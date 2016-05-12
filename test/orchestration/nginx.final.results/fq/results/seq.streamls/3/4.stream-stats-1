@@ -1,0 +1,50 @@
+Start time:              1461886674.252560 ms
+Recv  time:              1461886725.702438 ms
+End   time:              1461886732.282477 ms
+Total time:               58029 ms
+Receive time:             51449 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          8 ms
+Thru prune time:          51479 ms
+Make live set time:           0 ms
+Make rindex merge time:      15 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      4 ms
+Thru stream time:         51470 ms
+Send live set wait time:   6371 ms
+Output processing time:      45 ms
+Index wait time:              0 ms
+Address processing time:     56 ms
+Finish time:                 78 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 4
+Total output time 168 ms longest thread 42 ms, send idle 0 recv idle 0 comp time 168
+Total address time 220 ms longest thread 55 ms, send idle 0 recv idle 11 comp time 209
+
+Received 12858384 bytes of merge data
+Received 73445760 bytes of output data
+Received 816064 bytes of input data
+Received 100440 bytes of addr data
+
+Received 49343 values in live set
+Output directs 6635374 indirects 0 values 8925700 quashed 5360274 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 554 simplified 1096599 unchanged 510145 of 1607298 merge values using live set
+Address tokens 533970 passthrus 533930 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1067940 sent 1577980

@@ -1,0 +1,52 @@
+Start time:              1462583878.025062 ms
+Recv  time:              1462583917.284613 ms
+End   time:              1462583918.480404 ms
+Total time:               40455 ms
+Receive time:             39259 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          40368 ms
+Make live set time:           0 ms
+Make rindex merge time:       9 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   1097 ms
+Thru stream time:         40367 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:     82 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 539, comp time 558
+Total output time 6 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 6
+Total address time 328 ms longest thread 82 ms, send idle 0 recv idle 244 comp time 84
+
+Received 1132936 bytes of merge data
+Received 2063744 bytes of output data
+Received 26656 bytes of input data
+Received 445280 bytes of addr data
+
+Received 12912953 values in live set
+Output directs 239452 indirects 4 values 255903 quashed 4220 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 22424 simplified 6987 unchanged 112206 of 141617 merge values using live set
+Address tokens 1756483 passthrus 1735374 resolved 21109, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 3512966 sent 3931826
+Cache hits 0
+skips 0

@@ -1,0 +1,51 @@
+Start time:              1461546007.618276 ms
+Recv  time:              1461546012.629416 ms
+End   time:              1461546016.117290 ms
+Total time:                8500 ms
+Receive time:              5011 ms
+Preprune local time:        150 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           6439 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:       42 ms
+Make rindex stream time:   1228 ms
+Thru stream time:          6439 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2060 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1223, comp time 5
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 8240 ms longest thread 2060 ms, send idle 0 recv idle 8240 comp time 0
+
+Received 10304 bytes of merge data
+Received 1704 bytes of output data
+Received 32 bytes of input data
+Received 329350264 bytes of addr data
+
+Received 41438 values in live set
+Output directs 167 indirects 22 values 193 quashed 167 merges 9
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 740 simplified 545 unchanged 3 of 1288 merge values using live set
+Address tokens 601 passthrus 601 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1202 sent 1232
+Local preprune reduced merge data size from 87384 to 10304 (88.208%)

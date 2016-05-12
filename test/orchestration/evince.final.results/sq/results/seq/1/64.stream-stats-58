@@ -1,0 +1,50 @@
+Start time:              1461771464.067894 ms
+Recv  time:              1461771487.807124 ms
+End   time:              1461771498.876858 ms
+Total time:               34808 ms
+Receive time:             23739 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      10604 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          8 ms
+Thru prune time:          34352 ms
+Make live set time:           4 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1482583427 ms
+Send live set wait time:     23 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    424 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      9 ms longest thread 3 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 1696 ms longest thread 424 ms, send idle 0 recv idle 1692 comp time 4
+
+Received 15073904 bytes of merge data
+Received 4037984 bytes of output data
+Received 96 bytes of input data
+Received 6994984 bytes of addr data
+
+Received 676990 values in live set
+Output directs 88269 indirects 406085 values 504628 quashed 87971 merges 2975
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1878801 simplified 4278 unchanged 1159 of 1884238 merge values using live set
+Address tokens 2851 passthrus 2402 resolved 0, indirects 446 unmodified 3, merges 11062
+no changes 670674, zeros 259441, inputs 5737, merges 181, merge_zeros 528713, not live 80301
+Unique indirects 0
+Values rcvd 5702 sent 9138

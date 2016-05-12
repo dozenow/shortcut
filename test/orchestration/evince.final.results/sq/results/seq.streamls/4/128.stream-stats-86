@@ -1,0 +1,50 @@
+Start time:              1461947889.527632 ms
+Recv  time:              1461947906.254978 ms
+End   time:              1461947913.688479 ms
+Total time:               24160 ms
+Receive time:             16728 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          6 ms
+Thru prune time:          20231 ms
+Make live set time:           0 ms
+Make rindex merge time:      36 ms
+Make rindex addr time:        5 ms
+Make rindex stream time:   3456 ms
+Thru stream time:         20225 ms
+Send live set wait time:    590 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   3337 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 3388, comp time 68
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 13348 ms longest thread 3337 ms, send idle 0 recv idle 13318 comp time 30
+
+Received 10993984 bytes of merge data
+Received 1775968 bytes of output data
+Received 32 bytes of input data
+Received 3819840 bytes of addr data
+
+Received 1130229 values in live set
+Output directs 55589 indirects 166032 values 221936 quashed 55437 merges 156
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1373548 simplified 471 unchanged 229 of 1374248 merge values using live set
+Address tokens 83145 passthrus 79070 resolved 0, indirects 4021 unmodified 54, merges 40104
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 166290 sent 174996

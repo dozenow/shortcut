@@ -1,0 +1,50 @@
+Start time:              1461996723.303559 ms
+Recv  time:              1461996843.403179 ms
+End   time:              1461996845.150434 ms
+Total time:              121847 ms
+Receive time:            120099 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1707842663 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1707842663 ms
+Send live set wait time:      0 ms
+Output processing time:      18 ms
+Index wait time:             23 ms
+Address processing time:   1704 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 59 ms longest thread 15 ms, send idle 0 recv idle 0 comp time 59
+Total address time 6802 ms longest thread 1704 ms, send idle 0 recv idle 6268 comp time 534
+
+Received 12279808 bytes of merge data
+Received 786672 bytes of output data
+Received 224 bytes of input data
+Received 2349056 bytes of addr data
+
+Received 0 values in live set
+Output directs 68772 indirects 29532 values 98304 quashed 0 merges 15380
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 1534976 of 1534976 merge values using live set
+Address tokens 4094250 passthrus 4071108 resolved 0, indirects 5858 unmodified 10534, merges 922925
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 8188500 sent 8475188

@@ -1,0 +1,30 @@
+Epoch    DIFT     FF     PP  RMerge  RAddr Stream  Prune   Make   Send Output  Index Address Finish  Other   Total
+    0   89709  30310     67       6      0      3      0      0      0     55      0      30    139      3  120322
+    1   99586  20433     93       0      0      0      0      0      0     69      0       0    171      0  120352
+  Max   99586  30310     93       6      0      3      0      0      0     69      0      30    171      3  120352
+Total  189295  50743    160       6      0      3      0      0      0    124      0      30    310      3  240674
+ Core   94647  25371     80       3      0      0      0      0      0     62      0       1    155      1  120337
+
+
+Epoch     Tokens  Passthrus Unmodified  Resolveds  Indirects      Other   (Merges)
+    0     553980          0          0     553980          0          0          0
+    1          0          0          0          0          0          0          0
+  Max     553980          0          0     553980          0          0          0
+Total     553980          0          0     553980          0          0          0
+ Core     276990          0          0     276990          0          0          0
+
+
+Epoch      Merge     Output      Input       Addr       Live
+    0       4736  128464440    1427968     395360          0
+    1          0  159535640    1772640          0          0
+  Max       4736  159535640    1772640     395360          0
+Total       4736  288000080    3200608     395360          0
+ Core       2368  144000040    1600304     197680          0
+
+
+Epoch Instrumented
+    0        77207
+    1        18332
+  Max        77207
+Total        95539
+ Core        47769

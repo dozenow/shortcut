@@ -1,0 +1,52 @@
+Start time:              1462464246.000730 ms
+Recv  time:              1462464248.093844 ms
+End   time:              1462464252.243186 ms
+Total time:                6242 ms
+Receive time:              2093 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1146 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          0 ms
+Thru prune time:           3241 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119601936 ms
+Send live set wait time:      3 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2997 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 1 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 1
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 11988 ms longest thread 2997 ms, send idle 0 recv idle 11988 comp time 0
+
+Received 218872 bytes of merge data
+Received 744 bytes of output data
+Received 96 bytes of input data
+Received 849792 bytes of addr data
+
+Received 784430 values in live set
+Output directs 88 indirects 0 values 88 quashed 66 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 9776 simplified 10269 unchanged 7314 of 27359 merge values using live set
+Address tokens 1113 passthrus 1032 resolved 0, indirects 81 unmodified 0, merges 16
+no changes 581546, zeros 83534, inputs 11575, merges 37, merge_zeros 628, not live 10450
+Unique indirects 0
+Values rcvd 2226 sent 2108
+Cache hits 70
+skips 0

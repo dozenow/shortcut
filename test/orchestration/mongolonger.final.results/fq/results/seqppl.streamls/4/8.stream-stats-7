@@ -1,0 +1,51 @@
+Start time:              1462312974.490820 ms
+Recv  time:              1462313043.330756 ms
+End   time:              1462313043.575081 ms
+Total time:               69084 ms
+Receive time:             68840 ms
+Preprune local time:         59 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          68974 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:     74 ms
+Thru stream time:         68974 ms
+Send live set wait time:      0 ms
+Output processing time:      67 ms
+Index wait time:              0 ms
+Address processing time:      0 ms
+Finish time:                 43 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 74
+Total output time 232 ms longest thread 65 ms, send idle 0 recv idle 0 comp time 232
+Total address time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+
+Received 80 bytes of merge data
+Received 84513712 bytes of output data
+Received 1105088 bytes of input data
+Received 0 bytes of addr data
+
+Received 0 values in live set
+Output directs 9830973 indirects 15 values 10481879 quashed 167439 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 10 simplified 0 unchanged 0 of 10 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 0 sent 16202258
+Local preprune reduced merge data size from 40730544 to 80 (100.000%)

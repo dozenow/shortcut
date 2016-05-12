@@ -1,0 +1,50 @@
+Start time:              1461525288.140418 ms
+Recv  time:              1461525291.514079 ms
+End   time:              1461525292.116991 ms
+Total time:                3977 ms
+Receive time:              3373 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1236407500 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1236407500 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:             26 ms
+Address processing time:    574 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 6 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 6
+Total address time 2274 ms longest thread 574 ms, send idle 0 recv idle 2171 comp time 103
+
+Received 3216776 bytes of merge data
+Received 524448 bytes of output data
+Received 64 bytes of input data
+Received 2062176 bytes of addr data
+
+Received 0 values in live set
+Output directs 57632 indirects 7904 values 65536 quashed 0 merges 10
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 402097 of 402097 merge values using live set
+Address tokens 520699 passthrus 494746 resolved 0, indirects 212 unmodified 16177, merges 262350
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1041398 sent 1150334

@@ -1,0 +1,51 @@
+Start time:              1461726793.048404 ms
+Recv  time:              1461726808.353009 ms
+End   time:              1461726851.082920 ms
+Total time:               58034 ms
+Receive time:             15304 ms
+Preprune local time:          2 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          58005 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:        2 ms
+Make rindex stream time:  42690 ms
+Thru stream time:         58005 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     27 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 42680, comp time 10
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 104 ms longest thread 26 ms, send idle 0 recv idle 104 comp time 0
+
+Received 189728 bytes of merge data
+Received 111968 bytes of output data
+Received 0 bytes of input data
+Received 4034832 bytes of addr data
+
+Received 47273 values in live set
+Output directs 5436 indirects 0 values 7231 quashed 5436 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 18812 simplified 4904 unchanged 0 of 23716 merge values using live set
+Address tokens 6 passthrus 6 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 12 sent 12
+Local preprune reduced merge data size from 1128856 to 189728 (83.193%)

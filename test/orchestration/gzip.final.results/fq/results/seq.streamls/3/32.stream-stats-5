@@ -1,0 +1,50 @@
+Start time:              1461777901.055023 ms
+Recv  time:              1461777906.966732 ms
+End   time:              1461777907.995019 ms
+Total time:                6939 ms
+Receive time:              5911 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         71 ms
+Thru prune time:           6508 ms
+Make live set time:           0 ms
+Make rindex merge time:     257 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    267 ms
+Thru stream time:          6436 ms
+Send live set wait time:      0 ms
+Output processing time:      40 ms
+Index wait time:              0 ms
+Address processing time:    389 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 238, comp time 29
+Total output time 76 ms longest thread 28 ms, send idle 0 recv idle 0 comp time 76
+Total address time 1556 ms longest thread 389 ms, send idle 0 recv idle 1556 comp time 0
+
+Received 116525784 bytes of merge data
+Received 20715696 bytes of output data
+Received 2496 bytes of input data
+Received 2044544 bytes of addr data
+
+Received 235087 values in live set
+Output directs 2588671 indirects 1 values 2588672 quashed 394 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 10259952 simplified 4285847 unchanged 19924 of 14565723 merge values using live set
+Address tokens 10005 passthrus 0 resolved 10005, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 20010 sent 84756

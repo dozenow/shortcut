@@ -1,0 +1,50 @@
+Start time:              1461741658.305373 ms
+Recv  time:              1461741685.855615 ms
+End   time:              1461741692.005067 ms
+Total time:               33700 ms
+Receive time:             27550 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          4 ms
+Thru prune time:          27622 ms
+Make live set time:           0 ms
+Make rindex merge time:      10 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:     56 ms
+Thru stream time:         27617 ms
+Send live set wait time:      0 ms
+Output processing time:      32 ms
+Index wait time:              0 ms
+Address processing time:   6006 ms
+Finish time:                 39 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 51, comp time 5
+Total output time 97 ms longest thread 30 ms, send idle 0 recv idle 0 comp time 97
+Total address time 24024 ms longest thread 6006 ms, send idle 0 recv idle 23901 comp time 123
+
+Received 6465320 bytes of merge data
+Received 36915840 bytes of output data
+Received 410176 bytes of input data
+Received 79112 bytes of addr data
+
+Received 49447 values in live set
+Output directs 3336548 indirects 0 values 4486300 quashed 2695648 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 562 simplified 551184 unchanged 256419 of 808165 merge values using live set
+Address tokens 545760 passthrus 545720 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1091520 sent 1347880

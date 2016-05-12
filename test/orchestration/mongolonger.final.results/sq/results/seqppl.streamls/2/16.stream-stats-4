@@ -1,0 +1,51 @@
+Start time:              1462325278.661827 ms
+Recv  time:              1462325318.243937 ms
+End   time:              1462325332.171502 ms
+Total time:               53510 ms
+Receive time:             39583 ms
+Preprune local time:        167 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          40933 ms
+Make live set time:           0 ms
+Make rindex merge time:       8 ms
+Make rindex addr time:       37 ms
+Make rindex stream time:   1136 ms
+Thru stream time:         40932 ms
+Send live set wait time:    200 ms
+Output processing time:      26 ms
+Index wait time:              0 ms
+Address processing time:  12335 ms
+Finish time:                 16 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 557, comp time 579
+Total output time 88 ms longest thread 22 ms, send idle 0 recv idle 0 comp time 88
+Total address time 49336 ms longest thread 12334 ms, send idle 0 recv idle 46178 comp time 3158
+
+Received 1036128 bytes of merge data
+Received 52477800 bytes of output data
+Received 742368 bytes of input data
+Received 264234496 bytes of addr data
+
+Received 12023192 values in live set
+Output directs 6107808 indirects 23 values 6508900 quashed 103933 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 122760 simplified 2262 unchanged 4494 of 129516 merge values using live set
+Address tokens 38306282 passthrus 36401473 resolved 1904809, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 76612564 sent 83120832
+Local preprune reduced merge data size from 25460136 to 1036128 (95.930%)

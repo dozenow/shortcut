@@ -1,0 +1,50 @@
+Start time:              1461545795.570699 ms
+Recv  time:              1461545801.042727 ms
+End   time:              1461545807.261559 ms
+Total time:               11691 ms
+Receive time:              5473 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5890 ms
+Receive live set time:        0 ms
+Insert live set time:        17 ms
+Prune live set time:          0 ms
+Thru prune time:          11379 ms
+Make live set time:          14 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1256914930 ms
+Send live set wait time:     29 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    266 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 56 ms longest thread 14 ms, send idle 0 recv idle 0 comp time 56
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 1064 ms longest thread 266 ms, send idle 0 recv idle 1040 comp time 24
+
+Received 140784 bytes of merge data
+Received 234280 bytes of output data
+Received 4480 bytes of input data
+Received 81560 bytes of addr data
+
+Received 12093274 values in live set
+Output directs 27434 indirects 0 values 29060 quashed 1290 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1246 simplified 2342 unchanged 14010 of 17598 merge values using live set
+Address tokens 147381 passthrus 147157 resolved 216, indirects 0 unmodified 8, merges 0
+no changes 11548106, zeros 5082, inputs 4035, merges 12, merge_zeros 118, not live 948
+Unique indirects 0
+Values rcvd 294762 sent 346258

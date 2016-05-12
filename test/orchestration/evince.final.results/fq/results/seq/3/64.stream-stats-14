@@ -1,0 +1,50 @@
+Start time:              1461677113.027936 ms
+Recv  time:              1461677135.471160 ms
+End   time:              1461677148.400453 ms
+Total time:               35372 ms
+Receive time:             22443 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       8487 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          2 ms
+Thru prune time:          30935 ms
+Make live set time:           2 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1388232387 ms
+Send live set wait time:      4 ms
+Output processing time:      13 ms
+Index wait time:              0 ms
+Address processing time:   4417 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      1 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 3 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 3
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 45 ms longest thread 13 ms, send idle 0 recv idle 0 comp time 45
+Total address time 17668 ms longest thread 4417 ms, send idle 0 recv idle 16635 comp time 1033
+
+Received 1265368 bytes of merge data
+Received 676504 bytes of output data
+Received 5632 bytes of input data
+Received 1587992 bytes of addr data
+
+Received 505124 values in live set
+Output directs 17988 indirects 20373 values 82888 quashed 15530 merges 230594
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 139196 simplified 9834 unchanged 9141 of 158171 merge values using live set
+Address tokens 350561 passthrus 323321 resolved 0, indirects 27225 unmodified 15, merges 4588165
+no changes 481925, zeros 155995, inputs 9558, merges 1106, merge_zeros 10118, not live 21722
+Unique indirects 0
+Values rcvd 701122 sent 776834

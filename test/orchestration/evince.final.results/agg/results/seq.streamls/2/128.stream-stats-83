@@ -1,0 +1,50 @@
+Start time:              1462046135.1566323 ms
+Recv  time:              1462046256.666312 ms
+End   time:              1462046259.525537 ms
+Total time:              122960 ms
+Receive time:            120100 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:         122067 ms
+Make live set time:           0 ms
+Make rindex merge time:      17 ms
+Make rindex addr time:       32 ms
+Make rindex stream time:   1914 ms
+Thru stream time:        122065 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    893 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1850, comp time 64
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3572 ms longest thread 893 ms, send idle 0 recv idle 3550 comp time 22
+
+Received 2669584 bytes of merge data
+Received 86936 bytes of output data
+Received 2304 bytes of input data
+Received 70189008 bytes of addr data
+
+Received 1123005 values in live set
+Output directs 5565 indirects 0 values 10772 quashed 5032 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 327375 simplified 4613 unchanged 1710 of 333698 merge values using live set
+Address tokens 98173 passthrus 93484 resolved 0, indirects 4670 unmodified 19, merges 9181
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 196346 sent 206998

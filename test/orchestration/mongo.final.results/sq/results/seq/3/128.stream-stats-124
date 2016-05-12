@@ -1,0 +1,50 @@
+Start time:              1461545846.378381 ms
+Recv  time:              1461545851.704877 ms
+End   time:              1461545857.700468 ms
+Total time:               11322 ms
+Receive time:              5326 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5892 ms
+Receive live set time:        0 ms
+Insert live set time:        13 ms
+Prune live set time:          0 ms
+Thru prune time:          11231 ms
+Make live set time:          14 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1256965738 ms
+Send live set wait time:     27 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:     44 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 55 ms longest thread 14 ms, send idle 0 recv idle 0 comp time 55
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 3 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 3
+Total address time 176 ms longest thread 44 ms, send idle 0 recv idle 176 comp time 0
+
+Received 167968 bytes of merge data
+Received 331912 bytes of output data
+Received 5184 bytes of input data
+Received 83016 bytes of addr data
+
+Received 12093122 values in live set
+Output directs 39289 indirects 0 values 41209 quashed 1376 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1407 simplified 2773 unchanged 16816 of 20996 merge values using live set
+Address tokens 4986 passthrus 4946 resolved 0, indirects 0 unmodified 40, merges 0
+no changes 10940920, zeros 4898, inputs 4401, merges 10, merge_zeros 120, not live 948
+Unique indirects 0
+Values rcvd 9972 sent 84934

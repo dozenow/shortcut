@@ -1,0 +1,50 @@
+Start time:              1462339477.195156 ms
+Recv  time:              1462339488.471191 ms
+End   time:              1462339489.976042 ms
+Total time:               12780 ms
+Receive time:             11276 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1356 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          12634 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -2050596555 ms
+Send live set wait time:      0 ms
+Output processing time:       4 ms
+Index wait time:              0 ms
+Address processing time:    135 ms
+Finish time:                  6 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total address time 540 ms longest thread 135 ms, send idle 0 recv idle 457 comp time 83
+
+Received 1132584 bytes of merge data
+Received 6442560 bytes of output data
+Received 71584 bytes of input data
+Received 59008 bytes of addr data
+
+Received 49408 values in live set
+Output directs 587025 indirects 0 values 782950 quashed 475175 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 540 simplified 96203 unchanged 44830 of 141573 merge values using live set
+Address tokens 451730 passthrus 451690 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20417, zeros 3977, inputs 192, merges 43, merge_zeros 302, not live 2862
+Unique indirects 0
+Values rcvd 903460 sent 948200

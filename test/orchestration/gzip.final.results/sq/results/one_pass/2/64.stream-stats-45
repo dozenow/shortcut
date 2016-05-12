@@ -1,0 +1,50 @@
+Start time:              1461526765.150153 ms
+Recv  time:              1461526769.217528 ms
+End   time:              1461526771.676760 ms
+Total time:                6526 ms
+Receive time:              4067 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1237884510 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1237884510 ms
+Send live set wait time:      0 ms
+Output processing time:      20 ms
+Index wait time:             16 ms
+Address processing time:   2422 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 69 ms longest thread 20 ms, send idle 0 recv idle 0 comp time 69
+Total address time 9671 ms longest thread 2422 ms, send idle 0 recv idle 8866 comp time 805
+
+Received 28903680 bytes of merge data
+Received 1573344 bytes of output data
+Received 544 bytes of input data
+Received 2343680 bytes of addr data
+
+Received 0 values in live set
+Output directs 123142 indirects 73466 values 196608 quashed 0 merges 4876
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 3612960 of 3612960 merge values using live set
+Address tokens 4334675 passthrus 4324167 resolved 0, indirects 150 unmodified 290, merges 2228370
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 8669350 sent 9201454

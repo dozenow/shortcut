@@ -1,0 +1,50 @@
+Start time:              1461549940.186965 ms
+Recv  time:              1461549946.592669 ms
+End   time:              1461549949.509490 ms
+Total time:                9322 ms
+Receive time:              6405 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           9252 ms
+Make live set time:           0 ms
+Make rindex merge time:       8 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2802 ms
+Thru stream time:          9252 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     67 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2230, comp time 572
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 260 ms longest thread 67 ms, send idle 0 recv idle 109 comp time 151
+
+Received 1045008 bytes of merge data
+Received 1695256 bytes of output data
+Received 34752 bytes of input data
+Received 218392 bytes of addr data
+
+Received 12221578 values in live set
+Output directs 197343 indirects 8 values 210177 quashed 10462 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 4218 simplified 17810 unchanged 108598 of 130626 merge values using live set
+Address tokens 2741038 passthrus 2714605 resolved 26409, indirects 0 unmodified 24, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 5482076 sent 5796232

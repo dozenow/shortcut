@@ -1,0 +1,50 @@
+Start time:              1461625431.202554 ms
+Recv  time:              1461625442.164971 ms
+End   time:              1461625444.174624 ms
+Total time:               12973 ms
+Receive time:             10963 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:         21 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         69 ms
+Thru prune time:          11053 ms
+Make live set time:          29 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1336550562 ms
+Send live set wait time:    816 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1072 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     93 ms longest thread 28 ms
+Total prune pass 2 time:     39 ms
+
+Total live set make time 101 ms longest thread 29 ms, send idle 0 recv idle 0 comp time 101
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 4288 ms longest thread 1072 ms, send idle 0 recv idle 4286 comp time 2
+
+Received 145877200 bytes of merge data
+Received 7824 bytes of output data
+Received 0 bytes of input data
+Received 168255936 bytes of addr data
+
+Received 43042 values in live set
+Output directs 776 indirects 80 values 918 quashed 776 merges 90
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 18233882 simplified 694 unchanged 74 of 18234650 merge values using live set
+Address tokens 421 passthrus 421 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 42596, zeros 21028720, inputs 129, merges 330, merge_zeros 200, not live 2613
+Unique indirects 0
+Values rcvd 842 sent 1142

@@ -1,0 +1,50 @@
+Start time:              1461882665.813433 ms
+Recv  time:              1461882671.036587 ms
+End   time:              1461882674.630810 ms
+Total time:                8818 ms
+Receive time:              5224 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8087 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2856 ms
+Thru stream time:          8086 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:    721 ms
+Finish time:                  5 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2849, comp time 7
+Total output time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total address time 2883 ms longest thread 721 ms, send idle 0 recv idle 2768 comp time 115
+
+Received 883264 bytes of merge data
+Received 5019840 bytes of output data
+Received 55776 bytes of input data
+Received 58120 bytes of addr data
+
+Received 49345 values in live set
+Output directs 454873 indirects 0 values 610050 quashed 367723 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 530 simplified 74959 unchanged 34919 of 110408 merge values using live set
+Address tokens 857290 passthrus 857250 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1714580 sent 1749440

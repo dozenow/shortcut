@@ -1,0 +1,50 @@
+Start time:              1461620532.015004 ms
+Recv  time:              1461620546.958252 ms
+End   time:              1461620552.603762 ms
+Total time:               20588 ms
+Receive time:             14943 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       4057 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:         24 ms
+Thru prune time:          19027 ms
+Make live set time:          12 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331651375 ms
+Send live set wait time:     11 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1536 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     20 ms longest thread 8 ms
+Total prune pass 2 time:     15 ms
+
+Total live set make time 21 ms longest thread 12 ms, send idle 0 recv idle 0 comp time 21
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 6144 ms longest thread 1536 ms, send idle 0 recv idle 6141 comp time 3
+
+Received 30225720 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 18768984 bytes of addr data
+
+Received 2391823 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 26612 simplified 1384431 unchanged 2367172 of 3778215 merge values using live set
+Address tokens 3193 passthrus 3188 resolved 0, indirects 0 unmodified 5, merges 0
+no changes 2074039, zeros 1829182, inputs 287046, merges 16, merge_zeros 497, not live 229382
+Unique indirects 0
+Values rcvd 6386 sent 6386

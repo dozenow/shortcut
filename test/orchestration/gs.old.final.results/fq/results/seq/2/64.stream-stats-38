@@ -1,0 +1,50 @@
+Start time:              1461619940.490401 ms
+Recv  time:              1461619943.680409 ms
+End   time:              1461619952.003549 ms
+Total time:               11514 ms
+Receive time:              3190 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3117 ms
+Receive live set time:        0 ms
+Insert live set time:         2 ms
+Prune live set time:          0 ms
+Thru prune time:           6310 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331059850 ms
+Send live set wait time:      5 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   5193 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 20772 ms longest thread 5193 ms, send idle 0 recv idle 20746 comp time 26
+
+Received 127392 bytes of merge data
+Received 0 bytes of output data
+Received 32 bytes of input data
+Received 2534432 bytes of addr data
+
+Received 2286312 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 4732 simplified 3960 unchanged 7232 of 15924 merge values using live set
+Address tokens 3316 passthrus 484 resolved 2797, indirects 16 unmodified 19, merges 91260
+no changes 1901206, zeros 139967, inputs 26701, merges 21, merge_zeros 2214, not live 147901
+Unique indirects 0
+Values rcvd 6632 sent 34766

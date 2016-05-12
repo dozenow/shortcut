@@ -1,0 +1,50 @@
+Start time:              1461742839.910573 ms
+Recv  time:              1461742855.714062 ms
+End   time:              1461742856.504383 ms
+Total time:               16594 ms
+Receive time:             15804 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1453959270 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1453959270 ms
+Send live set wait time:      0 ms
+Output processing time:      28 ms
+Index wait time:              0 ms
+Address processing time:    742 ms
+Finish time:                 19 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 65 ms longest thread 28 ms, send idle 0 recv idle 0 comp time 65
+Total address time 2962 ms longest thread 742 ms, send idle 0 recv idle 2870 comp time 92
+
+Received 3281032 bytes of merge data
+Received 18720000 bytes of output data
+Received 208000 bytes of input data
+Received 65224 bytes of addr data
+
+Received 0 values in live set
+Output directs 1694245 indirects 0 values 2275000 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 410129 of 410129 merge values using live set
+Address tokens 1411508 passthrus 1398694 resolved 40, indirects 0 unmodified 6035, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 2823016 sent 5678028

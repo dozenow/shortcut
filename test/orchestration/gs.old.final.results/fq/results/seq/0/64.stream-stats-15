@@ -1,0 +1,50 @@
+Start time:              1461619952.714811 ms
+Recv  time:              1461619956.893205 ms
+End   time:              1461619964.201594 ms
+Total time:               11487 ms
+Receive time:              4178 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1203 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          0 ms
+Thru prune time:           5383 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331072074 ms
+Send live set wait time:      2 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   6099 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 2 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 2
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 24396 ms longest thread 6099 ms, send idle 0 recv idle 24393 comp time 3
+
+Received 891680 bytes of merge data
+Received 744 bytes of output data
+Received 256 bytes of input data
+Received 1525448 bytes of addr data
+
+Received 779777 values in live set
+Output directs 88 indirects 0 values 88 quashed 66 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 38381 simplified 45976 unchanged 27103 of 111460 merge values using live set
+Address tokens 1113 passthrus 617 resolved 36, indirects 439 unmodified 21, merges 841
+no changes 575731, zeros 141315, inputs 20454, merges 2542, merge_zeros 1967, not live 24403
+Unique indirects 0
+Values rcvd 2226 sent 1356

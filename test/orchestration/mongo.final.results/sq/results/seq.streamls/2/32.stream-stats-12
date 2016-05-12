@@ -1,0 +1,50 @@
+Start time:              1461550401.161059 ms
+Recv  time:              1461550407.231827 ms
+End   time:              1461550413.986876 ms
+Total time:               12825 ms
+Receive time:              6070 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          12642 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        9 ms
+Make rindex stream time:   6553 ms
+Thru stream time:         12641 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    180 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 6363, comp time 190
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 720 ms longest thread 180 ms, send idle 0 recv idle 481 comp time 239
+
+Received 2001112 bytes of merge data
+Received 579744 bytes of output data
+Received 118368 bytes of input data
+Received 7667840 bytes of addr data
+
+Received 4624059 values in live set
+Output directs 35138 indirects 0 values 68808 quashed 32210 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1087 simplified 44647 unchanged 204405 of 250139 merge values using live set
+Address tokens 2197792 passthrus 1832427 resolved 365365, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 4395584 sent 3664854

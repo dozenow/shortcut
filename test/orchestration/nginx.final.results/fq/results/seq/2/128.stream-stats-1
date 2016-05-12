@@ -1,0 +1,50 @@
+Start time:              1461882538.145432 ms
+Recv  time:              1461882543.215746 ms
+End   time:              1461882546.980114 ms
+Total time:                8834 ms
+Receive time:              5070 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1134 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           6206 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1593657505 ms
+Send live set wait time:      0 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:   2615 ms
+Finish time:                  6 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 15 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 15
+Total address time 10460 ms longest thread 2615 ms, send idle 0 recv idle 10304 comp time 156
+
+Received 1026104 bytes of merge data
+Received 5834880 bytes of output data
+Received 64832 bytes of input data
+Received 58120 bytes of addr data
+
+Received 49196 values in live set
+Output directs 531730 indirects 0 values 709100 quashed 430430 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 554 simplified 87129 unchanged 40580 of 128263 merge values using live set
+Address tokens 974400 passthrus 974360 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 19977, zeros 3931, inputs 188, merges 43, merge_zeros 302, not live 2801
+Unique indirects 0
+Values rcvd 1948800 sent 1989320

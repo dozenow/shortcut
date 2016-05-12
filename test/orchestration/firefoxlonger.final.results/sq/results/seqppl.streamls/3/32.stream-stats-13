@@ -1,0 +1,51 @@
+Start time:              1462129019.865213 ms
+Recv  time:              1462129213.055476 ms
+End   time:              1462129232.919971 ms
+Total time:              213054 ms
+Receive time:            193191 ms
+Preprune local time:        588 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         47 ms
+Thru prune time:         207243 ms
+Make live set time:           0 ms
+Make rindex merge time:     224 ms
+Make rindex addr time:      140 ms
+Make rindex stream time:  13052 ms
+Thru stream time:        207196 ms
+Send live set wait time:    871 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   4941 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 12991, comp time 61
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 19750 ms longest thread 4941 ms, send idle 0 recv idle 19749 comp time 1
+
+Received 75871800 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 194311368 bytes of addr data
+
+Received 712115 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 9245987 simplified 236475 unchanged 1513 of 9483975 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Local preprune reduced merge data size from 644190320 to 75871800 (88.222%)

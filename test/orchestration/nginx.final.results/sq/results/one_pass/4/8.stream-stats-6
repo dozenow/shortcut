@@ -1,0 +1,50 @@
+Start time:              1461742796.918725 ms
+Recv  time:              1461742821.562422 ms
+End   time:              1461742824.638909 ms
+Total time:               27721 ms
+Receive time:             24644 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1453916278 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1453916278 ms
+Send live set wait time:      0 ms
+Output processing time:      26 ms
+Index wait time:              0 ms
+Address processing time:   3017 ms
+Finish time:                 31 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 81 ms longest thread 25 ms, send idle 0 recv idle 0 comp time 81
+Total address time 12068 ms longest thread 3017 ms, send idle 0 recv idle 11937 comp time 131
+
+Received 5426392 bytes of merge data
+Received 30974400 bytes of output data
+Received 344160 bytes of input data
+Received 75560 bytes of addr data
+
+Received 0 values in live set
+Output directs 2798080 indirects 0 values 3764250 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 678299 of 678299 merge values using live set
+Address tokens 3008615 passthrus 2989725 resolved 40, indirects 0 unmodified 8904, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 6017230 sent 10733098

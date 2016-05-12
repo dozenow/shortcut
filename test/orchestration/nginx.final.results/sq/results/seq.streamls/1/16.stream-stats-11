@@ -1,0 +1,50 @@
+Start time:              1461741247.644244 ms
+Recv  time:              1461741264.990813 ms
+End   time:              1461741267.382166 ms
+Total time:               19738 ms
+Receive time:             17346 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:          19692 ms
+Make live set time:           0 ms
+Make rindex merge time:       8 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2334 ms
+Thru stream time:         19689 ms
+Send live set wait time:      0 ms
+Output processing time:      15 ms
+Index wait time:              0 ms
+Address processing time:     10 ms
+Finish time:                 20 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2329, comp time 5
+Total output time 49 ms longest thread 15 ms, send idle 0 recv idle 0 comp time 49
+Total address time 39 ms longest thread 10 ms, send idle 0 recv idle 17 comp time 22
+
+Received 3492472 bytes of merge data
+Received 19927640 bytes of output data
+Received 221440 bytes of input data
+Received 66112 bytes of addr data
+
+Received 49571 values in live set
+Output directs 1810504 indirects 0 values 2421760 quashed 1464514 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 537 simplified 297565 unchanged 138457 of 436559 merge values using live set
+Address tokens 235260 passthrus 235220 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 470520 sent 608900

@@ -1,0 +1,51 @@
+Start time:              1462063004.094773 ms
+Recv  time:              1462063124.187646 ms
+End   time:              1462063124.721773 ms
+Total time:              120627 ms
+Receive time:            120092 ms
+Preprune local time:        123 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         32 ms
+Thru prune time:         120618 ms
+Make live set time:           0 ms
+Make rindex merge time:     120 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    247 ms
+Thru stream time:        120585 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:      7 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 233, comp time 14
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 28 ms longest thread 7 ms, send idle 0 recv idle 28 comp time 0
+
+Received 48299960 bytes of merge data
+Received 3277800 bytes of output data
+Received 1472 bytes of input data
+Received 2353968 bytes of addr data
+
+Received 87298 values in live set
+Output directs 262776 indirects 146824 values 409600 quashed 262776 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 6037495 simplified 0 unchanged 0 of 6037495 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 0 sent 0
+Local preprune reduced merge data size from 76055480 to 48299960 (36.494%)

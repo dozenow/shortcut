@@ -1,0 +1,52 @@
+Start time:              1462464221.663371 ms
+Recv  time:              1462464223.952643 ms
+End   time:              1462464227.237016 ms
+Total time:                5574 ms
+Receive time:              2289 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2795 ms
+Receive live set time:        0 ms
+Insert live set time:         4 ms
+Prune live set time:          0 ms
+Thru prune time:           5088 ms
+Make live set time:           4 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119626273 ms
+Send live set wait time:     14 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    467 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 13 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 13
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 1820 ms longest thread 455 ms, send idle 0 recv idle 232 comp time 1588
+
+Received 21160 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 79712 bytes of addr data
+
+Received 3268241 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2553 simplified 71 unchanged 21 of 2645 merge values using live set
+Address tokens 7874885 passthrus 7598854 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 2639575, zeros 4315, inputs 507, merges 1, merge_zeros 129, not live 5012
+Unique indirects 0
+Values rcvd 15749770 sent 15197708
+Cache hits 0
+skips 250510

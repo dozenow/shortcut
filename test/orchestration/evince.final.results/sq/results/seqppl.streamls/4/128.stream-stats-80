@@ -1,0 +1,50 @@
+Start time:              1461947889.527692 ms
+Recv  time:              1461947909.611812 ms
+End   time:              1461947913.697686 ms
+Total time:               24169 ms
+Receive time:             20084 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          8 ms
+Thru prune time:          20227 ms
+Make live set time:           0 ms
+Make rindex merge time:      45 ms
+Make rindex addr time:       30 ms
+Make rindex stream time:     59 ms
+Thru stream time:         20219 ms
+Send live set wait time:     19 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   3923 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 59
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 15688 ms longest thread 3922 ms, send idle 0 recv idle 15672 comp time 16
+
+Received 12117352 bytes of merge data
+Received 151192 bytes of output data
+Received 2048 bytes of input data
+Received 71980528 bytes of addr data
+
+Received 1117625 values in live set
+Output directs 9971 indirects 16 values 18824 quashed 6545 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1499577 simplified 12704 unchanged 2388 of 1514669 merge values using live set
+Address tokens 103099 passthrus 102990 resolved 109, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 206198 sent 212832

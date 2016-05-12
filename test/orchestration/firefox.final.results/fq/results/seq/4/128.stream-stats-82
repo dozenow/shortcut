@@ -1,0 +1,50 @@
+Start time:              1461724493.312847 ms
+Recv  time:              1461724531.588728 ms
+End   time:              1461724555.274821 ms
+Total time:               61962 ms
+Receive time:             38275 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3463 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          5 ms
+Thru prune time:          41745 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1435612672 ms
+Send live set wait time:  12372 ms
+Output processing time:      26 ms
+Index wait time:              0 ms
+Address processing time:   7816 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      5 ms longest thread 2 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 94 ms longest thread 26 ms, send idle 0 recv idle 0 comp time 94
+Total address time 30164 ms longest thread 7816 ms, send idle 0 recv idle 28340 comp time 1824
+
+Received 10307928 bytes of merge data
+Received 24840 bytes of output data
+Received 128 bytes of input data
+Received 8668848 bytes of addr data
+
+Received 17080 values in live set
+Output directs 810 indirects 227 values 3060 quashed 810 merges 519528
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1134801 simplified 23660 unchanged 130030 of 1288491 merge values using live set
+Address tokens 1350 passthrus 275 resolved 0, indirects 976 unmodified 99, merges 10906375
+no changes 16263, zeros 769457, inputs 384, merges 1029, merge_zeros 40481, not live 272255
+Unique indirects 0
+Values rcvd 2700 sent 4844

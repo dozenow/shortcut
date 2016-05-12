@@ -1,0 +1,52 @@
+Start time:              1462464221.661723 ms
+Recv  time:              1462464224.328432 ms
+End   time:              1462464227.659653 ms
+Total time:                5998 ms
+Receive time:              2667 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1885 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          0 ms
+Thru prune time:           4556 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119626275 ms
+Send live set wait time:     11 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1426 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5697 ms longest thread 1425 ms, send idle 0 recv idle 4507 comp time 1190
+
+Received 418232 bytes of merge data
+Received 0 bytes of output data
+Received 32 bytes of input data
+Received 202720 bytes of addr data
+
+Received 2913790 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 14021 simplified 4097 unchanged 34161 of 52279 merge values using live set
+Address tokens 6535115 passthrus 6464589 resolved 22, indirects 4236 unmodified 64660, merges 2623
+no changes 2623126, zeros 10154, inputs 6689, merges 2400, merge_zeros 778, not live 5319
+Unique indirects 0
+Values rcvd 13070230 sent 13058498
+Cache hits 1585
+skips 1608

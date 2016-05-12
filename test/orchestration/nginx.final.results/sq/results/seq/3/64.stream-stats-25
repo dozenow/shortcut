@@ -1,0 +1,50 @@
+Start time:              1461773679.819906 ms
+Recv  time:              1461773686.485463 ms
+End   time:              1461773689.891064 ms
+Total time:               10071 ms
+Receive time:              6666 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2214 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8882 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1484799179 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:   1181 ms
+Finish time:                  4 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 4718 ms longest thread 1181 ms, send idle 0 recv idle 4596 comp time 122
+
+Received 842944 bytes of merge data
+Received 4789440 bytes of output data
+Received 53216 bytes of input data
+Received 58120 bytes of addr data
+
+Received 49408 values in live set
+Output directs 434508 indirects 0 values 582050 quashed 351358 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 530 simplified 71519 unchanged 33319 of 105368 merge values using live set
+Address tokens 525520 passthrus 525480 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20421, zeros 3931, inputs 188, merges 43, merge_zeros 302, not live 2801
+Unique indirects 0
+Values rcvd 1051040 sent 1084300

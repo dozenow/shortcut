@@ -1,0 +1,50 @@
+Start time:              1461960661.183311 ms
+Recv  time:              1461960669.405142 ms
+End   time:              1461960671.291731 ms
+Total time:               10108 ms
+Receive time:              8221 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        211 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         81 ms
+Thru prune time:           8515 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1671780543 ms
+Send live set wait time:     37 ms
+Output processing time:      50 ms
+Index wait time:              0 ms
+Address processing time:   1504 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    132 ms longest thread 36 ms
+Total prune pass 2 time:     45 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 159 ms longest thread 44 ms, send idle 0 recv idle 0 comp time 159
+Total address time 6016 ms longest thread 1504 ms, send idle 0 recv idle 6012 comp time 4
+
+Received 188020984 bytes of merge data
+Received 32778000 bytes of output data
+Received 4032 bytes of input data
+Received 2044592 bytes of addr data
+
+Received 123064 values in live set
+Output directs 4095999 indirects 1 values 4096000 quashed 624 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 16555999 simplified 6914454 unchanged 32170 of 23502623 merge values using live set
+Address tokens 42238 passthrus 0 resolved 42238, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 86331, inputs 115178, merges 0, merge_zeros 24, not live 54041
+Unique indirects 0
+Values rcvd 84476 sent 17690

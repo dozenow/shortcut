@@ -1,0 +1,50 @@
+Start time:              1461526163.736006 ms
+Recv  time:              1461526167.696298 ms
+End   time:              1461526169.239891 ms
+Total time:                5504 ms
+Receive time:              3961 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1291 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         11 ms
+Thru prune time:           5263 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1237283096 ms
+Send live set wait time:     11 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    227 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     17 ms longest thread 5 ms
+Total prune pass 2 time:      5 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 908 ms longest thread 227 ms, send idle 0 recv idle 908 comp time 0
+
+Received 25783408 bytes of merge data
+Received 1311120 bytes of output data
+Received 480 bytes of input data
+Received 2349088 bytes of addr data
+
+Received 88386 values in live set
+Output directs 107266 indirects 56574 values 163840 quashed 107266 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2018782 simplified 1203328 unchanged 816 of 3222926 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 196713, inputs 80327, merges 0, merge_zeros 5748, not live 10848
+Unique indirects 0
+Values rcvd 0 sent 0

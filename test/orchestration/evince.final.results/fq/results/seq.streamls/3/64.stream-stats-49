@@ -1,0 +1,50 @@
+Start time:              1461677242.855012 ms
+Recv  time:              1461677262.525840 ms
+End   time:              1461677277.860670 ms
+Total time:               35005 ms
+Receive time:             19671 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          31462 ms
+Make live set time:           0 ms
+Make rindex merge time:      10 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:  11779 ms
+Thru stream time:         31462 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   3543 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 11710, comp time 69
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 14172 ms longest thread 3543 ms, send idle 0 recv idle 14154 comp time 18
+
+Received 823488 bytes of merge data
+Received 123568 bytes of output data
+Received 64 bytes of input data
+Received 932920 bytes of addr data
+
+Received 1032753 values in live set
+Output directs 2769 indirects 1202 values 15416 quashed 2343 merges 4800
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 101301 simplified 1172 unchanged 463 of 102936 merge values using live set
+Address tokens 20851 passthrus 18492 resolved 0, indirects 2359 unmodified 0, merges 67037
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 41702 sent 49368

@@ -1,0 +1,51 @@
+Start time:              1461742347.875581 ms
+Recv  time:              1461742358.642948 ms
+End   time:              1461742361.087271 ms
+Total time:               13212 ms
+Receive time:             10768 ms
+Preprune local time:          4 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          13182 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2404 ms
+Thru stream time:         13182 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:     15 ms
+Finish time:                  9 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2398, comp time 6
+Total output time 13 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 13
+Total address time 47 ms longest thread 14 ms, send idle 0 recv idle 27 comp time 20
+
+Received 592 bytes of merge data
+Received 8824320 bytes of output data
+Received 98048 bytes of input data
+Received 59008 bytes of addr data
+
+Received 49408 values in live set
+Output directs 809324 indirects 0 values 1072400 quashed 656124 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 33 simplified 24 unchanged 17 of 74 merge values using live set
+Address tokens 139440 passthrus 139400 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 278880 sent 340160
+Local preprune reduced merge data size from 1549760 to 592 (99.962%)

@@ -1,0 +1,50 @@
+Start time:              1461996913.1876402 ms
+Recv  time:              1461997034.974133 ms
+End   time:              1461997036.015986 ms
+Total time:              121140 ms
+Receive time:            120098 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1708034236 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1708034236 ms
+Send live set wait time:      0 ms
+Output processing time:      13 ms
+Index wait time:             19 ms
+Address processing time:   1009 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 16 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 16
+Total address time 3989 ms longest thread 1009 ms, send idle 0 recv idle 3589 comp time 400
+
+Received 14986240 bytes of merge data
+Received 393336 bytes of output data
+Received 288 bytes of input data
+Received 2344928 bytes of addr data
+
+Received 0 values in live set
+Output directs 33804 indirects 15348 values 49152 quashed 0 merges 15348
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 1873280 of 1873280 merge values using live set
+Address tokens 2775194 passthrus 2715058 resolved 0, indirects 5296 unmodified 11096, merges 1185716
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 5550388 sent 5637724

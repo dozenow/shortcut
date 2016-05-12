@@ -1,0 +1,50 @@
+Start time:              1461724208.090390 ms
+Recv  time:              1461724235.828677 ms
+End   time:              1461724262.626885 ms
+Total time:               54536 ms
+Receive time:             27738 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      26432 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:          54172 ms
+Make live set time:          35 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1435327450 ms
+Send live set wait time:      0 ms
+Output processing time:      36 ms
+Index wait time:              0 ms
+Address processing time:    290 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      1 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 128 ms longest thread 35 ms, send idle 0 recv idle 0 comp time 128
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 144 ms longest thread 36 ms, send idle 0 recv idle 0 comp time 144
+Total address time 1160 ms longest thread 290 ms, send idle 0 recv idle 1160 comp time 0
+
+Received 4240904 bytes of merge data
+Received 71570656 bytes of output data
+Received 0 bytes of input data
+Received 207409056 bytes of addr data
+
+Received 51264 values in live set
+Output directs 8842949 indirects 70446 values 8944442 quashed 8842949 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 525987 simplified 4126 unchanged 0 of 530113 merge values using live set
+Address tokens 6 passthrus 6 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 43178, zeros 24858895, inputs 0, merges 1, merge_zeros 68784, not live 998452
+Unique indirects 0
+Values rcvd 12 sent 12

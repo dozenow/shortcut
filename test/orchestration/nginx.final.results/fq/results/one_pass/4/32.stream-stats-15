@@ -1,0 +1,50 @@
+Start time:              1461888122.805849 ms
+Recv  time:              1461888136.033022 ms
+End   time:              1461888136.203376 ms
+Total time:               13398 ms
+Receive time:             13228 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1599242165 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1599242165 ms
+Send live set wait time:      0 ms
+Output processing time:      20 ms
+Index wait time:              0 ms
+Address processing time:    133 ms
+Finish time:                 15 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 59 ms longest thread 20 ms, send idle 0 recv idle 0 comp time 59
+Total address time 526 ms longest thread 133 ms, send idle 0 recv idle 0 comp time 526
+
+Received 2509880 bytes of merge data
+Received 14308760 bytes of output data
+Received 159008 bytes of input data
+Received 62560 bytes of addr data
+
+Received 0 values in live set
+Output directs 1303853 indirects 0 values 1738910 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 313735 of 313735 merge values using live set
+Address tokens 9276789 passthrus 9275340 resolved 40, indirects 0 unmodified 740, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 18553578 sent 20762426

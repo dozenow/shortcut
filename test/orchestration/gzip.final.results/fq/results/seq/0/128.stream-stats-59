@@ -1,0 +1,50 @@
+Start time:              1461506043.475331 ms
+Recv  time:              1461506046.852214 ms
+End   time:              1461506048.716563 ms
+Total time:                5241 ms
+Receive time:              3376 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1419 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          8 ms
+Thru prune time:           4804 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1217162835 ms
+Send live set wait time:      0 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    433 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     12 ms longest thread 3 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 1732 ms longest thread 433 ms, send idle 0 recv idle 1728 comp time 4
+
+Received 18526016 bytes of merge data
+Received 3015576 bytes of output data
+Received 384 bytes of input data
+Received 2078280 bytes of addr data
+
+Received 104636 values in live set
+Output directs 347816 indirects 29016 values 376832 quashed 221626 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1591391 simplified 721694 unchanged 2667 of 2315752 merge values using live set
+Address tokens 4922 passthrus 0 resolved 4922, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 144974, inputs 114537, merges 0, merge_zeros 32, not live 242
+Unique indirects 0
+Values rcvd 9844 sent 0

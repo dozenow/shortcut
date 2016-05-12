@@ -1,0 +1,50 @@
+Start time:              1461551332.593605 ms
+Recv  time:              1461551339.248775 ms
+End   time:              1461551346.094803 ms
+Total time:               13502 ms
+Receive time:              6656 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       6144 ms
+Receive live set time:        0 ms
+Insert live set time:         9 ms
+Prune live set time:          1 ms
+Thru prune time:          12811 ms
+Make live set time:          19 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1262451953 ms
+Send live set wait time:     29 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:    639 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 41 ms longest thread 19 ms, send idle 0 recv idle 0 comp time 41
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 2556 ms longest thread 639 ms, send idle 0 recv idle 2174 comp time 382
+
+Received 2442840 bytes of merge data
+Received 670032 bytes of output data
+Received 136256 bytes of input data
+Received 9259944 bytes of addr data
+
+Received 8623739 values in live set
+Output directs 40610 indirects 10 values 79524 quashed 37226 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1839 simplified 51629 unchanged 251887 of 305355 merge values using live set
+Address tokens 4092488 passthrus 3585958 resolved 506530, indirects 0 unmodified 0, merges 0
+no changes 3957244, zeros 20872, inputs 1039617, merges 5118, merge_zeros 118, not live 91768
+Unique indirects 0
+Values rcvd 8184976 sent 7171924

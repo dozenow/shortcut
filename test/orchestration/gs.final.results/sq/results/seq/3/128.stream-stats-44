@@ -1,0 +1,52 @@
+Start time:              1462464246.004911 ms
+Recv  time:              1462464248.134941 ms
+End   time:              1462464252.231159 ms
+Total time:                6226 ms
+Receive time:              2130 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1762 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          0 ms
+Thru prune time:           3895 ms
+Make live set time:           2 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119601932 ms
+Send live set wait time:      5 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2322 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 7 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 7
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 9288 ms longest thread 2322 ms, send idle 0 recv idle 9288 comp time 0
+
+Received 441944 bytes of merge data
+Received 0 bytes of output data
+Received 96 bytes of input data
+Received 907184 bytes of addr data
+
+Received 2335453 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 20744 simplified 18875 unchanged 15624 of 55243 merge values using live set
+Address tokens 503 passthrus 503 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 1225350, zeros 61491, inputs 10869, merges 0, merge_zeros 5680, not live 35358
+Unique indirects 0
+Values rcvd 1006 sent 1006
+Cache hits 0
+skips 0

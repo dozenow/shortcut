@@ -1,0 +1,50 @@
+Start time:              1461771864.804693 ms
+Recv  time:              1461771886.262985 ms
+End   time:              1461771896.726180 ms
+Total time:               31922 ms
+Receive time:             21459 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          31220 ms
+Make live set time:           0 ms
+Make rindex merge time:      12 ms
+Make rindex addr time:        2 ms
+Make rindex stream time:   9746 ms
+Thru stream time:         31219 ms
+Send live set wait time:      0 ms
+Output processing time:      32 ms
+Index wait time:              0 ms
+Address processing time:    668 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 9674, comp time 72
+Total output time 128 ms longest thread 32 ms, send idle 0 recv idle 0 comp time 128
+Total address time 2670 ms longest thread 668 ms, send idle 0 recv idle 2650 comp time 20
+
+Received 1649656 bytes of merge data
+Received 62327240 bytes of output data
+Received 96 bytes of input data
+Received 1884360 bytes of addr data
+
+Received 1148129 values in live set
+Output directs 7776388 indirects 1510 values 7790320 quashed 7775247 merges 11440
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 201497 simplified 3541 unchanged 1169 of 206207 merge values using live set
+Address tokens 19809 passthrus 17450 resolved 0, indirects 2359 unmodified 0, merges 85917
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 39618 sent 50450

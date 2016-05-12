@@ -1,0 +1,51 @@
+Start time:              1462341968.541696 ms
+Recv  time:              1462341988.922826 ms
+End   time:              1462341999.750115 ms
+Total time:               31208 ms
+Receive time:             20381 ms
+Preprune local time:         12 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:          29124 ms
+Make live set time:           0 ms
+Make rindex merge time:      19 ms
+Make rindex addr time:        5 ms
+Make rindex stream time:   8704 ms
+Thru stream time:         29121 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2082 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 8665, comp time 39
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 8319 ms longest thread 2082 ms, send idle 0 recv idle 8312 comp time 7
+
+Received 6003784 bytes of merge data
+Received 2191592 bytes of output data
+Received 0 bytes of input data
+Received 3780736 bytes of addr data
+
+Received 683127 values in live set
+Output directs 72317 indirects 192124 values 273904 quashed 72106 merges 520
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 750206 simplified 7 unchanged 260 of 750473 merge values using live set
+Address tokens 3230 passthrus 2733 resolved 0, indirects 457 unmodified 40, merges 5469
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 6460 sent 8410
+Local preprune reduced merge data size from 6182784 to 6003784 (2.895%)

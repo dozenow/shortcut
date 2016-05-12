@@ -1,0 +1,50 @@
+Start time:              1461624426.706539 ms
+Recv  time:              1461624432.241927 ms
+End   time:              1461624442.557951 ms
+Total time:               15852 ms
+Receive time:              5536 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       7951 ms
+Receive live set time:        0 ms
+Insert live set time:        15 ms
+Prune live set time:          0 ms
+Thru prune time:          13502 ms
+Make live set time:          15 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1335546066 ms
+Send live set wait time:     28 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2304 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 56 ms longest thread 14 ms, send idle 0 recv idle 0 comp time 56
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 9216 ms longest thread 2304 ms, send idle 0 recv idle 9073 comp time 143
+
+Received 597840 bytes of merge data
+Received 1044208 bytes of output data
+Received 19680 bytes of input data
+Received 147720 bytes of addr data
+
+Received 12093301 values in live set
+Output directs 122249 indirects 0 values 129521 quashed 5772 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2966 simplified 10142 unchanged 61622 of 74730 merge values using live set
+Address tokens 998239 passthrus 985046 resolved 11989, indirects 0 unmodified 1204, merges 0
+no changes 11674165, zeros 5023, inputs 12451, merges 8, merge_zeros 139, not live 844
+Unique indirects 0
+Values rcvd 1996478 sent 2201734

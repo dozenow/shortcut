@@ -1,0 +1,51 @@
+Start time:              1461737635.980821 ms
+Recv  time:              1461737686.619356 ms
+End   time:              1461737704.516023 ms
+Total time:               68536 ms
+Receive time:             50639 ms
+Preprune local time:         54 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          50745 ms
+Make live set time:           0 ms
+Make rindex merge time:      16 ms
+Make rindex addr time:       27 ms
+Make rindex stream time:      6 ms
+Thru stream time:         50744 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:  17791 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 6
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 71164 ms longest thread 17791 ms, send idle 0 recv idle 71164 comp time 0
+
+Received 3256192 bytes of merge data
+Received 1736 bytes of output data
+Received 0 bytes of input data
+Received 80601944 bytes of addr data
+
+Received 0 values in live set
+Output directs 55 indirects 4 values 112 quashed 55 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 407024 simplified 0 unchanged 0 of 407024 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 0 sent 0
+Local preprune reduced merge data size from 7539808 to 3256192 (56.813%)

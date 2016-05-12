@@ -1,0 +1,51 @@
+Start time:              1461540749.432645 ms
+Recv  time:              1461540760.337258 ms
+End   time:              1461540761.289638 ms
+Total time:               11857 ms
+Receive time:             10905 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1251868792 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      2 ms
+Thru stream time:         10914 ms
+Send live set wait time:      1 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    942 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 2
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3768 ms longest thread 942 ms, send idle 0 recv idle 3768 comp time 0
+
+Received 3264 bytes of merge data
+Received 592 bytes of output data
+Received 448 bytes of input data
+Received 331504 bytes of addr data
+
+Received 0 values in live set
+Output directs 0 indirects 0 values 54 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 408 of 408 merge values using live set
+Address tokens 616 passthrus 0 resolved 616, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1232 sent 0
+Local preprune reduced merge data size from 9944 to 3264 (67.176%)

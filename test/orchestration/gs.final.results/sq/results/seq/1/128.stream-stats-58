@@ -1,0 +1,52 @@
+Start time:              1462464197.318664 ms
+Recv  time:              1462464200.305918 ms
+End   time:              1462464203.546663 ms
+Total time:                6227 ms
+Receive time:              2988 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1023 ms
+Receive live set time:        0 ms
+Insert live set time:         2 ms
+Prune live set time:          0 ms
+Thru prune time:           4014 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119650618 ms
+Send live set wait time:      5 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2204 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 8816 ms longest thread 2204 ms, send idle 0 recv idle 8806 comp time 10
+
+Received 65816 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 1738016 bytes of addr data
+
+Received 2286233 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 4361 simplified 1616 unchanged 2250 of 8227 merge values using live set
+Address tokens 5479 passthrus 503 resolved 0, indirects 22 unmodified 1493, merges 13803
+no changes 1907846, zeros 114153, inputs 11692, merges 11, merge_zeros 1699, not live 89697
+Unique indirects 0
+Values rcvd 10958 sent 36948
+Cache hits 13
+skips 2567

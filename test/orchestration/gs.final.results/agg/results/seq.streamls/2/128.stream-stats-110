@@ -1,0 +1,52 @@
+Start time:              1462780787.495428 ms
+Recv  time:              1462781027.595558 ms
+End   time:              1462781028.521729 ms
+Total time:              241026 ms
+Receive time:            240100 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          4 ms
+Thru prune time:         240584 ms
+Make live set time:           0 ms
+Make rindex merge time:      27 ms
+Make rindex addr time:        4 ms
+Make rindex stream time:    447 ms
+Thru stream time:        240580 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    442 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 46, comp time 401
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 1708 ms longest thread 427 ms, send idle 0 recv idle 148 comp time 1560
+
+Received 5559624 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 7403896 bytes of addr data
+
+Received 7250391 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 692257 simplified 2652 unchanged 44 of 694953 merge values using live set
+Address tokens 7553176 passthrus 7534151 resolved 0, indirects 0 unmodified 44, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 15106352 sent 15068390
+Cache hits 0
+skips 18914

@@ -1,0 +1,50 @@
+Start time:              1461773679.822271 ms
+Recv  time:              1461773686.563679 ms
+End   time:              1461773689.883318 ms
+Total time:               10061 ms
+Receive time:              6742 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3081 ms
+Receive live set time:        0 ms
+Insert live set time:         8 ms
+Prune live set time:          0 ms
+Thru prune time:           9832 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1484799182 ms
+Send live set wait time:      0 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    222 ms
+Finish time:                  4 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 888 ms longest thread 222 ms, send idle 0 recv idle 807 comp time 81
+
+Received 769536 bytes of merge data
+Received 4366080 bytes of output data
+Received 48512 bytes of input data
+Received 57232 bytes of addr data
+
+Received 49408 values in live set
+Output directs 396027 indirects 0 values 530600 quashed 320227 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 610 simplified 65198 unchanged 30384 of 96192 merge values using live set
+Address tokens 406940 passthrus 406900 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20425, zeros 3853, inputs 184, merges 43, merge_zeros 302, not live 2772
+Unique indirects 0
+Values rcvd 813880 sent 844200

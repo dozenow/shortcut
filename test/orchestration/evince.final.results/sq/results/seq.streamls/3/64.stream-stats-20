@@ -1,0 +1,50 @@
+Start time:              1461771905.422790 ms
+Recv  time:              1461771924.256562 ms
+End   time:              1461771937.421008 ms
+Total time:               31999 ms
+Receive time:             18834 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          21795 ms
+Make live set time:           0 ms
+Make rindex merge time:       9 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2950 ms
+Thru stream time:         21794 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:  10198 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2909, comp time 41
+Total output time 17 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 17
+Total address time 40783 ms longest thread 10198 ms, send idle 0 recv idle 40242 comp time 541
+
+Received 772920 bytes of merge data
+Received 142672 bytes of output data
+Received 1216 bytes of input data
+Received 1274808 bytes of addr data
+
+Received 779713 values in live set
+Output directs 3702 indirects 4704 values 17444 quashed 2172 merges 79743
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 80175 simplified 6724 unchanged 9716 of 96615 merge values using live set
+Address tokens 329973 passthrus 304597 resolved 0, indirects 25261 unmodified 115, merges 2424316
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 659946 sent 724006

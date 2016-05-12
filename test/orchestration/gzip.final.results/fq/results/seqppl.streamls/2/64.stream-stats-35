@@ -1,0 +1,51 @@
+Start time:              1461518746.069340 ms
+Recv  time:              1461518750.371018 ms
+End   time:              1461518750.837608 ms
+Total time:                4768 ms
+Receive time:              4301 ms
+Preprune local time:         56 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         16 ms
+Thru prune time:           4757 ms
+Make live set time:           0 ms
+Make rindex merge time:      74 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    308 ms
+Thru stream time:          4741 ms
+Send live set wait time:      0 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:      0 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 295, comp time 13
+Total output time 6 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 6
+Total address time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+
+Received 30474896 bytes of merge data
+Received 6293376 bytes of output data
+Received 928 bytes of input data
+Received 2083568 bytes of addr data
+
+Received 106130 values in live set
+Output directs 775334 indirects 11098 values 786432 quashed 480290 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3809362 simplified 0 unchanged 0 of 3809362 merge values using live set
+Address tokens 26028 passthrus 0 resolved 26028, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 52056 sent 0
+Local preprune reduced merge data size from 43769488 to 30474896 (30.374%)

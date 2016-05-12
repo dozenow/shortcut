@@ -1,0 +1,50 @@
+Start time:              1462229929.1635987 ms
+Recv  time:              1462230230.736155 ms
+End   time:              1462230240.318987 ms
+Total time:              309683 ms
+Receive time:            300101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3803 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:        107 ms
+Thru prune time:         304011 ms
+Make live set time:          27 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1941049995 ms
+Send live set wait time:     81 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   5564 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    118 ms longest thread 40 ms
+Total prune pass 2 time:     65 ms
+
+Total live set make time 100 ms longest thread 27 ms, send idle 0 recv idle 0 comp time 100
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 22256 ms longest thread 5564 ms, send idle 0 recv idle 22256 comp time 0
+
+Received 166137352 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 113563800 bytes of addr data
+
+Received 710829 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 20639994 simplified 127111 unchanged 64 of 20767169 merge values using live set
+Address tokens 404 passthrus 396 resolved 0, indirects 0 unmodified 8, merges 0
+no changes 709460, zeros 8865097, inputs 352, merges 22, merge_zeros 2978883, not live 2351121
+Unique indirects 0
+Values rcvd 808 sent 808

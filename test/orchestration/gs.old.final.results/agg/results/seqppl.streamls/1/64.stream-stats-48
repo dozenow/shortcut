@@ -1,0 +1,51 @@
+Start time:              1462068616.581871 ms
+Recv  time:              1462068736.681872 ms
+End   time:              1462068738.591013 ms
+Total time:              122009 ms
+Receive time:            120100 ms
+Preprune local time:          4 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         120307 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        9 ms
+Make rindex stream time:    186 ms
+Thru stream time:        120307 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1702 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 45, comp time 141
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 6805 ms longest thread 1702 ms, send idle 0 recv idle 6801 comp time 4
+
+Received 24376 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 6734120 bytes of addr data
+
+Received 2313778 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2956 simplified 74 unchanged 17 of 3047 merge values using live set
+Address tokens 3193 passthrus 3193 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 6386 sent 6386
+Local preprune reduced merge data size from 316728 to 24376 (92.304%)

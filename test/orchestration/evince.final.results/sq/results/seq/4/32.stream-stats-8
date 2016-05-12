@@ -1,0 +1,50 @@
+Start time:              1461686106.814907 ms
+Recv  time:              1461686139.932390 ms
+End   time:              1461686149.723552 ms
+Total time:               42909 ms
+Receive time:             33117 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5730 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          9 ms
+Thru prune time:          38858 ms
+Make live set time:           5 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1397226174 ms
+Send live set wait time:      0 ms
+Output processing time:      12 ms
+Index wait time:              0 ms
+Address processing time:   4032 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     12 ms longest thread 4 ms
+Total prune pass 2 time:      4 ms
+
+Total live set make time 12 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 12
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 40 ms longest thread 12 ms, send idle 0 recv idle 0 comp time 40
+Total address time 16111 ms longest thread 4032 ms, send idle 0 recv idle 15036 comp time 1075
+
+Received 21422040 bytes of merge data
+Received 996048 bytes of output data
+Received 12832 bytes of input data
+Received 16611344 bytes of addr data
+
+Received 501145 values in live set
+Output directs 7558 indirects 29431 values 123996 quashed 4634 merges 198468
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2477285 simplified 128507 unchanged 71963 of 2677755 merge values using live set
+Address tokens 239794 passthrus 209686 resolved 0, indirects 30106 unmodified 2, merges 4661077
+no changes 487181, zeros 1746695, inputs 16754, merges 1105, merge_zeros 32419, not live 279445
+Unique indirects 0
+Values rcvd 479588 sent 565316

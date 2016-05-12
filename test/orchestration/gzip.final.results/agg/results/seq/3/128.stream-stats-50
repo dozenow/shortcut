@@ -1,0 +1,50 @@
+Start time:              1461994191.122986 ms
+Recv  time:              1461994311.222920 ms
+End   time:              1461994312.915217 ms
+Total time:              121792 ms
+Receive time:            120099 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1083 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         11 ms
+Thru prune time:         121195 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1705310482 ms
+Send live set wait time:     10 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    582 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     17 ms longest thread 5 ms
+Total prune pass 2 time:      6 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 2328 ms longest thread 582 ms, send idle 0 recv idle 2324 comp time 4
+
+Received 22747760 bytes of merge data
+Received 3146688 bytes of output data
+Received 480 bytes of input data
+Received 2080552 bytes of addr data
+
+Received 106279 values in live set
+Output directs 375998 indirects 17218 values 393216 quashed 277631 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1974471 simplified 865786 unchanged 3213 of 2843470 merge values using live set
+Address tokens 6829 passthrus 0 resolved 6829, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 126930, inputs 95872, merges 0, merge_zeros 334, not live 36933
+Unique indirects 0
+Values rcvd 13658 sent 0

@@ -1,0 +1,52 @@
+Start time:              1462583706.910331 ms
+Recv  time:              1462583728.265413 ms
+End   time:              1462583749.062380 ms
+Total time:               42153 ms
+Receive time:             21356 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:          24423 ms
+Make live set time:           0 ms
+Make rindex merge time:      18 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:   3044 ms
+Thru stream time:         24420 ms
+Send live set wait time:      0 ms
+Output processing time:      15 ms
+Index wait time:              0 ms
+Address processing time:  17711 ms
+Finish time:                  3 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2455, comp time 589
+Total output time 17 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 17
+Total address time 70779 ms longest thread 17706 ms, send idle 0 recv idle 67090 comp time 3689
+
+Received 5235136 bytes of merge data
+Received 10401816 bytes of output data
+Received 129600 bytes of input data
+Received 1054408 bytes of addr data
+
+Received 12248095 values in live set
+Output directs 1211086 indirects 0 values 1290187 quashed 19980 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 88327 simplified 32611 unchanged 533454 of 654392 merge values using live set
+Address tokens 40921871 passthrus 40446738 resolved 475133, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 81843742 sent 83089952
+Cache hits 0
+skips 0

@@ -1,0 +1,51 @@
+Start time:              1462063738.1382367 ms
+Recv  time:              1462063859.482375 ms
+End   time:              1462063860.056939 ms
+Total time:              120675 ms
+Receive time:            120101 ms
+Preprune local time:        217 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         51 ms
+Thru prune time:         120637 ms
+Make live set time:           0 ms
+Make rindex merge time:     170 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:     96 ms
+Thru stream time:        120586 ms
+Send live set wait time:      0 ms
+Output processing time:      35 ms
+Index wait time:              0 ms
+Address processing time:      2 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 76, comp time 20
+Total output time 120 ms longest thread 32 ms, send idle 0 recv idle 0 comp time 120
+Total address time 2 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 2
+
+Received 73414104 bytes of merge data
+Received 18355680 bytes of output data
+Received 2240 bytes of input data
+Received 2044592 bytes of addr data
+
+Received 123071 values in live set
+Output directs 2293759 indirects 1 values 2293760 quashed 349 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 9176763 simplified 0 unchanged 0 of 9176763 merge values using live set
+Address tokens 45643 passthrus 0 resolved 45643, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 91286 sent 90586
+Local preprune reduced merge data size from 104477456 to 73414104 (29.732%)

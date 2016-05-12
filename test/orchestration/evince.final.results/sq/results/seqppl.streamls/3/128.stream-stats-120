@@ -1,0 +1,51 @@
+Start time:              1461948274.062930 ms
+Recv  time:              1461948293.969863 ms
+End   time:              1461948299.046816 ms
+Total time:               24984 ms
+Receive time:             19906 ms
+Preprune local time:         48 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:          24340 ms
+Make live set time:           0 ms
+Make rindex merge time:      19 ms
+Make rindex addr time:       15 ms
+Make rindex stream time:   4347 ms
+Thru stream time:         24336 ms
+Send live set wait time:      1 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    642 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 4307, comp time 40
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 2568 ms longest thread 642 ms, send idle 0 recv idle 2564 comp time 4
+
+Received 5795296 bytes of merge data
+Received 104 bytes of output data
+Received 1280 bytes of input data
+Received 70250720 bytes of addr data
+
+Received 682703 values in live set
+Output directs 0 indirects 0 values 8 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 724229 simplified 124 unchanged 59 of 724412 merge values using live set
+Address tokens 2871 passthrus 2871 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 5742 sent 5742
+Local preprune reduced merge data size from 6178568 to 5795296 (6.203%)

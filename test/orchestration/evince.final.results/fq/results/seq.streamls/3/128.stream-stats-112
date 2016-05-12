@@ -1,0 +1,50 @@
+Start time:              1461682509.406615 ms
+Recv  time:              1461682525.995707 ms
+End   time:              1461682538.153417 ms
+Total time:               28747 ms
+Receive time:             16589 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          27550 ms
+Make live set time:           0 ms
+Make rindex merge time:      11 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:  10948 ms
+Thru stream time:         27549 ms
+Send live set wait time:      2 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   1194 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 10876, comp time 72
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 4776 ms longest thread 1194 ms, send idle 0 recv idle 4764 comp time 12
+
+Received 1522560 bytes of merge data
+Received 1331976 bytes of output data
+Received 0 bytes of input data
+Received 720432 bytes of addr data
+
+Received 1143328 values in live set
+Output directs 41730 indirects 124520 values 166452 quashed 41612 merges 72
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 189752 simplified 449 unchanged 119 of 190320 merge values using live set
+Address tokens 4205 passthrus 3590 resolved 0, indirects 581 unmodified 34, merges 4046
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 8410 sent 10056

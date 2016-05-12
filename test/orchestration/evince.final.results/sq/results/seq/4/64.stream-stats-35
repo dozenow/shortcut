@@ -1,0 +1,50 @@
+Start time:              1461771821.660531 ms
+Recv  time:              1461771842.046038 ms
+End   time:              1461771856.511205 ms
+Total time:               34851 ms
+Receive time:             20386 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      10834 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          4 ms
+Thru prune time:          31225 ms
+Make live set time:           6 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1482941020 ms
+Send live set wait time:      1 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   3617 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      4 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 13 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 13
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 14459 ms longest thread 3617 ms, send idle 0 recv idle 14440 comp time 19
+
+Received 8004848 bytes of merge data
+Received 108824 bytes of output data
+Received 256 bytes of input data
+Received 20160616 bytes of addr data
+
+Received 630609 values in live set
+Output directs 10819 indirects 1688 values 13568 quashed 10284 merges 12
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 984543 simplified 7779 unchanged 8284 of 1000606 merge values using live set
+Address tokens 69639 passthrus 63558 resolved 100, indirects 5971 unmodified 10, merges 11785
+no changes 617694, zeros 2258914, inputs 17369, merges 61, merge_zeros 200589, not live 43144
+Unique indirects 0
+Values rcvd 139278 sent 152170

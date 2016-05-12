@@ -1,0 +1,51 @@
+Start time:              1462338247.372735 ms
+Recv  time:              1462338248.933696 ms
+End   time:              1462338255.265234 ms
+Total time:                7893 ms
+Receive time:              1560 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           3582 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2013 ms
+Thru stream time:          3582 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   4311 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1996, comp time 17
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 17244 ms longest thread 4311 ms, send idle 0 recv idle 17244 comp time 0
+
+Received 12128 bytes of merge data
+Received 0 bytes of output data
+Received 512 bytes of input data
+Received 443128 bytes of addr data
+
+Received 255317 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1443 simplified 38 unchanged 35 of 1516 merge values using live set
+Address tokens 227 passthrus 199 resolved 28, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 454 sent 398
+Local preprune reduced merge data size from 692696 to 12128 (98.249%)

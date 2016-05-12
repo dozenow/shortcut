@@ -1,0 +1,50 @@
+Start time:              1461776072.936411 ms
+Recv  time:              1461776076.567905 ms
+End   time:              1461776077.099967 ms
+Total time:                4164 ms
+Receive time:              3632 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:           4160 ms
+Make live set time:           0 ms
+Make rindex merge time:      23 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    501 ms
+Thru stream time:          4157 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:      2 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 358, comp time 143
+Total output time 3 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 3
+Total address time 7 ms longest thread 2 ms, send idle 0 recv idle 4 comp time 3
+
+Received 6310888 bytes of merge data
+Received 1048896 bytes of output data
+Received 128 bytes of input data
+Received 2092976 bytes of addr data
+
+Received 2757912 values in live set
+Output directs 128191 indirects 2881 values 131072 quashed 55331 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 538877 simplified 249448 unchanged 536 of 788861 merge values using live set
+Address tokens 18560 passthrus 0 resolved 18560, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 37120 sent 124388

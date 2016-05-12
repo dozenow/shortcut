@@ -1,0 +1,50 @@
+Start time:              1461996723.304075 ms
+Recv  time:              1461996843.403182 ms
+End   time:              1461996845.071506 ms
+Total time:              121768 ms
+Receive time:            120099 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1707842664 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1707842664 ms
+Send live set wait time:      0 ms
+Output processing time:      18 ms
+Index wait time:             24 ms
+Address processing time:   1625 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 56 ms longest thread 18 ms, send idle 0 recv idle 0 comp time 56
+Total address time 6469 ms longest thread 1625 ms, send idle 0 recv idle 5982 comp time 487
+
+Received 12248016 bytes of merge data
+Received 524448 bytes of output data
+Received 224 bytes of input data
+Received 2340624 bytes of addr data
+
+Received 0 values in live set
+Output directs 46940 indirects 18596 values 65536 quashed 0 merges 11424
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 1531002 of 1531002 merge values using live set
+Address tokens 3949034 passthrus 3892862 resolved 0, indirects 5460 unmodified 10932, merges 922501
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 7898068 sent 8022580

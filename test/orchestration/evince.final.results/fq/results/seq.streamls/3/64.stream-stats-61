@@ -1,0 +1,50 @@
+Start time:              1461677242.855348 ms
+Recv  time:              1461677269.440558 ms
+End   time:              1461677277.851940 ms
+Total time:               34997 ms
+Receive time:             26586 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        596 ms
+Thru prune time:          34962 ms
+Make live set time:           0 ms
+Make rindex merge time:    1879 ms
+Make rindex addr time:      123 ms
+Make rindex stream time:   5778 ms
+Thru stream time:         34365 ms
+Send live set wait time:      0 ms
+Output processing time:      34 ms
+Index wait time:              0 ms
+Address processing time:      0 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 5666, comp time 112
+Total output time 132 ms longest thread 33 ms, send idle 0 recv idle 0 comp time 132
+Total address time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+
+Received 774417368 bytes of merge data
+Received 63192216 bytes of output data
+Received 6080 bytes of input data
+Received 70477040 bytes of addr data
+
+Received 1056382 values in live set
+Output directs 7895050 indirects 167 values 7896612 quashed 7894523 merges 7167
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 96788648 simplified 8212 unchanged 5311 of 96802171 merge values using live set
+Address tokens 202 passthrus 195 resolved 0, indirects 5 unmodified 2, merges 10
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 404 sent 2552

@@ -1,0 +1,50 @@
+Start time:              1461961158.001976 ms
+Recv  time:              1461961162.521131 ms
+End   time:              1461961163.359711 ms
+Total time:                5357 ms
+Receive time:              4519 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         55 ms
+Thru prune time:           4884 ms
+Make live set time:           0 ms
+Make rindex merge time:     226 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:     82 ms
+Thru stream time:          4829 ms
+Send live set wait time:      0 ms
+Output processing time:      28 ms
+Index wait time:              0 ms
+Address processing time:    444 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 54, comp time 28
+Total output time 73 ms longest thread 26 ms, send idle 0 recv idle 0 comp time 73
+Total address time 1776 ms longest thread 444 ms, send idle 0 recv idle 1772 comp time 4
+
+Received 101579632 bytes of merge data
+Received 18093456 bytes of output data
+Received 2176 bytes of input data
+Received 2044448 bytes of addr data
+
+Received 244808 values in live set
+Output directs 2260991 indirects 1 values 2260992 quashed 344 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 8944501 simplified 3735588 unchanged 17365 of 12697454 merge values using live set
+Address tokens 10365 passthrus 0 resolved 10365, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 20730 sent 85576

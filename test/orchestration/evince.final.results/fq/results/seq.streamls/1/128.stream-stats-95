@@ -1,0 +1,50 @@
+Start time:              1461682435.155202 ms
+Recv  time:              1461682455.896489 ms
+End   time:              1461682463.604572 ms
+Total time:               28449 ms
+Receive time:             20741 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:          27593 ms
+Make live set time:           0 ms
+Make rindex merge time:      23 ms
+Make rindex addr time:        9 ms
+Make rindex stream time:   6817 ms
+Thru stream time:         27590 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:    850 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 6744, comp time 73
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 3400 ms longest thread 850 ms, send idle 0 recv idle 3388 comp time 12
+
+Received 6167256 bytes of merge data
+Received 1755088 bytes of output data
+Received 864 bytes of input data
+Received 12849504 bytes of addr data
+
+Received 1120925 values in live set
+Output directs 168010 indirects 44736 values 219336 quashed 167775 merges 352
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 767301 simplified 2974 unchanged 632 of 770907 merge values using live set
+Address tokens 25469 passthrus 23505 resolved 0, indirects 1960 unmodified 4, merges 17581
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 50938 sent 55840

@@ -1,0 +1,50 @@
+Start time:              1462328557.106682 ms
+Recv  time:              1462328597.495150 ms
+End   time:              1462328598.882695 ms
+Total time:               41776 ms
+Receive time:             40388 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          41349 ms
+Make live set time:           0 ms
+Make rindex merge time:      10 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:    949 ms
+Thru stream time:         41348 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:    419 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 256, comp time 693
+Total output time 7 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 7
+Total address time 1672 ms longest thread 419 ms, send idle 0 recv idle 1588 comp time 84
+
+Received 1657256 bytes of merge data
+Received 3118080 bytes of output data
+Received 39456 bytes of input data
+Received 522688 bytes of addr data
+
+Received 12918604 values in live set
+Output directs 362457 indirects 0 values 386700 quashed 6156 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 31780 simplified 10276 unchanged 165101 of 207157 merge values using live set
+Address tokens 1254419 passthrus 1221130 resolved 33289, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 2508838 sent 3131494

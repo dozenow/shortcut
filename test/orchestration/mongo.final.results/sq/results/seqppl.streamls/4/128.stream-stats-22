@@ -1,0 +1,51 @@
+Start time:              1461548390.982742 ms
+Recv  time:              1461548397.199488 ms
+End   time:              1461548400.549229 ms
+Total time:                9567 ms
+Receive time:              6217 ms
+Preprune local time:          5 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           9340 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        7 ms
+Make rindex stream time:   3103 ms
+Thru stream time:          9340 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    225 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2992, comp time 111
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 896 ms longest thread 224 ms, send idle 0 recv idle 682 comp time 214
+
+Received 46992 bytes of merge data
+Received 570240 bytes of output data
+Received 116640 bytes of input data
+Received 7533936 bytes of addr data
+
+Received 2792740 values in live set
+Output directs 34560 indirects 2 values 67680 quashed 31680 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 90 simplified 0 unchanged 5784 of 5874 merge values using live set
+Address tokens 1457266 passthrus 1105064 resolved 352202, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 2914532 sent 2210128
+Local preprune reduced merge data size from 1933392 to 46992 (97.569%)

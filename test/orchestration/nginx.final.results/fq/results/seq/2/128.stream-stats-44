@@ -1,0 +1,50 @@
+Start time:              1461882538.154750 ms
+Recv  time:              1461882545.597861 ms
+End   time:              1461882546.934195 ms
+Total time:                8779 ms
+Receive time:              7443 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        893 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8336 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1593657514 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:    434 ms
+Finish time:                  4 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total address time 1736 ms longest thread 434 ms, send idle 0 recv idle 1674 comp time 62
+
+Received 793176 bytes of merge data
+Received 4507200 bytes of output data
+Received 50080 bytes of input data
+Received 59576 bytes of addr data
+
+Received 49407 values in live set
+Output directs 417583 indirects 0 values 547750 quashed 339333 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 483 simplified 67305 unchanged 31359 of 99147 merge values using live set
+Address tokens 304330 passthrus 304290 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20429, zeros 4118, inputs 184, merges 43, merge_zeros 304, not live 2798
+Unique indirects 0
+Values rcvd 608660 sent 639960

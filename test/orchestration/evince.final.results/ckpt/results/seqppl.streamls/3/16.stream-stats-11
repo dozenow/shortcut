@@ -1,0 +1,52 @@
+Start time:              1462910132.125111 ms
+Recv  time:              1462910151.713355 ms
+End   time:              1462910200.466815 ms
+Total time:               68341 ms
+Receive time:             19588 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      45925 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:        357 ms
+Thru prune time:          65871 ms
+Make live set time:          56 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        1673715811 ms
+Send live set wait time:      2 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2407 ms
+Finish time:                  3 ms
+Total prune pass 1 time:    524 ms longest thread 168 ms
+Total prune pass 2 time:    188 ms
+
+Total live set make time 149 ms longest thread 56 ms, send idle 0 recv idle 0 comp time 149
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 9628 ms longest thread 2407 ms, send idle 0 recv idle 9608 comp time 20
+
+Received 755300320 bytes of merge data
+Received 82232 bytes of output data
+Received 2496 bytes of input data
+Received 137004984 bytes of addr data
+
+Received 638754 values in live set
+Output directs 5251 indirects 0 values 10164 quashed 4772 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 94403827 simplified 6086 unchanged 2627 of 94412540 merge values using live set
+Address tokens 31271 passthrus 31055 resolved 216, indirects 0 unmodified 0, merges 0
+no changes 626606, zeros 8567099, inputs 16544, merges 71, merge_zeros 8482514, not live 59395
+Unique indirects 0
+Values rcvd 62542 sent 63068
+Cache hits 0
+skips 0

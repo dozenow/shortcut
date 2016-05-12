@@ -1,0 +1,50 @@
+Start time:              1461614067.389662 ms
+Recv  time:              1461614075.493381 ms
+End   time:              1461614081.450034 ms
+Total time:               14060 ms
+Receive time:              8103 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5053 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          13159 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1325186749 ms
+Send live set wait time:     10 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:    884 ms
+Finish time:                  2 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3536 ms longest thread 884 ms, send idle 0 recv idle 3351 comp time 185
+
+Received 2830256 bytes of merge data
+Received 966088 bytes of output data
+Received 199072 bytes of input data
+Received 12137120 bytes of addr data
+
+Received 45659 values in live set
+Output directs 48865 indirects 15 values 114661 quashed 43990 merges 12
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1729 simplified 74742 unchanged 277311 of 353782 merge values using live set
+Address tokens 579478 passthrus 270 resolved 579208, indirects 0 unmodified 0, merges 0
+no changes 43981, zeros 39904, inputs 1462126, merges 8560, merge_zeros 236, not live 6314
+Unique indirects 0
+Values rcvd 1158956 sent 590

@@ -1,0 +1,50 @@
+Start time:              1461701736.652368 ms
+Recv  time:              1461701772.217935 ms
+End   time:              1461701778.834413 ms
+Total time:               42182 ms
+Receive time:             35566 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        310 ms
+Thru prune time:          41818 ms
+Make live set time:           0 ms
+Make rindex merge time:    1261 ms
+Make rindex addr time:      124 ms
+Make rindex stream time:   4556 ms
+Thru stream time:         41508 ms
+Send live set wait time:      0 ms
+Output processing time:      99 ms
+Index wait time:              0 ms
+Address processing time:    264 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 4462, comp time 94
+Total output time 396 ms longest thread 99 ms, send idle 0 recv idle 0 comp time 396
+Total address time 1056 ms longest thread 264 ms, send idle 0 recv idle 1045 comp time 11
+
+Received 524872328 bytes of merge data
+Received 188112968 bytes of output data
+Received 6912 bytes of input data
+Received 75251704 bytes of addr data
+
+Received 967298 values in live set
+Output directs 23502067 indirects 1827 values 23512291 quashed 23468556 merges 28391
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 65574315 simplified 27110 unchanged 7616 of 65609041 merge values using live set
+Address tokens 4656 passthrus 3573 resolved 0, indirects 971 unmodified 112, merges 44010
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 9312 sent 18912

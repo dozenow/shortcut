@@ -1,0 +1,50 @@
+Start time:              1461740054.435045 ms
+Recv  time:              1461740060.384183 ms
+End   time:              1461740062.923267 ms
+Total time:                8488 ms
+Receive time:              5950 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2482 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8432 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1451173795 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     53 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 212 ms longest thread 53 ms, send idle 0 recv idle 184 comp time 28
+
+Received 171144 bytes of merge data
+Received 947520 bytes of output data
+Received 10528 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49408 values in live set
+Output directs 91902 indirects 0 values 115150 quashed 75452 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 597 simplified 14157 unchanged 6639 of 21393 merge values using live set
+Address tokens 137490 passthrus 137450 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20433, zeros 3745, inputs 176, merges 43, merge_zeros 302, not live 2666
+Unique indirects 0
+Values rcvd 274980 sent 281560

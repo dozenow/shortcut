@@ -1,0 +1,50 @@
+Start time:              1461682318.129684 ms
+Recv  time:              1461682333.420919 ms
+End   time:              1461682349.705561 ms
+Total time:               31575 ms
+Receive time:             15291 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      12964 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          6 ms
+Thru prune time:          28261 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1393437489 ms
+Send live set wait time:    380 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2930 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      8 ms longest thread 2 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 3 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 3
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 11720 ms longest thread 2930 ms, send idle 0 recv idle 11702 comp time 18
+
+Received 11719840 bytes of merge data
+Received 12632 bytes of output data
+Received 128 bytes of input data
+Received 3212728 bytes of addr data
+
+Received 639304 values in live set
+Output directs 773 indirects 0 values 1564 quashed 700 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1462797 simplified 1574 unchanged 609 of 1464980 merge values using live set
+Address tokens 94973 passthrus 94806 resolved 49, indirects 0 unmodified 118, merges 0
+no changes 611275, zeros 62788, inputs 4210, merges 16, merge_zeros 304590, not live 29987
+Unique indirects 0
+Values rcvd 189946 sent 189994

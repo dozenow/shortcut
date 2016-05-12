@@ -1,0 +1,50 @@
+Start time:              1461947823.897432 ms
+Recv  time:              1461947840.543042 ms
+End   time:              1461947848.255647 ms
+Total time:               24359 ms
+Receive time:             16646 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          17985 ms
+Make live set time:           0 ms
+Make rindex merge time:      10 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   1327 ms
+Thru stream time:         17985 ms
+Send live set wait time:      0 ms
+Output processing time:      13 ms
+Index wait time:              0 ms
+Address processing time:   6360 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1283, comp time 44
+Total output time 39 ms longest thread 13 ms, send idle 0 recv idle 0 comp time 39
+Total address time 25431 ms longest thread 6359 ms, send idle 0 recv idle 24487 comp time 944
+
+Received 914640 bytes of merge data
+Received 661056 bytes of output data
+Received 3136 bytes of input data
+Received 727304 bytes of addr data
+
+Received 806698 values in live set
+Output directs 16751 indirects 9644 values 81952 quashed 15265 merges 115081
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 100547 simplified 6788 unchanged 6995 of 114330 merge values using live set
+Address tokens 828421 passthrus 799608 resolved 8, indirects 28787 unmodified 18, merges 3770926
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1656842 sent 1728224

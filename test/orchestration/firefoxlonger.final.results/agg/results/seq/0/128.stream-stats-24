@@ -1,0 +1,50 @@
+Start time:              1462229930.634941 ms
+Recv  time:              1462230230.734931 ms
+End   time:              1462230240.319807 ms
+Total time:              309685 ms
+Receive time:            300099 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2924 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        147 ms
+Thru prune time:         303171 ms
+Make live set time:          35 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1941049994 ms
+Send live set wait time:     74 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   6404 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    166 ms longest thread 54 ms
+Total prune pass 2 time:     91 ms
+
+Total live set make time 120 ms longest thread 35 ms, send idle 0 recv idle 0 comp time 120
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 25616 ms longest thread 6404 ms, send idle 0 recv idle 25616 comp time 0
+
+Received 242404528 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 148214440 bytes of addr data
+
+Received 671798 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 28864120 simplified 231790 unchanged 1204656 of 30300566 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 670705, zeros 13277743, inputs 2026, merges 449, merge_zeros 2758146, not live 2488441
+Unique indirects 0
+Values rcvd 808 sent 808

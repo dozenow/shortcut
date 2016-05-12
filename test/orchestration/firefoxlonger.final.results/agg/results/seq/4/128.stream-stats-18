@@ -1,0 +1,50 @@
+Start time:              1462227830.532592 ms
+Recv  time:              1462227952.019262 ms
+End   time:              1462227966.375430 ms
+Total time:              135843 ms
+Receive time:            121487 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       7235 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:         51 ms
+Thru prune time:         128776 ms
+Make live set time:          38 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1938949892 ms
+Send live set wait time:    144 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   6885 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     70 ms longest thread 20 ms
+Total prune pass 2 time:     29 ms
+
+Total live set make time 139 ms longest thread 38 ms, send idle 0 recv idle 0 comp time 139
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 27540 ms longest thread 6885 ms, send idle 0 recv idle 27540 comp time 0
+
+Received 94968360 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 187513448 bytes of addr data
+
+Received 675341 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 11648487 simplified 222549 unchanged 9 of 11871045 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 672505, zeros 18777276, inputs 59, merges 2, merge_zeros 2590348, not live 2071496
+Unique indirects 0
+Values rcvd 808 sent 808

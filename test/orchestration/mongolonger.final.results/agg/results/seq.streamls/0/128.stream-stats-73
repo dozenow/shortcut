@@ -1,0 +1,52 @@
+Start time:              1462775152.1761326 ms
+Recv  time:              1462775393.861346 ms
+End   time:              1462775395.921552 ms
+Total time:              242161 ms
+Receive time:            240101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:         241151 ms
+Make live set time:           0 ms
+Make rindex merge time:      12 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   1035 ms
+Thru stream time:        241149 ms
+Send live set wait time:      0 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:   1001 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 223, comp time 812
+Total output time 14 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 14
+Total address time 3991 ms longest thread 1001 ms, send idle 0 recv idle 2784 comp time 1207
+
+Received 2432576 bytes of merge data
+Received 4841472 bytes of output data
+Received 59776 bytes of input data
+Received 636048 bytes of addr data
+
+Received 12691848 values in live set
+Output directs 564128 indirects 0 values 600549 quashed 9168 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 36987 simplified 15840 unchanged 251245 of 304072 merge values using live set
+Address tokens 16405564 passthrus 16276939 resolved 128625, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 32811128 sent 33615028
+Cache hits 0
+skips 0

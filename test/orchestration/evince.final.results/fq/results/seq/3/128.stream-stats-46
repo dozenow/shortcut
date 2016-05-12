@@ -1,0 +1,50 @@
+Start time:              1461682318.125820 ms
+Recv  time:              1461682330.174171 ms
+End   time:              1461682349.721867 ms
+Total time:               31596 ms
+Receive time:             12048 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      15648 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          5 ms
+Thru prune time:          27703 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1393437485 ms
+Send live set wait time:      9 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   3881 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      5 ms longest thread 2 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 3 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 3
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 15517 ms longest thread 3880 ms, send idle 0 recv idle 15493 comp time 24
+
+Received 9978160 bytes of merge data
+Received 27816 bytes of output data
+Received 64 bytes of input data
+Received 2686248 bytes of addr data
+
+Received 628379 values in live set
+Output directs 3064 indirects 0 values 3452 quashed 2433 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1242304 simplified 2481 unchanged 2485 of 1247270 merge values using live set
+Address tokens 137896 passthrus 137896 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 590675, zeros 46569, inputs 4817, merges 1197, merge_zeros 259803, not live 23395
+Unique indirects 0
+Values rcvd 275792 sent 277054

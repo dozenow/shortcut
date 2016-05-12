@@ -1,0 +1,50 @@
+Start time:              1461701683.177777 ms
+Recv  time:              1461701712.827218 ms
+End   time:              1461701728.590256 ms
+Total time:               45412 ms
+Receive time:             29649 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      14973 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          0 ms
+Thru prune time:          44624 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1412802537 ms
+Send live set wait time:      0 ms
+Output processing time:      34 ms
+Index wait time:              0 ms
+Address processing time:    750 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 6 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 6
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 136 ms longest thread 34 ms, send idle 0 recv idle 0 comp time 136
+Total address time 3000 ms longest thread 750 ms, send idle 0 recv idle 2967 comp time 33
+
+Received 1250264 bytes of merge data
+Received 62258416 bytes of output data
+Received 3840 bytes of input data
+Received 5947032 bytes of addr data
+
+Received 668533 values in live set
+Output directs 7764621 indirects 2850 values 7781597 quashed 7763957 merges 15220
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 138443 simplified 12922 unchanged 4918 of 156283 merge values using live set
+Address tokens 16101 passthrus 13494 resolved 0, indirects 2551 unmodified 56, merges 133624
+no changes 606202, zeros 538343, inputs 60667, merges 1306, merge_zeros 20393, not live 122670
+Unique indirects 0
+Values rcvd 32202 sent 43588

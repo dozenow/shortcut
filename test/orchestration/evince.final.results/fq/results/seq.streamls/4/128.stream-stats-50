@@ -1,0 +1,50 @@
+Start time:              1461682546.319195 ms
+Recv  time:              1461682569.665656 ms
+End   time:              1461682575.059708 ms
+Total time:               28741 ms
+Receive time:             23346 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        566 ms
+Thru prune time:          28165 ms
+Make live set time:           0 ms
+Make rindex merge time:    1781 ms
+Make rindex addr time:      123 ms
+Make rindex stream time:   2347 ms
+Thru stream time:         27598 ms
+Send live set wait time:      0 ms
+Output processing time:      54 ms
+Index wait time:              0 ms
+Address processing time:    521 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2240, comp time 107
+Total output time 216 ms longest thread 54 ms, send idle 0 recv idle 0 comp time 216
+Total address time 2084 ms longest thread 521 ms, send idle 0 recv idle 2027 comp time 57
+
+Received 743205912 bytes of merge data
+Received 63189848 bytes of output data
+Received 1440 bytes of input data
+Received 72445536 bytes of addr data
+
+Received 1030430 values in live set
+Output directs 12766 indirects 7880754 values 7898076 quashed 11763 merges 10959
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 92891644 simplified 5297 unchanged 3798 of 92900739 merge values using live set
+Address tokens 117383 passthrus 111694 resolved 0, indirects 5669 unmodified 20, merges 163904
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 234766 sent 250888

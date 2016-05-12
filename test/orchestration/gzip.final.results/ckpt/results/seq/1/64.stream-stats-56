@@ -1,0 +1,50 @@
+Start time:              1461959290.738252 ms
+Recv  time:              1461959294.959485 ms
+End   time:              1461959295.976869 ms
+Total time:                5238 ms
+Receive time:              4221 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        913 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         12 ms
+Thru prune time:           5146 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1670410098 ms
+Send live set wait time:      6 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:     79 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     17 ms longest thread 5 ms
+Total prune pass 2 time:      6 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 14 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 14
+Total address time 316 ms longest thread 79 ms, send idle 0 recv idle 312 comp time 4
+
+Received 27261808 bytes of merge data
+Received 3540024 bytes of output data
+Received 576 bytes of input data
+Received 2081400 bytes of addr data
+
+Received 123068 values in live set
+Output directs 435483 indirects 6885 values 442368 quashed 222168 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2385710 simplified 1018036 unchanged 3980 of 3407726 merge values using live set
+Address tokens 380 passthrus 0 resolved 380, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 143185, inputs 98658, merges 0, merge_zeros 1830, not live 16502
+Unique indirects 0
+Values rcvd 760 sent 35232

@@ -1,0 +1,50 @@
+Start time:              1461624546.366490 ms
+Recv  time:              1461624552.270144 ms
+End   time:              1461624558.201132 ms
+Total time:               11835 ms
+Receive time:              5904 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          11720 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   5808 ms
+Thru stream time:         11720 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:    113 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 5212, comp time 596
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 441 ms longest thread 111 ms, send idle 0 recv idle 214 comp time 227
+
+Received 778144 bytes of merge data
+Received 1300256 bytes of output data
+Received 26112 bytes of input data
+Received 175416 bytes of addr data
+
+Received 12205949 values in live set
+Output directs 151662 indirects 0 values 161232 quashed 7718 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3397 simplified 13294 unchanged 80577 of 97268 merge values using live set
+Address tokens 3948617 passthrus 3923464 resolved 23981, indirects 0 unmodified 1172, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 7897234 sent 8130200

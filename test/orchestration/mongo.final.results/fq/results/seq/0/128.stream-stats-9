@@ -1,0 +1,50 @@
+Start time:              1461624396.955640 ms
+Recv  time:              1461624404.314015 ms
+End   time:              1461624412.916214 ms
+Total time:               15961 ms
+Receive time:              7359 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       4204 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          11565 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1335516315 ms
+Send live set wait time:      5 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   4383 ms
+Finish time:                  2 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 17532 ms longest thread 4383 ms, send idle 0 recv idle 17352 comp time 180
+
+Received 2811488 bytes of merge data
+Received 961592 bytes of output data
+Received 198176 bytes of input data
+Received 12050088 bytes of addr data
+
+Received 49415 values in live set
+Output directs 58318 indirects 9 values 114129 quashed 53463 merges 6
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1004 simplified 74198 unchanged 276234 of 351436 merge values using live set
+Address tokens 575938 passthrus 1458 resolved 574480, indirects 0 unmodified 0, merges 0
+no changes 47644, zeros 37383, inputs 1453759, merges 8439, merge_zeros 194, not live 6486
+Unique indirects 0
+Values rcvd 1151876 sent 2944

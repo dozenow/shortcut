@@ -1,0 +1,50 @@
+Start time:              1461882476.689498 ms
+Recv  time:              1461882481.615489 ms
+End   time:              1461882485.537332 ms
+Total time:                8848 ms
+Receive time:              4926 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3133 ms
+Receive live set time:        0 ms
+Insert live set time:         2 ms
+Prune live set time:          1 ms
+Thru prune time:           8063 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1593596049 ms
+Send live set wait time:      0 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:    777 ms
+Finish time:                  4 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 3105 ms longest thread 777 ms, send idle 0 recv idle 2947 comp time 158
+
+Received 742408 bytes of merge data
+Received 4216320 bytes of output data
+Received 46848 bytes of input data
+Received 57232 bytes of addr data
+
+Received 49279 values in live set
+Output directs 391584 indirects 0 values 512400 quashed 318384 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 499 simplified 62962 unchanged 29340 of 92801 merge values using live set
+Address tokens 842650 passthrus 842610 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20185, zeros 3849, inputs 184, merges 42, merge_zeros 278, not live 2801
+Unique indirects 0
+Values rcvd 1685300 sent 1714580

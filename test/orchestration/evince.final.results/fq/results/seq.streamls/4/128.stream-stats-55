@@ -1,0 +1,50 @@
+Start time:              1461682546.318931 ms
+Recv  time:              1461682560.630828 ms
+End   time:              1461682575.053729 ms
+Total time:               28735 ms
+Receive time:             14311 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          4 ms
+Thru prune time:          27557 ms
+Make live set time:           0 ms
+Make rindex merge time:      27 ms
+Make rindex addr time:        5 ms
+Make rindex stream time:  13208 ms
+Thru stream time:         27553 ms
+Send live set wait time:      0 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:   1172 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 13145, comp time 63
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 4688 ms longest thread 1172 ms, send idle 0 recv idle 4648 comp time 40
+
+Received 7650952 bytes of merge data
+Received 3523664 bytes of output data
+Received 0 bytes of input data
+Received 3939368 bytes of addr data
+
+Received 1034018 values in live set
+Output directs 74287 indirects 361796 values 440368 quashed 74066 merges 1528
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 954736 simplified 1242 unchanged 391 of 956369 merge values using live set
+Address tokens 99523 passthrus 94728 resolved 0, indirects 4780 unmodified 15, merges 99559
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 199046 sent 210516

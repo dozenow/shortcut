@@ -1,0 +1,50 @@
+Start time:              1461886055.099961 ms
+Recv  time:              1461886086.158690 ms
+End   time:              1461886086.263292 ms
+Total time:               31163 ms
+Receive time:             31058 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          4 ms
+Thru prune time:          31063 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1597174459 ms
+Send live set wait time:      0 ms
+Output processing time:      29 ms
+Index wait time:              0 ms
+Address processing time:     25 ms
+Finish time:                 44 ms
+Total prune pass 1 time:      4 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 108 ms longest thread 28 ms, send idle 0 recv idle 0 comp time 108
+Total address time 97 ms longest thread 25 ms, send idle 0 recv idle 36 comp time 61
+
+Received 7573320 bytes of merge data
+Received 43243200 bytes of output data
+Received 480480 bytes of input data
+Received 82992 bytes of addr data
+
+Received 49408 values in live set
+Output directs 3916729 indirects 0 values 5255250 quashed 3165979 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 651 simplified 645655 unchanged 300359 of 946665 merge values using live set
+Address tokens 368580 passthrus 368540 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20325, zeros 5774, inputs 284, merges 43, merge_zeros 332, not live 3941
+Unique indirects 0
+Values rcvd 737160 sent 1037460

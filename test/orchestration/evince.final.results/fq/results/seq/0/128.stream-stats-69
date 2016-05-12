@@ -1,0 +1,50 @@
+Start time:              1461682198.556475 ms
+Recv  time:              1461682216.206746 ms
+End   time:              1461682230.036619 ms
+Total time:               31481 ms
+Receive time:             17651 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      10888 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          3 ms
+Thru prune time:          28543 ms
+Make live set time:           2 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1393317916 ms
+Send live set wait time:     12 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2923 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      4 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 2 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 2
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 11692 ms longest thread 2923 ms, send idle 0 recv idle 11673 comp time 19
+
+Received 5898920 bytes of merge data
+Received 11232 bytes of output data
+Received 96 bytes of input data
+Received 2176264 bytes of addr data
+
+Received 643814 values in live set
+Output directs 808 indirects 8 values 1384 quashed 726 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 736420 simplified 668 unchanged 277 of 737365 merge values using live set
+Address tokens 89530 passthrus 84806 resolved 0, indirects 4670 unmodified 54, merges 22899
+no changes 629209, zeros 45970, inputs 4994, merges 90, merge_zeros 187042, not live 33937
+Unique indirects 0
+Values rcvd 179060 sent 188866

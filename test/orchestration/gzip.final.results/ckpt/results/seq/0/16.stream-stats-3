@@ -1,0 +1,50 @@
+Start time:              1461960654.922682 ms
+Recv  time:              1461960663.448613 ms
+End   time:              1461960665.041178 ms
+Total time:               10119 ms
+Receive time:              8526 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          9 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         86 ms
+Thru prune time:           8623 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1671774282 ms
+Send live set wait time:      0 ms
+Output processing time:      50 ms
+Index wait time:              0 ms
+Address processing time:   1445 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    152 ms longest thread 40 ms
+Total prune pass 2 time:     45 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 170 ms longest thread 43 ms, send idle 0 recv idle 0 comp time 170
+Total address time 5780 ms longest thread 1445 ms, send idle 0 recv idle 5775 comp time 5
+
+Received 188053792 bytes of merge data
+Received 33302448 bytes of output data
+Received 4032 bytes of input data
+Received 2044544 bytes of addr data
+
+Received 123065 values in live set
+Output directs 4161535 indirects 1 values 4161536 quashed 634 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 16554388 simplified 6920151 unchanged 32185 of 23506724 merge values using live set
+Address tokens 10105 passthrus 0 resolved 10105, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 140120, inputs 115178, merges 0, merge_zeros 30, not live 240
+Unique indirects 0
+Values rcvd 20210 sent 84476

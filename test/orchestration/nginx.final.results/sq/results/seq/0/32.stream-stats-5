@@ -1,0 +1,50 @@
+Start time:              1461741041.622633 ms
+Recv  time:              1461741048.423588 ms
+End   time:              1461741055.473733 ms
+Total time:               13852 ms
+Receive time:              6801 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       6938 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          13740 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1452160982 ms
+Send live set wait time:      0 ms
+Output processing time:       4 ms
+Index wait time:              0 ms
+Address processing time:     99 ms
+Finish time:                  7 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 11 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 11
+Total address time 396 ms longest thread 99 ms, send idle 0 recv idle 240 comp time 156
+
+Received 1257352 bytes of merge data
+Received 7156800 bytes of output data
+Received 79520 bytes of input data
+Received 60464 bytes of addr data
+
+Received 49284 values in live set
+Output directs 660437 indirects 0 values 869750 quashed 536187 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 542 simplified 106866 unchanged 49761 of 157169 merge values using live set
+Address tokens 828610 passthrus 828570 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20189, zeros 4112, inputs 188, merges 42, merge_zeros 338, not live 2878
+Unique indirects 0
+Values rcvd 1657220 sent 1706920

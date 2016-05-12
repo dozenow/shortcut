@@ -1,0 +1,50 @@
+Start time:              1461947823.911559 ms
+Recv  time:              1461947842.405813 ms
+End   time:              1461947848.014281 ms
+Total time:               24103 ms
+Receive time:             18495 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          21476 ms
+Make live set time:           0 ms
+Make rindex merge time:       8 ms
+Make rindex addr time:        2 ms
+Make rindex stream time:   2970 ms
+Thru stream time:         21476 ms
+Send live set wait time:      0 ms
+Output processing time:      33 ms
+Index wait time:              0 ms
+Address processing time:   2594 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2907, comp time 63
+Total output time 128 ms longest thread 32 ms, send idle 0 recv idle 0 comp time 128
+Total address time 10367 ms longest thread 2594 ms, send idle 0 recv idle 10356 comp time 11
+
+Received 689856 bytes of merge data
+Received 63044392 bytes of output data
+Received 3904 bytes of input data
+Received 3493784 bytes of addr data
+
+Received 1142526 values in live set
+Output directs 7879287 indirects 130 values 7879964 quashed 7879031 merges 7092
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 65729 simplified 15533 unchanged 4970 of 86232 merge values using live set
+Address tokens 45877 passthrus 42552 resolved 0, indirects 3321 unmodified 4, merges 6560
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 91754 sent 99708

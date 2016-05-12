@@ -1,0 +1,50 @@
+Start time:              1461885351.840486 ms
+Recv  time:              1461885358.514755 ms
+End   time:              1461885361.707187 ms
+Total time:                9867 ms
+Receive time:              6675 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3166 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           9842 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1596471200 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     21 ms
+Finish time:                  2 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 84 ms longest thread 21 ms, send idle 0 recv idle 56 comp time 28
+
+Received 390792 bytes of merge data
+Received 2206080 bytes of output data
+Received 24512 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49408 values in live set
+Output directs 213178 indirects 0 values 268100 quashed 174878 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 522 simplified 32948 unchanged 15379 of 48849 merge values using live set
+Address tokens 113480 passthrus 113440 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20433, zeros 3717, inputs 176, merges 42, merge_zeros 294, not live 2703
+Unique indirects 0
+Values rcvd 226960 sent 242280

@@ -1,0 +1,12 @@
+Instructions instrumented: 1196224
+Traces instrumented: 162096
+Traces executed: 0
+Instrument time: 3689839 us
+DIFT began at 1462127491.454522
+DIFT ended at 1462127609.930970
+Taint statistics:
+Second tables allocated: 70634
+Third tables allocated:  0
+Num taint options:       0
+Num merges:              24254244
+Num merges saved:        17575212

@@ -1,0 +1,51 @@
+Start time:              1462340221.375994 ms
+Recv  time:              1462340227.605954 ms
+End   time:              1462340234.030092 ms
+Total time:               12655 ms
+Receive time:              6229 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          12653 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   6417 ms
+Thru stream time:         12653 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:      1 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 6412, comp time 5
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+
+Received 656 bytes of merge data
+Received 4840 bytes of output data
+Received 64 bytes of input data
+Received 54040 bytes of addr data
+
+Received 49407 values in live set
+Output directs 492 indirects 0 values 590 quashed 432 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 45 simplified 20 unchanged 17 of 82 merge values using live set
+Address tokens 8220 passthrus 8180 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 16440 sent 16400
+Local preprune reduced merge data size from 3752 to 656 (82.516%)

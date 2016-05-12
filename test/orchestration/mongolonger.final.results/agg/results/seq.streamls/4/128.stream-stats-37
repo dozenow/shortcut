@@ -1,0 +1,52 @@
+Start time:              1462776276.1251744 ms
+Recv  time:              1462776517.351755 ms
+End   time:              1462776519.342607 ms
+Total time:              242091 ms
+Receive time:            240101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:         241087 ms
+Make live set time:           0 ms
+Make rindex merge time:      15 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    968 ms
+Thru stream time:        241084 ms
+Send live set wait time:      0 ms
+Output processing time:      24 ms
+Index wait time:              0 ms
+Address processing time:    978 ms
+Finish time:                  2 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 303, comp time 665
+Total output time 21 ms longest thread 12 ms, send idle 0 recv idle 0 comp time 21
+Total address time 3898 ms longest thread 976 ms, send idle 0 recv idle 1525 comp time 2373
+
+Received 3823504 bytes of merge data
+Received 7272192 bytes of output data
+Received 92800 bytes of input data
+Received 857768 bytes of addr data
+
+Received 12434621 values in live set
+Output directs 844818 indirects 0 values 901839 quashed 14548 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 61529 simplified 24939 unchanged 391470 of 477938 merge values using live set
+Address tokens 31460277 passthrus 31178243 resolved 282034, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 62920554 sent 63928468
+Cache hits 0
+skips 0

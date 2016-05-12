@@ -1,0 +1,50 @@
+Start time:              1461727406.783548 ms
+Recv  time:              1461727462.812199 ms
+End   time:              1461727481.556423 ms
+Total time:               74773 ms
+Receive time:             56028 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      18538 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          5 ms
+Thru prune time:          74573 ms
+Make live set time:           2 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1438526143 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:    179 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      5 ms longest thread 2 ms
+Total prune pass 2 time:      2 ms
+
+Total live set make time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 16 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 16
+Total address time 716 ms longest thread 179 ms, send idle 0 recv idle 716 comp time 0
+
+Received 9878192 bytes of merge data
+Received 7515880 bytes of output data
+Received 0 bytes of input data
+Received 11339320 bytes of addr data
+
+Received 62934 values in live set
+Output directs 827780 indirects 37218 values 939090 quashed 798671 merges 9215
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1140027 simplified 75925 unchanged 18822 of 1234774 merge values using live set
+Address tokens 1 passthrus 1 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 41894, zeros 911197, inputs 97793, merges 17522, merge_zeros 189654, not live 201249
+Unique indirects 0
+Values rcvd 2 sent 60066

@@ -1,0 +1,49 @@
+stats dir is 16:09:06.04.26.2016.evince.stats.experiment.config.fq.small
+<started streamserver on node-0.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-1.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-3.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-4.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-5.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-6.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-7.arquinn-QV15174.dift-pg0.apt.emulab.net>
+<started streamserver on node-8.arquinn-QV15174.dift-pg0.apt.emulab.net>
+['-stats', '-c', '-w', '-lowmem', '-s', '-v', 'tmp_results', 'seqtt.results', '-hs', '.arquinn-QV15174.dift-pg0.apt.emulab.net', '-seq']
+
+compared OK
+
+<finished with stream_ctl for 32 host test>
+finished full sync
+seq ['-stats', '-c', '-w', '-lowmem', '-v', 'tmp_results', 'seqtt.results', '-seq', '-hs', '.arquinn-QV15174.dift-pg0.apt.emulab.net']
+compared OK
+
+<finished with stream_ctl for 32 host test>
+<finished 0 round (written to0>seq.streamls ['-stats', '-c', '-w', '-lowmem', '-v', 'tmp_results', 'seqtt.results', '-seq', '-streamls', '-hs', '.arquinn-QV15174.dift-pg0.apt.emulab.net']
+compared OK
+
+<finished with stream_ctl for 32 host test>
+<finished 0 round (written to0>seqppl.streamls ['-stats', '-c', '-w', '-lowmem', '-v', 'tmp_results', 'seqtt.results', '-seqppl', '-streamls', '-hs', '.arquinn-QV15174.dift-pg0.apt.emulab.net']
+remote_dir /local/src/omniplay/test/seqtt.results
+local_dir /home/arquinn/Documents/omniplay/test/experiment_config_files/evince/seqtt.results
+seqtt.reults must have already existed
+Traceback (most recent call last):
+  File "./streamlined_experiment.py", line 238, in <module>
+    main()
+  File "./streamlined_experiment.py", line 232, in main
+    run_tests("arquinn", cmd_args.password, stats_dir, tconfs,a, int(cmd_args.num_rounds),int(cmd_args.offset))
+  File "./streamlined_experiment.py", line 53, in run_tests
+    t.start_ctrl(user, password, args)
+  File "/home/arquinn/Documents/omniplay/test/orchestration/server.py", line 152, in start_ctrl
+    self.ctrl_host.start_ctrl(user, password, flags)
+  File "/home/arquinn/Documents/omniplay/test/orchestration/server.py", line 107, in start_ctrl
+    result = shell.run(args,cwd=CLOUDLAB_STREAMCTL_DIR)
+  File "/usr/local/lib/python2.7/dist-packages/spur/ssh.py", line 158, in run
+    return self.spawn(*args, **kwargs).wait_for_result()
+  File "/usr/local/lib/python2.7/dist-packages/spur/ssh.py", line 359, in wait_for_result
+    self._result = self._generate_result()
+  File "/usr/local/lib/python2.7/dist-packages/spur/ssh.py", line 371, in _generate_result
+    stderr_output
+  File "/usr/local/lib/python2.7/dist-packages/spur/results.py", line 9, in result
+    raise result.to_error()
+spur.results.RunProcessError: return code: 137
+output: b''
+stderr output: b'found that we need 0 files\nCommand terminated by signal 9\n0.00user 0.00system 0:43.54elapsed 0%CPU (0avgtext+0avgdata 1208maxresident)k\n0inputs+0outputs (0major+383minor)pagefaults 0swaps\n'

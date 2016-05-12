@@ -1,0 +1,50 @@
+Start time:              1461780597.401962 ms
+Recv  time:              1461780603.298176 ms
+End   time:              1461780604.374106 ms
+Total time:                6973 ms
+Receive time:              5897 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         68 ms
+Thru prune time:           6401 ms
+Make live set time:           0 ms
+Make rindex merge time:     249 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    185 ms
+Thru stream time:          6332 ms
+Send live set wait time:      0 ms
+Output processing time:      40 ms
+Index wait time:              0 ms
+Address processing time:    530 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 156, comp time 29
+Total output time 132 ms longest thread 37 ms, send idle 0 recv idle 0 comp time 132
+Total address time 2119 ms longest thread 530 ms, send idle 0 recv idle 2119 comp time 0
+
+Received 113432304 bytes of merge data
+Received 19929024 bytes of output data
+Received 2432 bytes of input data
+Received 2044544 bytes of addr data
+
+Received 229987 values in live set
+Output directs 2490367 indirects 1 values 2490368 quashed 379 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 9984539 simplified 4175084 unchanged 19415 of 14179038 merge values using live set
+Address tokens 10715 passthrus 0 resolved 10715, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 21430 sent 20670

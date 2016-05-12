@@ -1,0 +1,50 @@
+Start time:              1462227830.526828 ms
+Recv  time:              1462227949.709274 ms
+End   time:              1462227966.374810 ms
+Total time:              135848 ms
+Receive time:            119182 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2537 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         84 ms
+Thru prune time:         121804 ms
+Make live set time:          56 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1938949886 ms
+Send live set wait time:     88 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:  13899 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    101 ms longest thread 34 ms
+Total prune pass 2 time:     48 ms
+
+Total live set make time 176 ms longest thread 56 ms, send idle 0 recv idle 0 comp time 176
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 55596 ms longest thread 13899 ms, send idle 0 recv idle 55596 comp time 0
+
+Received 154081368 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 272894008 bytes of addr data
+
+Received 552704 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 19178585 simplified 81585 unchanged 1 of 19260171 merge values using live set
+Address tokens 404 passthrus 396 resolved 0, indirects 0 unmodified 8, merges 0
+no changes 552657, zeros 29148939, inputs 16, merges 3, merge_zeros 2476571, not live 2486222
+Unique indirects 0
+Values rcvd 808 sent 808

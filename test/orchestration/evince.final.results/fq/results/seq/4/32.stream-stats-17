@@ -1,0 +1,50 @@
+Start time:              1461701683.176293 ms
+Recv  time:              1461701708.731985 ms
+End   time:              1461701728.598897 ms
+Total time:               45422 ms
+Receive time:             25555 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      16719 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:        341 ms
+Thru prune time:          42617 ms
+Make live set time:          51 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1412802536 ms
+Send live set wait time:     28 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2726 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    510 ms longest thread 151 ms
+Total prune pass 2 time:    189 ms
+
+Total live set make time 136 ms longest thread 51 ms, send idle 0 recv idle 0 comp time 136
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 10904 ms longest thread 2726 ms, send idle 0 recv idle 10890 comp time 14
+
+Received 755204424 bytes of merge data
+Received 82128 bytes of output data
+Received 2496 bytes of input data
+Received 136381584 bytes of addr data
+
+Received 638754 values in live set
+Output directs 5251 indirects 0 values 10156 quashed 4772 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 94392577 simplified 5533 unchanged 2443 of 94400553 merge values using live set
+Address tokens 55299 passthrus 55083 resolved 216, indirects 0 unmodified 0, merges 0
+no changes 626691, zeros 8525750, inputs 16302, merges 76, merge_zeros 8433338, not live 72232
+Unique indirects 0
+Values rcvd 110598 sent 111124

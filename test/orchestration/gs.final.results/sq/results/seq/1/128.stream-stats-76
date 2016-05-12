@@ -1,0 +1,52 @@
+Start time:              1462464197.324094 ms
+Recv  time:              1462464200.709877 ms
+End   time:              1462464203.287790 ms
+Total time:                5964 ms
+Receive time:              3385 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1043 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          4 ms
+Thru prune time:           4437 ms
+Make live set time:           8 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119650612 ms
+Send live set wait time:      6 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1511 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      5 ms longest thread 2 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 21 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 21
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 6044 ms longest thread 1511 ms, send idle 0 recv idle 4851 comp time 1193
+
+Received 8505344 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 15675664 bytes of addr data
+
+Received 2657132 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1059227 simplified 3584 unchanged 357 of 1063168 merge values using live set
+Address tokens 4147780 passthrus 3959161 resolved 0, indirects 0 unmodified 176391, merges 0
+no changes 2375795, zeros 1128069, inputs 107333, merges 580, merge_zeros 251272, not live 472204
+Unique indirects 0
+Values rcvd 8295560 sent 8271104
+Cache hits 0
+skips 12186

@@ -1,0 +1,50 @@
+Start time:              1461527712.386766 ms
+Recv  time:              1461527718.567714 ms
+End   time:              1461527719.852915 ms
+Total time:                7466 ms
+Receive time:              6180 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        716 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         41 ms
+Thru prune time:           6939 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1238831746 ms
+Send live set wait time:     23 ms
+Output processing time:      19 ms
+Index wait time:              0 ms
+Address processing time:    483 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     69 ms longest thread 18 ms
+Total prune pass 2 time:     21 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 68 ms longest thread 17 ms, send idle 0 recv idle 0 comp time 68
+Total address time 1932 ms longest thread 483 ms, send idle 0 recv idle 1932 comp time 0
+
+Received 94357144 bytes of merge data
+Received 15864552 bytes of output data
+Received 2016 bytes of input data
+Received 2075448 bytes of addr data
+
+Received 123073 values in live set
+Output directs 1975727 indirects 6737 values 1982464 quashed 314766 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 8292674 simplified 3486468 unchanged 15501 of 11794643 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 143956, inputs 98795, merges 0, merge_zeros 32, not live 16648
+Unique indirects 0
+Values rcvd 0 sent 47516

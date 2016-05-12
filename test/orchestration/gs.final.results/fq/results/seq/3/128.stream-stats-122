@@ -1,0 +1,52 @@
+Start time:              1462469240.711489 ms
+Recv  time:              1462469244.590846 ms
+End   time:              1462469247.319854 ms
+Total time:                6609 ms
+Receive time:              3880 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2624 ms
+Receive live set time:        0 ms
+Insert live set time:         8 ms
+Prune live set time:          2 ms
+Thru prune time:           6514 ms
+Make live set time:           8 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2114607225 ms
+Send live set wait time:      0 ms
+Output processing time:      41 ms
+Index wait time:              0 ms
+Address processing time:     44 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 14 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 14
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 121 ms longest thread 40 ms, send idle 0 recv idle 0 comp time 121
+Total address time 175 ms longest thread 44 ms, send idle 0 recv idle 172 comp time 3
+
+Received 2759192 bytes of merge data
+Received 117600 bytes of output data
+Received 0 bytes of input data
+Received 1975432 bytes of addr data
+
+Received 3299308 values in live set
+Output directs 8273 indirects 6084 values 14550 quashed 7868 merges 226954
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 125860 simplified 18638 unchanged 200401 of 344899 merge values using live set
+Address tokens 767 passthrus 273 resolved 0, indirects 360 unmodified 0, merges 2539
+no changes 3005946, zeros 132317, inputs 37053, merges 33248, merge_zeros 7803, not live 36508
+Unique indirects 0
+Values rcvd 1534 sent 295688
+Cache hits 353
+skips 134

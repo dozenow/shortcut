@@ -1,0 +1,52 @@
+Start time:              1462469163.835824 ms
+Recv  time:              1462469167.710150 ms
+End   time:              1462469170.444215 ms
+Total time:                6609 ms
+Receive time:              3875 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2632 ms
+Receive live set time:        0 ms
+Insert live set time:        11 ms
+Prune live set time:          9 ms
+Thru prune time:           6527 ms
+Make live set time:           9 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2114684101 ms
+Send live set wait time:      0 ms
+Output processing time:      33 ms
+Index wait time:              0 ms
+Address processing time:     39 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 19 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 19
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 92 ms longest thread 32 ms, send idle 0 recv idle 0 comp time 92
+Total address time 153 ms longest thread 39 ms, send idle 0 recv idle 152 comp time 1
+
+Received 2759192 bytes of merge data
+Received 117600 bytes of output data
+Received 0 bytes of input data
+Received 1975432 bytes of addr data
+
+Received 3299308 values in live set
+Output directs 8273 indirects 6084 values 14550 quashed 7868 merges 226954
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 125860 simplified 18638 unchanged 200401 of 344899 merge values using live set
+Address tokens 767 passthrus 273 resolved 0, indirects 360 unmodified 0, merges 2375
+no changes 3005946, zeros 132317, inputs 37053, merges 33248, merge_zeros 7803, not live 36508
+Unique indirects 0
+Values rcvd 1534 sent 295688
+Cache hits 354
+skips 134

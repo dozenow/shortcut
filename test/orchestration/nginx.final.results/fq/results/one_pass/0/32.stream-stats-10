@@ -1,0 +1,50 @@
+Start time:              1461886972.162844 ms
+Recv  time:              1461886981.770445 ms
+End   time:              1461886985.663129 ms
+Total time:               13500 ms
+Receive time:              9607 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         -1598091522 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1598091522 ms
+Send live set wait time:      0 ms
+Output processing time:       8 ms
+Index wait time:              0 ms
+Address processing time:   3874 ms
+Finish time:                 10 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 23 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 23
+Total address time 15496 ms longest thread 3874 ms, send idle 0 recv idle 14646 comp time 850
+
+Received 1732040 bytes of merge data
+Received 9869760 bytes of output data
+Received 109664 bytes of input data
+Received 59896 bytes of addr data
+
+Received 0 values in live set
+Output directs 905618 indirects 0 values 1199450 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 0 simplified 0 unchanged 216505 of 216505 merge values using live set
+Address tokens 13342794 passthrus 13339110 resolved 40, indirects 0 unmodified 1719, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 26685588 sent 28218814

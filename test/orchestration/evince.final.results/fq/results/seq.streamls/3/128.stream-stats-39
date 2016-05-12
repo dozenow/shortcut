@@ -1,0 +1,50 @@
+Start time:              1461682509.397450 ms
+Recv  time:              1461682532.268939 ms
+End   time:              1461682538.248421 ms
+Total time:               28851 ms
+Receive time:             22872 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          27547 ms
+Make live set time:           0 ms
+Make rindex merge time:       9 ms
+Make rindex addr time:       87 ms
+Make rindex stream time:   4578 ms
+Thru stream time:         27547 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1303 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 4518, comp time 60
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5212 ms longest thread 1303 ms, send idle 0 recv idle 5178 comp time 34
+
+Received 553296 bytes of merge data
+Received 300648 bytes of output data
+Received 640 bytes of input data
+Received 255135288 bytes of addr data
+
+Received 952942 values in live set
+Output directs 34737 indirects 135 values 37441 quashed 1753 merges 75
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 57505 simplified 7178 unchanged 4479 of 69162 merge values using live set
+Address tokens 181122 passthrus 172630 resolved 0, indirects 8491 unmodified 1, merges 16671
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 362244 sent 380124

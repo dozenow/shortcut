@@ -1,0 +1,50 @@
+Start time:              1461682472.114838 ms
+Recv  time:              1461682490.715806 ms
+End   time:              1461682501.152455 ms
+Total time:               29037 ms
+Receive time:             18600 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          27053 ms
+Make live set time:           0 ms
+Make rindex merge time:      13 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:   8437 ms
+Thru stream time:         27052 ms
+Send live set wait time:      0 ms
+Output processing time:      17 ms
+Index wait time:              0 ms
+Address processing time:   1967 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 8394, comp time 43
+Total output time 59 ms longest thread 17 ms, send idle 0 recv idle 0 comp time 59
+Total address time 7867 ms longest thread 1967 ms, send idle 0 recv idle 7430 comp time 437
+
+Received 1963680 bytes of merge data
+Received 1566384 bytes of output data
+Received 1024 bytes of input data
+Received 1021944 bytes of addr data
+
+Received 796257 values in live set
+Output directs 42127 indirects 60635 values 195323 quashed 38931 merges 284565
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 231669 simplified 6832 unchanged 6959 of 245460 merge values using live set
+Address tokens 214195 passthrus 203822 resolved 0, indirects 10369 unmodified 4, merges 1913635
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 428390 sent 475278

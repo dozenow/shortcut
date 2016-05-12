@@ -1,0 +1,50 @@
+Start time:              1461779941.332152 ms
+Recv  time:              1461779945.208963 ms
+End   time:              1461779946.165759 ms
+Total time:                4834 ms
+Receive time:              3877 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         38 ms
+Thru prune time:           4452 ms
+Make live set time:           0 ms
+Make rindex merge time:     144 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    391 ms
+Thru stream time:          4414 ms
+Send live set wait time:      0 ms
+Output processing time:      23 ms
+Index wait time:              0 ms
+Address processing time:    358 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 353, comp time 38
+Total output time 72 ms longest thread 21 ms, send idle 0 recv idle 0 comp time 72
+Total address time 1432 ms longest thread 358 ms, send idle 0 recv idle 1432 comp time 0
+
+Received 62710328 bytes of merge data
+Received 11013408 bytes of output data
+Received 1344 bytes of input data
+Received 2044480 bytes of addr data
+
+Received 284048 values in live set
+Output directs 1376255 indirects 1 values 1376256 quashed 209 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 5518557 simplified 2309507 unchanged 10727 of 7838791 merge values using live set
+Address tokens 10920 passthrus 0 resolved 10920, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 21840 sent 21420

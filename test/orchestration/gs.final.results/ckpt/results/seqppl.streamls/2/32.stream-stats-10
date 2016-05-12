@@ -1,0 +1,53 @@
+Start time:              1462868099.331524 ms
+Recv  time:              1462868107.367338 ms
+End   time:              1462868109.977410 ms
+Total time:               10645 ms
+Receive time:              8035 ms
+Preprune local time:         13 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8168 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:       11 ms
+Make rindex stream time:    100 ms
+Thru stream time:          8168 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:            207 ms
+Address processing time:   2270 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 100
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 9076 ms longest thread 2269 ms, send idle 0 recv idle 9076 comp time 0
+
+Received 4552 bytes of merge data
+Received 0 bytes of output data
+Received 32 bytes of input data
+Received 25219120 bytes of addr data
+
+Received 1767562 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 514 simplified 33 unchanged 22 of 569 merge values using live set
+Address tokens 503 passthrus 503 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1006 sent 1006
+Cache hits 0
+skips 0
+Local preprune reduced merge data size from 3033288 to 4552 (99.850%)

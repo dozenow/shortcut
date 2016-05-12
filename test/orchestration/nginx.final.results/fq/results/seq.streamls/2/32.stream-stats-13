@@ -1,0 +1,50 @@
+Start time:              1461886508.340342 ms
+Recv  time:              1461886518.561865 ms
+End   time:              1461886521.664554 ms
+Total time:               13324 ms
+Receive time:             10221 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          12330 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2100 ms
+Thru stream time:         12329 ms
+Send live set wait time:      0 ms
+Output processing time:       7 ms
+Index wait time:              0 ms
+Address processing time:    975 ms
+Finish time:                 11 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2094, comp time 6
+Total output time 23 ms longest thread 7 ms, send idle 0 recv idle 0 comp time 23
+Total address time 3893 ms longest thread 975 ms, send idle 0 recv idle 3807 comp time 86
+
+Received 1876896 bytes of merge data
+Received 10693440 bytes of output data
+Received 118816 bytes of input data
+Received 60784 bytes of addr data
+
+Received 49612 values in live set
+Output directs 972177 indirects 0 values 1299550 quashed 786527 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 619 simplified 159670 unchanged 74323 of 234612 merge values using live set
+Address tokens 501630 passthrus 501590 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1003260 sent 1077520

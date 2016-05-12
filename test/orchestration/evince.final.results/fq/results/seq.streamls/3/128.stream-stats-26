@@ -1,0 +1,50 @@
+Start time:              1461682509.394971 ms
+Recv  time:              1461682527.740522 ms
+End   time:              1461682538.365360 ms
+Total time:               28971 ms
+Receive time:             18345 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          27030 ms
+Make live set time:           0 ms
+Make rindex merge time:       9 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   8674 ms
+Thru stream time:         27029 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   1939 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 8630, comp time 44
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 7732 ms longest thread 1933 ms, send idle 0 recv idle 7593 comp time 139
+
+Received 814720 bytes of merge data
+Received 74152 bytes of output data
+Received 448 bytes of input data
+Received 1177608 bytes of addr data
+
+Received 775204 values in live set
+Output directs 1255 indirects 3773 values 9104 quashed 641 merges 4099
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 82879 simplified 7491 unchanged 11470 of 101840 merge values using live set
+Address tokens 389379 passthrus 365667 resolved 0, indirects 23623 unmodified 89, merges 424715
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 778758 sent 831286

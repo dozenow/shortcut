@@ -1,0 +1,50 @@
+Start time:              1461740974.703995 ms
+Recv  time:              1461740988.864621 ms
+End   time:              1461740994.468264 ms
+Total time:               19765 ms
+Receive time:             14160 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5561 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          19723 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1452094063 ms
+Send live set wait time:      0 ms
+Output processing time:       8 ms
+Index wait time:              0 ms
+Address processing time:     17 ms
+Finish time:                 15 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 32 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 32
+Total address time 68 ms longest thread 17 ms, send idle 0 recv idle 38 comp time 30
+
+Received 2487344 bytes of merge data
+Received 14183080 bytes of output data
+Received 157568 bytes of input data
+Received 64904 bytes of addr data
+
+Received 49408 values in live set
+Output directs 1286341 indirects 0 values 1723640 quashed 1040131 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 630 simplified 211747 unchanged 98541 of 310918 merge values using live set
+Address tokens 186010 passthrus 185970 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20401, zeros 4450, inputs 208, merges 42, merge_zeros 330, not live 3083
+Unique indirects 0
+Values rcvd 372020 sent 470520

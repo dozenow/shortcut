@@ -1,0 +1,50 @@
+Start time:              1461506296.408193 ms
+Recv  time:              1461506299.527056 ms
+End   time:              1461506301.670646 ms
+Total time:                5262 ms
+Receive time:              3118 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1231 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         18 ms
+Thru prune time:           4368 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1217415768 ms
+Send live set wait time:      0 ms
+Output processing time:       8 ms
+Index wait time:              0 ms
+Address processing time:    885 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     31 ms longest thread 8 ms
+Total prune pass 2 time:      7 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 28 ms longest thread 7 ms, send idle 0 recv idle 0 comp time 28
+Total address time 3540 ms longest thread 885 ms, send idle 0 recv idle 3526 comp time 14
+
+Received 37340688 bytes of merge data
+Received 6424488 bytes of output data
+Received 800 bytes of input data
+Received 2044416 bytes of addr data
+
+Received 123065 values in live set
+Output directs 802815 indirects 1 values 802816 quashed 119 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3285465 simplified 1375741 unchanged 6380 of 4667586 merge values using live set
+Address tokens 78291 passthrus 0 resolved 78291, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 135396, inputs 115173, merges 0, merge_zeros 18, not live 4965
+Unique indirects 0
+Values rcvd 156582 sent 123574

@@ -1,0 +1,51 @@
+Start time:              1462082319.973733 ms
+Recv  time:              1462082444.440454 ms
+End   time:              1462082474.617219 ms
+Total time:              154644 ms
+Receive time:            124467 ms
+Preprune local time:         48 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:         144328 ms
+Make live set time:           0 ms
+Make rindex merge time:      23 ms
+Make rindex addr time:       36 ms
+Make rindex stream time:  19750 ms
+Thru stream time:        144325 ms
+Send live set wait time:      8 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:  10306 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 19691, comp time 59
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 41221 ms longest thread 10306 ms, send idle 0 recv idle 41220 comp time 1
+
+Received 4978808 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 45580400 bytes of addr data
+
+Received 717532 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 568072 simplified 54279 unchanged 0 of 622351 merge values using live set
+Address tokens 404 passthrus 380 resolved 0, indirects 0 unmodified 24, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Local preprune reduced merge data size from 22619800 to 4978808 (77.989%)

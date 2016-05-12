@@ -1,0 +1,50 @@
+Start time:              1462044615.089389 ms
+Recv  time:              1462044735.096556 ms
+End   time:              1462044740.087795 ms
+Total time:              124999 ms
+Receive time:            120007 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        520 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         120529 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1755734449 ms
+Send live set wait time:      6 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   4462 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 1 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 1
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 17844 ms longest thread 4461 ms, send idle 0 recv idle 17783 comp time 61
+
+Received 282712 bytes of merge data
+Received 214544 bytes of output data
+Received 352 bytes of input data
+Received 907952 bytes of addr data
+
+Received 542282 values in live set
+Output directs 6336 indirects 6643 values 26673 quashed 5873 merges 3343
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 32835 simplified 1711 unchanged 793 of 35339 merge values using live set
+Address tokens 242651 passthrus 233389 resolved 0, indirects 9253 unmodified 9, merges 240346
+no changes 531772, zeros 78575, inputs 4427, merges 728, merge_zeros 6435, not live 23329
+Unique indirects 0
+Values rcvd 485302 sent 507292

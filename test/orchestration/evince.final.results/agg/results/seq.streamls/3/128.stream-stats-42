@@ -1,0 +1,50 @@
+Start time:              1462046267.1187828 ms
+Recv  time:              1462046388.287835 ms
+End   time:              1462046391.355784 ms
+Total time:              123168 ms
+Receive time:            120101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         120328 ms
+Make live set time:           0 ms
+Make rindex merge time:       8 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:    217 ms
+Thru stream time:        120328 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2841 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 172, comp time 45
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 11364 ms longest thread 2841 ms, send idle 0 recv idle 11252 comp time 112
+
+Received 448256 bytes of merge data
+Received 19512 bytes of output data
+Received 128 bytes of input data
+Received 1077632 bytes of addr data
+
+Received 835720 values in live set
+Output directs 2194 indirects 10 values 2404 quashed 1844 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 49486 simplified 3505 unchanged 3041 of 56032 merge values using live set
+Address tokens 510293 passthrus 486452 resolved 0, indirects 23717 unmodified 124, merges 94043
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1020586 sent 1068966

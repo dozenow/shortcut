@@ -1,0 +1,51 @@
+Start time:              1462136315.112403 ms
+Recv  time:              1462136915.212397 ms
+End   time:              1462136916.720748 ms
+Total time:              601608 ms
+Receive time:            600099 ms
+Preprune local time:        394 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         31 ms
+Thru prune time:         601563 ms
+Make live set time:           0 ms
+Make rindex merge time:     116 ms
+Make rindex addr time:      121 ms
+Make rindex stream time:    800 ms
+Thru stream time:        601531 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     38 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 718, comp time 82
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 152 ms longest thread 38 ms, send idle 0 recv idle 152 comp time 0
+
+Received 33685768 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 206000232 bytes of addr data
+
+Received 714283 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3725675 simplified 442656 unchanged 42390 of 4210721 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Local preprune reduced merge data size from 244643200 to 33685768 (86.231%)

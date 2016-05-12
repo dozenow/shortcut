@@ -1,0 +1,52 @@
+Start time:              1462469291.166381 ms
+Recv  time:              1462469295.763798 ms
+End   time:              1462469298.601860 ms
+Total time:                7435 ms
+Receive time:              4597 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:           6417 ms
+Make live set time:           0 ms
+Make rindex merge time:      10 ms
+Make rindex addr time:        5 ms
+Make rindex stream time:   1804 ms
+Thru stream time:          6415 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   1016 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1537, comp time 267
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 4064 ms longest thread 1016 ms, send idle 0 recv idle 1786 comp time 2278
+
+Received 1537656 bytes of merge data
+Received 0 bytes of output data
+Received 640 bytes of input data
+Received 7041704 bytes of addr data
+
+Received 5216951 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 38988 simplified 85831 unchanged 67388 of 192207 merge values using live set
+Address tokens 6646084 passthrus 4538285 resolved 24, indirects 794034 unmodified 1300299, merges 145177
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 13292168 sent 11677200
+Cache hits 631002
+skips 13423

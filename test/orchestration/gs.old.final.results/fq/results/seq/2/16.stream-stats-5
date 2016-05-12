@@ -1,0 +1,50 @@
+Start time:              1461620405.711818 ms
+Recv  time:              1461620424.638257 ms
+End   time:              1461620426.309346 ms
+Total time:               20598 ms
+Receive time:             18927 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         2 ms
+Prune live set time:          7 ms
+Thru prune time:          18937 ms
+Make live set time:          11 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331525071 ms
+Send live set wait time:      0 ms
+Output processing time:       6 ms
+Index wait time:            382 ms
+Address processing time:   1260 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      5 ms longest thread 2 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 32 ms longest thread 11 ms, send idle 0 recv idle 0 comp time 32
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5040 ms longest thread 1260 ms, send idle 0 recv idle 5040 comp time 0
+
+Received 9633200 bytes of merge data
+Received 352 bytes of output data
+Received 32 bytes of input data
+Received 30952688 bytes of addr data
+
+Received 1382401 values in live set
+Output directs 11 indirects 28 values 39 quashed 11 merges 225
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 102003 simplified 70844 unchanged 1031303 of 1204150 merge values using live set
+Address tokens 503 passthrus 467 resolved 0, indirects 0 unmodified 36, merges 0
+no changes 1298367, zeros 2534254, inputs 713941, merges 410917, merge_zeros 49021, not live 160953
+Unique indirects 0
+Values rcvd 1006 sent 1468

@@ -1,0 +1,50 @@
+Start time:              1461625027.874145 ms
+Recv  time:              1461625034.501358 ms
+End   time:              1461625041.354330 ms
+Total time:               13481 ms
+Receive time:              6628 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          13248 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        9 ms
+Make rindex stream time:   6602 ms
+Thru stream time:         13247 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    230 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 6475, comp time 127
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 920 ms longest thread 230 ms, send idle 0 recv idle 729 comp time 191
+
+Received 1989128 bytes of merge data
+Received 567072 bytes of output data
+Received 115872 bytes of input data
+Received 7832896 bytes of addr data
+
+Received 3032149 values in live set
+Output directs 34368 indirects 8 values 67304 quashed 31504 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1543 simplified 43777 unchanged 203321 of 248641 merge values using live set
+Address tokens 1537563 passthrus 1210621 resolved 326942, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 3075126 sent 2421242

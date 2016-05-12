@@ -1,0 +1,50 @@
+Start time:              1461777552.329546 ms
+Recv  time:              1461777558.318668 ms
+End   time:              1461777560.144244 ms
+Total time:                7815 ms
+Receive time:              5990 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         58 ms
+Thru prune time:           7769 ms
+Make live set time:           0 ms
+Make rindex merge time:     229 ms
+Make rindex addr time:        2 ms
+Make rindex stream time:   1489 ms
+Thru stream time:          7710 ms
+Send live set wait time:      0 ms
+Output processing time:      40 ms
+Index wait time:              0 ms
+Address processing time:      5 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1453, comp time 36
+Total output time 156 ms longest thread 39 ms, send idle 0 recv idle 0 comp time 156
+Total address time 19 ms longest thread 5 ms, send idle 0 recv idle 12 comp time 7
+
+Received 104741704 bytes of merge data
+Received 18486792 bytes of output data
+Received 2240 bytes of input data
+Received 2044560 bytes of addr data
+
+Received 313162 values in live set
+Output directs 2310143 indirects 1 values 2310144 quashed 349 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 9208665 simplified 3866167 unchanged 17881 of 13092713 merge values using live set
+Address tokens 45693 passthrus 0 resolved 45693, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 91386 sent 123454

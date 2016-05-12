@@ -1,0 +1,50 @@
+Start time:              1461624970.347331 ms
+Recv  time:              1461624976.160067 ms
+End   time:              1461624985.587009 ms
+Total time:               15239 ms
+Receive time:              5813 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       7800 ms
+Receive live set time:        0 ms
+Insert live set time:        12 ms
+Prune live set time:          0 ms
+Thru prune time:          13626 ms
+Make live set time:          16 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1336089707 ms
+Send live set wait time:     30 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1566 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 48 ms longest thread 16 ms, send idle 0 recv idle 0 comp time 48
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 6261 ms longest thread 1566 ms, send idle 0 recv idle 5778 comp time 483
+
+Received 813448 bytes of merge data
+Received 210672 bytes of output data
+Received 42976 bytes of input data
+Received 3517600 bytes of addr data
+
+Received 11396616 values in live set
+Output directs 12768 indirects 2 values 25004 quashed 11704 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1780 simplified 16311 unchanged 83590 of 101681 merge values using live set
+Address tokens 4958560 passthrus 4831870 resolved 126690, indirects 0 unmodified 0, merges 0
+no changes 6181835, zeros 11961, inputs 346291, merges 1643, merge_zeros 134, not live 79671
+Unique indirects 0
+Values rcvd 9917120 sent 9663740

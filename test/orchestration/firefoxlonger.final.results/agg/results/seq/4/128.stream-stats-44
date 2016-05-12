@@ -1,0 +1,50 @@
+Start time:              1462227830.589616 ms
+Recv  time:              1462227958.712643 ms
+End   time:              1462227966.423499 ms
+Total time:              135834 ms
+Receive time:            128123 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2991 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:         55 ms
+Thru prune time:         131169 ms
+Make live set time:          13 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1938949949 ms
+Send live set wait time:    132 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   4518 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     65 ms longest thread 22 ms
+Total prune pass 2 time:     32 ms
+
+Total live set make time 42 ms longest thread 13 ms, send idle 0 recv idle 0 comp time 42
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 18072 ms longest thread 4518 ms, send idle 0 recv idle 18072 comp time 0
+
+Received 105718792 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 51761400 bytes of addr data
+
+Received 716343 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 13045163 simplified 57622 unchanged 112064 of 13214849 merge values using live set
+Address tokens 404 passthrus 376 resolved 0, indirects 0 unmodified 28, merges 0
+no changes 713587, zeros 4822356, inputs 674, merges 22, merge_zeros 210588, not live 1436535
+Unique indirects 0
+Values rcvd 808 sent 808

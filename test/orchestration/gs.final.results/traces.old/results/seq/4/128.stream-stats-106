@@ -1,0 +1,50 @@
+Start time:              1462338026.023470 ms
+Recv  time:              1462338028.696124 ms
+End   time:              1462338034.155855 ms
+Total time:                8132 ms
+Receive time:              2672 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3585 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          0 ms
+Thru prune time:           6261 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -2049145383 ms
+Send live set wait time:     16 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1851 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 7404 ms longest thread 1851 ms, send idle 0 recv idle 3865 comp time 3539
+
+Received 467192 bytes of merge data
+Received 0 bytes of output data
+Received 64 bytes of input data
+Received 225176 bytes of addr data
+
+Received 2913790 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 14063 simplified 8193 unchanged 36143 of 58399 merge values using live set
+Address tokens 14805111 passthrus 14689725 resolved 22, indirects 12164 unmodified 103200, merges 11505
+no changes 2623048, zeros 10146, inputs 6689, merges 5207, merge_zeros 778, not live 5327
+Unique indirects 0
+Values rcvd 29610222 sent 29585850

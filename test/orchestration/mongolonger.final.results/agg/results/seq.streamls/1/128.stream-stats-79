@@ -1,0 +1,52 @@
+Start time:              1462775434.560174 ms
+Recv  time:              1462775674.686963 ms
+End   time:              1462775676.192377 ms
+Total time:              241633 ms
+Receive time:            240126 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:         241211 ms
+Make live set time:           0 ms
+Make rindex merge time:      11 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   1071 ms
+Thru stream time:        241210 ms
+Send live set wait time:      0 ms
+Output processing time:       4 ms
+Index wait time:              0 ms
+Address processing time:    415 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 376, comp time 695
+Total output time 11 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 11
+Total address time 1659 ms longest thread 415 ms, send idle 0 recv idle 575 comp time 1084
+
+Received 2197176 bytes of merge data
+Received 4269960 bytes of output data
+Received 52160 bytes of input data
+Received 588944 bytes of addr data
+
+Received 12728855 values in live set
+Output directs 498168 indirects 8 values 529710 quashed 7932 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 42127 simplified 13770 unchanged 218750 of 274647 merge values using live set
+Address tokens 14105290 passthrus 13992096 resolved 113194, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 28210580 sent 28930504
+Cache hits 0
+skips 0

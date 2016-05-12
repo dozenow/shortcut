@@ -1,0 +1,52 @@
+Start time:              1462464197.311832 ms
+Recv  time:              1462464200.452608 ms
+End   time:              1462464203.557407 ms
+Total time:                6245 ms
+Receive time:              3140 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         12 ms
+Thru prune time:           3153 ms
+Make live set time:           2 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119650625 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:             39 ms
+Address processing time:   3049 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     12 ms longest thread 4 ms
+Total prune pass 2 time:      6 ms
+
+Total live set make time 5 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 5
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 12196 ms longest thread 3049 ms, send idle 0 recv idle 12196 comp time 0
+
+Received 21656112 bytes of merge data
+Received 0 bytes of output data
+Received 448 bytes of input data
+Received 4218640 bytes of addr data
+
+Received 346296 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2240 simplified 544 unchanged 2704230 of 2707014 merge values using live set
+Address tokens 356 passthrus 340 resolved 0, indirects 16 unmodified 0, merges 7
+no changes 339355, zeros 128027, inputs 397258, merges 217, merge_zeros 112, not live 1716
+Unique indirects 0
+Values rcvd 712 sent 680
+Cache hits 12
+skips 0

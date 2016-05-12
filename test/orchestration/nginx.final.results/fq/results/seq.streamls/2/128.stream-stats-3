@@ -1,0 +1,50 @@
+Start time:              1461882644.769500 ms
+Recv  time:              1461882649.399292 ms
+End   time:              1461882653.613605 ms
+Total time:                8845 ms
+Receive time:              4630 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           6209 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   1573 ms
+Thru stream time:          6209 ms
+Send live set wait time:      0 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:   2626 ms
+Finish time:                  4 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1566, comp time 7
+Total output time 8 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 8
+Total address time 10504 ms longest thread 2626 ms, send idle 0 recv idle 10373 comp time 131
+
+Received 802560 bytes of merge data
+Received 4561000 bytes of output data
+Received 50688 bytes of input data
+Received 57328 bytes of addr data
+
+Received 49219 values in live set
+Output directs 419323 indirects 0 values 554290 quashed 340163 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 425 simplified 68124 unchanged 31771 of 100320 merge values using live set
+Address tokens 939070 passthrus 939030 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1878140 sent 1909740

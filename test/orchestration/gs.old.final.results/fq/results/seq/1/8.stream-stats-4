@@ -1,0 +1,50 @@
+Start time:              1461620378.634335 ms
+Recv  time:              1461620387.092198 ms
+End   time:              1461620401.982400 ms
+Total time:               23348 ms
+Receive time:              8458 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      12016 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          2 ms
+Thru prune time:          20480 ms
+Make live set time:           7 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331497994 ms
+Send live set wait time:    912 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:   1947 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      1 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 21 ms longest thread 7 ms, send idle 0 recv idle 0 comp time 21
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 7788 ms longest thread 1947 ms, send idle 0 recv idle 7780 comp time 8
+
+Received 4387200 bytes of merge data
+Received 5040 bytes of output data
+Received 800 bytes of input data
+Received 20251944 bytes of addr data
+
+Received 2278276 values in live set
+Output directs 133 indirects 175 values 605 quashed 111 merges 24088
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 346097 simplified 111215 unchanged 91088 of 548400 merge values using live set
+Address tokens 3193 passthrus 448 resolved 2709, indirects 0 unmodified 36, merges 0
+no changes 2240702, zeros 1756302, inputs 73385, merges 229, merge_zeros 76460, not live 625117
+Unique indirects 0
+Values rcvd 6386 sent 1006

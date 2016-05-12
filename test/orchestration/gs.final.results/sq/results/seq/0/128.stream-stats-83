@@ -1,0 +1,52 @@
+Start time:              1462464172.546057 ms
+Recv  time:              1462464175.476896 ms
+End   time:              1462464178.496647 ms
+Total time:                5951 ms
+Receive time:              2931 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1568 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:          0 ms
+Thru prune time:           4503 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119675390 ms
+Send live set wait time:     10 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1434 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 11 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 11
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5736 ms longest thread 1434 ms, send idle 0 recv idle 4704 comp time 1032
+
+Received 307048 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 750088 bytes of addr data
+
+Received 2753617 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 12565 simplified 2269 unchanged 23547 of 38381 merge values using live set
+Address tokens 6401389 passthrus 5030640 resolved 0, indirects 732 unmodified 1368766, merges 253
+no changes 2166519, zeros 49943, inputs 34211, merges 579, merge_zeros 1426, not live 7602
+Unique indirects 0
+Values rcvd 12802778 sent 12801740
+Cache hits 475
+skips 1251

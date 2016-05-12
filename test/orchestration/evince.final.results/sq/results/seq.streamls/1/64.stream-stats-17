@@ -1,0 +1,50 @@
+Start time:              1461771547.854825 ms
+Recv  time:              1461771567.406179 ms
+End   time:              1461771580.089762 ms
+Total time:               32235 ms
+Receive time:             19552 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          2 ms
+Thru prune time:          22479 ms
+Make live set time:           0 ms
+Make rindex merge time:      16 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:   2908 ms
+Thru stream time:         22476 ms
+Send live set wait time:      0 ms
+Output processing time:       8 ms
+Index wait time:              0 ms
+Address processing time:   9749 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2860, comp time 48
+Total output time 7 ms longest thread 7 ms, send idle 0 recv idle 0 comp time 7
+Total address time 38961 ms longest thread 9747 ms, send idle 0 recv idle 38299 comp time 662
+
+Received 2987592 bytes of merge data
+Received 135528 bytes of output data
+Received 96 bytes of input data
+Received 1514720 bytes of addr data
+
+Received 760541 values in live set
+Output directs 2303 indirects 4120 values 16796 quashed 1946 merges 4804
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 359933 simplified 7942 unchanged 5574 of 373449 merge values using live set
+Address tokens 440430 passthrus 406547 resolved 0, indirects 32982 unmodified 901, merges 1464633
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 880860 sent 951706

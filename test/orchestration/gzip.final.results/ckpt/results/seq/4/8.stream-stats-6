@@ -1,0 +1,50 @@
+Start time:              1461960874.229905 ms
+Recv  time:              1461960888.159224 ms
+End   time:              1461960892.260594 ms
+Total time:               18030 ms
+Receive time:             13930 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3756 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        152 ms
+Thru prune time:          17838 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1671993589 ms
+Send live set wait time:    144 ms
+Output processing time:      10 ms
+Index wait time:              0 ms
+Address processing time:     36 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    234 ms longest thread 75 ms
+Total prune pass 2 time:     75 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 40 ms longest thread 10 ms, send idle 0 recv idle 0 comp time 40
+Total address time 144 ms longest thread 36 ms, send idle 0 recv idle 144 comp time 0
+
+Received 312573232 bytes of merge data
+Received 15208992 bytes of output data
+Received 6048 bytes of input data
+Received 2353984 bytes of addr data
+
+Received 86511 values in live set
+Output directs 1252738 indirects 647806 values 1900544 quashed 1252738 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 24859400 simplified 14207111 unchanged 5143 of 39071654 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 7882, zeros 195916, inputs 81713, merges 0, merge_zeros 5006, not live 11613
+Unique indirects 0
+Values rcvd 0 sent 0

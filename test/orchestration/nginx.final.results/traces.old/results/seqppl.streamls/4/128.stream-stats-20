@@ -1,0 +1,51 @@
+Start time:              1462340464.956096 ms
+Recv  time:              1462340474.414938 ms
+End   time:              1462340477.710500 ms
+Total time:               12755 ms
+Receive time:              9459 ms
+Preprune local time:          3 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          12652 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   3183 ms
+Thru stream time:         12652 ms
+Send live set wait time:      0 ms
+Output processing time:       2 ms
+Index wait time:              0 ms
+Address processing time:     93 ms
+Finish time:                  5 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 3178, comp time 5
+Total output time 5 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 5
+Total address time 372 ms longest thread 93 ms, send idle 0 recv idle 293 comp time 79
+
+Received 592 bytes of merge data
+Received 5515200 bytes of output data
+Received 61280 bytes of input data
+Received 58120 bytes of addr data
+
+Received 49408 values in live set
+Output directs 509917 indirects 0 values 670250 quashed 414167 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 33 simplified 24 unchanged 17 of 74 merge values using live set
+Address tokens 605710 passthrus 605670 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1211420 sent 1249720
+Local preprune reduced merge data size from 970568 to 592 (99.939%)

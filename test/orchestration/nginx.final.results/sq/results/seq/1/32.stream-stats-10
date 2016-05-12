@@ -1,0 +1,50 @@
+Start time:              1461741002.923557 ms
+Recv  time:              1461741010.850659 ms
+End   time:              1461741016.157358 ms
+Total time:               13234 ms
+Receive time:              7928 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       4315 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          12243 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1452122283 ms
+Send live set wait time:      0 ms
+Output processing time:       4 ms
+Index wait time:              0 ms
+Address processing time:    978 ms
+Finish time:                  7 ms
+Total prune pass 1 time:      1 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 15 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 15
+Total address time 3900 ms longest thread 978 ms, send idle 0 recv idle 3762 comp time 138
+
+Received 1351496 bytes of merge data
+Received 7695360 bytes of output data
+Received 85504 bytes of input data
+Received 59008 bytes of addr data
+
+Received 49412 values in live set
+Output directs 709144 indirects 0 values 935200 quashed 575544 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 532 simplified 114906 unchanged 53499 of 168937 merge values using live set
+Address tokens 656380 passthrus 656340 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20421, zeros 3993, inputs 192, merges 43, merge_zeros 302, not live 2846
+Unique indirects 0
+Values rcvd 1312760 sent 1366200

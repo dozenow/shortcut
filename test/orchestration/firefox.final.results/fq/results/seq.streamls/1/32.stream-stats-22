@@ -1,0 +1,50 @@
+Start time:              1461727496.204026 ms
+Recv  time:              1461727569.003021 ms
+End   time:              1461727578.677646 ms
+Total time:               82473 ms
+Receive time:             72799 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        516 ms
+Thru prune time:          75385 ms
+Make live set time:           0 ms
+Make rindex merge time:    1781 ms
+Make rindex addr time:      236 ms
+Make rindex stream time:     52 ms
+Thru stream time:         74869 ms
+Send live set wait time:      0 ms
+Output processing time:     150 ms
+Index wait time:              0 ms
+Address processing time:   6936 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 52
+Total output time 600 ms longest thread 150 ms, send idle 0 recv idle 0 comp time 600
+Total address time 26537 ms longest thread 6936 ms, send idle 0 recv idle 24744 comp time 1793
+
+Received 662143496 bytes of merge data
+Received 220689200 bytes of output data
+Received 128 bytes of input data
+Received 543545832 bytes of addr data
+
+Received 22681 values in live set
+Output directs 17994389 indirects 9405402 values 27583785 quashed 17994100 merges 519528
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 82607466 simplified 28351 unchanged 132120 of 82767937 merge values using live set
+Address tokens 1061 passthrus 6 resolved 0, indirects 976 unmodified 79, merges 10906375
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 2122 sent 4844

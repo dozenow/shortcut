@@ -1,0 +1,50 @@
+Start time:              1461524600.186118 ms
+Recv  time:              1461524603.376337 ms
+End   time:              1461524605.483114 ms
+Total time:                5296 ms
+Receive time:              3190 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1265 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         17 ms
+Thru prune time:           4474 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1235719546 ms
+Send live set wait time:      7 ms
+Output processing time:       9 ms
+Index wait time:              0 ms
+Address processing time:    805 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     31 ms longest thread 8 ms
+Total prune pass 2 time:      7 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 33 ms longest thread 9 ms, send idle 0 recv idle 0 comp time 33
+Total address time 3220 ms longest thread 805 ms, send idle 0 recv idle 3212 comp time 8
+
+Received 35971632 bytes of merge data
+Received 6424488 bytes of output data
+Received 768 bytes of input data
+Received 2044496 bytes of addr data
+
+Received 123075 values in live set
+Output directs 802815 indirects 1 values 802816 quashed 119 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3168964 simplified 1321356 unchanged 6134 of 4496454 merge values using live set
+Address tokens 45963 passthrus 0 resolved 45963, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 132590, inputs 115178, merges 0, merge_zeros 18, not live 7776
+Unique indirects 0
+Values rcvd 91926 sent 124454

@@ -1,0 +1,5 @@
+start_delay,pin_time,dift_time,preprune_local_time,make_rindex_merge_time,make_rindex_addr_time,make_rindex_stream_time,prune_live_set_time,make_live_set_time,send_live_set_wait_time,output_processing_time,index_wait_time,address_processing_time,finish_time
+25,1318.24050749,26228.7594925,48,7,0,2,0,0,10833,137,0,188,1
+761,199.514968323,35089.4850317,1011,1197,1,49,290,0,0,187,0,1,1
+1529,224.783763845,33016.2162362,964,1170,1,1404,279,0,0,69,0,0,1
+2276,394.689284655,28669.3107153,665,0,0,6263,54,0,0,32,0,0,0

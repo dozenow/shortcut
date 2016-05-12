@@ -1,0 +1,52 @@
+Start time:              1462464318.947335 ms
+Recv  time:              1462464320.502761 ms
+End   time:              1462464325.009614 ms
+Total time:                6063 ms
+Receive time:              1556 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           4645 ms
+Make live set time:           0 ms
+Make rindex merge time:       6 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   3081 ms
+Thru stream time:          4645 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1418 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2811, comp time 270
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5672 ms longest thread 1418 ms, send idle 0 recv idle 4790 comp time 882
+
+Received 25504 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 1373808 bytes of addr data
+
+Received 5236356 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2173 simplified 366 unchanged 649 of 3188 merge values using live set
+Address tokens 4134713 passthrus 3888482 resolved 0, indirects 0 unmodified 245259, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 8269426 sent 8267482
+Cache hits 0
+skips 972

@@ -1,0 +1,51 @@
+Start time:              1462234000.248367 ms
+Recv  time:              1462234300.354970 ms
+End   time:              1462234301.696478 ms
+Total time:              301448 ms
+Receive time:            300106 ms
+Preprune local time:         86 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          3 ms
+Thru prune time:         301346 ms
+Make live set time:           0 ms
+Make rindex merge time:      32 ms
+Make rindex addr time:       63 ms
+Make rindex stream time:   1053 ms
+Thru stream time:        301342 ms
+Send live set wait time:      1 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     99 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 989, comp time 64
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 387 ms longest thread 99 ms, send idle 0 recv idle 385 comp time 2
+
+Received 5119000 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 63451648 bytes of addr data
+
+Received 718150 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 568478 simplified 67562 unchanged 3835 of 639875 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Local preprune reduced merge data size from 35793480 to 5119000 (85.699%)

@@ -1,0 +1,50 @@
+Start time:              1461957957.158174 ms
+Recv  time:              1461957958.562248 ms
+End   time:              1461957961.167435 ms
+Total time:                4009 ms
+Receive time:              1404 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1203 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         10 ms
+Thru prune time:           2618 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1669076518 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:   1385 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     16 ms longest thread 4 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 20 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 20
+Total address time 5540 ms longest thread 1385 ms, send idle 0 recv idle 5534 comp time 6
+
+Received 21131480 bytes of merge data
+Received 3671136 bytes of output data
+Received 448 bytes of input data
+Received 2044352 bytes of addr data
+
+Received 123066 values in live set
+Output directs 458751 indirects 1 values 458752 quashed 69 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1865360 simplified 772509 unchanged 3566 of 2641435 merge values using live set
+Address tokens 24954 passthrus 0 resolved 24954, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 140089, inputs 115177, merges 0, merge_zeros 48, not live 230
+Unique indirects 0
+Values rcvd 49908 sent 49768

@@ -1,0 +1,52 @@
+Start time:              1462464246.000797 ms
+Recv  time:              1462464248.623337 ms
+End   time:              1462464252.243031 ms
+Total time:                6242 ms
+Receive time:              2622 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        620 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          0 ms
+Thru prune time:           3243 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2119601936 ms
+Send live set wait time:      2 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2994 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 2 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 2
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 11976 ms longest thread 2994 ms, send idle 0 recv idle 11976 comp time 0
+
+Received 617968 bytes of merge data
+Received 0 bytes of output data
+Received 672 bytes of input data
+Received 1477384 bytes of addr data
+
+Received 788197 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 18245 simplified 45122 unchanged 13879 of 77246 merge values using live set
+Address tokens 1134 passthrus 1092 resolved 21, indirects 0 unmodified 21, merges 0
+no changes 577875, zeros 31863, inputs 71601, merges 36202, merge_zeros 6592, not live 38415
+Unique indirects 0
+Values rcvd 2268 sent 2226
+Cache hits 0
+skips 0

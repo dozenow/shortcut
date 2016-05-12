@@ -1,0 +1,52 @@
+Start time:              1462469240.709198 ms
+Recv  time:              1462469242.266240 ms
+End   time:              1462469247.909388 ms
+Total time:                7200 ms
+Receive time:              1558 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       4815 ms
+Receive live set time:        0 ms
+Insert live set time:         4 ms
+Prune live set time:          0 ms
+Thru prune time:           6376 ms
+Make live set time:           4 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2114607227 ms
+Send live set wait time:     23 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    796 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 13 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 13
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3184 ms longest thread 796 ms, send idle 0 recv idle 1558 comp time 1626
+
+Received 27472 bytes of merge data
+Received 544 bytes of output data
+Received 64 bytes of input data
+Received 23040 bytes of addr data
+
+Received 3403228 values in live set
+Output directs 58 indirects 0 values 58 quashed 58 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3434 simplified 0 unchanged 0 of 3434 merge values using live set
+Address tokens 7815755 passthrus 7782076 resolved 4, indirects 0 unmodified 0, merges 0
+no changes 2684369, zeros 943, inputs 566, merges 0, merge_zeros 347, not live 1024
+Unique indirects 0
+Values rcvd 15631510 sent 15564152
+Cache hits 0
+skips 33529

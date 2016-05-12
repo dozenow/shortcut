@@ -1,0 +1,50 @@
+Start time:              1461947791.142041 ms
+Recv  time:              1461947807.842379 ms
+End   time:              1461947815.722024 ms
+Total time:               24579 ms
+Receive time:             16700 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          17748 ms
+Make live set time:           0 ms
+Make rindex merge time:      17 ms
+Make rindex addr time:        3 ms
+Make rindex stream time:   1025 ms
+Thru stream time:         17746 ms
+Send live set wait time:      0 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:   6826 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 991, comp time 34
+Total output time 24 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 24
+Total address time 27304 ms longest thread 6826 ms, send idle 0 recv idle 26402 comp time 902
+
+Received 3429360 bytes of merge data
+Received 11839848 bytes of output data
+Received 384 bytes of input data
+Received 3283136 bytes of addr data
+
+Received 646840 values in live set
+Output directs 272023 indirects 912961 values 1479776 quashed 271888 merges 856
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 385066 simplified 22810 unchanged 20794 of 428670 merge values using live set
+Address tokens 1192881 passthrus 1147887 resolved 0, indirects 44992 unmodified 2, merges 629312
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 2385762 sent 2476810

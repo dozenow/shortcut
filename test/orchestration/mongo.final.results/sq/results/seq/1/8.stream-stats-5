@@ -1,0 +1,50 @@
+Start time:              1461551206.397728 ms
+Recv  time:              1461551219.358991 ms
+End   time:              1461551225.016914 ms
+Total time:               18620 ms
+Receive time:             12962 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5416 ms
+Receive live set time:        0 ms
+Insert live set time:        12 ms
+Prune live set time:          4 ms
+Thru prune time:          18394 ms
+Make live set time:          79 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1262325757 ms
+Send live set wait time:     32 ms
+Output processing time:      12 ms
+Index wait time:              0 ms
+Address processing time:     96 ms
+Finish time:                  5 ms
+Total prune pass 1 time:      4 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 162 ms longest thread 79 ms, send idle 0 recv idle 0 comp time 162
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 34 ms longest thread 12 ms, send idle 0 recv idle 0 comp time 34
+Total address time 384 ms longest thread 96 ms, send idle 0 recv idle 30 comp time 354
+
+Received 8861128 bytes of merge data
+Received 11373288 bytes of output data
+Received 459872 bytes of input data
+Received 181386424 bytes of addr data
+
+Received 10746258 values in live set
+Output directs 1282416 indirects 96 values 1406361 quashed 99158 merges 36
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 23281 simplified 161983 unchanged 922377 of 1107641 merge values using live set
+Address tokens 4142933 passthrus 3561697 resolved 581236, indirects 0 unmodified 0, merges 0
+no changes 10616447, zeros 21090848, inputs 1469566, merges 7204, merge_zeros 375, not live 105310
+Unique indirects 0
+Values rcvd 8285866 sent 9112814

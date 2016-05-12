@@ -1,0 +1,51 @@
+Start time:              1462340465.035927 ms
+Recv  time:              1462340472.534842 ms
+End   time:              1462340477.735168 ms
+Total time:               12699 ms
+Receive time:              7498 ms
+Preprune local time:          1 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          12648 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   5142 ms
+Thru stream time:         12648 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     47 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 5137, comp time 5
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 188 ms longest thread 47 ms, send idle 0 recv idle 160 comp time 28
+
+Received 592 bytes of merge data
+Received 1823040 bytes of output data
+Received 20256 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49408 values in live set
+Output directs 179236 indirects 0 values 221550 quashed 147586 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 33 simplified 24 unchanged 17 of 74 merge values using live set
+Address tokens 147990 passthrus 147950 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 295980 sent 308640
+Local preprune reduced merge data size from 323848 to 592 (99.817%)

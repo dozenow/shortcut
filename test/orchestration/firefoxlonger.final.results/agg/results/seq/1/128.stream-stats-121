@@ -1,0 +1,50 @@
+Start time:              1462230247.1305970 ms
+Recv  time:              1462230548.405977 ms
+End   time:              1462230557.951721 ms
+Total time:              309646 ms
+Receive time:            300101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       9220 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          3 ms
+Thru prune time:         309326 ms
+Make live set time:          12 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1941367665 ms
+Send live set wait time:     29 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    273 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      4 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 33 ms longest thread 12 ms, send idle 0 recv idle 0 comp time 33
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 1092 ms longest thread 273 ms, send idle 0 recv idle 1092 comp time 0
+
+Received 6314448 bytes of merge data
+Received 1145488 bytes of output data
+Received 0 bytes of input data
+Received 42875904 bytes of addr data
+
+Received 1192140 values in live set
+Output directs 142428 indirects 27 values 143071 quashed 142428 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 762047 simplified 22472 unchanged 4787 of 789306 merge values using live set
+Address tokens 404 passthrus 404 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 769708, zeros 4588932, inputs 249, merges 1148, merge_zeros 96124, not live 673035
+Unique indirects 0
+Values rcvd 808 sent 808

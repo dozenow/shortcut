@@ -1,0 +1,50 @@
+Start time:              1462339477.205034 ms
+Recv  time:              1462339484.123974 ms
+End   time:              1462339489.959865 ms
+Total time:               12754 ms
+Receive time:              6919 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       5734 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          12654 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -2050596565 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     96 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 3 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 3
+Total address time 384 ms longest thread 96 ms, send idle 0 recv idle 326 comp time 58
+
+Received 313776 bytes of merge data
+Received 1765440 bytes of output data
+Received 19616 bytes of input data
+Received 57800 bytes of addr data
+
+Received 49408 values in live set
+Output directs 172064 indirects 0 values 214550 quashed 141414 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 534 simplified 26369 unchanged 12319 of 39222 merge values using live set
+Address tokens 214850 passthrus 214810 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20433, zeros 3994, inputs 176, merges 43, merge_zeros 328, not live 2684
+Unique indirects 0
+Values rcvd 429700 sent 441960

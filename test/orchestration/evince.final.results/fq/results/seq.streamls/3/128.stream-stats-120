@@ -1,0 +1,50 @@
+Start time:              1461682509.408425 ms
+Recv  time:              1461682535.368653 ms
+End   time:              1461682538.148677 ms
+Total time:               28741 ms
+Receive time:             25961 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        607 ms
+Thru prune time:          28695 ms
+Make live set time:           0 ms
+Make rindex merge time:    1892 ms
+Make rindex addr time:      121 ms
+Make rindex stream time:    113 ms
+Thru stream time:         28086 ms
+Send live set wait time:      0 ms
+Output processing time:      34 ms
+Index wait time:              0 ms
+Address processing time:      0 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 113
+Total output time 136 ms longest thread 34 ms, send idle 0 recv idle 0 comp time 136
+Total address time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+
+Received 774157440 bytes of merge data
+Received 63170560 bytes of output data
+Received 1152 bytes of input data
+Received 70465896 bytes of addr data
+
+Received 1146637 values in live set
+Output directs 7894603 indirects 159 values 7895480 quashed 7894310 merges 7165
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 96760066 simplified 6654 unchanged 2960 of 96769680 merge values using live set
+Address tokens 438 passthrus 416 resolved 0, indirects 7 unmodified 15, merges 14
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 876 sent 2552

@@ -1,0 +1,30 @@
+Epoch    DIFT     FF     PP    Wait  Recv. Insert  Prune   Make   Send Output  Index Address Finish  Other   Total
+    0   52689     26      0       0      0      0      0      0      0    343      0  747446      3      0  800507
+    1   59567    386      0       0      0      0      0      0      0 740551      0       0      1      1  800506
+  Max   59567    386      0       0      0      0      0      0      0 740551      0  747446      3      1  800507
+Total  112256    412      0       0      0      0      0      0      0 740894      0  747446      4      1 1601013
+ Core   56128    206      0       0      0      0      0      0      0 370447      0  373723      2      0  800506
+
+
+Epoch     Tokens  Passthrus Unmodified  Resolveds  Indirects      Other   (Merges)
+    0   12372025          0          0      62637          0   12309388          0
+    1          0          0          0          0          0          0    1316147
+  Max   12372025          0          0      62637          0   12309388    1316147
+Total   12372025          0          0      62637          0   12309388    1316147
+ Core    6186012          0          0      31318          0    6154694     658073
+
+
+Epoch      Merge     Output      Input       Addr       Live
+    0       1944  243474984      33024     984464          0
+    1 1449142136  146974560      29888          0          0
+  Max 1449142136  243474984      33024     984464          0
+Total 1449144080  390449544      62912     984464          0
+ Core  724572040  195224772      31456     492232          0
+
+
+Epoch Instrumented
+    0        17063
+    1         5094
+  Max        17063
+Total        22157
+ Core        11078

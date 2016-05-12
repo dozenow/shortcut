@@ -1,0 +1,50 @@
+Start time:              1462044881.1738571 ms
+Recv  time:              1462045002.838585 ms
+End   time:              1462045007.619716 ms
+Total time:              124882 ms
+Receive time:            120101 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       3764 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          3 ms
+Thru prune time:         123869 ms
+Make live set time:           4 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1756002098 ms
+Send live set wait time:      7 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    997 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      2 ms longest thread 1 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 8 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 8
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3988 ms longest thread 997 ms, send idle 0 recv idle 3980 comp time 8
+
+Received 6197272 bytes of merge data
+Received 7488 bytes of output data
+Received 1856 bytes of input data
+Received 11617240 bytes of addr data
+
+Received 668626 values in live set
+Output directs 891 indirects 2 values 916 quashed 829 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 769557 simplified 4153 unchanged 949 of 774659 merge values using live set
+Address tokens 20360 passthrus 18387 resolved 0, indirects 1956 unmodified 17, merges 3832
+no changes 658350, zeros 1157168, inputs 9853, merges 115, merge_zeros 210429, not live 74590
+Unique indirects 0
+Values rcvd 40720 sent 45002

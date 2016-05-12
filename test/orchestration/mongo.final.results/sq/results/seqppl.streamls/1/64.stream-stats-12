@@ -1,0 +1,51 @@
+Start time:              1461552850.280682 ms
+Recv  time:              1461552857.416916 ms
+End   time:              1461552859.409286 ms
+Total time:                9128 ms
+Receive time:              7136 ms
+Preprune local time:          7 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8904 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:       10 ms
+Make rindex stream time:   1744 ms
+Thru stream time:          8904 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    222 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1738, comp time 6
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 888 ms longest thread 222 ms, send idle 0 recv idle 782 comp time 106
+
+Received 51480 bytes of merge data
+Received 801608 bytes of output data
+Received 165504 bytes of input data
+Received 10123296 bytes of addr data
+
+Received 46898 values in live set
+Output directs 48622 indirects 9 values 95141 quashed 44575 merges 6
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 177 simplified 9 unchanged 6249 of 6435 merge values using live set
+Address tokens 464741 passthrus 270 resolved 464471, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 929482 sent 568
+Local preprune reduced merge data size from 2315240 to 51480 (97.776%)

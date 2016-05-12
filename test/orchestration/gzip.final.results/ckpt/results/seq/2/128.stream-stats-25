@@ -1,0 +1,50 @@
+Start time:              1461957833.667863 ms
+Recv  time:              1461957835.042813 ms
+End   time:              1461957837.670556 ms
+Total time:                4002 ms
+Receive time:              1375 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1361 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          6 ms
+Thru prune time:           2743 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1668953027 ms
+Send live set wait time:      3 ms
+Output processing time:       3 ms
+Index wait time:              0 ms
+Address processing time:   1251 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     10 ms longest thread 3 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total address time 5004 ms longest thread 1251 ms, send idle 0 recv idle 4996 comp time 8
+
+Received 13741296 bytes of merge data
+Received 2491128 bytes of output data
+Received 288 bytes of input data
+Received 2044176 bytes of addr data
+
+Received 123063 values in live set
+Output directs 311295 indirects 1 values 311296 quashed 44 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1214549 simplified 500820 unchanged 2293 of 1717662 merge values using live set
+Address tokens 9340 passthrus 0 resolved 9340, indirects 0 unmodified 0, merges 0
+no changes 7883, zeros 140076, inputs 115188, merges 0, merge_zeros 30, not live 228
+Unique indirects 0
+Values rcvd 18680 sent 51358

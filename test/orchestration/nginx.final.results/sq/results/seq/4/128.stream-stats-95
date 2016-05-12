@@ -1,0 +1,50 @@
+Start time:              1461740124.870703 ms
+Recv  time:              1461740130.979723 ms
+End   time:              1461740133.365742 ms
+Total time:                8496 ms
+Receive time:              6109 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2336 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8446 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1451244230 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     46 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 181 ms longest thread 46 ms, send idle 0 recv idle 158 comp time 23
+
+Received 184224 bytes of merge data
+Received 1025280 bytes of output data
+Received 11392 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49408 values in live set
+Output directs 94746 indirects 0 values 124600 quashed 76946 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 531 simplified 15318 unchanged 7179 of 23028 merge values using live set
+Address tokens 102810 passthrus 102770 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20433, zeros 3745, inputs 176, merges 43, merge_zeros 302, not live 2666
+Unique indirects 0
+Values rcvd 205620 sent 212740

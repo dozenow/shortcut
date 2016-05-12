@@ -1,0 +1,50 @@
+Start time:              1462059467.281447 ms
+Recv  time:              1462059587.381443 ms
+End   time:              1462059587.537981 ms
+Total time:              120256 ms
+Receive time:            120099 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:         70 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         120171 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1770586641 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     79 ms
+Finish time:                  2 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 315 ms longest thread 79 ms, send idle 0 recv idle 270 comp time 45
+
+Received 491744 bytes of merge data
+Received 2779200 bytes of output data
+Received 30880 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49408 values in live set
+Output directs 264367 indirects 0 values 337750 quashed 216117 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 604 simplified 41505 unchanged 19359 of 61468 merge values using live set
+Address tokens 228210 passthrus 228170 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20433, zeros 3729, inputs 176, merges 43, merge_zeros 302, not live 2682
+Unique indirects 0
+Values rcvd 456420 sent 475720

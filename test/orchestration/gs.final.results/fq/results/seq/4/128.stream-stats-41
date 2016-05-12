@@ -1,0 +1,52 @@
+Start time:              1462469265.496542 ms
+Recv  time:              1462469270.605879 ms
+End   time:              1462469273.085411 ms
+Total time:                7589 ms
+Receive time:              5109 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        472 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:         17 ms
+Thru prune time:           5603 ms
+Make live set time:           3 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        2114582440 ms
+Send live set wait time:      6 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   1977 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     17 ms longest thread 6 ms
+Total prune pass 2 time:      9 ms
+
+Total live set make time 12 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 12
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 7908 ms longest thread 1977 ms, send idle 0 recv idle 7908 comp time 0
+
+Received 31773464 bytes of merge data
+Received 336 bytes of output data
+Received 96 bytes of input data
+Received 4206760 bytes of addr data
+
+Received 2423659 values in live set
+Output directs 32 indirects 0 values 32 quashed 32 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 142221 simplified 11986 unchanged 3817476 of 3971683 merge values using live set
+Address tokens 503 passthrus 503 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 1816016, zeros 268122, inputs 215520, merges 6936, merge_zeros 8239, not live 27028
+Unique indirects 0
+Values rcvd 1006 sent 1006
+Cache hits 0
+skips 0

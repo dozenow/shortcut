@@ -1,0 +1,50 @@
+Start time:              1461771421.183567 ms
+Recv  time:              1461771440.005398 ms
+End   time:              1461771455.825063 ms
+Total time:               34641 ms
+Receive time:             18822 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      14175 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:        357 ms
+Thru prune time:          33356 ms
+Make live set time:          28 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1482540543 ms
+Send live set wait time:    283 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    973 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    517 ms longest thread 156 ms
+Total prune pass 2 time:    199 ms
+
+Total live set make time 96 ms longest thread 28 ms, send idle 0 recv idle 0 comp time 96
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3886 ms longest thread 973 ms, send idle 0 recv idle 3878 comp time 8
+
+Received 778129368 bytes of merge data
+Received 0 bytes of output data
+Received 96 bytes of input data
+Received 69117824 bytes of addr data
+
+Received 649699 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 97260459 simplified 4645 unchanged 1067 of 97266171 merge values using live set
+Address tokens 37228 passthrus 37228 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 622200, zeros 213609, inputs 6563, merges 20, merge_zeros 8357370, not live 62166
+Unique indirects 0
+Values rcvd 74456 sent 74456

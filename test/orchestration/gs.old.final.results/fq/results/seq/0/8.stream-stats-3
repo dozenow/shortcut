@@ -1,0 +1,50 @@
+Start time:              1461620413.320726 ms
+Recv  time:              1461620423.212331 ms
+End   time:              1461620439.160408 ms
+Total time:               25840 ms
+Receive time:              9892 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      14532 ms
+Receive live set time:        0 ms
+Insert live set time:         3 ms
+Prune live set time:         22 ms
+Thru prune time:          24449 ms
+Make live set time:           6 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1331532680 ms
+Send live set wait time:      2 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:   1375 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     22 ms longest thread 9 ms
+Total prune pass 2 time:     12 ms
+
+Total live set make time 17 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 17
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 5500 ms longest thread 1375 ms, send idle 0 recv idle 5496 comp time 4
+
+Received 35817920 bytes of merge data
+Received 66240 bytes of output data
+Received 928 bytes of input data
+Received 15916440 bytes of addr data
+
+Received 2423659 values in live set
+Output directs 3389 indirects 836 values 8235 quashed 3389 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 407920 simplified 138515 unchanged 3930805 of 4477240 merge values using live set
+Address tokens 503 passthrus 235 resolved 0, indirects 0 unmodified 268, merges 0
+no changes 1731461, zeros 1376070, inputs 245480, merges 4162, merge_zeros 68511, not live 295332
+Unique indirects 0
+Values rcvd 1006 sent 1006

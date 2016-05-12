@@ -1,0 +1,50 @@
+Start time:              1461993828.649511 ms
+Recv  time:              1461993948.749522 ms
+End   time:              1461993950.432207 ms
+Total time:              121783 ms
+Receive time:            120100 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:        888 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         17 ms
+Thru prune time:         121005 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1704948009 ms
+Send live set wait time:     17 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:    759 ms
+Finish time:                  0 ms
+Total prune pass 1 time:     22 ms longest thread 7 ms
+Total prune pass 2 time:      9 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3036 ms longest thread 759 ms, send idle 0 recv idle 3036 comp time 0
+
+Received 34872152 bytes of merge data
+Received 1311120 bytes of output data
+Received 736 bytes of input data
+Received 1810496 bytes of addr data
+
+Received 103405 values in live set
+Output directs 131756 indirects 32084 values 163840 quashed 131756 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3034350 simplified 1319417 unchanged 5252 of 4359019 merge values using live set
+Address tokens 0 passthrus 0 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 34390, zeros 140600, inputs 69110, merges 0, merge_zeros 3456, not live 13146
+Unique indirects 0
+Values rcvd 0 sent 0

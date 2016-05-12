@@ -1,0 +1,50 @@
+Start time:              1461625027.877658 ms
+Recv  time:              1461625033.706004 ms
+End   time:              1461625041.140874 ms
+Total time:               13264 ms
+Receive time:              5829 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:          13245 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   7409 ms
+Thru stream time:         13245 ms
+Send live set wait time:      0 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     16 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 6847, comp time 562
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 53 ms longest thread 15 ms, send idle 0 recv idle 21 comp time 32
+
+Received 791064 bytes of merge data
+Received 1418536 bytes of output data
+Received 25728 bytes of input data
+Received 173480 bytes of addr data
+
+Received 12248276 values in live set
+Output directs 166488 indirects 0 values 175992 quashed 7348 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 3711 simplified 13363 unchanged 81809 of 98883 merge values using live set
+Address tokens 644258 passthrus 635228 resolved 7858, indirects 0 unmodified 1172, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1288516 sent 1586416

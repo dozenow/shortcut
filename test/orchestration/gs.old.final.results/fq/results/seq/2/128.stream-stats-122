@@ -1,0 +1,50 @@
+Start time:              1461619380.919250 ms
+Recv  time:              1461619384.837152 ms
+End   time:              1461619387.582036 ms
+Total time:                6663 ms
+Receive time:              3918 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2607 ms
+Receive live set time:        0 ms
+Insert live set time:        11 ms
+Prune live set time:         11 ms
+Thru prune time:           6548 ms
+Make live set time:          13 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1330500279 ms
+Send live set wait time:      7 ms
+Output processing time:      28 ms
+Index wait time:              0 ms
+Address processing time:     65 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 13 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 13
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 81 ms longest thread 27 ms, send idle 0 recv idle 0 comp time 81
+Total address time 248 ms longest thread 64 ms, send idle 0 recv idle 225 comp time 23
+
+Received 2759192 bytes of merge data
+Received 117600 bytes of output data
+Received 0 bytes of input data
+Received 1975432 bytes of addr data
+
+Received 3299308 values in live set
+Output directs 8273 indirects 6084 values 14550 quashed 7868 merges 226954
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 125860 simplified 18638 unchanged 200401 of 344899 merge values using live set
+Address tokens 767 passthrus 273 resolved 0, indirects 494 unmodified 0, merges 85334
+no changes 3005946, zeros 132317, inputs 37053, merges 33248, merge_zeros 7803, not live 36508
+Unique indirects 0
+Values rcvd 1534 sent 317932

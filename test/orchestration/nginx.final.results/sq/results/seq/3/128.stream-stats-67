@@ -1,0 +1,50 @@
+Start time:              1461740107.416696 ms
+Recv  time:              1461740113.125801 ms
+End   time:              1461740115.960576 ms
+Total time:                8543 ms
+Receive time:              5710 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2714 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:           8424 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1451226776 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    117 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 468 ms longest thread 117 ms, send idle 0 recv idle 427 comp time 41
+
+Received 201352 bytes of merge data
+Received 1126080 bytes of output data
+Received 12512 bytes of input data
+Received 55456 bytes of addr data
+
+Received 49407 values in live set
+Output directs 111734 indirects 0 values 136850 quashed 92184 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 467 simplified 16823 unchanged 7879 of 25169 merge values using live set
+Address tokens 237860 passthrus 237820 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20437, zeros 3757, inputs 176, merges 43, merge_zeros 288, not live 2668
+Unique indirects 0
+Values rcvd 475720 sent 483540

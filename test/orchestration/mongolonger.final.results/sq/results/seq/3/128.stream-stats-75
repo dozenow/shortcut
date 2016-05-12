@@ -1,0 +1,50 @@
+Start time:              1462328292.295908 ms
+Recv  time:              1462328326.428948 ms
+End   time:              1462328334.352004 ms
+Total time:               42056 ms
+Receive time:             34133 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       1201 ms
+Receive live set time:        0 ms
+Insert live set time:        21 ms
+Prune live set time:          1 ms
+Thru prune time:          35356 ms
+Make live set time:          14 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -2039411655 ms
+Send live set wait time:     16 ms
+Output processing time:      14 ms
+Index wait time:              0 ms
+Address processing time:   6653 ms
+Finish time:                  1 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 56 ms longest thread 14 ms, send idle 0 recv idle 0 comp time 56
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 32 ms longest thread 13 ms, send idle 0 recv idle 0 comp time 32
+Total address time 26612 ms longest thread 6653 ms, send idle 0 recv idle 25139 comp time 1473
+
+Received 2240120 bytes of merge data
+Received 4545648 bytes of output data
+Received 55360 bytes of input data
+Received 606896 bytes of addr data
+
+Received 12024370 values in live set
+Output directs 530410 indirects 4 values 563916 quashed 8440 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 33690 simplified 14593 unchanged 231732 of 280015 merge values using live set
+Address tokens 15792147 passthrus 15663938 resolved 127684, indirects 0 unmodified 525, merges 0
+no changes 11865411, zeros 25750, inputs 46993, merges 111, merge_zeros 258, not live 2750
+Unique indirects 0
+Values rcvd 31584294 sent 32321708

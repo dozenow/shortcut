@@ -1,0 +1,50 @@
+Start time:              1461724397.606757 ms
+Recv  time:              1461724451.611115 ms
+End   time:              1461724459.176781 ms
+Total time:               61571 ms
+Receive time:             54004 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:        317 ms
+Thru prune time:          54322 ms
+Make live set time:          41 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1435516966 ms
+Send live set wait time:      0 ms
+Output processing time:      87 ms
+Index wait time:              0 ms
+Address processing time:   7118 ms
+Finish time:                  0 ms
+Total prune pass 1 time:    401 ms longest thread 131 ms
+Total prune pass 2 time:    186 ms
+
+Total live set make time 140 ms longest thread 41 ms, send idle 0 recv idle 0 comp time 140
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 348 ms longest thread 87 ms, send idle 0 recv idle 0 comp time 348
+Total address time 28468 ms longest thread 7117 ms, send idle 0 recv idle 28468 comp time 0
+
+Received 624351600 bytes of merge data
+Received 145896520 bytes of output data
+Received 0 bytes of input data
+Received 231327256 bytes of addr data
+
+Received 17676 values in live set
+Output directs 8990929 indirects 9122977 values 18235615 quashed 8990838 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 78042158 simplified 1779 unchanged 13 of 78043950 merge values using live set
+Address tokens 1259 passthrus 1186 resolved 0, indirects 0 unmodified 73, merges 0
+no changes 17412, zeros 21943506, inputs 153, merges 4, merge_zeros 164276, not live 6807968
+Unique indirects 0
+Values rcvd 2518 sent 2700

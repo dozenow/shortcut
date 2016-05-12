@@ -1,0 +1,50 @@
+Start time:              1461682358.201236 ms
+Recv  time:              1461682376.162394 ms
+End   time:              1461682389.744301 ms
+Total time:               31543 ms
+Receive time:             17962 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      13056 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          0 ms
+Thru prune time:          31019 ms
+Make live set time:           1 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1393477561 ms
+Send live set wait time:      0 ms
+Output processing time:      32 ms
+Index wait time:              0 ms
+Address processing time:    489 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 2 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 2
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 128 ms longest thread 32 ms, send idle 0 recv idle 0 comp time 128
+Total address time 1953 ms longest thread 489 ms, send idle 0 recv idle 1948 comp time 5
+
+Received 510648 bytes of merge data
+Received 63198504 bytes of output data
+Received 32 bytes of input data
+Received 1017344 bytes of addr data
+
+Received 676499 values in live set
+Output directs 7898530 indirects 138 values 7899248 quashed 7898192 merges 7120
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 61888 simplified 1508 unchanged 435 of 63831 merge values using live set
+Address tokens 9035 passthrus 7845 resolved 0, indirects 1155 unmodified 35, merges 6803
+no changes 661201, zeros 68051, inputs 7296, merges 171, merge_zeros 4965, not live 46685
+Unique indirects 0
+Values rcvd 18070 sent 22192

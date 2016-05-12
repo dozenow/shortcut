@@ -1,0 +1,50 @@
+Start time:              1461741041.623715 ms
+Recv  time:              1461741052.717620 ms
+End   time:              1461741055.473415 ms
+Total time:               13850 ms
+Receive time:             11093 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       2664 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          13760 ms
+Make live set time:           0 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1452160983 ms
+Send live set wait time:      0 ms
+Output processing time:       7 ms
+Index wait time:              0 ms
+Address processing time:     71 ms
+Finish time:                 12 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 24 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 24
+Total address time 278 ms longest thread 70 ms, send idle 0 recv idle 177 comp time 101
+
+Received 2047512 bytes of merge data
+Received 11669760 bytes of output data
+Received 129664 bytes of input data
+Received 61672 bytes of addr data
+
+Received 49408 values in live set
+Output directs 1060781 indirects 0 values 1418200 quashed 858181 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 594 simplified 174246 unchanged 81099 of 255939 merge values using live set
+Address tokens 552070 passthrus 552030 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 20405, zeros 4191, inputs 204, merges 43, merge_zeros 288, not live 2983
+Unique indirects 0
+Values rcvd 1104140 sent 1185180

@@ -1,0 +1,3 @@
+start_delay,pin_time,dift_time,preprune_local_time,Forward Pass Time,Backward Pass time
+0,4152,5984.44139834,83964.5586017,65,8,9574
+1,2234,1420.94343407,99793.0565659,90,0,246

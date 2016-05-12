@@ -1,0 +1,50 @@
+Start time:              1462044615.102676 ms
+Recv  time:              1462044735.202689 ms
+End   time:              1462044739.988491 ms
+Total time:              124885 ms
+Receive time:            120100 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:       4311 ms
+Receive live set time:        0 ms
+Insert live set time:         1 ms
+Prune live set time:          6 ms
+Thru prune time:         124420 ms
+Make live set time:           4 ms
+Make rindex merge time:       0 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      0 ms
+Thru stream time:        -1755734462 ms
+Send live set wait time:    419 ms
+Output processing time:       1 ms
+Index wait time:              0 ms
+Address processing time:     39 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      7 ms longest thread 2 ms
+Total prune pass 2 time:      3 ms
+
+Total live set make time 6 ms longest thread 4 ms, send idle 0 recv idle 0 comp time 6
+Total rlive set send idle 0, recv idle 0, comp time 0
+Total output time 4 ms longest thread 1 ms, send idle 0 recv idle 0 comp time 4
+Total address time 156 ms longest thread 39 ms, send idle 0 recv idle 156 comp time 0
+
+Received 12696072 bytes of merge data
+Received 1749096 bytes of output data
+Received 0 bytes of input data
+Received 5083592 bytes of addr data
+
+Received 676406 values in live set
+Output directs 16958 indirects 192133 values 218592 quashed 16752 merges 562
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1585955 simplified 738 unchanged 316 of 1587009 merge values using live set
+Address tokens 1220 passthrus 1101 resolved 0, indirects 112 unmodified 7, merges 1279
+no changes 648812, zeros 59952, inputs 800, merges 87, merge_zeros 541518, not live 33092
+Unique indirects 0
+Values rcvd 2440 sent 3814

@@ -1,0 +1,50 @@
+Start time:              1461771507.372930 ms
+Recv  time:              1461771528.686885 ms
+End   time:              1461771539.332133 ms
+Total time:               31960 ms
+Receive time:             21313 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          31203 ms
+Make live set time:           0 ms
+Make rindex merge time:      12 ms
+Make rindex addr time:       25 ms
+Make rindex stream time:   9851 ms
+Thru stream time:         31202 ms
+Send live set wait time:      4 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    752 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 9791, comp time 60
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3008 ms longest thread 752 ms, send idle 0 recv idle 2863 comp time 145
+
+Received 1293416 bytes of merge data
+Received 309416 bytes of output data
+Received 1920 bytes of input data
+Received 70356040 bytes of addr data
+
+Received 1035660 values in live set
+Output directs 407 indirects 55 values 38572 quashed 334 merges 32
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 135062 simplified 15635 unchanged 10980 of 161677 merge values using live set
+Address tokens 96041 passthrus 87548 resolved 0, indirects 8463 unmodified 30, merges 58273
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 192082 sent 209740

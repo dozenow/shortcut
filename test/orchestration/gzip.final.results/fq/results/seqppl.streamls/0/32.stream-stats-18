@@ -1,0 +1,51 @@
+Start time:              1461520349.163132 ms
+Recv  time:              1461520355.242362 ms
+End   time:              1461520357.033055 ms
+Total time:                7870 ms
+Receive time:              6079 ms
+Preprune local time:        123 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         41 ms
+Thru prune time:           7852 ms
+Make live set time:           0 ms
+Make rindex merge time:     134 ms
+Make rindex addr time:        1 ms
+Make rindex stream time:   1472 ms
+Thru stream time:          7811 ms
+Send live set wait time:      0 ms
+Output processing time:       9 ms
+Index wait time:              0 ms
+Address processing time:      8 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 1454, comp time 18
+Total output time 32 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 32
+Total address time 17 ms longest thread 8 ms, send idle 0 recv idle 15 comp time 2
+
+Received 57677472 bytes of merge data
+Received 12193416 bytes of output data
+Received 1760 bytes of input data
+Received 2097376 bytes of addr data
+
+Received 106011 values in live set
+Output directs 1496810 indirects 26902 values 1523712 quashed 1046355 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 7209684 simplified 0 unchanged 0 of 7209684 merge values using live set
+Address tokens 8524 passthrus 0 resolved 8524, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 17048 sent 0
+Local preprune reduced merge data size from 83510992 to 57677472 (30.934%)

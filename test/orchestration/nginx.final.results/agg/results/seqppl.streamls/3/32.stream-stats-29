@@ -1,0 +1,51 @@
+Start time:              1462004095.056033 ms
+Recv  time:              1462004215.156152 ms
+End   time:              1462004215.195856 ms
+Total time:              120139 ms
+Receive time:            120100 ms
+Preprune local time:          8 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          0 ms
+Thru prune time:         120121 ms
+Make live set time:           0 ms
+Make rindex merge time:       5 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:      7 ms
+Thru stream time:        120121 ms
+Send live set wait time:      0 ms
+Output processing time:       5 ms
+Index wait time:              0 ms
+Address processing time:      0 ms
+Finish time:                 11 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 0, comp time 7
+Total output time 9 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 9
+Total address time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+
+Received 608 bytes of merge data
+Received 11476800 bytes of output data
+Received 127520 bytes of input data
+Received 61672 bytes of addr data
+
+Received 49408 values in live set
+Output directs 1036343 indirects 0 values 1394750 quashed 837093 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 33 simplified 24 unchanged 19 of 76 merge values using live set
+Address tokens 54910 passthrus 54870 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 109820 sent 189520
+Local preprune reduced merge data size from 2013272 to 608 (99.970%)

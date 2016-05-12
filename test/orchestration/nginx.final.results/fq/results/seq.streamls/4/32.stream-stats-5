@@ -1,0 +1,50 @@
+Start time:              1461886989.876315 ms
+Recv  time:              1461886998.804943 ms
+End   time:              1461887003.143713 ms
+Total time:               13268 ms
+Receive time:              8929 ms
+Preprune local time:          0 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          1 ms
+Thru prune time:          11028 ms
+Make live set time:           0 ms
+Make rindex merge time:       7 ms
+Make rindex addr time:        0 ms
+Make rindex stream time:   2091 ms
+Thru stream time:         11027 ms
+Send live set wait time:   1257 ms
+Output processing time:       6 ms
+Index wait time:              0 ms
+Address processing time:    963 ms
+Finish time:                 10 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 2086, comp time 5
+Total output time 21 ms longest thread 6 ms, send idle 0 recv idle 0 comp time 21
+Total address time 3852 ms longest thread 963 ms, send idle 0 recv idle 3735 comp time 117
+
+Received 1791480 bytes of merge data
+Received 10209600 bytes of output data
+Received 113440 bytes of input data
+Received 60784 bytes of addr data
+
+Received 49376 values in live set
+Output directs 922697 indirects 0 values 1240750 quashed 745447 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 530 simplified 152445 unchanged 70960 of 223935 merge values using live set
+Address tokens 792420 passthrus 792380 resolved 40, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1584840 sent 1655740

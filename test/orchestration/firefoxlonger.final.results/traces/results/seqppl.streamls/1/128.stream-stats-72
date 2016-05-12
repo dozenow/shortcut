@@ -1,0 +1,51 @@
+Start time:              1462119249.420999 ms
+Recv  time:              1462119373.067816 ms
+End   time:              1462119405.017320 ms
+Total time:              155597 ms
+Receive time:            123647 ms
+Preprune local time:        110 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          8 ms
+Thru prune time:         144098 ms
+Make live set time:           0 ms
+Make rindex merge time:      49 ms
+Make rindex addr time:       64 ms
+Make rindex stream time:  20218 ms
+Thru stream time:        144089 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:  11498 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 20157, comp time 61
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 45992 ms longest thread 11498 ms, send idle 0 recv idle 45992 comp time 0
+
+Received 12295360 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 93094952 bytes of addr data
+
+Received 718392 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1484979 simplified 51941 unchanged 0 of 1536920 merge values using live set
+Address tokens 404 passthrus 388 resolved 0, indirects 0 unmodified 16, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Local preprune reduced merge data size from 61648088 to 12295360 (80.056%)
