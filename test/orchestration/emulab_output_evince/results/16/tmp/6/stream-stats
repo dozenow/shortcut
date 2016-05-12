@@ -1,0 +1,30 @@
+Total time:               71449 ms
+Receive time:             46904 ms
+Receive live set time:    16630 ms
+Prune live set time:         42 ms
+Make live set time:         103 ms
+Send live set wait time:      2 ms
+Output processing time:     210 ms
+Index wait time:              0 ms
+Address processing time:   7553 ms
+Finish time:                  2 ms
+Total prune pass 1 time:     80 ms longest thread 37 ms
+Total prune pass 2 time:     12 ms
+
+Total live set make time 239 ms longest thread 100 ms, send idle 0 recv idle 16525 comp time -16286
+Total output time 344 ms longest thread 210 ms, send idle 0 recv idle 0 comp time 344
+Total address time 30152 ms longest thread 7553 ms, send idle 0 recv idle 28641 comp time 1511
+
+Received 16304248 bytes of merge data
+Received 4065736 bytes of output data
+Received 7392 bytes of input data
+Received 286512616 bytes of addr data
+
+Received 504769 values in live set
+Output directs 70261 indirects 220037 values 506562 quashed 59903 merges 6654
+Prune lookups 0 indirects 0
+Pruned 1919516 simplified 68728 unchanged 49787 of 2038031 merge values using live set
+Address tokens 62002 passthrus 53020 resolved 207, indirects 8765 unmodified 10, merges 3469158
+no changes 472548, zeros 35503352, inputs 69213, merges 61886, merge_zeros 53194, not live 126432
+Unique indirects 0
+Values rcvd 124004 sent 194202

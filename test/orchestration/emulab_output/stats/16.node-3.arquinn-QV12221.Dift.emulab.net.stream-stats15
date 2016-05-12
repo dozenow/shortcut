@@ -1,0 +1,20 @@
+Total time:               25166 ms
+Receive time:             10079 ms
+Receive live set time:    12720 ms
+Receive live snd idle:        0 ms
+Receive live rcv idle:    12366 ms
+Prune live set time:         44 ms
+Output processing time:    2322 ms
+Output proc. send idle:       0 ms
+Output proc. recv idle:       0 ms
+Finish time:                  0 ms
+
+Received 22132440 bytes of merge data
+Received 1227048 bytes of output data
+Received 2816 bytes of input data
+Received 0 bytes of addr data
+
+Received 3268431 values in live set
+Output directs 121069 indirects 14676 values 152511 quashed 21315 merges 8293825
+Unique indirects 0
+Values rcvd 0 sent 14572094

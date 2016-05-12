@@ -1,0 +1,10 @@
+start at 1451931256.718023
+Instructions instrumented: 71395
+DIFT began at 1451931256.753382
+DIFT ended at 1451931262.808016
+Taint statistics:
+Second tables allocated: 176
+Third tables allocated:  24855
+Num taint options:       0
+Num merges:              600840
+Num merges saved:        1467

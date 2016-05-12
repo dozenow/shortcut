@@ -1,0 +1,15 @@
+Total time:               82573 ms
+Receive time:             77998 ms
+Output processing time:    4575 ms
+Output proc. send idle:       0 ms
+Output proc. recv idle:       0 ms
+Finish time:                  0 ms
+
+Received 223789776 bytes of merge data
+Received 1408792 bytes of output data
+Received 23200 bytes of input data
+Received 0 bytes of addr data
+
+Output directs 100390 indirects 3230 values 175009 quashed 0 merges 15601648
+Unique indirects 0
+Values rcvd 0 sent 0
