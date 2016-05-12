@@ -1,0 +1,42 @@
+Total time:               46718 ms
+Receive time:             30475 ms
+Preprune local time:        229 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:      15827 ms
+Receive live set time:        0 ms
+Insert live set time:         2 ms
+Prune live set time:          0 ms
+Make live set time:           8 ms
+Send live set wait time:      4 ms
+Output processing time:       9 ms
+Index wait time:              0 ms
+Address processing time:    162 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 24 ms longest thread 8 ms, send idle 0 recv idle 0 comp time 24
+Total output time 18 ms longest thread 5 ms, send idle 0 recv idle 0 comp time 18
+Total address time 648 ms longest thread 162 ms, send idle 0 recv idle 580 comp time 68
+
+Received 57744 bytes of merge data
+Received 6853880 bytes of output data
+Received 288 bytes of input data
+Received 25186648 bytes of addr data
+
+Received 544095 values in live set
+Output directs 697282 indirects 5152 values 856635 quashed 415665 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 7168 simplified 6 unchanged 44 of 7218 merge values using live set
+Address tokens 155491 passthrus 155491 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 435372, zeros 132131, inputs 593, merges 29, merge_zeros 14414, not live 3001164
+Unique indirects 0
+Values rcvd 310982 sent 311050
+Local preprune reduced merge data size from 455369376 to 57744 (99.987%)

@@ -1,0 +1,14 @@
+Retaint execution time: -1461856896.000 seconds
+Instructions instrumented: 2619839
+Traces instrumented: 386135
+Traces executed: 0
+Instrument time: 8050813 us
+DIFT began at 1461856930.813381
+DIFT ended at 1461857250.663420
+Retaint execution time: 316.116 seconds
+Taint statistics:
+Second tables allocated: 983795
+Third tables allocated:  0
+Num taint options:       0
+Num merges:              150981885
+Num merges saved:        241751382
