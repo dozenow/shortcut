@@ -28,3 +28,6 @@ Epoch Instrumented
   Max        77207
 Total        95540
  Core        47770
+
+Epoch perPruned perSimppl
+ Core     0.000000     0.000000

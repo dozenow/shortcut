@@ -1,9 +1,11 @@
 Instructions instrumented: 40439
 Traces instrumented: 5367
 Traces executed: 0
-Instrument time: 121114 us
-DIFT began at 1462315845.639438
-DIFT ended at 1462315853.162870
+collisions: 0 us
+has_flushes: 0 us
+Instrument time: 132764 us
+DIFT began at 1470151917.901167
+DIFT ended at 1470151924.882531
 Taint statistics:
 Second tables allocated: 4288
 Third tables allocated:  0

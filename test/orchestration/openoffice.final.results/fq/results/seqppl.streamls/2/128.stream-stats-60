@@ -1,0 +1,53 @@
+Start time:              1473462955.731779 ms
+Recv  time:              1473462981.363664 ms
+End   time:              1473462993.408615 ms
+Total time:               37677 ms
+Receive time:             25632 ms
+Preprune local time:         33 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:          5 ms
+Thru prune time:          34942 ms
+Make live set time:           0 ms
+Make rindex merge time:      38 ms
+Make rindex addr time:        5 ms
+Make rindex stream time:   9225 ms
+Thru stream time:         34936 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:   2735 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 9202, comp time 23
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 10934 ms longest thread 2735 ms, send idle 0 recv idle 10934 comp time 0
+
+Received 15035576 bytes of merge data
+Received 2320840 bytes of output data
+Received 0 bytes of input data
+Received 8539280 bytes of addr data
+
+Received 287678 values in live set
+Output directs 193499 indirects 54781 values 289920 quashed 193499 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 1879393 simplified 54 unchanged 0 of 1879447 merge values using live set
+Address tokens 983 passthrus 983 resolved 0, indirects 0 unmodified 0, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 1966 sent 1966
+Cache hits 0
+skips 0
+Local preprune reduced merge data size from 24956160 to 15035576 (39.752%)

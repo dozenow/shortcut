@@ -84,3 +84,6 @@ Epoch Instrumented
   Max        77164
 Total       340680
  Core        21292
+
+Epoch perPruned perSimppl
+ Core     0.393581     0.675387

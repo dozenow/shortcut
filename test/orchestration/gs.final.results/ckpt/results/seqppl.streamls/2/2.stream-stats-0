@@ -1,9 +1,9 @@
-Start time:              1462867745.814006 ms
-Recv  time:              1462867785.533370 ms
-End   time:              1462867790.029157 ms
-Total time:               44216 ms
-Receive time:             39720 ms
-Preprune local time:         63 ms
+Start time:              1473457397.580481 ms
+Recv  time:              1473457434.295696 ms
+End   time:              1473457441.394384 ms
+Total time:               43814 ms
+Receive time:             36716 ms
+Preprune local time:         64 ms
 Preprune global time:         0 ms
 Preprune g output time:       0 ms
 Preprune g address time:      0 ms
@@ -13,24 +13,24 @@ Receive fb set time:          0 ms
 Receive live set time:        0 ms
 Insert live set time:         0 ms
 Prune live set time:          0 ms
-Thru prune time:         1716102122 ms
+Thru prune time:         -283615052 ms
 Make live set time:           0 ms
 Make rindex merge time:      13 ms
-Make rindex addr time:       13 ms
+Make rindex addr time:       14 ms
 Make rindex stream time:      2 ms
-Thru stream time:         39814 ms
-Send live set wait time:    339 ms
+Thru stream time:         36810 ms
+Send live set wait time:   2963 ms
 Output processing time:       3 ms
-Index wait time:            255 ms
-Address processing time:   3805 ms
+Index wait time:            257 ms
+Address processing time:   3772 ms
 Finish time:                  0 ms
 Total prune pass 1 time:      0 ms longest thread 0 ms
 Total prune pass 2 time:      0 ms
 
 Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
 Total rlive set send idle 0, recv idle 0, comp time 2
-Total output time 4 ms longest thread 2 ms, send idle 0 recv idle 0 comp time 4
-Total address time 7610 ms longest thread 3805 ms, send idle 0 recv idle 7608 comp time 2
+Total output time 6 ms longest thread 3 ms, send idle 0 recv idle 0 comp time 6
+Total address time 7542 ms longest thread 3771 ms, send idle 0 recv idle 7540 comp time 2
 
 Received 11185600 bytes of merge data
 Received 76016 bytes of output data

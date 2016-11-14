@@ -1,0 +1,53 @@
+Start time:              1472093394.727554 ms
+Recv  time:              1472093567.007740 ms
+End   time:              1472093571.127860 ms
+Total time:              176401 ms
+Receive time:            172281 ms
+Preprune local time:        529 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         45 ms
+Thru prune time:         176372 ms
+Make live set time:           0 ms
+Make rindex merge time:     208 ms
+Make rindex addr time:      206 ms
+Make rindex stream time:   3103 ms
+Thru stream time:        176327 ms
+Send live set wait time:      0 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:     28 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 3042, comp time 61
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 112 ms longest thread 28 ms, send idle 0 recv idle 112 comp time 0
+
+Received 62171840 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 403508312 bytes of addr data
+
+Received 725359 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 7367918 simplified 401605 unchanged 1957 of 7771480 merge values using live set
+Address tokens 404 passthrus 388 resolved 0, indirects 0 unmodified 16, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Cache hits 0
+skips 0
+Local preprune reduced merge data size from 322946456 to 62171840 (80.749%)
