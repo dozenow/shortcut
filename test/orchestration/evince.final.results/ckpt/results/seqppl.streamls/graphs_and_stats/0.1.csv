@@ -1,2 +1,2 @@
-start_delay,pin_time,dift_time,preprune_local_time,Forward Pass Time,Backward Pass time
-0,24,77456.376904,186912.623096,0,0,498
+start_delay,pin_time,dift_time,preprune_local_time,Forward Pass Time,prune_live_set_time,Backward Pass time
+0,24,77456.376904,186912.623096,0,0,0,498

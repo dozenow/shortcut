@@ -1,8 +1,8 @@
-Start time:              1462315875.963453 ms
-Recv  time:              1462315891.313585 ms
-End   time:              1462315919.914098 ms
-Total time:               43951 ms
-Receive time:             15351 ms
+Start time:              1470151822.133006 ms
+Recv  time:              1470151831.824131 ms
+End   time:              1470151856.820471 ms
+Total time:               34687 ms
+Receive time:              9691 ms
 Preprune local time:         14 ms
 Preprune global time:         0 ms
 Preprune g output time:       0 ms
@@ -13,24 +13,24 @@ Receive fb set time:          0 ms
 Receive live set time:        0 ms
 Insert live set time:         0 ms
 Prune live set time:          0 ms
-Thru prune time:          26795 ms
+Thru prune time:          25062 ms
 Make live set time:           0 ms
 Make rindex merge time:       5 ms
-Make rindex addr time:       22 ms
-Make rindex stream time:  11401 ms
-Thru stream time:         26795 ms
+Make rindex addr time:       14 ms
+Make rindex stream time:  15337 ms
+Thru stream time:         25062 ms
 Send live set wait time:      0 ms
-Output processing time:      10 ms
+Output processing time:       9 ms
 Index wait time:              0 ms
-Address processing time:  17142 ms
+Address processing time:   9611 ms
 Finish time:                  3 ms
 Total prune pass 1 time:      0 ms longest thread 0 ms
 Total prune pass 2 time:      0 ms
 
 Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
-Total rlive set send idle 0, recv idle 11182, comp time 219
+Total rlive set send idle 0, recv idle 15121, comp time 216
 Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
-Total address time 68559 ms longest thread 17142 ms, send idle 0 recv idle 64731 comp time 3828
+Total address time 38435 ms longest thread 9611 ms, send idle 0 recv idle 34146 comp time 4289
 
 Received 2144 bytes of merge data
 Received 1053592 bytes of output data
@@ -48,4 +48,6 @@ Address tokens 31180654 passthrus 20614782 resolved 10565872, indirects 0 unmodi
 no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
 Unique indirects 0
 Values rcvd 62361308 sent 41229572
+Cache hits 0
+skips 0
 Local preprune reduced merge data size from 6843520 to 2144 (99.969%)

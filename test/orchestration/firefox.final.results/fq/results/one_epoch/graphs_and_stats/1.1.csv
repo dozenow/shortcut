@@ -1,2 +1,0 @@
-start_delay,pin_time,dift_time,preprune_local_time,receive_fb_set_time,receive_live_set_time,insert_live_set_time,prune_live_set_time,make_live_set_time,send_live_set_wait_time,output_processing_time,index_wait_time,address_processing_time,finish_time
-25,202659.848203,91615.1517973,0,0,0,0,0,0,0,10123,0,0,21

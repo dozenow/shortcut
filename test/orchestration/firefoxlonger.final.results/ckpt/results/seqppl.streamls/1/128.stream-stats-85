@@ -1,0 +1,53 @@
+Start time:              1472043490.801405 ms
+Recv  time:              1472043575.954334 ms
+End   time:              1472043585.182120 ms
+Total time:               94381 ms
+Receive time:             85152 ms
+Preprune local time:        160 ms
+Preprune global time:         0 ms
+Preprune g output time:       0 ms
+Preprune g address time:      0 ms
+Preprune g send time:         0 ms
+Preprune g resize time:       0 ms
+Receive fb set time:          0 ms
+Receive live set time:        0 ms
+Insert live set time:         0 ms
+Prune live set time:         13 ms
+Thru prune time:          93478 ms
+Make live set time:           0 ms
+Make rindex merge time:      58 ms
+Make rindex addr time:       64 ms
+Make rindex stream time:   8027 ms
+Thru stream time:         93464 ms
+Send live set wait time:      5 ms
+Output processing time:       0 ms
+Index wait time:              0 ms
+Address processing time:    899 ms
+Finish time:                  0 ms
+Total prune pass 1 time:      0 ms longest thread 0 ms
+Total prune pass 2 time:      0 ms
+
+Total live set make time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total rlive set send idle 0, recv idle 7982, comp time 45
+Total output time 0 ms longest thread 0 ms, send idle 0 recv idle 0 comp time 0
+Total address time 3596 ms longest thread 899 ms, send idle 0 recv idle 3596 comp time 0
+
+Received 16914080 bytes of merge data
+Received 0 bytes of output data
+Received 0 bytes of input data
+Received 111865928 bytes of addr data
+
+Received 719295 values in live set
+Output directs 0 indirects 0 values 0 quashed 0 merges 0
+Prune lookup 0
+FP Prune lookups 0, Most 0
+FP Prune Cnt 0, Most 0
+FP Simplify Cnt 0, Most 0
+Pruned 2040287 simplified 73973 unchanged 0 of 2114260 merge values using live set
+Address tokens 404 passthrus 396 resolved 0, indirects 0 unmodified 8, merges 0
+no changes 0, zeros 0, inputs 0, merges 0, merge_zeros 0, not live 0
+Unique indirects 0
+Values rcvd 808 sent 808
+Cache hits 0
+skips 0
+Local preprune reduced merge data size from 97549848 to 16914080 (82.661%)
