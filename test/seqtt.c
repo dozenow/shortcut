@@ -86,11 +86,14 @@ int main (int argc, char* argv[])
 	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     } 
+    printf ("resume called.\n");
     
     do {
 	// Wait until we can attach pin
 	rc = get_attach_status (fd, cpid);
     } while (rc <= 0);
+
+    printf ("start to attach pin.\n");
     
     gettimeofday (&tv_attach, NULL);
 
@@ -123,14 +126,16 @@ int main (int argc, char* argv[])
 	    args[argcnt++] = stop_at;
 	}
 	args[argcnt++] = NULL;
-	rc = execv ("../../../pin/pin", (char **) args);
+	rc = execv ("../../pin/pin", (char **) args);
 	fprintf (stderr, "execv of pin tool failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     }
 
     // Wait for cpid to complete
+    printf ("waiting for finishing, fd %d, cpid %ld\n", fd,cpid);
 
     rc = wait_for_replay_group(fd, cpid);
+    printf ("waitpid starts.\n");
     rc = waitpid (cpid, &status, 0);
     if (rc < 0) {
 	fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
