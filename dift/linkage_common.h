@@ -15,6 +15,23 @@
 #define NUM_REGS 120
 #define REG_SIZE 16
 
+// flag register (status) 
+#define NUM_FLAGS 6
+
+#define CF_FLAG 0
+#define PF_FLAG 1
+#define AF_FLAG 2
+#define ZF_FLAG 3
+#define SF_FLAG 4
+#define OF_FLAG 5
+
+#define CF_MASK 0x01
+#define PF_MASK 0x02
+#define AF_MASK 0x04
+#define ZF_MASK 0x08
+#define SF_MASK 0x10
+#define OF_MASK 0x20
+
 #define OPEN_PATH_LEN 256
 struct open_info {
     char name[OPEN_PATH_LEN];
@@ -119,6 +136,7 @@ struct thread_data {
     int socketcall;
     int syscall_handled;            // flag to indicate if a syscall is handled at the glibc wrapper instead
     taint_t shadow_reg_table[NUM_REGS * REG_SIZE];
+    taint_t shadow_flag_table[NUM_FLAGS];
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;

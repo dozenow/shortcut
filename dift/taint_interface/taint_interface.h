@@ -93,6 +93,8 @@ TAINTSIGN taint_wmem2dwreg (u_long mem_loc, int reg);
 TAINTSIGN taint_wmem2qwreg (u_long mem_loc, int reg);
 
 TAINTSIGN taint_dwmem2qwreg (u_long mem_loc, int reg);
+TAINTSIGN taint_flag_reg (uint32_t mask);
+TAINTSIGN taint_jump (uint32_t mask); 
 
 // mem2reg extend
 TAINTSIGN taintx_bmem2hwreg (u_long mem_loc, int reg);

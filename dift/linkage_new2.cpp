@@ -43,6 +43,27 @@ using namespace std;
 #define PIN_ATTACH_BLOCKED 2
 #define PIN_ATTACH_REDO    4
 
+#define SYSNUM                      (ptdata->sysnum)
+#define CURRENT_BBL                 (ptdata->current_bbl)
+#define CALLING_BBLOCK_HEAD         (ptdata->calling_bblock_head)
+#define CALLING_BBLOCK_SIZE         (ptdata->calling_bblock_size)
+#define CTRFLOW_TAINT_STACK         (ptdata->ctrflow_taint_stack)
+#define CTRFLOW_TAINT_STACK_SIZE    (ptdata->ctrflow_taint_stack_size)
+#define CKPTS                       (ptdata->ckpts)
+#define ALLOC_CKPTS                 (ptdata->alloc_ckpts)
+#define NUM_CKPTS                   (ptdata->num_ckpts)
+#define TOTAL_NUM_CKPTS             (ptdata->total_num_ckpts)
+#define HANDLED_FUNC_HEAD           (ptdata->handled_func_head)
+#define MERGE_ON_NEXT_RET           (ptdata->merge_on_next_ret)
+#define NUM_INSTS                   (ptdata->num_insts)
+#define BBL_OVER                    (ptdata->bbl_over)
+#define BBLOCK_DIFFERENCE_MATCHED   (ptdata->bblock_difference_matched)
+#define SAVED_REG_TAINTS            (ptdata->saved_reg_taints)
+#define SAVED_FLAG_TAINTS           (ptdata->saved_flag_taints)
+#define SELECT_TAINT                (ptdata->select_taint)
+
+
+
 
 u_int redo_syscall = 0;
 
@@ -59,7 +80,8 @@ int s = -1;
 // #define LINKAGE_SYSCALL              // system call & libc function abstraction
 // #define LINKAGE_CODE
 #define LINKAGE_FDTRACK
-// #define CTRL_FLOW                    // direct control flow
+// #define CTRL_FLOW_OLD                    // direct control flow (old def in dift);
+#define CTRL_FLOW                    // direct control flow (xdou)
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
@@ -67,7 +89,7 @@ int s = -1;
 //used in order to trace instructions! 
 //#define TRACE_INST
 
-//#define LOGGING_ON
+#define LOGGING_ON
 #define LOG_F log_f
 //#define ERROR_PRINT fprintf
 #define ERROR_PRINT(x,...);
@@ -77,14 +99,13 @@ int s = -1;
     fprintf(LOG_F, args);   \
     fflush(LOG_F);          \
 }
-/*
+
 #define INSTRUMENT_PRINT(args...) \
 {                                   \
     fprintf(args);                  \
     fflush(log_f);                  \
 }
-*/
- #define INSTRUMENT_PRINT(x,...);
+// #define INSTRUMENT_PRINT(x,...);
  #define PRINTX fprintf
  #define SYSCALL_DEBUG fprintf
 #else
@@ -919,7 +940,7 @@ static inline void sys_write_stop(int rc)
 	    tci.offset = 0;
 	    tci.fileno = channel_fileno;
 	    
-	    LOG_PRINT ("Output buffer result syscall %ld, %#lx\n", tci.syscall_cnt, (u_long) wi->buf);
+	    LOG_PRINT ("Output buffer result syscall %u, %#lx\n", tci.syscall_cnt, (u_long) wi->buf);
 	    if (produce_output) { 
 		output_buffer_result (wi->buf, rc, &tci, outfd);
 	    }
@@ -13961,6 +13982,59 @@ void instrument_pmovmskb(INS ins)
 #endif
 }
 
+inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t mask) {
+	INSTRUMENT_PRINT (log_f, "instrument_taint_flag_reg: mask %u\n", mask);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_flag_reg),
+			IARG_UINT32, dst_reg,
+			IARG_UINT32, src_reg,
+			IARG_UINT32, mask, 
+			IARG_END);
+}
+
+void instrument_test(INS ins)
+{
+    int op1mem, op1reg, op2reg, op2imm;
+    string instruction;
+    REG reg;
+
+    op1mem = INS_OperandIsMemory(ins, 0);
+    op1reg = INS_OperandIsReg(ins, 0);
+    op2reg = INS_OperandIsReg(ins, 1);
+    op2imm = INS_OperandIsImmediate(ins, 1);
+    if((op1mem && op2reg)) {
+	    ERROR_PRINT ("TEST: TODO.\n");
+    } else if(op1reg && op2reg) {
+        REG dstreg;
+        dstreg = INS_OperandReg(ins, 0);
+        reg = INS_OperandReg(ins, 1);
+        INSTRUMENT_PRINT(log_f, "instrument_test: op1 and op2 of are registers %d(%s), %d(%s)\n", 
+                dstreg, REG_StringShort(dstreg).c_str(), reg, REG_StringShort(reg).c_str());
+	//INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
+        if(!REG_valid(dstreg) || !REG_valid(reg)) {
+            return;
+        } 
+	instrument_taint_reg2reg (ins, dstreg, reg, 1);
+	//taint flag register
+	instrument_taint_reg2flag (ins, dstreg, reg, SF_MASK|ZF_MASK|PF_MASK);
+    } else if(op1mem && op2imm) {
+	    ERROR_PRINT ("TEST: TODO.\n");
+    }else if(op1reg && op2imm){
+	    ERROR_PRINT ("TEST: TODO.\n");
+    }else{
+        //if the arithmatic involves an immediate instruction the taint does
+        //not propagate...
+        string instruction;
+        instruction = INS_Disassemble(ins);
+        printf("unknown combination of CMP ins: %s\n", instruction.c_str());
+    }
+}
+
+void instrument_jump (INS ins, uint32_t mask) {
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
+			IARG_UINT32, mask, 
+			IARG_END);
+}
+
 #ifdef TAINT_DEBUG
 void trace_inst(ADDRINT ptr)
 {
@@ -14074,7 +14148,6 @@ void instruction_instrumentation(INS ins, void *v)
         case XED_ICLASS_JP:
         case XED_ICLASS_JNS:
         case XED_ICLASS_JS:
-        case XED_ICLASS_JNZ:
         case XED_ICLASS_JZ:
             instrumented = 1;
             break;
@@ -14088,7 +14161,7 @@ void instruction_instrumentation(INS ins, void *v)
     } else if (category == XED_CATEGORY_CMOV) {
         // We separate out the tainting of the movement of data with
         //  cf, since we can do so much faster if we don't care about cf
-#ifdef CTRL_FLOW
+#ifdef CTRL_FLOW_OLD
         // TODO
         instrument_cmov_cf(ins);
 #else
@@ -14184,7 +14257,7 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst(ins);
 #else
                 instrument_addorsub(ins);
-#ifdef CTRL_FLOW
+#ifdef CTRL_FLOW_OLD
                 // TODO extra taint movement for flags
 #endif
 #endif
@@ -14287,7 +14360,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_RET_NEAR:
             case XED_ICLASS_RET_FAR:
                 break;
-#ifdef CTRL_FLOW
+#ifdef CTRL_FLOW_OLD
             // TODO
             // case XED_ICLASS_INC:
             // case XED_ICLASS_DEC:
@@ -14310,7 +14383,7 @@ void instruction_instrumentation(INS ins, void *v)
                 // flags affected: CF, OF
                 break;
                 */
-#ifdef CTRL_FLOW
+#ifdef CTRL_FLOW_OLD
             case XED_ICLASS_SETB:
             case XED_ICLASS_SETNB:
             case XED_ICLASS_SETL:
@@ -14349,7 +14422,7 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst(ins);
                 break;
 #endif
-#ifdef CTRL_FLOW
+#ifdef CTRL_FLOW_OLD
             // TODO
            // case XED_ICLASS_BSF:
            // case XED_ICLASS_BSR:
@@ -14360,10 +14433,24 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst(ins);
                 break;
 #endif
-#ifndef CTRL_FLOW
+#ifdef CTRL_FLOW
+	   case XED_ICLASS_TEST:
+                INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
+                instrument_test(ins);
+		break;
+	   case XED_ICLASS_JNZ:
+                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
+		instrument_jump (ins, ZF_FLAG);
+		break;
+#else
+	   case XED_ICLASS_TEST:
+		break;
+	   case XED_ICLASS_JNZ:
+		break;
+		
+#endif
+#ifndef CTRL_FLOW_OLD
             // these instructions only affect control flow
-            case XED_ICLASS_TEST:
-                break;
             case XED_ICLASS_PTEST:
                 break;
             case XED_ICLASS_CMP:

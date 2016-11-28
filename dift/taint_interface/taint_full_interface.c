@@ -15,7 +15,7 @@
 
 #define USE_MERGE_HASH
 #define TAINT_STATS
-//#define TRACE_TAINT
+#define TRACE_TAINT
 
 #ifdef TRACE_TAINT
 #define TPRINT printf
@@ -1687,6 +1687,41 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
+void inline clear_flag_reg () {
+	taint_t* reg_table = current_thread->shadow_reg_table;
+	memset (&reg_table[REG_EFLAGS], 0, REG_SIZE*sizeof(taint_t));
+}
+
+TAINTSIGN taint_reg2flag (int dst_reg, int src_reg, uint32_t mask) {
+	int i = 0;
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+	for (; i<NUM_FLAGS; ++i) {
+		if (mask & ( 1 << i)) {
+			//merge taints
+			//TODO: should we only calculate this once??? Will it preserve the merges?
+			int index =0;
+			for (; index < REG_SIZE; ++index) {
+				taint_t t = merge_taints (shadow_reg_table[dst_reg*REG_SIZE + index], shadow_reg_table[src_reg*REG_SIZE + index]);
+				shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints (t,  shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
+			}
+		} else {
+			//clear taint
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+		}
+	}
+}
+
+TAINTSIGN taint_jump (uint32_t mask) {
+	int i = 0;
+	for (; i < NUM_FLAGS; ++i) {
+		if (mask & (1 << i)) {
+			//preserve the taint value
+		} else 
+			current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+	}
+}
+
 TAINTSIGN taint_lbreg2mem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_lbreg2mem");
@@ -2175,7 +2210,7 @@ static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
     {
 	u_int i;
 	for (i = 0; i < size; i++) {
-	    TPRINT ("set reg %x to %lx\n", dst_reg*REG_SIZE+i, shadow_reg_table[dst_reg*REG_SIZE+i]);
+	    TPRINT ("set reg %x to %x\n", dst_reg*REG_SIZE+i, shadow_reg_table[dst_reg*REG_SIZE+i]);
 	}
     }
 #endif
