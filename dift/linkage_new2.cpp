@@ -2147,6 +2147,7 @@ void instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
     src_treg = translate_reg((int)srcreg);
     dst_regsize = REG_Size(dstreg);
     src_regsize = REG_Size(srcreg);
+    //printf ( "instrument_taint_reg2reg:dst %u src %u, dst_t %d, src_t %d\n",  dstreg, srcreg, dst_treg, src_treg);
 
     if (dst_regsize == src_regsize) {
         switch(dst_regsize) {
@@ -13983,10 +13984,28 @@ void instrument_pmovmskb(INS ins)
 }
 
 inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t mask) {
-	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: mask %u\n", mask);
+	printf ("TODO: fix regsize problem\n");
+	//TODO add TRACE_TAINT_OPS
+	int dst_treg;
+	int src_treg;
+	UINT32 dst_regsize;
+	UINT32 src_regsize;
+
+	if (dst_reg == src_reg) 
+		return;
+
+	dst_treg = translate_reg ((int) dst_reg);
+	src_treg = translate_reg ((int) src_reg);
+	dst_regsize = REG_Size(dst_reg);
+	src_regsize = REG_Size(src_reg);
+	printf ( "instrument_taint_reg2flag: mask %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", mask, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
+
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
-			IARG_UINT32, dst_reg,
-			IARG_UINT32, src_reg,
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_UINT32, dst_treg,
+			IARG_UINT32, src_treg,
 			IARG_UINT32, mask, 
 			IARG_END);
 }
@@ -14031,6 +14050,9 @@ void instrument_test(INS ins)
 
 void instrument_jump (INS ins, uint32_t mask) {
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
 			IARG_UINT32, mask, 
 			IARG_END);
 }

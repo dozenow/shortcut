@@ -1692,9 +1692,10 @@ void inline clear_flag_reg () {
 	memset (&reg_table[REG_EFLAGS], 0, REG_SIZE*sizeof(taint_t));
 }
 
-TAINTSIGN taint_reg2flag (int dst_reg, int src_reg, uint32_t mask) {
+TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask) {
 	int i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	TPRINT ("start to taint_reg2flag, dst_reg %u, src_reg %u\n", dst_reg, src_reg);
 
 	for (; i<NUM_FLAGS; ++i) {
 		if (mask & ( 1 << i)) {
@@ -2202,6 +2203,7 @@ TAINTSIGN taint_rep_qwreg2mem (u_long mem_loc, int reg, int count)
 // reg2reg
 static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
 {
+    //TPRINT ("taint_reg2reg dest %d src %d\n", dst_reg, src_reg);
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
             &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
