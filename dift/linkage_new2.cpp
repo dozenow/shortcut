@@ -13983,8 +13983,8 @@ void instrument_pmovmskb(INS ins)
 }
 
 inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t mask) {
-	INSTRUMENT_PRINT (log_f, "instrument_taint_flag_reg: mask %u\n", mask);
-	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_flag_reg),
+	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: mask %u\n", mask);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
 			IARG_UINT32, dst_reg,
 			IARG_UINT32, src_reg,
 			IARG_UINT32, mask, 
