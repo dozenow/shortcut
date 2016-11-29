@@ -13984,7 +13984,7 @@ void instrument_pmovmskb(INS ins)
 }
 
 inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t mask) {
-	printf ("TODO: fix regsize problem\n");
+	fprintf (stderr, "TODO: fix regsize problem\n");
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
 	int src_treg;
