@@ -1699,7 +1699,7 @@ TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask) {
 
 	for (; i<NUM_FLAGS; ++i) {
 		if (mask & ( 1 << i)) {
-			//merge taints
+			//merge taints into flag register
 			//TODO: should we only calculate this once??? Will it preserve the merges?
 			int index =0;
 			for (; index < REG_SIZE; ++index) {

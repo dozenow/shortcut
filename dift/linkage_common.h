@@ -136,7 +136,7 @@ struct thread_data {
     int socketcall;
     int syscall_handled;            // flag to indicate if a syscall is handled at the glibc wrapper instead
     taint_t shadow_reg_table[NUM_REGS * REG_SIZE];
-    taint_t shadow_flag_table[NUM_FLAGS];
+    taint_t current_flag_taint;
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;

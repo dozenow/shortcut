@@ -81,7 +81,7 @@ int s = -1;
 // #define LINKAGE_CODE
 #define LINKAGE_FDTRACK
 // #define CTRL_FLOW_OLD                    // direct control flow (old def in dift);
-#define CTRL_FLOW                    // direct control flow (xdou)
+//#define CTRL_FLOW                    // direct control flow (xdou)
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
