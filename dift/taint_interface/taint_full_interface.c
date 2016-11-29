@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
+#define CTRL_FLOW
 #define USE_MERGE_HASH
 #define TAINT_STATS
 #define TRACE_TAINT
@@ -917,7 +918,7 @@ static void set_mem_taints(u_long mem_loc, uint32_t size, taint_t* values)
     leaf_t = mem_root[index];
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    //memcpy(leaf_t + low_index, values, size * sizeof(taint_t));
+    memcpy(leaf_t + low_index, values, size * sizeof(taint_t));
 
 #ifdef TAINT_DEBUG
     {
@@ -945,7 +946,9 @@ static void set_mem_taints_cf(u_long mem_loc, uint32_t size, taint_t* values)
 
     u_long i;
     taint_t* mem_taints = leaf_t + low_index;
+#ifdef TAINT_DEBUG
     u_long addr = mem_loc;
+#endif
     for (i = 0; i < size; i++) {
 	    mem_taints[i] = merge_taints (values[i], current_thread->current_flag_taint);
 #ifdef TAINT_DEBUG
@@ -970,7 +973,7 @@ static inline uint32_t set_cmem_taints(u_long mem_loc, uint32_t size, taint_t* v
     leaf_t = mem_root[index];
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    //memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
+    memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
 #ifdef TAINT_DEBUG
     {
 	u_long i;
@@ -999,7 +1002,9 @@ static inline uint32_t set_cmem_taints_cf(u_long mem_loc, uint32_t size, taint_t
     //memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
     u_long i;
     taint_t* mem_taints = leaf_t + low_index;
+#ifdef TAINT_DEBUG
     u_long addr = mem_loc;
+#endif
     for (i = 0; i < set_size; i++) {
 	    mem_taints[i] =  merge_taints (values[i], current_thread->current_flag_taint);
 #ifdef TAINT_DEBUG
@@ -1025,6 +1030,7 @@ static inline uint32_t set_cmem_taints_one(u_long mem_loc, uint32_t size, taint_
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memset(leaf_t + low_index, value, set_size * sizeof(taint_t));
+    fprintf (stderr, "BUG?????????");
 #ifdef TAINT_DEBUG
     {
 	u_long i;
@@ -1076,7 +1082,7 @@ static inline uint32_t clear_cmem_taints_cf(u_long mem_loc, uint32_t size)
     leaf_t = mem_root[index];
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    int i = 0;
+    uint32_t i = 0;
     for (; i<set_size; ++i) {
 	    *(leaf_t + low_index + i) = current_thread->current_flag_taint;
     }
@@ -1187,6 +1193,20 @@ static inline void zero_partial_reg_until (int reg, int offset, int until)
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memset(&shadow_reg_table[reg * REG_SIZE + offset], 0,
             (until - offset) * sizeof(taint_t));
+}
+
+static inline void zero_partial_reg_until_cf (int reg, int offset, int until)
+{
+    assert(until > offset);
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    if (current_thread->current_flag_taint != 0) { 
+    	int i = offset;
+	for (; i<until; ++i) {
+		shadow_reg_table[reg*REG_SIZE + i] = current_thread->current_flag_taint;
+	}
+    }
+    //memset(&shadow_reg_table[reg * REG_SIZE + offset], 0,
+     //       (until - offset) * sizeof(taint_t));
 }
 
 void init_taint_structures (char* group_dir)
@@ -3435,27 +3455,47 @@ TAINTSIGN taint_add3_2wreg_2wreg (int src_reg1, int src_reg2, int src_reg3,
 // immval2mem
 TAINTSIGN taint_immvalb2mem (u_long mem_loc)
 {
+#ifdef CTRL_FLOW
+    clear_mem_taints_cf(mem_loc, 1);
+#else
     clear_mem_taints(mem_loc, 1);
+#endif
 }
 
 TAINTSIGN taint_immvalhw2mem (u_long mem_loc)
 {
+ #ifdef CTRL_FLOW
+    clear_mem_taints_cf(mem_loc, 2);
+#else
     clear_mem_taints(mem_loc, 2);
+#endif
 }
 
 TAINTSIGN taint_immvalw2mem (u_long mem_loc)
 {
+ #ifdef CTRL_FLOW
+    clear_mem_taints_cf(mem_loc, 4);
+#else
     clear_mem_taints(mem_loc, 4);
+#endif
 }
 
 TAINTSIGN taint_immvaldw2mem (u_long mem_loc)
 {
+ #ifdef CTRL_FLOW
+    clear_mem_taints_cf(mem_loc, 8);
+#else
     clear_mem_taints(mem_loc, 8);
+#endif
 }
 
 TAINTSIGN taint_immvalqw2mem (u_long mem_loc)
 {
+ #ifdef CTRL_FLOW
+    clear_mem_taints_cf(mem_loc, 16);
+#else
     clear_mem_taints(mem_loc, 16);
+#endif
 }
 
 // immval2mem add

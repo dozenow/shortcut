@@ -82,6 +82,7 @@ int s = -1;
 #define LINKAGE_FDTRACK
 // #define CTRL_FLOW_OLD                    // direct control flow (old def in dift);
 //#define CTRL_FLOW                    // direct control flow (xdou)
+//TODO: IMPORTANT: make CTRL_FLOW consistent with the defs in taint_interface/taint_full_interface.c
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
