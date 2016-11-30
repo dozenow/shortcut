@@ -1376,6 +1376,34 @@ static void sys_send_stop(int rc)
 }
 
 
+static inline void sys_gettimeofday_start (struct thread_data* tdata, struct timeval* tv, struct timezone *tz) {
+	SYSCALL_DEBUG(stderr, "sys_gettimeofday_start.\n");
+	struct gettimeofday_info* info = &tdata->gettimeofday_info_cache;
+	info->tv = tv;
+	info->tz = tz;
+	tdata->save_syscall_info = (void*) info;
+}
+
+static inline void sys_gettimeofday_stop (int rc) {
+	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->read_info_cache;
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		char* channel_name = (char*) "gettimeofday-tv";
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = -1;
+		tci.data = 0;
+		create_taints_from_buffer (ri->tv, rc, &tci, tokens_fd, channel_name);
+		if (ri->tz != NULL) {
+			channel_name = (char*) "gettimeofday-tz";
+			create_taints_from_buffer (ri->tz, rc, &tci, tokens_fd, channel_name);
+		}
+	}
+	memset (&current_thread->gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
+	current_thread->save_syscall_info = 0;
+}
 
 
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
@@ -1449,6 +1477,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_mmap2:
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
             break;
+	case SYS_gettimeofday:
+	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
+	    break;
 #if 0
         case SYS_munmap:
 	    sys_munmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1);
@@ -1498,6 +1529,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
             sys_munmap_stop(rc);
             break;
 #endif
+	case SYS_gettimeofday:
+	    sys_gettimeofday_stop(rc);
+	    break;
         case SYS_socketcall:
         {
 	    

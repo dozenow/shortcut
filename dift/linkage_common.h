@@ -103,6 +103,11 @@ struct select_info {
     struct timeval* timeout;
 };
 
+struct gettimeofday_info {
+	struct timeval* tv;
+	struct timezone* tz;
+};
+
 /* Commonly used fields in a syscall */
 struct syscall_info {
     char name[256];
@@ -131,6 +136,7 @@ struct thread_data {
     struct writev_info writev_info_cache;
     struct mmap_info mmap_info_cache;
     struct select_info select_info_cache;
+    struct gettimeofday_info gettimeofday_info_cache;
 
     void* save_syscall_info;
     int socketcall;
