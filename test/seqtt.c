@@ -31,11 +31,12 @@ int main (int argc, char* argv[])
     int next_child = 0, i;
     size_t n = BUFFER_SIZE;
     FILE* fp; 
-
+    int instruction_only = 0;
+    
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction]\n");
 	return -1;
     }
 
@@ -47,6 +48,9 @@ int main (int argc, char* argv[])
 	    if(!strncmp(argv[index],"--cache_dir",BUFFER_SIZE)) {
 		strncpy(cache_dir,argv[index + 1],BUFFER_SIZE); 
 		index++;
+	    } else if (!strncmp(argv[index],"-print_instruction",BUFFER_SIZE)) {
+		    instruction_only = 1;
+		    ++index;
 	    } else if (!strncmp(argv[index],"-stop_at",BUFFER_SIZE)) {
 		stop_at = argv[index+1];
 		index += 2;
@@ -61,7 +65,7 @@ int main (int argc, char* argv[])
 		filter_output_after = atoi(argv[index+1]);
 		index += 2;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction]\n");
 		return -1;
 	    }
 	}
@@ -107,7 +111,10 @@ int main (int argc, char* argv[])
 	sprintf (cpids, "%d", cpid);
 	args[argcnt++] = cpids;
 	args[argcnt++] = "-t";
-	args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+	if (instruction_only) 
+	args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
+	else
+		args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;

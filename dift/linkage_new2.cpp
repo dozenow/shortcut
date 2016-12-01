@@ -1378,6 +1378,7 @@ static void sys_send_stop(int rc)
 
 static inline void sys_gettimeofday_start (struct thread_data* tdata, struct timeval* tv, struct timezone *tz) {
 	SYSCALL_DEBUG(stderr, "sys_gettimeofday_start.\n");
+	LOG_PRINT ("start to handle gettimeofday, tv %p, tz %p\n", tv, tz);
 	struct gettimeofday_info* info = &tdata->gettimeofday_info_cache;
 	info->tv = tv;
 	info->tz = tz;
@@ -1403,6 +1404,7 @@ static inline void sys_gettimeofday_stop (int rc) {
 	}
 	memset (&current_thread->gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
 	current_thread->save_syscall_info = 0;
+	LOG_PRINT ("Done with gettimeofday.\n");
 }
 
 
@@ -14033,8 +14035,8 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 	src_treg = translate_reg ((int) src_reg);
 	dst_regsize = REG_Size(dst_reg);
 	src_regsize = REG_Size(src_reg);
-	printf ( "instrument_taint_reg2flag: mask %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", mask, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 
+	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: mask %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", mask, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -14065,7 +14067,8 @@ void instrument_test(INS ins)
                 dstreg, REG_StringShort(dstreg).c_str(), reg, REG_StringShort(reg).c_str());
 	//INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
         if(!REG_valid(dstreg) || !REG_valid(reg)) {
-            return;
+		INSTRUMENT_PRINT (log_f, "instrument_test: not valid registers.\n");
+            	return;
         } 
 	instrument_taint_reg2reg (ins, dstreg, reg, 1);
 	//taint flag register
@@ -14190,7 +14193,6 @@ void instruction_instrumentation(INS ins, void *v)
 
     // TODO: control flow
     switch(opcode) {
-        case XED_ICLASS_JMP:
         case XED_ICLASS_JB:
         case XED_ICLASS_JNB:
         case XED_ICLASS_JBE:
@@ -14499,10 +14501,15 @@ void instruction_instrumentation(INS ins, void *v)
                 INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG);
 		break;
+	   case XED_ICLASS_JMP:
+                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
+		instrument_jump (ins, 0);
+		break;
 #else
 	   case XED_ICLASS_TEST:
 		break;
 	   case XED_ICLASS_JNZ:
+	   case XED_ICLASS_JMP:
 		break;
 		
 #endif

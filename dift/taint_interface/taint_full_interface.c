@@ -1896,10 +1896,15 @@ TAINTSIGN taint_jump (uint32_t mask) {
 			//preserve the taint value and merge together
 			if (t != 0) {
 				t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
+			} else {
+				TPRINT ("taint_jump flag tainted %x\n", current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
+				t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i];
 			}
 		} 
 	}
 	current_thread->current_flag_mask = mask;
+	current_thread->current_flag_taint = t;
+	TPRINT ("taint_jump: mask %u, tainted flag %x\n", mask, t);
 	//TODO: what to do for unconditional jump instruction?? Should we clear all flag reg?
 }
 
