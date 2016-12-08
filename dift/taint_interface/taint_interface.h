@@ -58,6 +58,7 @@ taint_t* get_reg_taints(int reg);
 
 /* Clear size bytes of the register. (starts from the LSB) */
 void clear_reg (int reg, int size);
+void set_syscall_retval_reg_value(int offset, taint_t value);
 
 /* Set the taint of a memory address */
 void taint_mem (u_long mem_loc, taint_t t);

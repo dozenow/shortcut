@@ -1063,6 +1063,10 @@ static inline void set_reg_value(int reg, int offset, int size, taint_t* values)
 #endif
 }
 
+void set_syscall_retval_reg_value (int offset, taint_t value) {
+	current_thread->shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE + offset] = value;
+}
+
 static inline void zero_partial_reg (int reg, int offset)
 {
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;

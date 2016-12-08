@@ -1404,7 +1404,25 @@ static inline void sys_gettimeofday_stop (int rc) {
 	}
 	memset (&current_thread->gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
 	current_thread->save_syscall_info = 0;
-	LOG_PRINT ("Done with gettimeofday.\n");
+	LOG_PRINT ("Done with getpid.\n");
+}
+
+static inline void sys_getpid_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
+	//do nothing
+}
+
+static inline void sys_getpid_stop (int rc) {
+	struct taint_creation_info tci;
+	char* channel_name = (char*) "getpid_retval";
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	create_syscall_retval_taint (&tci, tokens_fd, channel_name);
+	LOG_PRINT ("Done with getpid.\n");
 }
 
 

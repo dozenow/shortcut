@@ -119,6 +119,10 @@ struct syscall_info {
     int len;
 };
 
+struct syscall_ret_info {
+	int retval;
+};
+
 // Per-thread data structure
 struct thread_data {
     int                      threadid;
@@ -139,6 +143,7 @@ struct thread_data {
     struct mmap_info mmap_info_cache;
     struct select_info select_info_cache;
     struct gettimeofday_info gettimeofday_info_cache;
+    struct syscall_ret_info syscall_ret_info_cache;
 
     void* save_syscall_info;
     int socketcall;
