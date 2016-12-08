@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/select.h>
+#include "taint.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,6 +62,7 @@ void create_fd_taints(int nfds, fd_set* fds,
 void output_buffer_result (void* buf, int size,
 			   struct taint_creation_info* tci,
 			   int outfd);
+void output_jump_result (u_long inst_addr, taint_t value, struct taint_creation_info* tci, int outfd);
 
 void output_xcoords (int outfd, int syscall_cnt,
 		     int dest_x, int dest_y, u_long mem_loc);

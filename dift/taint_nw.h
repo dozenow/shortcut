@@ -24,6 +24,7 @@ extern "C" {
 #define TAINT_DATA_OUTPUT 2
 #define TAINT_DATA_INPUT  3
 #define TAINT_DATA_ADDR   4
+#define TAINT_DATA_INST 5
 
 struct taint_data_header {
     uint32_t type;

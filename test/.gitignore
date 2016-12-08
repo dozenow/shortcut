@@ -15,6 +15,12 @@ demo_inotify
 dev/.backups/
 dev/spec.mod.o
 dev/spec.o
+dev/*.o
+dev/*.a
+dev/*.d
+dev/*.ko
+dev/*.mod.c
+dev/*.cmd
 file_lists/
 filemap
 filemap.o

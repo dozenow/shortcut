@@ -394,6 +394,7 @@ void create_taints_from_buffer(void* buf, int size,
     int i = 0;
     taint_t start;
     u_long buf_addr = (u_long) buf;
+    fprintf (stderr, "create_taints_from_buffer:size %d buf %p, tci %p, outfd %d channel name %s\n", size, buf, tci, outfd, channel_name);
     if (size <= 0) return;
     if (!buf) return;
 
@@ -429,6 +430,7 @@ void create_taints_from_buffer(void* buf, int size,
     }
 
     start = taint_num;
+    fprintf (stderr, "create_taints_from_buffer: taint num %u(%x)\n", start, start);
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
                 !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
@@ -544,6 +546,25 @@ void write_output_taints (int outfd, void* buf, int size)
     }
 }
 
+void write_output_reg_taints (int outfd, u_long reg, taint_t value) {
+	int rc;
+	rc = write(outfd, &reg, sizeof(u_long));
+	if (rc != sizeof(u_long)) {
+		fprintf (stderr, "Could not write taint reg index.\n");
+	}
+#ifdef TAINT_DEBUG
+	if (TAINT_DEBUG(value)) {
+		fprintf (debug_f, "output %lx has taint value %x reg %lu clock %lx\n", 
+				debug_taint_cnt, value, reg, *ppthread_log_clock);
+	}
+	debug_taint_cnt++;
+#endif
+	rc = write(outfd, &value, sizeof(taint_t));
+	if (rc != sizeof(taint_t)) {
+		fprintf (stderr, "Could not write taint value.\n");
+	}
+}
+
 int filter_outputs (struct taint_creation_info* tci)
 {
     if (taint_filter_outputs) return 1;
@@ -599,6 +620,16 @@ static inline void fill_outbuf (char* pout, struct taint_creation_info* tci, voi
     fprintf (debug_f, "output %lx-%lx size %d clock %ld\n", 
 	     debug_taint_cnt-size, debug_taint_cnt, size, *ppthread_log_clock);
 #endif
+}
+
+void output_jump_result (u_long inst_addr, taint_t value, struct taint_creation_info* tci, int outfd) {
+	if (outfd == -99999) {
+		return;
+	}
+	if (!filter_outputs(tci)) {
+		write_output_header (outfd, tci, (void*) inst_addr, 1);
+		write_output_reg_taints (outfd, inst_addr, value);
+	}
 }
 
 void output_buffer_result (void* buf, int size,

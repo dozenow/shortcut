@@ -9,28 +9,30 @@
 #include <unistd.h>
 #include "taint_interface/taint.h"
 
-// constants
-#define DF_MASK 0x0400
-
 #define NUM_REGS 120
 #define REG_SIZE 16
 
 // flag register (status) 
 #define NUM_FLAGS 6
 
-#define CF_FLAG 0
-#define PF_FLAG 1
-#define AF_FLAG 2
-#define ZF_FLAG 3
-#define SF_FLAG 4
-#define OF_FLAG 5
+#define CF_FLAG 0x01
+#define PF_FLAG 0x02
+#define AF_FLAG 0x04
+#define ZF_FLAG 0x08
+#define SF_FLAG 0x10
+#define OF_FLAG 0x20
+#define DF_FLAG 0x40
 
 #define CF_MASK 0x01
-#define PF_MASK 0x02
-#define AF_MASK 0x04
-#define ZF_MASK 0x08
-#define SF_MASK 0x10
-#define OF_MASK 0x20
+#define PF_MASK 0x04
+#define AF_MASK 0x10
+#define ZF_MASK 0x40
+#define SF_MASK 0x80
+#define OF_MASK 0x800
+#define DF_MASK 0x400
+
+const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
+#define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
 
 #define OPEN_PATH_LEN 256
 struct open_info {
@@ -143,7 +145,6 @@ struct thread_data {
     int syscall_handled;            // flag to indicate if a syscall is handled at the glibc wrapper instead
     taint_t shadow_reg_table[NUM_REGS * REG_SIZE];
     taint_t current_flag_taint;
-    uint32_t current_flag_mask;
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;

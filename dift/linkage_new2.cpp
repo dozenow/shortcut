@@ -1386,7 +1386,7 @@ static inline void sys_gettimeofday_start (struct thread_data* tdata, struct tim
 }
 
 static inline void sys_gettimeofday_stop (int rc) {
-	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->read_info_cache;
+	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->gettimeofday_info_cache;
 	if (rc == 0) {
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "gettimeofday-tv";
@@ -1396,10 +1396,10 @@ static inline void sys_gettimeofday_stop (int rc) {
 		tci.offset = 0;
 		tci.fileno = -1;
 		tci.data = 0;
-		create_taints_from_buffer (ri->tv, rc, &tci, tokens_fd, channel_name);
+		create_taints_from_buffer (ri->tv, sizeof(struct timeval), &tci, tokens_fd, channel_name);
 		if (ri->tz != NULL) {
 			channel_name = (char*) "gettimeofday-tz";
-			create_taints_from_buffer (ri->tz, rc, &tci, tokens_fd, channel_name);
+			create_taints_from_buffer (ri->tz, sizeof(struct timezone), &tci, tokens_fd, channel_name);
 		}
 	}
 	memset (&current_thread->gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
@@ -14020,7 +14020,7 @@ void instrument_pmovmskb(INS ins)
 #endif
 }
 
-inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t mask) {
+inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
 	fprintf (stderr, "TODO: fix regsize problem\n");
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
@@ -14028,22 +14028,20 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 	UINT32 dst_regsize;
 	UINT32 src_regsize;
 
-	if (dst_reg == src_reg) 
-		return;
-
 	dst_treg = translate_reg ((int) dst_reg);
 	src_treg = translate_reg ((int) src_reg);
 	dst_regsize = REG_Size(dst_reg);
 	src_regsize = REG_Size(src_reg);
 
-	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: mask %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", mask, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
+	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
 #endif
 			IARG_UINT32, dst_treg,
 			IARG_UINT32, src_treg,
-			IARG_UINT32, mask, 
+			IARG_UINT32, flags, 
+			IARG_ADDRINT, INS_Address(ins),
 			IARG_END);
 }
 
@@ -14058,7 +14056,7 @@ void instrument_test(INS ins)
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
     if((op1mem && op2reg)) {
-	    ERROR_PRINT ("TEST: TODO.\n");
+	    ERROR_PRINT ("instrument_test: TODO.\n");
     } else if(op1reg && op2reg) {
         REG dstreg;
         dstreg = INS_OperandReg(ins, 0);
@@ -14072,9 +14070,9 @@ void instrument_test(INS ins)
         } 
 	instrument_taint_reg2reg (ins, dstreg, reg, 1);
 	//taint flag register
-	instrument_taint_reg2flag (ins, dstreg, reg, SF_MASK|ZF_MASK|PF_MASK);
+	instrument_taint_reg2flag (ins, dstreg, reg, SF_FLAG|ZF_FLAG|PF_FLAG);
     } else if(op1mem && op2imm) {
-	    ERROR_PRINT ("TEST: TODO.\n");
+	    ERROR_PRINT ("instrument_test: TODO.\n");
     }else if(op1reg && op2imm){
 	    ERROR_PRINT ("TEST: TODO.\n");
     }else{
@@ -14086,12 +14084,14 @@ void instrument_test(INS ins)
     }
 }
 
-void instrument_jump (INS ins, uint32_t mask) {
+void instrument_jump (INS ins, uint32_t flags) {
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_UINT32, mask, 
+			IARG_REG_VALUE, REG_EFLAGS,
+			IARG_UINT32, flags, 
+			IARG_ADDRINT, INS_Address(ins),
 			IARG_END);
 }
 
@@ -14502,7 +14502,7 @@ void instruction_instrumentation(INS ins, void *v)
 		instrument_jump (ins, ZF_FLAG);
 		break;
 	   case XED_ICLASS_JMP:
-                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
+                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
 		instrument_jump (ins, 0);
 		break;
 #else
@@ -15225,7 +15225,10 @@ void init_logs(void)
         snprintf(log_name, 256, "%s/confaid.log.%d",
                 group_directory, PIN_GetPid());
         log_f = fopen(log_name, "w");
+    	//to std output
+	//log_f = stdout;
     }
+
 
 #ifdef TAINT_DEBUG
     {

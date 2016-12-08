@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
-#define CTRL_FLOW
+//#define CTRL_FLOW: don't turn this on; as this is deprecated;to turn this on, take a look at 98747fee412f666cba1921d088f3076d7ea7526a (commit id)
 #define USE_MERGE_HASH
 #define TAINT_STATS
 #define TRACE_TAINT
@@ -117,6 +117,7 @@ static struct merge_buffer_control * merge_control_shm;
 #ifdef USE_NW
 extern int s;
 #endif
+extern int outfd;
 
 
 
@@ -379,6 +380,7 @@ static inline void init_taint_index(char* group_dir)
 
 static inline taint_t merge_taints(taint_t dst, taint_t src)
 {
+    if (dst != 0 || src != 0) TPRINT ("merge_taints %x %x\n", dst, src);
     if (dst == 0) {
         return src;
     }
@@ -402,6 +404,7 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges_saved++;
 #endif       
+	TPRINT  ("merge_taints ret %x\n", bucket.n);
 	return bucket.n;
     } else {
 	taint_t n = add_merge_number (dst, src);
@@ -411,6 +414,8 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges++;
 #endif
+
+	TPRINT  ("merge_taints ret %x\n", n);
 	return n;
     }
 #else
@@ -1667,45 +1672,68 @@ void inline clear_flag_reg () {
 	memset (&reg_table[REG_EFLAGS], 0, REG_SIZE*sizeof(taint_t));
 }
 
-TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask) {
+TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, ADDRINT ip) {
 	int i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-	TPRINT ("start to taint_reg2flag, dst_reg %u, src_reg %u\n", dst_reg, src_reg);
+	TPRINT ("start to taint_reg2flag(address %x), dst_reg %u, src_reg %u\n", ip, dst_reg, src_reg);
 
 	for (; i<NUM_FLAGS; ++i) {
 		if (mask & ( 1 << i)) {
 			//merge taints into flag register
-			//TODO: should we only calculate this once??? Will it preserve the merges?
+			//TODO: should we only calculate this once for all flags??? Will the merge log preserve the merges?
 			int index =0;
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
 			for (; index < REG_SIZE; ++index) {
 				taint_t t = merge_taints (shadow_reg_table[dst_reg*REG_SIZE + index], shadow_reg_table[src_reg*REG_SIZE + index]);
-				shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints (t,  shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
+				if (t != 0) TPRINT ("\ttaint_reg2flag index %d, %d, merged value %x, dst %x, src %x\n", i, index, t, shadow_reg_table[dst_reg*REG_SIZE + index], shadow_reg_table[src_reg*REG_SIZE + index]);
+				shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints(shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
 			}
+			TPRINT ("taint_reg2flag tainted flag index %d, value %x\n", i, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
 		} else {
-			//clear taint
+			// just clear taint
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
 		}
 	}
 }
 
-TAINTSIGN taint_jump (uint32_t mask) {
+TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 	int i = 0;
 	taint_t t = 0;
+	struct taint_creation_info tci;
+	int flag_value = 0;
+
 	for (; i < NUM_FLAGS; ++i) {
-		if (mask & (1 << i)) {
+		if (flags & (1 << i)) {
 			//preserve the taint value and merge together
-			if (t != 0) {
-				t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
-			} else {
-				TPRINT ("taint_jump flag tainted %x\n", current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-				t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i];
-			}
+			t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
 		} 
 	}
-	current_thread->current_flag_mask = mask;
-	current_thread->current_flag_taint = t;
-	TPRINT ("taint_jump: mask %u, tainted flag %x\n", mask, t);
+	TPRINT ("taint_jump: ip %#x flags %x, tainted flag %x\n", ip, flags, t);
 	//TODO: what to do for unconditional jump instruction?? Should we clear all flag reg?
+	for (i = 0; i<NUM_FLAGS; ++i) {
+		if (flags & (1 << i)) {
+			TPRINT ("taint_jump flag index %d, taint value %x, flag value %d\n", i, current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], GET_FLAG_VALUE (eflag, i));
+			if (flag_value == 0) 
+				flag_value = GET_FLAG_VALUE(eflag, i);
+			else {
+				fprintf (stderr, "TODO: what if one instruction uses multiple flags.\n");
+			}
+		}
+	}
+	current_thread->current_flag_taint = t;
+
+	tci.type = TAINT_DATA_INST;
+	tci.record_pid = current_thread->record_pid;
+	tci.rg_id = current_thread->rg_id;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = flag_value; //hacky fileno is the flag value for this jump
+	tci.data = ip;
+
+	if (t != 0 && flags == 8 ) {
+		output_jump_result (ip, t, &tci, outfd);
+	}
+	//clear the flag register taints after jump? Probably not necessary as CMP, TEST, etc. instructions had cleaned them in taint_reg2flag
 }
 
 // reg2mem
@@ -3487,6 +3515,7 @@ taint_t create_and_taint_option (u_long mem_addr)
 {
     taint_t t = taint_num++;
     taint_mem_internal(mem_addr, t);
+    TPRINT ("taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);
 #ifdef TAINT_DEBUG
     if (TAINT_DEBUG(t)) {
 	fprintf (debug_f, "taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);

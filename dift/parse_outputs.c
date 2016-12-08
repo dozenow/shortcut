@@ -364,6 +364,7 @@ int main(int argc, char** argv) {
 
     fprintf(stdout, "OUTPUT\n");
     read_output(dataflow_filename, merge_filename);
+    read_tokens_file(tokens_filename);
 
 
     return 0;
