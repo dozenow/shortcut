@@ -14021,7 +14021,6 @@ void instrument_pmovmskb(INS ins)
 }
 
 inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
-	fprintf (stderr, "TODO: fix regsize problem\n");
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
 	int src_treg;
@@ -14032,6 +14031,8 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 	src_treg = translate_reg ((int) src_reg);
 	dst_regsize = REG_Size(dst_reg);
 	src_regsize = REG_Size(src_reg);
+	if (dst_regsize != src_regsize) 
+		fprintf (stderr, "TODO: fix regsize problem\n");
 
 	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
@@ -14045,7 +14046,7 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 			IARG_END);
 }
 
-void instrument_test(INS ins)
+void instrument_test_or_cmp (INS ins, uint32_t mask)
 {
     int op1mem, op1reg, op2reg, op2imm;
     string instruction;
@@ -14068,9 +14069,9 @@ void instrument_test(INS ins)
 		INSTRUMENT_PRINT (log_f, "instrument_test: not valid registers.\n");
             	return;
         } 
-	instrument_taint_reg2reg (ins, dstreg, reg, 1);
+	//instrument_taint_reg2reg (ins, dstreg, reg, 1);
 	//taint flag register
-	instrument_taint_reg2flag (ins, dstreg, reg, SF_FLAG|ZF_FLAG|PF_FLAG);
+	instrument_taint_reg2flag (ins, dstreg, reg, mask);
     } else if(op1mem && op2imm) {
 	    ERROR_PRINT ("instrument_test: TODO.\n");
     }else if(op1reg && op2imm){
@@ -14190,27 +14191,6 @@ void instruction_instrumentation(INS ins, void *v)
     }
     */
 #endif
-
-    // TODO: control flow
-    switch(opcode) {
-        case XED_ICLASS_JB:
-        case XED_ICLASS_JNB:
-        case XED_ICLASS_JBE:
-        case XED_ICLASS_JNBE:
-        case XED_ICLASS_JL:
-        case XED_ICLASS_JNL:
-        case XED_ICLASS_JLE:
-        case XED_ICLASS_JNLE:
-        case XED_ICLASS_JNO:
-        case XED_ICLASS_JO:
-        case XED_ICLASS_JNP:
-        case XED_ICLASS_JP:
-        case XED_ICLASS_JNS:
-        case XED_ICLASS_JS:
-        case XED_ICLASS_JZ:
-            instrumented = 1;
-            break;
-    }
 
 #ifdef USE_CODEFLUSH_TRICK
     if (option_cnt != 0) {
@@ -14495,29 +14475,90 @@ void instruction_instrumentation(INS ins, void *v)
 #ifdef CTRL_FLOW
 	   case XED_ICLASS_TEST:
                 INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
-                instrument_test(ins);
+                instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG);
+		break;
+	   case XED_ICLASS_CMP:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
+		instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
 		break;
 	   case XED_ICLASS_JNZ:
                 INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
+		instrument_jump (ins, ZF_FLAG);
+		break;
+       	   case XED_ICLASS_JZ:
+                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JZ/JE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG);
 		break;
 	   case XED_ICLASS_JMP:
                 INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
 		instrument_jump (ins, 0);
 		break;
+        case XED_ICLASS_JB:
+        case XED_ICLASS_JNB:
+           	INSTRUMENT_PRINT(log_f, "%#x: about to instrument JB/JNB\n", INS_Address(ins));
+		instrument_jump (ins, CF_FLAG);
+		break;
+        case XED_ICLASS_JBE:
+        case XED_ICLASS_JNBE:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JBE/JNBE\n", INS_Address(ins));
+		instrument_jump (ins, CF_FLAG|ZF_FLAG);
+		break;
+        case XED_ICLASS_JL:
+        case XED_ICLASS_JNL:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JL/JNL\n", INS_Address(ins));
+		instrument_jump (ins, SF_FLAG|OF_FLAG);
+		break;
+	case XED_ICLASS_JLE:
+        case XED_ICLASS_JNLE: 
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JLE/JNLE\n", INS_Address(ins));
+		instrument_jump (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
+		break;
+	case XED_ICLASS_JNO:
+        case XED_ICLASS_JO:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JO/JNO\n", INS_Address(ins));
+		instrument_jump (ins, OF_FLAG);
+		break;
+	case XED_ICLASS_JNP:
+        case XED_ICLASS_JP:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JP/JNP\n", INS_Address(ins));
+		instrument_jump (ins, PF_FLAG);
+		break;
+        case XED_ICLASS_JNS:
+        case XED_ICLASS_JS:
+		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JS/JNS\n", INS_Address(ins));
+		instrument_jump (ins, SF_FLAG);
+		break;
 #else
+	   case XED_ICLASS_CMP:
+		break;
 	   case XED_ICLASS_TEST:
 		break;
+           case XED_ICLASS_JZ:
 	   case XED_ICLASS_JNZ:
+		break;
 	   case XED_ICLASS_JMP:
 		break;
-		
+        case XED_ICLASS_JB:
+        case XED_ICLASS_JNB:
+		break;
+        case XED_ICLASS_JBE:
+        case XED_ICLASS_JNBE:
+        case XED_ICLASS_JL:
+        case XED_ICLASS_JNL:
+	case XED_ICLASS_JLE:
+        case XED_ICLASS_JNLE:
+		break;
+	case XED_ICLASS_JNO:
+        case XED_ICLASS_JO:
+	case XED_ICLASS_JNP:
+        case XED_ICLASS_JP:
+        case XED_ICLASS_JNS:
+        case XED_ICLASS_JS:
+		break;
 #endif
 #ifndef CTRL_FLOW_OLD
             // these instructions only affect control flow
             case XED_ICLASS_PTEST:
-                break;
-            case XED_ICLASS_CMP:
                 break;
             case XED_ICLASS_NOT:
                 break;
