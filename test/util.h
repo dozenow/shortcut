@@ -54,9 +54,9 @@ int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save
 
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename, char *uniqueid, loff_t attach_index, int attach_pid
-		       ,u_long nfake_calls, u_long* fake_calls);
+		       ,u_long nfake_calls, u_long* fake_calls, int go_live);
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char *uniqueid, int ckpt_pos);
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char *uniqueid, int ckpt_pos, int go_live);
 int set_pin_addr (int fd_spec, u_long app_syscall_addr, void* pthread_data, void** pcurthread, int* pattach_ndx);
 int check_clock_before_syscall (int fd_spec, int syscall);
 int check_clock_after_syscall (int fd_spec);

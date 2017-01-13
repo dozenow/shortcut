@@ -466,12 +466,13 @@ void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, ch
 	}
 
 	//TODO may add filters here
+	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
 	
 	for (; i < REG_SIZE; ++i) {
 		set_syscall_retval_reg_value (i, taint_num);
 		++ taint_num;
 	}
-	write_tokens_info (outfd, t, tci, 1);
+	write_tokens_info (outfd, t, tci, REG_SIZE);
 }
 
 void write_output_taint(int outfd, taint_t t,

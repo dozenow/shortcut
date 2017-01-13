@@ -4374,7 +4374,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
-			 u_long nfake_calls, u_long *fake_call_points)
+			 u_long nfake_calls, u_long *fake_call_points, int go_live)
 {
 	struct ckpt_waiter* pckpt_waiter = NULL;
 	struct record_group* precg; 
@@ -4389,6 +4389,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	u_long consumed, num_procs;
 	loff_t pos;
 	int clock, i, is_thread = 1;
+	
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("starting replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 
 	if (current->record_thrd || current->replay_thrd) {
 		printk ("replay_full_ckpt_wakeup: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
@@ -4484,7 +4490,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	}
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
-	}	
+	}
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup from_disk starts %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4496,6 +4507,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
 						       &pos);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 
 	printk ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
 
@@ -4507,7 +4523,17 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 	// Read in the log records 
 	prect->rp_record_pid = record_pid;
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 	rc = skip_and_read_log_data (prect);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup endend  skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 	if (rc < 0) {
 		if (num_procs > 1) pckpt_waiter->prepg = NULL;
 		return rc;
@@ -4611,13 +4637,23 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 	printk ("replay_full_ckpt_wakeup returning retval %ld\n", retval);
 	atomic_set(&prept->ckpt_restore_done,1);
+	
+	if (go_live) {
+		current->replay_thrd = NULL;
+		printk ("replay pid %d goes live\n", current->pid);
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		}
+	}
 
 	return retval;
 }
 EXPORT_SYMBOL(replay_full_ckpt_wakeup);
 
 long
-replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos)
+replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live)
 {
 	struct ckpt_waiter* pckpt_waiter;
 	struct record_thread* prect;
@@ -4769,6 +4805,10 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	printk ("Pid %d (%d) replay_full_ckpt_proc_wakeup restarting syscall %d (pos %d)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, record_pid,prect->rp_log[prept->rp_out_ptr].sysnum, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
+	if (go_live) {
+		current->replay_thrd = NULL;
+		printk ("replay pid %d goes live (not fully tested for multi-process)\n", current->pid);
+	}
 
 	if(prept->rp_ckpt_pthread_block_clock){
 		return 32; //this is sys_pthread_block's sysnumber

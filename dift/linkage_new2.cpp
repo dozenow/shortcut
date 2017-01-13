@@ -1407,6 +1407,32 @@ static inline void sys_gettimeofday_stop (int rc) {
 	LOG_PRINT ("Done with getpid.\n");
 }
 
+static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
+	SYSCALL_DEBUG(stderr, "sys_clock_gettime_start %p.\n", tp);
+	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
+	struct clock_gettime_info* info = &tdata->clock_gettime_info_cache;
+	info->tp = tp;
+	tdata->save_syscall_info = (void*) info;
+}
+
+static inline void sys_clock_gettime_stop (int rc) { 
+	struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->clock_gettime_info_cache;
+	if (rc == 0) { 
+		struct taint_creation_info tci;
+		char* channel_name = (char*) "clock_gettime";
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = -1;
+		tci.data = 0;
+		create_taints_from_buffer(ri->tp, sizeof(struct timespec), &tci, tokens_fd, channel_name);
+	}
+	memset (&current_thread->clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+	current_thread->save_syscall_info = 0;
+	LOG_PRINT ("Done with clock_gettime.\n");
+}
+
 static inline void sys_getpid_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
 	//do nothing
@@ -1425,6 +1451,31 @@ static inline void sys_getpid_stop (int rc) {
 	LOG_PRINT ("Done with getpid.\n");
 }
 
+static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
+	SYSCALL_DEBUG (stderr, "sys_getrusage_start.\n");
+	LOG_PRINT ("start to handle getrusage, usage addr %p\n", usage);
+	struct getrusage_info* info = &tdata->getrusage_info_cache;
+	info->usage = usage;
+	tdata->save_syscall_info = (void*) info;
+}
+
+static inline void sys_getrusage_stop (int rc) {
+	struct getrusage_info* ri = (struct getrusage_info*) &current_thread->getrusage_info_cache;
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		char* channel_name = (char*) "getrusage";
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = -1;
+		tci.data = 0;
+		create_taints_from_buffer (ri->usage, sizeof(struct rusage), &tci, tokens_fd, channel_name);	
+	}
+	memset (&current_thread->getrusage_info_cache, 0, sizeof(struct rusage));
+	current_thread->save_syscall_info = 0;
+	LOG_PRINT ("Done with getrusage\n");
+}
 
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
@@ -1500,6 +1551,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
 	    break;
+	case SYS_getpid:
+	    sys_getpid_start (tdata);
+	    break;
+	case SYS_clock_gettime:
+	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
+	    break;
 #if 0
         case SYS_munmap:
 	    sys_munmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1);
@@ -1551,6 +1608,12 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 #endif
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);
+	    break;
+	case SYS_getpid:
+	    sys_getpid_stop(rc);
+	    break;
+	case SYS_clock_gettime:
+	    sys_clock_gettime_stop(rc);
 	    break;
         case SYS_socketcall:
         {
@@ -15114,7 +15177,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         char** args;
         struct taint_creation_info tci;
 #endif
-        PIN_AddFollowChildProcessFunction(follow_child, ptdata);
+        //PIN_AddFollowChildProcessFunction(follow_child, ptdata);
         first_thread = 0;
         if (!ptdata->syscall_cnt) {
             ptdata->syscall_cnt = 1;

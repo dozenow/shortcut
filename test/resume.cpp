@@ -42,6 +42,7 @@ struct ckpt_data {
     u_long nfake_calls; 
     u_long *fake_calls;
     int ckpt_pos; 
+    int go_live;
 };
 
 //used to read in the header from the ckpt file
@@ -85,7 +86,7 @@ void *start_thread(void *td) {
     int rc;
     struct ckpt_data *cd = (struct ckpt_data *) td;
     
-    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos);
+    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos, cd->go_live);
     if (rc < 0) {
 	perror ("resume proc after ckpt");
 	exit (-1);
@@ -99,7 +100,7 @@ void *start_main_thread(void *td) {
     
     rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 			    cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-			    cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls);
+			    cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live);
 
     if (rc < 0) {
 	perror ("resume after ckpt");
@@ -176,7 +177,7 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
     if (current->main_thread){ 
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls);
+				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
@@ -184,7 +185,7 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 
     }
     else { 
-	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos);
+	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
@@ -210,6 +211,7 @@ int main (int argc, char* argv[])
 	int record_timing = 0;
 	int first_proc = -1;
 	char filename[4096], pathname[4096], uniqueid[4096];
+	int go_live = 0;
 
 	u_long i = 0;
 	u_long nfake_calls = 0;
@@ -235,7 +237,7 @@ int main (int argc, char* argv[])
 		char opt;
 		int option_index = 0;
 
-		opt = getopt_long(argc, argv, "fpmhgt", long_options, &option_index);
+		opt = getopt_long(argc, argv, "fpmhgtl", long_options, &option_index);
 		//printf("getopt_long returns %c (%d)\n", opt, opt);
 
 		if (opt == -1) {
@@ -318,7 +320,10 @@ int main (int argc, char* argv[])
 			//printf("record timing is on\n");
 			record_timing = 1;
 			break;
-
+		case 'l':
+			printf ("set to go live.\n");
+			go_live = 1;
+			break;
 		default:
 			fprintf(stderr, "Unrecognized option\n");
 			print_help(argv[0]);
@@ -407,6 +412,7 @@ int main (int argc, char* argv[])
 		cd.attach_pid = attach_pid;
 		cd.nfake_calls = nfake_calls;
 		cd.fake_calls = fake_calls;
+		cd.go_live = go_live;
 		restart_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
 /*
  		if (use_threads) {

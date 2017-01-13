@@ -123,6 +123,14 @@ struct syscall_ret_info {
 	int retval;
 };
 
+struct getrusage_info {
+	struct rusage* usage;
+};
+
+struct clock_gettime_info {
+	struct timespec* tp;
+};
+
 // Per-thread data structure
 struct thread_data {
     int                      threadid;
@@ -144,6 +152,8 @@ struct thread_data {
     struct select_info select_info_cache;
     struct gettimeofday_info gettimeofday_info_cache;
     struct syscall_ret_info syscall_ret_info_cache;
+    struct getrusage_info getrusage_info_cache;
+    struct clock_gettime_info clock_gettime_info_cache;
 
     void* save_syscall_info;
     int socketcall;

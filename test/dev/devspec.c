@@ -200,10 +200,9 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 		    }
 		}
 
-
 		rc = replay_full_ckpt_wakeup(device, logdir, filename, tmp, uniqueid, wcdata.fd,
 					     wcdata.follow_splits, wcdata.save_mmap, wcdata.attach_index,
-					     wcdata.attach_pid,wcdata.nfake_calls, fake_calls);
+					     wcdata.attach_pid,wcdata.nfake_calls, fake_calls, wcdata.go_live);
 
 		if (tmp) putname (tmp);
 		return rc;
@@ -231,7 +230,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 			return -EINVAL;
 		}
 
-		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos);
+		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos, wcdata.go_live);
 
 		if (tmp) putname (tmp);
 		return rc;
