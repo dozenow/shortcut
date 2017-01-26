@@ -840,6 +840,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				}
 				KFREE(ppages);
 				ppages = NULL;
+				printk ("replay_full_checkpoint_hdr_to_disk file %s start %lx end %lx, size %ld, nrp_page %ld\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_start-pvmas->vmas_end, nr_pages);
 			} else {
 				set_fs(old_fs);
 				copied = vfs_write(mmap_file, (char *) pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, &mmap_ppos);
@@ -849,6 +850,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 					rc = copied;
 					goto freemem;
 				}
+				printk ("replay_full_checkpoint_hdr_to_disk file %s start %lx end %lx, size %ld, nrp_page %ld\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_start-pvmas->vmas_end, nr_pages);
 			}
 			if (mmap_file) fput (mmap_file);	
 			if (mmap_fd > 0) {
