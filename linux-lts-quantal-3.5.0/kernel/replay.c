@@ -123,6 +123,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
+#define TRACE_TIMINGS
 
 //#define KFREE(x) my_kfree(x, __LINE__)
 //#define KMALLOC(size, flags) my_kmalloc(size, flags, __LINE__)
@@ -754,7 +755,14 @@ struct record_group {
 
 };
 
+#define RECORD_TIMEBUF_ENTRIES 4096 
 #define REPLAY_TIMEBUF_ENTRIES 10000
+struct record_timing {
+	u_long    index;
+	short     syscall;
+	short 	  before_sys;
+	struct timespec tp;
+};
 struct replay_timing {
 	pid_t     pid;
 	u_long    index;
@@ -762,6 +770,7 @@ struct replay_timing {
 	cputime_t ut;
 	__u64     cache_misses;  //added to track cache_misses
 };
+
 
 // This structure has task-specific replay data
 struct replay_group {
@@ -984,6 +993,7 @@ struct record_thread {
 #endif
 
 	struct record_cache_files* rp_cache_files; // Info about open cache files
+	struct record_timing* rp_timebuf;
 };
 
 /* FIXME: Put this somewhere that doesn't suck */
@@ -2199,6 +2209,16 @@ new_record_thread (struct record_group* prg, u_long recpid, struct record_cache_
 		}
 	} while (0);
 
+#ifdef TRACE_TIMINGS
+	prp->rp_timebuf = VMALLOC (sizeof(struct record_timing)*RECORD_TIMEBUF_ENTRIES);
+	if (prp->rp_timebuf == NULL) {
+		KFREE (prp);
+		return NULL;
+	}
+#else 
+	prp->rp_timebuf = NULL;
+#endif
+
 	get_record_group(prg);
 	return prp;
 }
@@ -2313,6 +2333,7 @@ __destroy_record_thread (struct record_thread* prp)
 	argsfreeall (prp);
 	VFREE (prp->rp_log); 
 	DPRINT ("       destroy_record_thread freeing log %p: end\n", prp->rp_log);
+	VFREE (prp->rp_timebuf);
 
 	while (prp->rp_signals) {
 		psig = prp->rp_signals;
@@ -4022,6 +4043,7 @@ static void ckpt_tsk_add_child(struct ckpt_tsk *parent, struct ckpt_tsk *child)
 }
 
 
+/*
 static void print_ckpt_tsk(struct ckpt_tsk *ct, int parent_pid, int is_thread) { 
 	printk("%d ",parent_pid);
 	printk("%d ",ct->record_pid);
@@ -4031,7 +4053,7 @@ static void print_ckpt_tsk(struct ckpt_tsk *ct, int parent_pid, int is_thread) {
 	else
 		printk("0 ");
 	printk("%d\n", ct->ckpt_pos);
-}
+}*/
 
 static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int is_thread, struct file *cfile, loff_t *ppos) { 
 
@@ -4077,6 +4099,8 @@ static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int i
 	}	
 	return 0; 
 }
+
+/*
 static void dump_ckpt_tsks(struct ckpt_tsk *ct, int parent_pid, int is_thread) { 
 	
 	struct ckpt_tsk *tmp;
@@ -4091,7 +4115,7 @@ static void dump_ckpt_tsks(struct ckpt_tsk *ct, int parent_pid, int is_thread) {
 		printk("another child\n");
 		dump_ckpt_tsks(ct->child_tasks[i],ct->record_pid, 0); //recursive call for all children
 	}
-}
+}*/
 
 
 int
@@ -4269,7 +4293,7 @@ replay_full_ckpt (long rc)
 	       current->pid,(u_long)current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
 	       (u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr, (u_long)current->clear_child_tid);
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, current->pid);       
-	printk("Pid %d (%ld) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
+	printk("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
 
 
 	retval = replay_full_checkpoint_proc_to_disk (ckpt, current, 
@@ -4296,7 +4320,7 @@ replay_full_ckpt (long rc)
 			curr_ckpt_tsk = btree_lookup32(&proc_btree, tsk->pid);       
 			//not sure we want or need these two cases! 
 			if(prt->rp_ckpt_pthread_block_clock){				
-				printk("Pid %d (%ld) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
+				printk("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
 				retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
 									      prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
 									      argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
@@ -4307,7 +4331,7 @@ replay_full_ckpt (long rc)
 									      (u_long) prt->rp_replay_hook, &pos); 	       
 			}
 			else { 
-				printk("Pid %d (%ld) had exp clock %lu, save clock %lu\n", 
+				printk("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
 				       prt->rp_replay_pid, 
 				       prt->rp_record_thread->rp_record_pid, 
 				       prt->rp_expected_clock,
@@ -4802,7 +4826,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 		MPRINT("%d(%ld) taking %d's cache_files %p\n",current->pid, record_pid, current->tgid, prept->rp_cache_files);
 	}
 
-	printk ("Pid %d (%d) replay_full_ckpt_proc_wakeup restarting syscall %d (pos %d)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+	printk ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, record_pid,prect->rp_log[prept->rp_out_ptr].sysnum, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
 	if (go_live) {
@@ -5816,7 +5840,7 @@ get_next_syscall_enter (struct replay_thread* prt, struct replay_group* prg, int
 	MPRINT ("Replay Pid %d, index %ld sys %d\n", current->pid, prt->rp_out_ptr, psr->sysnum);
 //	dump_stack(); // how did we get here? for debugging purposes
 
-	MPRINT ("Pid %d (%d) get_next_syfscall_enter (beginning) syscall %d (pos %d)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+	MPRINT ("Pid %d (%d) get_next_syfscall_enter (beginning) syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, prect->rp_record_pid,prect->rp_log[prt->rp_out_ptr].sysnum, prt->rp_out_ptr, prt->rp_expected_clock, prt->rp_ckpt_pthread_block_clock);
 
 	if (prt->rp_pin_attaching == PIN_ATTACHING_FF || prt->rp_pin_attaching == PIN_ATTACHING_RESTART) {
@@ -6341,6 +6365,27 @@ void write_timings (struct replay_group* prepg)
 	set_fs(old_fs);
 	prepg->rg_timecnt = 0;
 }
+
+void open_record_timings_file (struct record_thread* prp) { 
+	char filename[MAX_LOGDIR_STRLEN+20];
+	int fd, rc; 
+	struct file* file = NULL;
+	mm_segment_t old_fs;
+	int copied = 0;
+	int to_write, written;
+
+	sprintf (filename, "%s/timings.%d", prp->rp_group->rg_logdir, current->pid);
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	fd = sys_open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+	if (fd < 0) {
+		printk("Pid %d write_timings: could not open file %s, %d\n", current->pid, filename, fd);
+		return;
+	}
+
+}
+
 
 static void
 record_timings (struct replay_thread* prept, short syscall)
@@ -11625,7 +11670,7 @@ replay_ipc (uint call, int first, u_long second, u_long third, void __user *ptr,
 			// redo the mapping with the same address returned during recording
 			repid = find_sysv_mapping (current->replay_thrd, first);
 			retval = sys_ipc (call, repid, rc, third, (void __user *) atretparams->raddr, fifth);
-			printk("shmat called with id %d (recid %d), shmaddr 0x%x, shmflg %d\n", 
+			printk("shmat called with id %d (recid %d), shmaddr 0x%p, shmflg %lu\n", 
 			       repid, first, (void __user *)atretparams->raddr, second);
 
 			if (retval != rc) {
