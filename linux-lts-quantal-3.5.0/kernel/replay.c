@@ -124,6 +124,7 @@ int verify_debug = 0;
 unsigned int replay_pause_tool = 0;
 //xdou
 #define TRACE_TIMINGS
+unsigned int trace_timings = 0;
 
 //#define KFREE(x) my_kfree(x, __LINE__)
 //#define KMALLOC(size, flags) my_kmalloc(size, flags, __LINE__)
@@ -993,7 +994,6 @@ struct record_thread {
 #endif
 
 	struct record_cache_files* rp_cache_files; // Info about open cache files
-	struct record_timing* rp_timebuf;
 };
 
 /* FIXME: Put this somewhere that doesn't suck */
@@ -2209,16 +2209,6 @@ new_record_thread (struct record_group* prg, u_long recpid, struct record_cache_
 		}
 	} while (0);
 
-#ifdef TRACE_TIMINGS
-	prp->rp_timebuf = VMALLOC (sizeof(struct record_timing)*RECORD_TIMEBUF_ENTRIES);
-	if (prp->rp_timebuf == NULL) {
-		KFREE (prp);
-		return NULL;
-	}
-#else 
-	prp->rp_timebuf = NULL;
-#endif
-
 	get_record_group(prg);
 	return prp;
 }
@@ -2333,7 +2323,6 @@ __destroy_record_thread (struct record_thread* prp)
 	argsfreeall (prp);
 	VFREE (prp->rp_log); 
 	DPRINT ("       destroy_record_thread freeing log %p: end\n", prp->rp_log);
-	VFREE (prp->rp_timebuf);
 
 	while (prp->rp_signals) {
 		psig = prp->rp_signals;
@@ -6366,27 +6355,6 @@ void write_timings (struct replay_group* prepg)
 	prepg->rg_timecnt = 0;
 }
 
-void open_record_timings_file (struct record_thread* prp) { 
-	char filename[MAX_LOGDIR_STRLEN+20];
-	int fd, rc; 
-	struct file* file = NULL;
-	mm_segment_t old_fs;
-	int copied = 0;
-	int to_write, written;
-
-	sprintf (filename, "%s/timings.%d", prp->rp_group->rg_logdir, current->pid);
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	fd = sys_open(filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-	if (fd < 0) {
-		printk("Pid %d write_timings: could not open file %s, %d\n", current->pid, filename, fd);
-		return;
-	}
-
-}
-
-
 static void
 record_timings (struct replay_thread* prept, short syscall)
 {
@@ -7305,7 +7273,7 @@ asmlinkage long sys_pthread_sysign (void)
 			get_user (ignore_flag, current->record_thrd->rp_ignore_flag_addr); \
 			if (ignore_flag) return F_SYS;			\
 		}							\
-		return F_RECORD;					\
+		return F_RECORD; 					\
 	}								\
 									\
 	if (current->replay_thrd && test_app_syscall(number)) {		\
@@ -7325,7 +7293,6 @@ asmlinkage long sys_pthread_sysign (void)
 	} \
 	return F_SYS;							\
 }
-
 
 #define SHIM_CALL(name, number, args...)					\
 { \
@@ -8063,6 +8030,16 @@ shim_restart_syscall(void)
 	if (current->replay_thrd) return replay_restart_syscall (restart);
 	return restart->fn(restart); // Skip sys_restart_syscall because this is all it does
 }
+#ifdef TRACE_TIMINGS
+asmlinkage long trace_exit (int error_code) { 
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:exit\n", current->pid, tp.tv_sec, tp.tv_nsec);
+	}
+	return sys_exit (error_code);
+}
+#endif
 
 asmlinkage long 
 shim_exit(int error_code)
@@ -8072,7 +8049,11 @@ shim_exit(int error_code)
 	    MPRINT ("Replaying Pid %d naturally exiting\n", current->pid);
 	    //dump_stack();
 	}
+#ifdef TRACE_TIMINGS
+	return trace_exit(error_code);
+#else
 	return sys_exit (error_code);
+#endif
 }
 
 
@@ -9242,7 +9223,22 @@ replay_open (const char __user * filename, int flags, int mode)
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long
+trace_open (const char __user* filename, int flags, int mode) {
+	long rc = sys_open (filename, flags, mode);
+	//printk ("trace_open called %d\n", trace_timings);
+	if (trace_timings && rc > 0) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+	}
+	return rc;
+}
+asmlinkage long shim_open (const char __user * filename, int flags, int mode) SHIM_CALL_MAIN(5, record_open(filename, flags, mode), replay_open(filename, flags, mode), trace_open(filename, flags, mode));
+#else
 asmlinkage long shim_open (const char __user * filename, int flags, int mode) SHIM_CALL (open, 5, filename, flags, mode);
+#endif
 
 static asmlinkage long							
 record_close (int fd)
@@ -9302,7 +9298,28 @@ replay_close (int fd)
 
 asmlinkage long shim_close (int fd) SHIM_CALL (close, 6, fd);
 
+#ifdef TRACE_TIMINGS
+asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) { 
+	long rc = 0;
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+	}
+	rc = sys_waitpid (pid, stat_addr, options);
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+	}
+	return rc;
+}
+RET1_RECORD3(waitpid, 7, int, stat_addr, pid_t, pid, int __user*, stat_addr, int, options);
+RET1_REPLAY(waitpid, 7, int, stat_addr, pid_t pid, int __user* stat_addr, int options);
+asmlinkage long shim_waitpid (pid_t pid, int __user* stat_addr, int options) SHIM_CALL_MAIN(7, record_waitpid(pid, stat_addr, options), replay_waitpid(pid, stat_addr, options), trace_waitpid(pid, stat_addr, options));
+#else
 RET1_SHIM3(waitpid, 7, int, stat_addr, pid_t, pid, int __user *, stat_addr, int, options);
+#endif
 SIMPLE_SHIM2(creat, 8, const char __user *, pathname, int, mode);
 SIMPLE_SHIM2(link, 9, const char __user *, oldname, const char __user *, newname);
 SIMPLE_SHIM1(unlink, 10, const char __user *, pathname);
@@ -9668,8 +9685,46 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 	return retval;
 }
 
+#ifdef TRACE_TIMINGS
+static int trace_execve (const char *filename, const char __user *const __user *__argv, const char __user *const __user *__envp, struct pt_regs *regs) {
+	if (trace_timings) {
+		struct timespec tp;
+		const char __user* pc;
+		const char __user*const __user* up;
+		int len;
+		char* buf = KMALLOC (4096, GFP_KERNEL);
+		int count = 0;
+
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:execve filename %s, argv ", current->pid, tp.tv_sec, tp.tv_nsec, filename);
+		up = __argv;
+		do { 
+			if (get_user (pc, up)) {
+				BUG();
+			}
+			if (pc == 0) break;
+			len = strnlen_user (pc, 4096);
+			memset (buf, 0, 4096);
+			if (copy_from_user (buf, pc, len)) {
+				BUG();
+			}
+			printk ("%s ", buf);
+			++count;
+			if (count > 50) break;
+			up ++;
+		} while (1);
+		printk ("\n");
+		KFREE (buf);
+	}
+	
+	return do_execve (filename, __argv, __envp, regs);
+}
+int shim_execve(const char *filename, const char __user *const __user *__argv, const char __user *const __user *__envp, struct pt_regs *regs) 
+SHIM_CALL_MAIN(11, record_execve(filename, __argv, __envp, regs), replay_execve(filename, __argv, __envp, regs), trace_execve(filename, __argv, __envp, regs))
+#else
 int shim_execve(const char *filename, const char __user *const __user *__argv, const char __user *const __user *__envp, struct pt_regs *regs) 
 SHIM_CALL_MAIN(11, record_execve(filename, __argv, __envp, regs), replay_execve(filename, __argv, __envp, regs), do_execve(filename, __argv, __envp, regs))
+#endif
 
 SIMPLE_SHIM1(chdir, 12, const char __user *, filename);
 
@@ -11444,7 +11499,27 @@ replay_wait4 (pid_t upid, int __user *stat_addr, int options, struct rusage __us
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+asmlinkage long trace_wait4 (pid_t upid, int __user* stat_addr, int options, struct rusage __user* ru) { 
+	long rc = 0;
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:wait4_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+	}
+	rc = sys_wait4 (upid, stat_addr, options, ru);
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:wait4_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+	}
+	return rc;
+}
+
+asmlinkage long shim_wait4 (pid_t upid, int __user *stat_addr, int options, struct rusage __user *ru) SHIM_CALL_MAIN(114, record_wait4(upid, stat_addr, options, ru), replay_wait4(upid, stat_addr, options, ru), trace_wait4(upid, stat_addr, options, ru));
+#else
 asmlinkage long shim_wait4 (pid_t upid, int __user *stat_addr, int options, struct rusage __user *ru) SHIM_CALL(wait4, 114, upid, stat_addr, options, ru);
+#endif
 
 SIMPLE_SHIM1(swapoff, 115, const char __user *, specialfile);
 RET1_SHIM1(sysinfo, 116, struct sysinfo, info, struct sysinfo __user *, info);
@@ -12081,6 +12156,18 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
+	long rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:clone rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
+		printk ("%ld:%ld.%ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
+	}
+	return rc;
+}
+#endif
 
 long 
 shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
@@ -12120,7 +12207,11 @@ shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs 
 		printk("Pid %d - Pin fork child %d\n", current->pid, child_pid);
 		return child_pid;
 	}
+#ifdef TRACE_TIMINGS
+	return trace_clone (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+#else
 	return do_fork(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+#endif
 }
 
 SIMPLE_SHIM2(setdomainname, 121, char __user *, name, int, len);
@@ -13737,6 +13828,19 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+long trace_vfork(unsigned long vfork_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
+	long rc = do_fork (vfork_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:vfork rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
+		printk ("%ld:%ld.%ld:vfork child process\n", rc, tp.tv_sec, tp.tv_nsec);
+	}
+	return rc;
+}
+#endif
+
 long 
 shim_vfork(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {
@@ -13759,7 +13863,11 @@ shim_vfork(unsigned long clone_flags, unsigned long stack_start, struct pt_regs 
 		MPRINT("Pid %d - Pin vforks a child %d\n", current->pid, child_pid);
 		return child_pid;
 	}
+#ifdef TRACE_TIMINGS
+	return trace_vfork(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+#else
 	return do_fork(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+#endif
 }
 
 RET1_SHIM2(getrlimit, 191, struct rlimit, rlim, unsigned int, resource, struct rlimit __user *, rlim);
@@ -14539,12 +14647,27 @@ replay_exit_group (int error_code)
 	sys_exit_group (error_code); /* Signals should wake up any wakers */
 }
 
+#ifdef TRACE_TIMINGS
+asmlinkage long trace_exit_group (int error_code) { 
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:exit_group\n", current->pid, tp.tv_sec, tp.tv_nsec);
+	}
+	return sys_exit_group (error_code);
+}
+#endif
+
 asmlinkage void
 shim_exit_group (int error_code) 
 { 
 	if (current->record_thrd) record_exit_group (error_code);
 	if (current->replay_thrd && test_app_syscall(252)) replay_exit_group(error_code);
+#ifdef TRACE_TIMINGS
+	trace_exit_group (error_code);
+#else
 	sys_exit_group (error_code);					
+#endif
 }
 
 RET1_COUNT_SHIM3(lookup_dcookie, 253, buf, u64, cookie64, char __user *, buf, size_t, len);
@@ -14775,7 +14898,26 @@ replay_waitid (int which, pid_t upid, struct siginfo __user *infop, int options,
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+asmlinkage long trace_waitid (int which, pid_t upid, struct siginfo __user* infop, int options, struct rusage __user* ru) { 
+	long rc = 0;
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+	}
+	rc = sys_waitid (which, upid, infop, options, ru);
+	if (trace_timings) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+	}
+	return rc;
+}
+asmlinkage long shim_waitid (int which, pid_t upid, struct siginfo __user *infop, int options, struct rusage __user *ru) SHIM_CALL_MAIN (284, record_waitid(which, upid, infop, options, ru), replay_waitid(which, upid, infop, options, ru), trace_waitid(which, upid, infop, options, ru));
+#else
 asmlinkage long shim_waitid (int which, pid_t upid, struct siginfo __user *infop, int options, struct rusage __user *ru) SHIM_CALL(waitid, 284, which, upid, infop, options, ru);
+#endif
 
 SIMPLE_SHIM5(add_key, 286, const char __user *, _type, const char __user *, _description, const void __user *, _payload, size_t, plen, key_serial_t, ringid);
 SIMPLE_SHIM4(request_key, 287, const char __user *, _type, const char __user *, _description, const char __user *, _callout_info, key_serial_t, destringid);
@@ -16532,6 +16674,13 @@ static struct ctl_table replay_ctl[] = {
 	{
 		.procname	= "replay_ckpt_dir",
 		.data		= &replay_ckpt_dir,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "trace_timings",
+		.data		= &trace_timings,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
