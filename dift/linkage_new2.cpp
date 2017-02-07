@@ -592,13 +592,14 @@ static void create_connect_info_name(char* connect_info_name, int domain,
     }
 }
 
-static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags)
+static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
     SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
     struct open_info* oi = (struct open_info *) malloc (sizeof(struct open_info));
     strncpy(oi->name, filename, OPEN_PATH_LEN);
     oi->flags = flags;
     oi->fileno = open_file_cnt;
+    oi->mode = mode;
     open_file_cnt++;
     tdata->save_syscall_info = (void *) oi;
 }
@@ -1482,7 +1483,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 {
     switch (sysnum) {
         case SYS_open:
-            sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1);
+            sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
             break;
         case SYS_close:
             sys_close_start(tdata, (int) syscallarg0); 

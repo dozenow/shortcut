@@ -123,7 +123,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-#define TRACE_TIMINGS
+//#define TRACE_TIMINGS
 unsigned int trace_timings = 0;
 
 //#define KFREE(x) my_kfree(x, __LINE__)
@@ -4659,6 +4659,8 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			do_gettimeofday (&tv);
 			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 		}
+		//reopen necessary files
+		sys_open ("/tmp/cctTZrh1.s", O_RDWR|O_CREAT|O_TRUNC|O_LARGEFILE, 0666);
 	}
 
 	return retval;

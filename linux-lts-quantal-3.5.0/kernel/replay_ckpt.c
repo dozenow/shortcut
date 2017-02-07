@@ -1038,11 +1038,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		rc = copied;
 		goto exit;
 	}
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
 
 	record_pid = cpdata.record_pid;
 	*pretval = cpdata.retval;
@@ -1077,11 +1072,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		rc = copied;
 		goto exit;
 	}	
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
 
 	if (fpu_is_allocated) { 
 
@@ -1113,21 +1103,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
 	restore_sysv_mappings (file, ppos);
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk before_is_tthread %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
 
 	if (!is_thread) { 
 		
 		// restore the replay cache state (this is going to be done on per process)
 		restore_replay_cache_files (file, ppos);
-		{
-			struct timeval tv;
-			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk after restoring cache files %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-		}
 
 
 		// Delete all the vm areas of current process 
@@ -1165,7 +1145,9 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		btree_init32(&replay_mmap_btree);
 		for (i = 0; i < map_count-1; i++) {
 			struct timeval tv_start, tv_end;
-			do_gettimeofday(&tv_start);
+			if (replay_debug) {
+				do_gettimeofday(&tv_start);
+			}
 			premapped = 0;
 			copied = vfs_read (file, (char *) pvmas, sizeof(struct vma_stats), ppos);
 			if (copied != sizeof(struct vma_stats)) {
@@ -1173,7 +1155,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				rc = copied;
 				goto freemem;
 			}				
-			printk ("replay_full_resume_proc_from_disk file %s\n", pvmas->vmas_file);
+			DPRINT ("replay_full_resume_proc_from_disk file %s\n", pvmas->vmas_file);
 			if (pvmas->vmas_file[0]) { 
 				flags = O_RDONLY;
 				if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) {
@@ -1267,7 +1249,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			}
 
 			if (!premapped) { 
-				printk ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx\n", 
+				DPRINT ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx\n", 
 					map_file, pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, 
 					(pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
 					(pvmas->vmas_flags & VM_WRITE),
@@ -1326,13 +1308,15 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					rc = copied;
 					goto freemem;
 				}
-				printk ("replay_full_resume_proc_from_disk copy data from ckpt.\n");
+				DPRINT ("replay_full_resume_proc_from_disk copy data from ckpt.\n");
 				filp_close (mmap_file, NULL);
 			}
 			set_fs(old_fs);			
 			if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections		
-			do_gettimeofday(&tv_end);
-			printk ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%ld, end %ld.%ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
+			if (replay_debug) {
+				do_gettimeofday(&tv_end);
+			}
+			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%ld, end %ld.%ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
 		}
 		btree_destroy32(&replay_mmap_btree);
 		// Process-specific info in the mm struct
@@ -1374,12 +1358,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	else { 
 		arch_restore_sysenter_return(current->mm->context.vdso);
 	}
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
-
 
 	// Read in TLS info
 	for (i = 0; i < GDT_ENTRY_TLS_ENTRIES; i++) {
@@ -1407,15 +1385,15 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		rc = copied;
 		goto exit;
 	}
-
+	
 	MPRINT ("replay_full_resume_proc_from_disk done\n");
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("replay_full_resume_proc_from_disk end time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
-	print_vmas(current);
+	if (replay_debug) print_vmas(current);
 freemem:
 	KFREE (pmminfo);
 	KFREE (pvmas);

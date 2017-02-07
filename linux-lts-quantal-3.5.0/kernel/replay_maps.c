@@ -31,7 +31,7 @@
 
 //#define DPRINT printk
 
-char cache_dir[] = "/mnt/hd/replay_cache";
+char cache_dir[] = "/replay_cache";
 #define COPY_CHUNK 4096
 
 // We hold the record lock when this function is called

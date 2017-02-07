@@ -16,9 +16,9 @@
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 
-long print_limit = 10;
+long print_limit = -1;
 KNOB<string> KnobPrintLimit(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print limit");
-long print_stop = 10;
+long print_stop = 1000000;
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
 char* addr_save = NULL;
 KNOB<string> KnobSaveSyscallAddrs(KNOB_MODE_WRITEONCE, "pintool", "addr_save", "", "save syscall addrs to file");
@@ -142,6 +142,12 @@ void set_address_one(ADDRINT syscall_num, ADDRINT ebx_value, ADDRINT syscallarg0
 	if (sysnum == 31) {
 	    tdata->ignore_flag = (u_long) syscallarg1;
 	}
+	if (sysnum == SYS_brk) {
+		printf ("brk at %p\n", (void*) syscallarg0);
+	}
+	if (sysnum == SYS_stat64) { 
+		printf ("try to stat %s\n", (char*) syscallarg0);
+	}
 
 #ifdef PLUS_TWO
 	    g_hash_table_add(sysexit_addr_table, GINT_TO_POINTER(ip+2));
@@ -207,10 +213,13 @@ void instrument_inst_print (ADDRINT ip)
 {
     if (global_syscall_cnt > print_limit && global_syscall_cnt < print_stop) {
 	PIN_LockClient();
-        printf("[INST] Pid %d (tid: %d) (record %d) - %#x\n", PIN_GetPid(), PIN_GetTid(), get_record_pid(), ip);
+	printf ("#%x\n", ip);
+        /*printf("[INST] Pid %d (tid: %d) (record %d) - %#x, ", PIN_GetPid(), PIN_GetTid(), get_record_pid(), ip);
 	if (IMG_Valid(IMG_FindByAddress(ip))) {
 		printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-	}
+	} else 
+		printf ("\n");
+	*/	
 	PIN_UnlockClient();
     }
 }
@@ -348,16 +357,29 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 }
 
 #ifdef DEBUG_FUNCTIONS
-void before_function_call(ADDRINT name, ADDRINT rtn_addr)
+void before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0)
 {
     if (global_syscall_cnt >= function_print_limit && global_syscall_cnt < function_print_stop) {
+	if (strcmp ((char*)name, "coverage_init") == 0) {
+		printf ("coverage_init %s\n", (char*) arg0);
+	}
+	if (strcmp ((char*)name, "search_line_sse42") == 0) {
+		//printf ("search_line_sse42 %s\n", (char*) arg0);
+		printf ("search_line_sse42 %p\n", (char*) arg0);
+	}
+	if (strcmp ((char*)name, "malloc") == 0) {
+		printf ("malloc size %u\n", (unsigned int) arg0);
+	}
         printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
     }
 }
 
-void after_function_call(ADDRINT name, ADDRINT rtn_addr)
+void after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT ret)
 {
     if (global_syscall_cnt >= function_print_limit && global_syscall_cnt < function_print_stop) {
+	if (strcmp ((char*)name, "malloc") == 0) {
+		printf ("malloc ret %p\n", (void*) ret);
+	}
         printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
     }
 }
@@ -372,9 +394,14 @@ void routine (RTN rtn, VOID *v)
 
     if (!strstr(name, "get_pc_thunk")) {
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-                IARG_PTR, name, IARG_ADDRINT, RTN_Address(rtn), IARG_END);
+                IARG_PTR, name, 
+		IARG_ADDRINT, RTN_Address(rtn), 
+		IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		IARG_END);
         RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
-			    IARG_PTR, name, IARG_ADDRINT, RTN_Address(rtn), IARG_END);
+			    IARG_PTR, name, IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCRET_EXITPOINT_VALUE,  
+			    IARG_END);
     }
 
     RTN_Close(rtn);

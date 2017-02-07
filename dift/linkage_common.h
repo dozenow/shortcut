@@ -39,6 +39,7 @@ struct open_info {
     char name[OPEN_PATH_LEN];
     int flags;
     int fileno;
+    int mode;
 };
 
 struct read_info {
