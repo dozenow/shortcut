@@ -696,6 +696,7 @@ static inline void sys_read_stop(int rc)
     if (rc > 0) {
         struct taint_creation_info tci;
         char* channel_name = (char *) "--";
+	char* channel_name_ret = (char*) "read_retval";
 
         if (monitor_has_fd(open_fds, ri->fd)) {
             struct open_info* oi;
@@ -729,6 +730,10 @@ static inline void sys_read_stop(int rc)
                         rc, (unsigned long) ri->buf);
         //fprintf(stderr, "inst_count = %lld\n", inst_count);
         create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+	//track control flow taints for retvals	
+	tci.fileno = -1;
+	tci.type = TOK_READ_RET;
+	create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
 #ifdef LINKAGE_FDTRACK
         //fprintf(stderr, "read from fd %d\n", ri->fd);
         if (is_fd_tainted(ri->fd)) {

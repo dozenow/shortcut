@@ -88,7 +88,7 @@ int main (int argc, char* argv[])
 			ptok++;
 		    } 
 
-		    printf ("input pid/syscall %d/%d offset %lu\n", ptok->record_pid, ptok->syscall_cnt, tokval);
+		    printf ("input pid/syscall %d/%d offset %lu type %d\n", ptok->record_pid, ptok->syscall_cnt, tokval, ptok->type);
 		    mptr++;
 		} else {
 		    mptr++;

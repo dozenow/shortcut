@@ -29,6 +29,7 @@ extern "C" {
 #define TOK_PREAD 8
 /* Select on a file descriptor */
 #define TOK_SELECT 9
+#define TOK_READ_RET 10
 
 
 /* A token represents one or more contiguous inputs,
