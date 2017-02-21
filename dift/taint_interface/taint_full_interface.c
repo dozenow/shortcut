@@ -13,10 +13,9 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
-//#define CTRL_FLOW: don't turn this on; as this is deprecated;to turn this on, take a look at 98747fee412f666cba1921d088f3076d7ea7526a (commit id)
 #define USE_MERGE_HASH
 #define TAINT_STATS
-#define TRACE_TAINT
+//#define TRACE_TAINT
 
 #ifdef TRACE_TAINT
 #define TPRINT printf
@@ -1704,7 +1703,7 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 	int i = 0;
 	taint_t t = 0;
 	struct taint_creation_info tci;
-	int flag_value = 0;
+	//int flag_value = 0;
 
 	for (; i < NUM_FLAGS; ++i) {
 		if (flags & (1 << i)) {
@@ -1713,8 +1712,7 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 		} 
 	}
 	TPRINT ("taint_jump: ip %#x flags %x, tainted flag %x\n", ip, flags, t);
-	//TODO: what to do for unconditional jump instruction?? Should we clear all flag reg?
-	for (i = 0; i<NUM_FLAGS; ++i) {
+	/*for (i = 0; i<NUM_FLAGS; ++i) {
 		if (flags & (1 << i)) {
 			TPRINT ("taint_jump flag index %d, taint value %x, flag value %d\n", i, current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], GET_FLAG_VALUE (eflag, i));
 			if (flag_value == 0) 
@@ -1723,7 +1721,7 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 				fprintf (stderr, "TODO: what if one instruction uses multiple flags.\n");
 			}
 		}
-	}
+	}*/
 	current_thread->current_flag_taint = t;
 
 	tci.type = TAINT_DATA_INST;
@@ -1731,7 +1729,7 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 	tci.rg_id = current_thread->rg_id;
 	tci.syscall_cnt = current_thread->syscall_cnt;
 	tci.offset = 0;
-	tci.fileno = flag_value; //hacky fileno is the flag value for this jump
+	tci.fileno = eflag;//hacky: fileno is the flag value for this jump
 	tci.data = ip;
 
 	if (t != 0 && flags == 8 ) {
@@ -2025,7 +2023,7 @@ static inline void taint_add_reg2mem (u_long mem_loc, int reg, uint32_t size)
     unsigned i = 0;
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
-    fprintf (stderr, "TODO: taint_add_reg2mem control flow not handled.\n");
+//    fprintf (stderr, "TODO: taint_add_reg2mem control flow not handled.\n");
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {

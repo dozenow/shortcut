@@ -22,6 +22,7 @@
 #include <linux/net.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/resource.h>
 
 #include <map>
 using namespace std;
@@ -86,6 +87,7 @@ int s = -1;
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
+#define STARTUP_LOG
 
 //used in order to trace instructions! 
 //#define TRACE_INST
@@ -171,6 +173,8 @@ unsigned long long inst_count = 0;
 int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
+unsigned int checkpoint_clock = 0;
+int startup_fd = -1;
 const char* filter_read_filename = NULL;
 u_long segment_length = 0;
 int splice_output = 0;
@@ -253,6 +257,9 @@ KNOB<int> KnobNWPort(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobForkFlags(KNOB_MODE_WRITEONCE,
     "pintool", "fork_flags", "",
     "flags for which way to go on each fork");
+KNOB<unsigned int> KnobCheckpointClock(KNOB_MODE_WRITEONCE,
+    "pintool", "ckpt_clock", "",
+    "taint tracking until ckpt_clock(inclusive) and generates startup logs. The clock should always be the end clock of a syscall (checkpoint files has the same property in namings)");
 #ifdef RETAINT
 KNOB<string> KnobRetaintEpochs(KNOB_MODE_WRITEONCE,
     "pintool", "retaint", "",
@@ -567,6 +574,44 @@ static inline void increment_syscall_cnt (int syscall_num)
     }
 }
 
+#ifdef STARTUP_LOG
+struct startup_entry { 
+	int sysnum;
+	int len;
+};
+struct prlimit64_retval { 
+	int pid;
+	int resource;
+	struct rlimit rlim;
+};
+
+static void write_into_startup_log (struct thread_data* tdata, int sysnum, void* buf, int len) { 
+	int rc = 0;
+	struct startup_entry entry;
+	entry.sysnum = sysnum;
+	entry.len = len;
+	if (tdata->startup_fd <= 0) { 
+		char output_file_name[256];
+		sprintf(output_file_name, "/tmp/startup.%llu.%d", tdata->rg_id, tdata->record_pid);
+		tdata->startup_fd = open(output_file_name, O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
+		if (tdata->startup_fd < 0) {
+			fprintf (stderr, "could not open startup log errno %d\n", errno);
+			assert (0);
+		}
+	}
+	rc = write (tdata->startup_fd, (void*) &entry, sizeof(struct startup_entry));
+	if (rc != sizeof(struct startup_entry)) { 
+		assert (0 && "cannot write into startup");
+	}
+	if (buf == NULL) 
+		return;
+	rc = write (tdata->startup_fd, buf, len);
+	if (rc != len) { 
+		assert (0 && "cannot write into startup buf");
+	}
+}
+#endif
+
 static void create_connect_info_name(char* connect_info_name, int domain,
 				     struct connect_info* ci)
 {
@@ -602,6 +647,9 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     oi->mode = mode;
     open_file_cnt++;
     tdata->save_syscall_info = (void *) oi;
+#ifdef STARTUP_LOG
+    write_into_startup_log (tdata, 5, filename, strlen(filename) + 1);
+#endif
 }
 
 char* get_file_ext(char* filename){
@@ -655,6 +703,9 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
     SYSCALL_DEBUG (stderr, "close_start:fd = %d\n", fd);
     tdata->save_syscall_info = (void *) fd;
+#ifdef STARTUP_LOG
+    write_into_startup_log (tdata, 6, NULL, 0);
+#endif
 }
 
 static inline void sys_close_stop(int rc)
@@ -835,6 +886,9 @@ static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int 
     mmi->prot = prot;
     mmi->fd = fd;
     tdata->save_syscall_info = (void *) mmi;
+#ifdef STARTUP_LOG
+    write_into_startup_log (tdata, 192, NULL, 0);
+#endif
 }
 
 static void sys_mmap_stop(int rc)
@@ -1485,7 +1539,8 @@ static inline void sys_getrusage_stop (int rc) {
 
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
-{
+{ 
+    char* filename = NULL;
     switch (sysnum) {
         case SYS_open:
             sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
@@ -1495,6 +1550,11 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_read:
 	    sys_read_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
+#ifdef STARTUP_LOG 
+	    write_into_startup_log (tdata, 3, NULL, 0);
+	    //for read, if the file is read-only (included in the cache), we can safely ignore them;
+	    //TODO However, the application may open the same file and write and close during startup?
+#endif
             break;
         case SYS_write:
         case SYS_pwrite64:
@@ -1556,6 +1616,11 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
+#ifdef STARTUP_LOG
+	    // we need to track the data/ctrl flow for gettimeofday
+	    // so they're not getting reexecuted
+	    write_into_startup_log (tdata, 78, NULL, 0);
+#endif
 	    break;
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
@@ -1563,6 +1628,53 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_clock_gettime:
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
 	    break;
+#ifdef STARTUP_LOG
+	case SYS_execve:
+	    write_into_startup_log (tdata, 11, NULL, 0);
+	    break;
+	case SYS_brk:
+	    write_into_startup_log (tdata, 45, NULL, 0);
+	    break;
+	case SYS_access:
+	    filename = (char*) syscallarg0;
+	    write_into_startup_log (tdata, 33, filename, strlen (filename)  + 1); 
+	    break;
+	case SYS_fstat64:
+	    //currently we only detect mtime, assuming atime is not affecting ctrlflow
+	    //if mtime is changed, the open syscall should already detect it (fstat always requires an open before it)
+	    write_into_startup_log (tdata, 197, NULL, 0); 
+	    break;
+	case SYS_mprotect: 
+	    write_into_startup_log (tdata, 125, NULL, 0);
+	    break;
+	case SYS_munmap:
+	    write_into_startup_log (tdata, 91, NULL, 0);
+	    break;
+
+	case SYS_rt_sigaction:
+	    write_into_startup_log (tdata, 174, NULL, 0);
+	    break;
+	case SYS_prlimit64:
+	    {
+	    void* new_limit = (void*) syscallarg2;
+	    int pid = (int) syscallarg0;
+	    int resource = (int) syscallarg1;
+	    void* old_limit = (void*) syscallarg3;
+	    if (new_limit == NULL) {
+		    //if we don't modify the rlimit
+		    struct prlimit64_retval ret;
+		    ret.pid = pid;
+		    ret.resource = resource;
+		    memcpy (&ret.rlim, old_limit, sizeof(struct rlimit));
+		    write_into_startup_log (tdata, 340, &ret, sizeof(ret));
+	    }
+	    break;
+	    }
+	case SYS_stat64:
+	    filename = (char*) syscallarg0;
+	    write_into_startup_log (tdata, 195, filename, strlen (filename) + 1);
+	    break;
+#endif
 #if 0
         case SYS_munmap:
 	    sys_munmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1);
@@ -1650,6 +1762,23 @@ void syscall_end(int sysnum, ADDRINT ret_value)
             current_thread->socketcall = 0;
             break;
         }
+    }
+    //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
+    if (*ppthread_log_clock >= checkpoint_clock) { 
+	struct fd_struct* fds;
+	//TODO: socks, x server ...
+	printf ("opened files: \n");
+	list_for_each_entry (fds, &open_fds->fds, list) {
+		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
+	}
+	//stop tracing after this 
+	int calling_dd = dift_done ();
+	while (!calling_dd || is_pin_attaching(dev_fd)) {
+		usleep (1000);
+	}
+	fprintf(stderr, "%d: calling try_to_exit\n", PIN_GetTid());
+	try_to_exit(dev_fd, PIN_GetPid());
+	PIN_ExitApplication(0); 
     }
 }
 
@@ -13387,8 +13516,9 @@ void instrument_div(INS ins)
         int msb_treg, lsb_treg, dst1_treg, dst2_treg;
 
         addrsize = INS_MemoryReadSize(ins);
+	INSTRUMENT_PRINT (log_f, "div addrsize %u\n", addrsize);
         switch (addrsize) {
-            case 2:
+            case 1:
                 // mem_loc is Divisor
                 lsb_treg = translate_reg(LEVEL_BASE::REG_AX); // Dividend
                 dst1_treg = translate_reg(LEVEL_BASE::REG_AL); // Quotient
@@ -13404,7 +13534,7 @@ void instrument_div(INS ins)
                                     IARG_UINT32, dst2_treg,
                                     IARG_END);
                 break;
-            case 4:
+            case 2:
                 // mem_loc is Divisor
                 msb_treg = translate_reg(LEVEL_BASE::REG_DX);
                 lsb_treg = translate_reg(LEVEL_BASE::REG_AX); // Dividend
@@ -13421,7 +13551,7 @@ void instrument_div(INS ins)
                                     IARG_UINT32, dst2_treg,
                                     IARG_END);
                 break;
-            case 8:
+            case 4:
                 // Dividend is msb_treg:lsb_treg
                 // Divisor is src_treg
                 msb_treg = translate_reg(LEVEL_BASE::REG_EDX);
@@ -14144,7 +14274,7 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
     if((op1mem && op2reg)) {
-	    ERROR_PRINT ("instrument_test: TODO.\n");
+	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
     } else if(op1reg && op2reg) {
         REG dstreg;
         dstreg = INS_OperandReg(ins, 0);
@@ -14160,9 +14290,9 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 	//taint flag register
 	instrument_taint_reg2flag (ins, dstreg, reg, mask);
     } else if(op1mem && op2imm) {
-	    ERROR_PRINT ("instrument_test: TODO.\n");
+	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
     }else if(op1reg && op2imm){
-	    ERROR_PRINT ("TEST: TODO.\n");
+	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
     }else{
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
@@ -15153,6 +15283,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->app_syscall = 0;
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
+    ptdata->startup_fd = -1;
 
 
     int thread_ndx;
@@ -15268,7 +15399,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
                 exit(-1);
             }
 #endif
-        }
+        } 
 
         if (trace_x && xoutput_fd == -1) {
             char xoutput_file_name[256];
@@ -15499,6 +15630,7 @@ int main(int argc, char** argv)
     splice_output = KnobSpliceOutput.Value();
     all_output = KnobAllOutput.Value();
     fork_flags = KnobForkFlags.Value().c_str();
+    checkpoint_clock = KnobCheckpointClock.Value();
 
 #ifdef RETAINT
     retaint = KnobRetaintEpochs.Value().c_str();

@@ -26,6 +26,7 @@ int main (int argc, char* argv[])
     int fd, rc, status, filter_inet = 0;
     u_long filter_output_after = 0;
     char* stop_at = NULL;
+    char* ckpt_clock = NULL;
     char* filter_output_after_str = NULL;
     char* filter_partfile = NULL;
     int next_child = 0, i;
@@ -36,7 +37,7 @@ int main (int argc, char* argv[])
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock]\n");
 	return -1;
     }
 
@@ -54,6 +55,9 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index],"-stop_at",BUFFER_SIZE)) {
 		stop_at = argv[index+1];
 		index += 2;
+	    } else if (!strncmp(argv[index],"-ckpt_clock",BUFFER_SIZE)) {
+		ckpt_clock = argv[index+1];
+		index += 2;
 	    } else if (!strncmp(argv[index],"-filter_inet",BUFFER_SIZE)) {
 		filter_inet = 1;
 		index++;
@@ -65,7 +69,7 @@ int main (int argc, char* argv[])
 		filter_output_after = atoi(argv[index+1]);
 		index += 2;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
 		return -1;
 	    }
 	}
@@ -131,6 +135,10 @@ int main (int argc, char* argv[])
 	if (stop_at) {
 	    args[argcnt++] = "-l";
 	    args[argcnt++] = stop_at;
+	}
+	if (ckpt_clock) {
+	    args[argcnt++] = "-ckpt_clock";
+	    args[argcnt++] = ckpt_clock;
 	}
 	args[argcnt++] = NULL;
 	rc = execv ("../../pin/pin", (char **) args);

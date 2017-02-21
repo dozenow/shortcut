@@ -164,6 +164,7 @@ struct thread_data {
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;
+    int startup_fd;
 };
 
 struct memcpy_header {

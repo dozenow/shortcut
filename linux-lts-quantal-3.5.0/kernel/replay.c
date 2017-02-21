@@ -3962,9 +3962,11 @@ static inline long
 should_take_checkpoint (void)
 {
 	long retval = 0;
+	//the checkpoint will always be taken after a system call 
+	// e.g. start and stop clock for A is 3 and 4, then checkpoint will be taken after A is finished, and before clock value 5
 	if (!current->replay_thrd->rp_group->finished_ckpt && 
 	    current->replay_thrd->rp_group->rg_checkpoint_at > 0 && 
-	    atomic_read (current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock) >= current->replay_thrd->rp_group->rg_checkpoint_at) { 
+	    (atomic_read (current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock) - 1) >= current->replay_thrd->rp_group->rg_checkpoint_at) { 
 
 		printk("%d, taking checkpoint, record_clock %d, rg_cpt_at %d\n", current->pid, 
 		       atomic_read (current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock),
@@ -4198,13 +4200,14 @@ replay_full_ckpt (long rc)
 	prepg = prept->rp_group;
 	precg = prepg->rg_rec_group;
 	clock = atomic_read (precg->rg_pkrecord_clock);
+	//the file name always contains the clock value after a system call is finished, instead of the expected clock value
 	if(replay_ckpt_dir != 0) {
-		sprintf (ckpt, "%s/%d/ckpt.%d", precg->rg_logdir, replay_ckpt_dir,clock);
+		sprintf (ckpt, "%s/%d/ckpt.%d", precg->rg_logdir, replay_ckpt_dir,clock-1);
 	}else {
-		sprintf (ckpt, "%s/ckpt.%d", precg->rg_logdir, clock);
+		sprintf (ckpt, "%s/ckpt.%d", precg->rg_logdir, clock-1);
 	}
 	MPRINT ("replay_full_ckpt saving rc %ld\n", rc);
-	printk("starting checkpoint at pid %d, clock %d\n",prept->rp_record_thread->rp_record_pid,clock);
+	printk("starting checkpoint at pid %d, just after clock %d\n",prept->rp_record_thread->rp_record_pid,clock - 1);
 
 	// Determine how many processes to checkpoint
 	iter = ds_list_iter_create(current->replay_thrd->rp_group->rg_replay_threads);
