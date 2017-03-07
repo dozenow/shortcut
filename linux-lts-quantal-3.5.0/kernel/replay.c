@@ -4663,7 +4663,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 		}
 		//reopen necessary files
-		sys_open ("/tmp/cctTZrh1.s", O_RDWR|O_CREAT|O_TRUNC|O_LARGEFILE, 0666);
+		//sys_open ("/tmp/cctTZrh1.s", O_RDWR|O_CREAT|O_TRUNC|O_LARGEFILE, 0666);
+#ifdef RECHECK
+		{
+			char recheck_log_name[256];
+			sprintf (recheck_log_name, "/startup_db/%llu/startup.%d.recheck", precg->rg_id, prect->rp_record_pid);
+			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
+		}
+#endif
 	}
 
 	return retval;
@@ -8394,12 +8401,6 @@ void consume_socket_args_write(void *retparams) {
 
 
 /* fork system call is handled by shim_clone */
-
-struct open_retvals {
-	dev_t           dev;
-	u_long          ino;
-	struct timespec mtime;
-};
 
 long file_cache_check_version(int fd, struct file *filp,
 		struct filemap_data *data , struct open_retvals *retvals) {

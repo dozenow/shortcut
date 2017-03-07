@@ -8,9 +8,78 @@
 
 #include <assert.h>
 
+int startup_ignore_flag = 1;
+int startup_log_fd = -1;
+int recheck_fd = -1;
+int generate_startup = 0;
+struct startup_entry {
+	int sysnum;
+	int len;
+};
+struct recheck_entry { 
+	int sysnum;
+	int flag;
+	long retval;
+	int len;
+};
 static void empty_printfcn(FILE *out, struct klog_result *res) {
 }
 
+static void startup_default_printfcn (FILE* out, struct klog_result* res) { 
+	int rc = 0;
+	struct startup_entry entry;
+	void* buf = NULL;
+
+	default_printfcn (out, res);
+	//read from startup log
+	if (startup_ignore_flag == 0) { 
+		rc = read (startup_log_fd, &entry, sizeof(entry));
+		if (rc == 0) {
+			//end of startup log; do nothing
+			exit (EXIT_SUCCESS);
+		}
+		assert (rc == sizeof(entry));
+		if (entry.len > 0) {
+			buf = malloc (entry.len);
+			rc = read (startup_log_fd, buf, entry.len);
+		}
+		startup_ignore_flag = 0;
+		//check syscall
+		if (res->psr.sysnum != entry.sysnum) { 
+			fprintf (stderr, "MISMATCH syscall, expected %d in the reply log, while in the startup log %d\n", res->psr.sysnum, entry.sysnum);
+			exit (EXIT_FAILURE);
+		}
+		res->startup_retparams = buf;
+		res->startup_retsize = entry.len;
+	} else { 
+		startup_ignore_flag = 0; 
+		//TODO:this is to ignroe the first execve
+	}
+}
+
+static void write_header_into_recheck_log (int sysnum, long retval, int flag, int len) { 
+	int rc = 0;
+	struct recheck_entry entry;
+	entry.sysnum = sysnum;
+	entry.len = (len>0?len:0);
+	entry.flag = flag;
+	entry.retval = retval;
+	if (recheck_fd <= 0) { 
+		exit(EXIT_FAILURE);
+	}
+	rc = write (recheck_fd, (void*) &entry, sizeof(struct recheck_entry));
+	if (rc != sizeof(struct recheck_entry)) { 
+		assert (0 && "cannot write into startup");
+	}
+	fprintf (stderr, "write_header_into_recheck_log: len %d\n", len);
+}
+static void write_content_into_recheck_log (void* buf, int len) {
+	int rc = 0;
+	/*rc = write (recheck_fd, &len, sizeof (len));
+	assert (rc == sizeof(len));*/
+	rc = write (recheck_fd, buf, len);
+	assert (rc == len); 
+}
 
 static void print_write_pipe(FILE *out, struct klog_result *res) {
 	char *retparams = res->retparams;
@@ -189,6 +258,14 @@ static void print_mmap(FILE *out, struct klog_result *res) {
 	}
 }
 
+//here is the recheck heuristic:
+//for READ ONLY files(should already be cached), recheck on open;
+//otherwise, recheck on each read
+struct open_params { 
+	int flag;
+	int mode;
+	char filename[0];
+};
 static void print_open(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
 
@@ -197,6 +274,23 @@ static void print_open(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct open_retvals *oret = res->retparams;
 		fprintf(out, "         Open dev is %lX, ino %lX\n", oret->dev, oret->ino);
+	}
+	if (generate_startup) { 
+		//for read-only files, check mtime here instead of read; also re-open and check retval
+		char* filename = (char*) (((struct open_params*)res->startup_retparams)->filename);
+		if (psr->flags & SR_HAS_RETPARAMS) {
+			struct open_retvals* or = res->retparams;
+			write_header_into_recheck_log (5, res->retval, 0, sizeof (struct open_retvals) + res->startup_retsize);
+			write_content_into_recheck_log (res->retparams, sizeof(struct open_retvals));
+			printf ("     Open cache file filename %s, mtime %lu %lu\n", filename, or->mtime.tv_sec, or->mtime.tv_nsec);
+		} else {
+			write_header_into_recheck_log (5, res->retval, 1, res->startup_retsize);
+		}
+		if (filename != NULL) { 
+			write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
+		} else { 
+			fprintf (stderr, "cannot parse filename for open? retsize %d\n", res->startup_retsize);
+		}
 	}
 }
 
@@ -233,6 +327,7 @@ static void print_read(FILE *out, struct klog_result *res) {
 			struct open_retvals *orets = (void *)(buf + sizeof(int) + sizeof(loff_t));
 			fprintf(out, "         Updating cache file to {%lu, %lu, (%ld, %ld)}",
 					orets->dev, orets->ino, orets->mtime.tv_sec, orets->mtime.tv_nsec);
+			if (generate_startup) fprintf (stderr, "Not handled for READ_NEW_CACHE_FILE\n");
 		}
 
 		if (is_cache_read & CACHE_MASK) {
@@ -275,6 +370,39 @@ static void print_read(FILE *out, struct klog_result *res) {
 			}
 #endif
 		}
+	}
+	if (generate_startup)  {
+		int write_content = 0;
+		if (psr->flags & SR_HAS_RETPARAMS) { 
+			char* buf = res->retparams;
+			int is_cache_read = *((int*)buf);
+
+			if ((is_cache_read & CACHE_MASK) == 0) {
+				//include all bytes into recheck log
+				write_header_into_recheck_log (3, res->retval, 0, res->retval);
+				write_content_into_recheck_log (res->retparams + sizeof(int), res->retval);
+				write_content = 1;
+			}
+		}
+		if (write_content == 0) { 
+			write_header_into_recheck_log (3, res->retval, 1, 0);
+		}
+	}
+}
+
+static void print_close (FILE* out, struct klog_result* res) { 
+	parseklog_default_print(out, res);
+	if (generate_startup) {
+		write_header_into_recheck_log (6, res->retval, 0, res->startup_retsize);
+		write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
+	}
+}
+
+static void print_access (FILE* out, struct klog_result* res) { 
+	parseklog_default_print(out, res);
+	if (generate_startup) { 
+		write_header_into_recheck_log (33, res->retval, 0, res->startup_retsize);
+		write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
 	}
 }
 
@@ -371,7 +499,7 @@ enum printtype {
 };
 
 void print_usage(FILE *out, char *progname) {
-	fprintf(out, "Usage: %s [-p] [-g] [-h] logfile\n", progname);
+	fprintf(out, "Usage: %s [-p] [-g] [-h] [-s] logfile\n", progname);
 }
 
 void print_help(char *progname) {
@@ -379,17 +507,21 @@ void print_help(char *progname) {
 	printf(" -h       Prints this dialog\n");
 	printf(" -g       Only prints file graph information\n");
 	printf(" -p       Only prints pipe write information\n");
+	printf(" -s 	  generate startup caches.\n");
 }
 
 int main(int argc, char **argv) {
 	struct klogfile *log;
 	struct klog_result *res;
+	char startup_filename[256];
 
 	enum printtype type = BASE;
 
 	int opt;
+	unsigned long gid;
+	int pid;
 
-	while ((opt = getopt(argc, argv, "gp")) != -1) {
+	while ((opt = getopt(argc, argv, "gphs")) != -1) {
 		switch (opt) {
 			case 'g':
 				type = GRAPH;
@@ -400,6 +532,9 @@ int main(int argc, char **argv) {
 			case 'h':
 				print_help(argv[0]);
 				exit(EXIT_SUCCESS);
+			case 's':
+				generate_startup = 1;
+				break;
 			default:
 				print_usage(stderr, argv[0]);
 				exit(EXIT_FAILURE);
@@ -412,6 +547,31 @@ int main(int argc, char **argv) {
 	}
 
 	log = parseklog_open(argv[optind]);
+	//get the group id and log id (this requires the absolute path in the params) 
+	if (strncmp (argv[optind], "/replay_logdb/rec_", 18) != 0) { 
+		printf ("use absulte log path.\n");
+		exit (EXIT_FAILURE);
+	} else { 
+		char* index = strrchr (argv[optind], '/');
+		gid = atol (argv[optind] + 18);
+		pid = atoi (index + 9);
+	}
+	printf ("Group id %lu, pid %d\n", gid, pid);
+	//open startup log
+	if (generate_startup) { 
+		sprintf (startup_filename, "/startup_db/%lu/startup.%d", gid, pid);
+		startup_log_fd = open (startup_filename, O_RDONLY);
+		if (startup_log_fd < 0) { 
+			printf ("cannot open startup log, ret %d, filename %s\n", startup_log_fd, startup_filename);
+			exit (EXIT_FAILURE);
+		}
+		sprintf (startup_filename, "/startup_db/%lu/startup.%d.recheck", gid, pid);
+		recheck_fd = open (startup_filename, O_RDWR | O_TRUNC | O_CREAT, 0644);
+		if (recheck_fd < 0) {
+			printf ("cannot open startup log, ret %d, filename %s\n", startup_log_fd, startup_filename);
+			exit (EXIT_FAILURE);
+		}
+	}
 	if (!log) {
 		fprintf(stderr, "%s doesn't appear to be a valid log file!\n", argv[0]);
 		exit(EXIT_FAILURE);
@@ -435,6 +595,10 @@ int main(int argc, char **argv) {
 		parseklog_set_printfcn(log, print_stat, 197);
 		parseklog_set_printfcn(log, print_epoll_wait, 256);
 		parseklog_set_printfcn(log, print_clock_gettime, 265);
+		if (generate_startup){
+			parseklog_set_default_printfcn (log, startup_default_printfcn);
+			parseklog_set_printfcn(log, print_close, 6);
+		}
 	} else if (type == GRAPH) {
 		parseklog_set_default_printfcn(log, empty_printfcn);
 		parseklog_set_signalprint(log, empty_printfcn);
@@ -451,10 +615,15 @@ int main(int argc, char **argv) {
 	}
 
 	while ((res = parseklog_get_next_psr(log)) != NULL) {
+		//stop at the checkpoint clock
 		klog_print(stdout, res);
 	}
 
 	parseklog_close(log);
+	if (generate_startup) {
+		close (startup_log_fd);
+		close (recheck_fd);
+	}
 
 	return EXIT_SUCCESS;
 }

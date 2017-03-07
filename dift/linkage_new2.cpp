@@ -592,7 +592,20 @@ static void write_into_startup_log (struct thread_data* tdata, int sysnum, void*
 	entry.len = len;
 	if (tdata->startup_fd <= 0) { 
 		char output_file_name[256];
-		sprintf(output_file_name, "/tmp/startup.%llu.%d", tdata->rg_id, tdata->record_pid);
+		char output_dir[256];
+		DIR* dir = NULL;
+
+		sprintf(output_dir, "/startup_db/%llu", tdata->rg_id);
+		dir = opendir (output_dir);	
+		if (dir) { 
+			closedir (dir);
+		} else if (errno == ENOENT) {
+			int retval = mkdir (output_dir, 0744);
+			if (retval != 0) fprintf (stderr, "cannot creat dir %s\n", output_dir);
+		} else { 
+			fprintf (stderr, "Cannot open dir %s\n", output_dir);
+		}
+		sprintf(output_file_name, "/startup_db/%llu/startup.%d", tdata->rg_id, tdata->record_pid);
 		tdata->startup_fd = open(output_file_name, O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
 		if (tdata->startup_fd < 0) {
 			fprintf (stderr, "could not open startup log errno %d\n", errno);
@@ -637,18 +650,29 @@ static void create_connect_info_name(char* connect_info_name, int domain,
     }
 }
 
+struct open_params {
+	int flags;
+	int mode;
+	char filename[0];
+};
+
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
     SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
     struct open_info* oi = (struct open_info *) malloc (sizeof(struct open_info));
+    struct open_params *op = NULL;
     strncpy(oi->name, filename, OPEN_PATH_LEN);
-    oi->flags = flags;
     oi->fileno = open_file_cnt;
-    oi->mode = mode;
+    oi->flags = flags;
     open_file_cnt++;
     tdata->save_syscall_info = (void *) oi;
 #ifdef STARTUP_LOG
-    write_into_startup_log (tdata, 5, filename, strlen(filename) + 1);
+    op = (struct open_params*) malloc (sizeof (struct open_params) + strlen (filename) + 1);
+    memset (op, 0, sizeof(struct open_params) + strlen (filename) + 1);
+    op->flags = flags;
+    op->mode = mode;
+    memcpy (op->filename, filename, strlen(filename) + 1);
+    write_into_startup_log (tdata, 5, op, sizeof(struct open_params) + strlen (filename) + 1);
 #endif
 }
 
@@ -704,7 +728,7 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
     SYSCALL_DEBUG (stderr, "close_start:fd = %d\n", fd);
     tdata->save_syscall_info = (void *) fd;
 #ifdef STARTUP_LOG
-    write_into_startup_log (tdata, 6, NULL, 0);
+    write_into_startup_log (tdata, 6, &fd, sizeof(fd));
 #endif
 }
 
@@ -791,6 +815,11 @@ static inline void sys_read_stop(int rc)
             taint_add_fd2mem((u_long) ri->buf, rc, ri->fd);
         }
 #endif
+#ifdef STARTUP_LOG
+    //as we already have the mtime, so here we include the hash for the file read
+    //write_into_startup_log (tdata, 5, ri->buf, rc);
+#endif
+
     }
 
     memset(&current_thread->read_info_cache, 0, sizeof(struct read_info));
@@ -1656,6 +1685,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
 	case SYS_prlimit64:
 	    {
+		    //TODO: how to handle this properly??
 	    void* new_limit = (void*) syscallarg2;
 	    int pid = (int) syscallarg0;
 	    int resource = (int) syscallarg1;
@@ -1667,6 +1697,14 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 		    ret.resource = resource;
 		    memcpy (&ret.rlim, old_limit, sizeof(struct rlimit));
 		    write_into_startup_log (tdata, 340, &ret, sizeof(ret));
+	    } else { 
+		    struct prlimit64_retval ret;
+		    ret.pid = pid;
+		    ret.resource = resource;
+		    memcpy (&ret.rlim, new_limit, sizeof(struct rlimit));
+		    write_into_startup_log (tdata, 340, &ret, sizeof(ret));
+
+		    fprintf (stderr, "[ERROR] cannot handle prlimit changes\n");
 	    }
 	    break;
 	    }
@@ -14237,6 +14275,42 @@ void instrument_pmovmskb(INS ins)
 #endif
 }
 
+inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
+	//TODO add TRACE_TAINT_OPS
+	int treg;
+	UINT32 regsize;
+	UINT32 memsize;
+	IARG_TYPE mem_ea;
+
+	treg = translate_reg ((int) reg);
+	regsize = REG_Size(reg);
+
+	if (INS_IsMemoryRead(ins)) {
+		mem_ea = IARG_MEMORYREAD_EA;
+		memsize = INS_MemoryReadSize(ins);
+	} else if (INS_IsMemoryWrite(ins)) {
+		mem_ea = IARG_MEMORYWRITE_EA;
+		memsize = INS_MemoryWriteSize(ins);
+	} else {
+		assert(0);
+	}
+
+	if (regsize != memsize) 
+		fprintf (stderr, "TODO: instrument_taint_regmem2flag: fix regsize problem\n");
+
+	INSTRUMENT_PRINT (log_f, "instrument_taint_regmem2flag: flags %u, reg %u size %u, memsize %u\n", flags, reg, regsize, memsize);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			mem_ea,
+			IARG_UINT32, treg,
+			IARG_UINT32, flags, 
+			IARG_ADDRINT, INS_Address(ins),
+			IARG_UINT32, regsize,
+			IARG_END);
+}
+
 inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
@@ -14265,16 +14339,24 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 
 void instrument_test_or_cmp (INS ins, uint32_t mask)
 {
-    int op1mem, op1reg, op2reg, op2imm;
+    int op1mem, op1reg, op2reg, op2imm, op2mem;
     string instruction;
     REG reg;
+    USIZE addrsize;
 
     op1mem = INS_OperandIsMemory(ins, 0);
     op1reg = INS_OperandIsReg(ins, 0);
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
-    if((op1mem && op2reg)) {
-	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
+    op2mem = INS_OperandIsMemory(ins, 1);
+    if((op1mem && op2reg) || (op1reg && op2mem)) { //it doesn't matter of ordering
+	    REG reg = INS_OperandReg(ins, 1);
+	    if (!REG_valid (reg))
+		    return;
+	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is register\n");
+	    addrsize = INS_MemoryReadSize(ins);
+	    assert (REG_Size(reg) == addrsize);
+	    instrument_taint_regmem2flag (ins, reg, mask);
     } else if(op1reg && op2reg) {
         REG dstreg;
         dstreg = INS_OperandReg(ins, 0);
@@ -14290,9 +14372,33 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 	//taint flag register
 	instrument_taint_reg2flag (ins, dstreg, reg, mask);
     } else if(op1mem && op2imm) {
-	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
+	    addrsize = INS_MemoryReadSize(ins);
+	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(taint_memimm2flag),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_MEMORYREAD_EA,
+			    IARG_UINT32, mask, 
+			    IARG_ADDRINT, INS_Address(ins),
+			    IARG_UINT32, addrsize,
+			    IARG_END);
     }else if(op1reg && op2imm){
-	    fprintf (stderr, "instrument_test: TODO: unmatched.\n");
+	    REG reg = INS_OperandReg (ins, 0);
+	    if (!REG_valid (reg)) 
+		    return;
+	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is reg and op2 is imm\n");
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(taint_regimm2flag),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_UINT32, reg, 
+			    IARG_UINT32, mask, 
+			    IARG_ADDRINT, INS_Address(ins),
+			    IARG_UINT32, REG_Size(reg),
+			    IARG_END);
     }else{
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...

@@ -25,6 +25,8 @@
 #include <linux/proc_fs.h>
 #include <linux/replay.h>
 #include <linux/replay_maps.h>
+#include <linux/stat.h>
+#include <linux/times.h>
 
 // No clean way to handle this that I know of...
 extern int replay_debug, replay_min_debug;
@@ -86,6 +88,13 @@ struct ckpt_proc_data {
 	u_long p_clear_child_tid;
 	u_long p_replay_hook;
 //	u_long rss_stat_counts[NR_MM_COUNTERS]; //the counters from the checkpointed task
+};
+
+struct recheck_entry {
+	int sysnum;
+	int flag;
+	long retval;
+	int len;
 };
 
 static void
@@ -1405,4 +1414,116 @@ exit:
 	set_fs(old_fs);
 	if (rc < 0) return rc;
 	return record_pid;
+}
+
+struct open_params {
+	int flag;
+	int mode;
+	char filename[0];
+};
+
+static inline void check_retval (const char* name, int expected, int actual) { 
+	if (expected != actual) { 
+		printk ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+	}
+}
+
+long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) { 
+	mm_segment_t old_fs = get_fs();	
+	int rc = 0;
+	int fd;
+	void* buf = NULL;
+	unsigned long pos = 0;
+	struct stat64 stat;
+	set_fs (KERNEL_DS);
+	fd = sys_open (recheck_log, O_RDONLY, 0);
+	if (fd < 0) { 
+		printk ("go_live_recheck: cannot open the recheck log ret %d, pid %d\n", rc, current->pid);
+		goto exit;
+	}
+	rc = sys_fstat64 (fd, &stat);
+	if (rc != 0) { 
+		printk ( "go_live_recheck: cannot state check log.\n");
+		goto exit;
+	}
+
+	buf = vmalloc (stat.st_size);
+
+	BUG_ON (buf == NULL);
+
+	rc = sys_read (fd, buf, stat.st_size);
+	if (rc != stat.st_size) { 
+		printk ("go_live_recheck: cannot read file into buffer.\n");
+		goto exit;
+	}
+
+	if (fd > 0) {
+		rc = sys_close (fd);
+		if (rc < 0) printk ("go_live_recheck:cannot close.\n");
+	}
+
+	printk ("Pid %d recheck log, size %llu \n", current->pid, stat.st_size);
+	//parse the log
+	while (pos < stat.st_size) { 
+		struct recheck_entry* entry = (struct recheck_entry*) (buf + pos);
+		void* cur = NULL;
+		long rc = 0;
+
+		pos += sizeof(struct recheck_entry);
+		cur = buf + pos;
+
+		printk ("   sysnum %d len %d\n", entry->sysnum, entry->len);
+		switch (entry->sysnum) { 
+			case 5: {
+					struct open_params* op = NULL;
+					struct open_retvals* ret = NULL;
+
+					if (entry->flag) { 
+						op = (struct open_params*) cur;
+					} else { 
+						op = (struct open_params*) (cur + sizeof(struct open_retvals));
+						ret = (struct open_retvals*) cur;
+					}
+					printk (" Pid %d open file %s, flag %d, mode %d\n", current->pid, op->filename, op->flag, op->mode);
+					//reopen and check retval
+					//readonly files: check mtime
+					rc = sys_open (op->filename, op->flag, op->mode);
+					check_retval ("open", entry->retval, rc);
+					if (ret != NULL) {
+						struct stat64 stat;
+						if (sys_stat64(op->filename, &stat) == 0) { 
+							if (stat.st_mtime == ret->mtime.tv_sec && stat.st_mtime_nsec == ret->mtime.tv_nsec) { 
+								//good to go
+							} else { 
+								printk ("[MISMATCH] read-only file %s changed, expected %ld, %ld, actual %lu, %u\n", op->filename, ret->mtime.tv_sec, ret->mtime.tv_nsec, stat.st_mtime, stat.st_mtime_nsec);
+							}
+						} else { 
+							printk ("[MIMATCH] cannot stat read-only file on open rechecking, filename %s\n", op->filename);
+						}
+					}
+					break;
+				}
+			case 6: { 
+					int* fd = (int*) cur;	
+					rc = sys_close (*fd);
+					check_retval ("close", entry->retval, rc);
+					break;
+				}
+			case 33:
+				{
+					//TODO
+					
+					break;
+				}
+			default: { 
+					 printk ("[BUG] unhandled recheck syscall %d\n", entry->sysnum);
+				 }
+		}
+		pos += entry->len;
+	}
+	
+exit:
+	if (buf != NULL) vfree (buf);
+	set_fs (old_fs);
+	return 0;
 }

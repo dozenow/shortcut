@@ -1675,6 +1675,98 @@ void inline clear_flag_reg () {
 	memset (&reg_table[REG_EFLAGS], 0, REG_SIZE*sizeof(taint_t));
 }
 
+TAINTSIGN taint_regmem2flag (u_long mem_loc, uint32_t reg, uint32_t mask, ADDRINT ip, uint32_t size) {
+	uint32_t i = 0;
+	uint32_t offset = 0;
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	u_long mem_offset = mem_loc;
+	taint_t result = 0;
+
+	//merge taints
+	while (offset < size) { 
+		taint_t* mem_taints = NULL;
+		uint32_t count = get_cmem_taints_internal (mem_offset, size - offset, &mem_taints);
+		taint_t t = 0;
+		if (mem_taints) { 
+			for (i=0; i<count; ++i) { 
+				t = merge_taints (shadow_reg_table[reg*REG_SIZE + offset + i], mem_taints[i]);
+				result = merge_taints (result, t);
+			}
+		} else { 
+			for (i = 0; i<count; ++i) {
+				t = shadow_reg_table[reg*REG_SIZE + offset + i];
+				result = merge_taints (result, t);
+			}
+		}
+		offset += count;
+		mem_offset += count;
+	}
+	
+
+	for (i = 0; i<NUM_FLAGS; ++i) {
+		if (mask & ( 1 << i)) {
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints(shadow_reg_table[REG_EFLAGS*REG_SIZE + i], result);
+		} else { 
+			// just clear taint
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+		}
+	}
+}
+
+TAINTSIGN taint_memimm2flag (u_long mem_loc, uint32_t mask, ADDRINT ip, uint32_t size) {
+	uint32_t i = 0;
+	uint32_t offset = 0;
+	u_long mem_offset = mem_loc;
+	taint_t result = 0;
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+	//merge taints
+	while (offset < size) { 
+		taint_t* mem_taints = NULL;
+		uint32_t count = get_cmem_taints_internal (mem_offset, size - offset, &mem_taints);
+		if (mem_taints) { 
+			for (i=0; i<count; ++i) { 
+				result = merge_taints (result, mem_taints[i]);
+			}
+		} else { 
+			//do nothing
+		}
+		offset += count;
+		mem_offset += count;
+	}
+
+	for (i = 0; i<NUM_FLAGS; ++i) {
+		if (mask & ( 1 << i)) {
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints(shadow_reg_table[REG_EFLAGS*REG_SIZE + i], result);
+		} else { 
+			// just clear taint
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+		}
+	}
+}
+
+TAINTSIGN taint_regimm2flag (uint32_t reg, uint32_t mask, ADDRINT ip, uint32_t size) {
+	uint32_t i = 0;
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	taint_t result = 0;
+
+	//merge taints
+	for (i = 0; i<size; ++i) {
+		result = merge_taints (result, shadow_reg_table[reg*REG_SIZE +i]);
+	}
+	
+
+	for (i = 0; i<NUM_FLAGS; ++i) {
+		if (mask & ( 1 << i)) {
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = merge_taints(shadow_reg_table[REG_EFLAGS*REG_SIZE + i], result);
+		} else { 
+			// just clear taint
+			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+		}
+	}
+}
+
+
 TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, ADDRINT ip) {
 	int i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;

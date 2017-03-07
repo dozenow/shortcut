@@ -9,6 +9,8 @@ source $OMNIPLAY_DIR/scripts/common.sh
 
 setup_spec
 
+sudo echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
 ##/bin/sh
 #
 #if [ ! -e /replay_cache ]

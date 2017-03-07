@@ -21,6 +21,11 @@ function do_spec_setup() {
 			sudo chmod a+rwx /replay_logdb
 	fi
 
+	if [[ ! -e /startup_db ]]; then
+			sudo mkdir /startup_db
+			sudo chmod a+rwx /startup_db
+	fi
+
 	sudo /sbin/insmod $OMNIPLAY_DIR/test/dev/spec.ko || {
 		echo "Unable to insert spec!"
 		return 1

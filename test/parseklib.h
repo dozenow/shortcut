@@ -315,6 +315,8 @@ struct klog_result {
 	struct klog_signal *signal;
 
 	void (*printfcn)(FILE *, struct klog_result *);
+	int startup_retsize;
+	void* startup_retparams;
 };
 
 struct parse_rules {

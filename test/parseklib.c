@@ -48,7 +48,7 @@
 
 
 static __attribute__((const)) char *syscall_name(int nr);
-static void default_printfcn(FILE *out, struct klog_result *res) {
+void default_printfcn(FILE *out, struct klog_result *res) {
 	char idx[10];
 	char spacing[10];
 	int len;
@@ -91,6 +91,8 @@ static void free_active_psrs(struct klogfile *log) {
 		if (apsr->retparams) {
 			free(apsr->retparams);
 		}
+		if (apsr->startup_retparams) 
+			free (apsr->startup_retparams);
 
 		while (sig) {
 			struct klog_signal *n;

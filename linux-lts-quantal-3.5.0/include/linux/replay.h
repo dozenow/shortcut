@@ -13,6 +13,7 @@
 #define PIN_ATTACH_BLOCKED 2
 #define PIN_ATTACH_REDO    4
 
+#define RECHECK
 
 #include <linux/signal.h>
 #include <linux/mm_types.h>
@@ -187,5 +188,12 @@ struct monitor_data {
 	char channel[256];
 };
 long get_open_socks (struct monitor_data __user* entries, int num_entries);
+
+long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log);
+struct open_retvals {
+	dev_t           dev;
+	u_long          ino;
+	struct timespec mtime;
+};
 
 #endif
