@@ -9,10 +9,10 @@
 #include <assert.h>
 
 int startup_ignore_flag = 1;
-int startup_log_fd = -1;
+int params_log_fd = -1;
 int recheck_fd = -1;
 int generate_startup = 0;
-struct startup_entry {
+struct params_log_entry {
 	int sysnum;
 	int len;
 };
@@ -27,30 +27,30 @@ static void empty_printfcn(FILE *out, struct klog_result *res) {
 
 static void startup_default_printfcn (FILE* out, struct klog_result* res) { 
 	int rc = 0;
-	struct startup_entry entry;
+	struct params_log_entry entry;
 	void* buf = NULL;
 
 	default_printfcn (out, res);
-	//read from startup log
+	//read from params_log log
 	if (startup_ignore_flag == 0) { 
-		rc = read (startup_log_fd, &entry, sizeof(entry));
+		rc = read (params_log_fd, &entry, sizeof(entry));
 		if (rc == 0) {
-			//end of startup log; do nothing
+			//end of params_log log; do nothing
 			exit (EXIT_SUCCESS);
 		}
 		assert (rc == sizeof(entry));
 		if (entry.len > 0) {
 			buf = malloc (entry.len);
-			rc = read (startup_log_fd, buf, entry.len);
+			rc = read (params_log_fd, buf, entry.len);
 		}
 		startup_ignore_flag = 0;
 		//check syscall
 		if (res->psr.sysnum != entry.sysnum) { 
-			fprintf (stderr, "MISMATCH syscall, expected %d in the reply log, while in the startup log %d\n", res->psr.sysnum, entry.sysnum);
+			fprintf (stderr, "MISMATCH syscall, expected %d in the reply log, while in the params_log log %d\n", res->psr.sysnum, entry.sysnum);
 			exit (EXIT_FAILURE);
 		}
-		res->startup_retparams = buf;
-		res->startup_retsize = entry.len;
+		res->params_log_retparams = buf;
+		res->params_log_retsize = entry.len;
 	} else { 
 		startup_ignore_flag = 0; 
 		//TODO:this is to ignroe the first execve
@@ -277,19 +277,19 @@ static void print_open(FILE *out, struct klog_result *res) {
 	}
 	if (generate_startup) { 
 		//for read-only files, check mtime here instead of read; also re-open and check retval
-		char* filename = (char*) (((struct open_params*)res->startup_retparams)->filename);
+		char* filename = (char*) (((struct open_params*)res->params_log_retparams)->filename);
 		if (psr->flags & SR_HAS_RETPARAMS) {
 			struct open_retvals* or = res->retparams;
-			write_header_into_recheck_log (5, res->retval, 0, sizeof (struct open_retvals) + res->startup_retsize);
+			write_header_into_recheck_log (5, res->retval, 0, sizeof (struct open_retvals) + res->params_log_retsize);
 			write_content_into_recheck_log (res->retparams, sizeof(struct open_retvals));
 			printf ("     Open cache file filename %s, mtime %lu %lu\n", filename, or->mtime.tv_sec, or->mtime.tv_nsec);
 		} else {
-			write_header_into_recheck_log (5, res->retval, 1, res->startup_retsize);
+			write_header_into_recheck_log (5, res->retval, 1, res->params_log_retsize);
 		}
 		if (filename != NULL) { 
-			write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
+			write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
 		} else { 
-			fprintf (stderr, "cannot parse filename for open? retsize %d\n", res->startup_retsize);
+			fprintf (stderr, "cannot parse filename for open? retsize %d\n", res->params_log_retsize);
 		}
 	}
 }
@@ -393,16 +393,16 @@ static void print_read(FILE *out, struct klog_result *res) {
 static void print_close (FILE* out, struct klog_result* res) { 
 	parseklog_default_print(out, res);
 	if (generate_startup) {
-		write_header_into_recheck_log (6, res->retval, 0, res->startup_retsize);
-		write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
+		write_header_into_recheck_log (6, res->retval, 0, res->params_log_retsize);
+		write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
 	}
 }
 
 static void print_access (FILE* out, struct klog_result* res) { 
 	parseklog_default_print(out, res);
 	if (generate_startup) { 
-		write_header_into_recheck_log (33, res->retval, 0, res->startup_retsize);
-		write_content_into_recheck_log (res->startup_retparams, res->startup_retsize);
+		write_header_into_recheck_log (33, res->retval, 0, res->params_log_retsize);
+		write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
 	}
 }
 
@@ -507,12 +507,13 @@ void print_help(char *progname) {
 	printf(" -h       Prints this dialog\n");
 	printf(" -g       Only prints file graph information\n");
 	printf(" -p       Only prints pipe write information\n");
-	printf(" -s 	  generate startup caches.\n");
+	printf(" -s 	  generate startup recheck logs.\n");
 }
 
 int main(int argc, char **argv) {
 	struct klogfile *log;
 	struct klog_result *res;
+	char params_log_filename[256];
 	char startup_filename[256];
 
 	enum printtype type = BASE;
@@ -559,16 +560,16 @@ int main(int argc, char **argv) {
 	printf ("Group id %lu, pid %d\n", gid, pid);
 	//open startup log
 	if (generate_startup) { 
-		sprintf (startup_filename, "/startup_db/%lu/startup.%d", gid, pid);
-		startup_log_fd = open (startup_filename, O_RDONLY);
-		if (startup_log_fd < 0) { 
-			printf ("cannot open startup log, ret %d, filename %s\n", startup_log_fd, startup_filename);
+		sprintf (params_log_filename, "/startup_db/%lu/params_log.%d", gid, pid);
+		params_log_fd = open (params_log_filename, O_RDONLY);
+		if (params_log_fd < 0) { 
+			printf ("cannot open params_log log, ret %d, filename %s\n", params_log_fd, params_log_filename);
 			exit (EXIT_FAILURE);
 		}
 		sprintf (startup_filename, "/startup_db/%lu/startup.%d.recheck", gid, pid);
 		recheck_fd = open (startup_filename, O_RDWR | O_TRUNC | O_CREAT, 0644);
 		if (recheck_fd < 0) {
-			printf ("cannot open startup log, ret %d, filename %s\n", startup_log_fd, startup_filename);
+			printf ("cannot open startup log, ret %d, filename %s\n", params_log_fd, startup_filename);
 			exit (EXIT_FAILURE);
 		}
 	}
@@ -621,7 +622,7 @@ int main(int argc, char **argv) {
 
 	parseklog_close(log);
 	if (generate_startup) {
-		close (startup_log_fd);
+		close (params_log_fd);
 		close (recheck_fd);
 	}
 

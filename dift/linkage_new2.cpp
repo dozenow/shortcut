@@ -87,7 +87,7 @@ int s = -1;
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
-#define STARTUP_LOG
+#define PARAMS_LOG
 
 //used in order to trace instructions! 
 //#define TRACE_INST
@@ -174,7 +174,7 @@ int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
 unsigned int checkpoint_clock = 0;
-int startup_fd = -1;
+int params_log_fd = -1;
 const char* filter_read_filename = NULL;
 u_long segment_length = 0;
 int splice_output = 0;
@@ -259,7 +259,7 @@ KNOB<string> KnobForkFlags(KNOB_MODE_WRITEONCE,
     "flags for which way to go on each fork");
 KNOB<unsigned int> KnobCheckpointClock(KNOB_MODE_WRITEONCE,
     "pintool", "ckpt_clock", "",
-    "taint tracking until ckpt_clock(inclusive) and generates startup logs. The clock should always be the end clock of a syscall (checkpoint files has the same property in namings)");
+    "taint tracking until ckpt_clock(inclusive) and generates params_log logs. The clock should always be the end clock of a syscall (checkpoint files has the same property in namings)");
 #ifdef RETAINT
 KNOB<string> KnobRetaintEpochs(KNOB_MODE_WRITEONCE,
     "pintool", "retaint", "",
@@ -574,8 +574,8 @@ static inline void increment_syscall_cnt (int syscall_num)
     }
 }
 
-#ifdef STARTUP_LOG
-struct startup_entry { 
+#ifdef PARAMS_LOG
+struct params_log_entry { 
 	int sysnum;
 	int len;
 };
@@ -585,12 +585,12 @@ struct prlimit64_retval {
 	struct rlimit rlim;
 };
 
-static void write_into_startup_log (struct thread_data* tdata, int sysnum, void* buf, int len) { 
+static void write_into_params_log (struct thread_data* tdata, int sysnum, void* buf, int len) { 
 	int rc = 0;
-	struct startup_entry entry;
+	struct params_log_entry entry;
 	entry.sysnum = sysnum;
 	entry.len = len;
-	if (tdata->startup_fd <= 0) { 
+	if (tdata->params_log_fd <= 0) { 
 		char output_file_name[256];
 		char output_dir[256];
 		DIR* dir = NULL;
@@ -605,22 +605,22 @@ static void write_into_startup_log (struct thread_data* tdata, int sysnum, void*
 		} else { 
 			fprintf (stderr, "Cannot open dir %s\n", output_dir);
 		}
-		sprintf(output_file_name, "/startup_db/%llu/startup.%d", tdata->rg_id, tdata->record_pid);
-		tdata->startup_fd = open(output_file_name, O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
-		if (tdata->startup_fd < 0) {
-			fprintf (stderr, "could not open startup log errno %d\n", errno);
+		sprintf(output_file_name, "/startup_db/%llu/params_log.%d", tdata->rg_id, tdata->record_pid);
+		tdata->params_log_fd = open(output_file_name, O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
+		if (tdata->params_log_fd < 0) {
+			fprintf (stderr, "could not open params_log log errno %d\n", errno);
 			assert (0);
 		}
 	}
-	rc = write (tdata->startup_fd, (void*) &entry, sizeof(struct startup_entry));
-	if (rc != sizeof(struct startup_entry)) { 
-		assert (0 && "cannot write into startup");
+	rc = write (tdata->params_log_fd, (void*) &entry, sizeof(struct params_log_entry));
+	if (rc != sizeof(struct params_log_entry)) { 
+		assert (0 && "cannot write into params_log");
 	}
 	if (buf == NULL) 
 		return;
-	rc = write (tdata->startup_fd, buf, len);
+	rc = write (tdata->params_log_fd, buf, len);
 	if (rc != len) { 
-		assert (0 && "cannot write into startup buf");
+		assert (0 && "cannot write into params_log buf");
 	}
 }
 #endif
@@ -666,13 +666,13 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     oi->flags = flags;
     open_file_cnt++;
     tdata->save_syscall_info = (void *) oi;
-#ifdef STARTUP_LOG
+#ifdef PARAMS_LOG
     op = (struct open_params*) malloc (sizeof (struct open_params) + strlen (filename) + 1);
     memset (op, 0, sizeof(struct open_params) + strlen (filename) + 1);
     op->flags = flags;
     op->mode = mode;
     memcpy (op->filename, filename, strlen(filename) + 1);
-    write_into_startup_log (tdata, 5, op, sizeof(struct open_params) + strlen (filename) + 1);
+    write_into_params_log (tdata, 5, op, sizeof(struct open_params) + strlen (filename) + 1);
 #endif
 }
 
@@ -727,8 +727,8 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
     SYSCALL_DEBUG (stderr, "close_start:fd = %d\n", fd);
     tdata->save_syscall_info = (void *) fd;
-#ifdef STARTUP_LOG
-    write_into_startup_log (tdata, 6, &fd, sizeof(fd));
+#ifdef PARAMS_LOG
+    write_into_params_log (tdata, 6, &fd, sizeof(fd));
 #endif
 }
 
@@ -815,9 +815,9 @@ static inline void sys_read_stop(int rc)
             taint_add_fd2mem((u_long) ri->buf, rc, ri->fd);
         }
 #endif
-#ifdef STARTUP_LOG
+#ifdef PARAMS_LOG
     //as we already have the mtime, so here we include the hash for the file read
-    //write_into_startup_log (tdata, 5, ri->buf, rc);
+    //write_into_params_log (tdata, 5, ri->buf, rc);
 #endif
 
     }
@@ -915,8 +915,8 @@ static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int 
     mmi->prot = prot;
     mmi->fd = fd;
     tdata->save_syscall_info = (void *) mmi;
-#ifdef STARTUP_LOG
-    write_into_startup_log (tdata, 192, NULL, 0);
+#ifdef PARAMS_LOG
+    write_into_params_log (tdata, 192, NULL, 0);
 #endif
 }
 
@@ -1579,10 +1579,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_read:
 	    sys_read_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
-#ifdef STARTUP_LOG 
-	    write_into_startup_log (tdata, 3, NULL, 0);
+#ifdef PARAMS_LOG 
+	    write_into_params_log (tdata, 3, NULL, 0);
 	    //for read, if the file is read-only (included in the cache), we can safely ignore them;
-	    //TODO However, the application may open the same file and write and close during startup?
+	    //TODO However, the application may open the same file and write and close during params_log?
 #endif
             break;
         case SYS_write:
@@ -1645,10 +1645,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
-#ifdef STARTUP_LOG
+#ifdef PARAMS_LOG
 	    // we need to track the data/ctrl flow for gettimeofday
 	    // so they're not getting reexecuted
-	    write_into_startup_log (tdata, 78, NULL, 0);
+	    write_into_params_log (tdata, 78, NULL, 0);
 #endif
 	    break;
 	case SYS_getpid:
@@ -1657,31 +1657,31 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_clock_gettime:
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
 	    break;
-#ifdef STARTUP_LOG
+#ifdef PARAMS_LOG
 	case SYS_execve:
-	    write_into_startup_log (tdata, 11, NULL, 0);
+	    write_into_params_log (tdata, 11, NULL, 0);
 	    break;
 	case SYS_brk:
-	    write_into_startup_log (tdata, 45, NULL, 0);
+	    write_into_params_log (tdata, 45, NULL, 0);
 	    break;
 	case SYS_access:
 	    filename = (char*) syscallarg0;
-	    write_into_startup_log (tdata, 33, filename, strlen (filename)  + 1); 
+	    write_into_params_log (tdata, 33, filename, strlen (filename)  + 1); 
 	    break;
 	case SYS_fstat64:
 	    //currently we only detect mtime, assuming atime is not affecting ctrlflow
 	    //if mtime is changed, the open syscall should already detect it (fstat always requires an open before it)
-	    write_into_startup_log (tdata, 197, NULL, 0); 
+	    write_into_params_log (tdata, 197, NULL, 0); 
 	    break;
 	case SYS_mprotect: 
-	    write_into_startup_log (tdata, 125, NULL, 0);
+	    write_into_params_log (tdata, 125, NULL, 0);
 	    break;
 	case SYS_munmap:
-	    write_into_startup_log (tdata, 91, NULL, 0);
+	    write_into_params_log (tdata, 91, NULL, 0);
 	    break;
 
 	case SYS_rt_sigaction:
-	    write_into_startup_log (tdata, 174, NULL, 0);
+	    write_into_params_log (tdata, 174, NULL, 0);
 	    break;
 	case SYS_prlimit64:
 	    {
@@ -1696,13 +1696,13 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 		    ret.pid = pid;
 		    ret.resource = resource;
 		    memcpy (&ret.rlim, old_limit, sizeof(struct rlimit));
-		    write_into_startup_log (tdata, 340, &ret, sizeof(ret));
+		    write_into_params_log (tdata, 340, &ret, sizeof(ret));
 	    } else { 
 		    struct prlimit64_retval ret;
 		    ret.pid = pid;
 		    ret.resource = resource;
 		    memcpy (&ret.rlim, new_limit, sizeof(struct rlimit));
-		    write_into_startup_log (tdata, 340, &ret, sizeof(ret));
+		    write_into_params_log (tdata, 340, &ret, sizeof(ret));
 
 		    fprintf (stderr, "[ERROR] cannot handle prlimit changes\n");
 	    }
@@ -1710,7 +1710,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    }
 	case SYS_stat64:
 	    filename = (char*) syscallarg0;
-	    write_into_startup_log (tdata, 195, filename, strlen (filename) + 1);
+	    write_into_params_log (tdata, 195, filename, strlen (filename) + 1);
 	    break;
 #endif
 #if 0
@@ -15389,7 +15389,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->app_syscall = 0;
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
-    ptdata->startup_fd = -1;
+    ptdata->params_log_fd = -1;
 
 
     int thread_ndx;
