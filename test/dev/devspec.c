@@ -56,6 +56,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 	struct get_record_pid_data recordpid_data;
 	struct set_pin_address_data pin_data;
 	struct get_replay_pid_data replay_pid_data;
+	struct add_startup_db_data add_sd_data;
 	int syscall;
 	char logdir[MAX_LOGDIR_STRLEN+1];
 	char filename[MAX_LOGDIR_STRLEN+1];
@@ -391,6 +392,34 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 		return retval;
 	}
 
+	case SPECI_STARTUP_DB_INIT: { 
+		init_startup_db ();
+		return 0;
+	}
+	case SPECI_STARTUP_DB_ADD:{
+		if (len != sizeof(struct add_startup_db_data)) { 
+			printk ("ioctl SPECI_STARTUP_DB_ADD fails, len %d\n", len);
+			return -EINVAL;
+		}
+		if (copy_from_user (&add_sd_data, (void*) data, sizeof(add_sd_data))) { 
+			printk ("ioctl SPECI_STARTUP_DB_ADD fails, invalid data.\n");
+			return -EFAULT;
+		}
+		tmp = kmalloc (add_sd_data.arglen, GFP_KERNEL);
+		if (tmp == NULL) { 
+			printk ("ioctl SPECI_STARTUP_DB_ADD fails, cannot allocate memory.\n");
+			return -EFAULT;
+		}	
+		if (copy_from_user (tmp, add_sd_data.argbuf, add_sd_data.arglen)) { 
+			printk ("ioctl SPECI_STARTUP_DB_ADD fails, invalid data.\n");
+			return -EFAULT;
+		}
+		printk ("ioctl add_to_startup_cache.\n");	
+		add_to_startup_cache (tmp, add_sd_data.arglen, add_sd_data.group_id, add_sd_data.ckpt_clock);
+
+		if (tmp) kfree (tmp);
+		return 0;
+	}
 	default:
 		return -EINVAL;
 	}

@@ -183,17 +183,20 @@ copy_args (const char __user* const __user* args, const char __user* const __use
 
 	env_cnt = 0;
 	env_len = 0;
-	up = env;
-	do {
-		if (get_user (pc, up)) {
-			printk ("copy_args: invalid env value\n");
-			return NULL;
-		}
-		if (pc == 0) break; // No more env
-		env_cnt++;
-		env_len += strnlen_user(pc, 4096) + sizeof(int);
-		up++;
-	} while (1);
+	if (env != NULL) { 
+		up = env;
+		do {
+			if (get_user (pc, up)) {
+				printk ("copy_args: invalid env value\n");
+				return NULL;
+			}
+			if (pc == 0) break; // No more env
+			env_cnt++;
+			env_len += strnlen_user(pc, 4096) + sizeof(int);
+			up++;
+		} while (1);
+
+	}
 	
 	// Now allocate buffer
 	*buflen = 2*sizeof(int) + args_len + env_len;

@@ -107,6 +107,13 @@ struct redo_mmap_data {
 	u_long len;
 };
 
+struct add_startup_db_data { 
+	char __user* argbuf; 
+	int arglen;
+	uint64_t group_id;
+	unsigned long ckpt_clock;
+};
+
 #define SPECI_REPLAY_FORK _IOR('u', 0, struct record_data)
 #define SPECI_RESUME _IOR('u', 1, struct wakeup_data)
 #define SPECI_SET_PIN_ADDR _IOWR('u',2,struct set_pin_address_data)
@@ -135,5 +142,7 @@ struct redo_mmap_data {
 #define SPECI_REDO_MMAP _IOW('u', 25, struct redo_mmap_data)
 #define SPECI_IS_PIN_ATTACHING _IO('u', 26)
 #define SPECI_REDO_MUNMAP _IO('u', 27)
+#define SPECI_STARTUP_DB_INIT _IO('u', 28)
+#define SPECI_STARTUP_DB_ADD _IOR('u', 29, struct add_startup_db_data)
 
 #endif

@@ -32,6 +32,8 @@ getstats: libutil.a
 
 filemap: libutil.a 
 
+parseckpt: libutil.a
+
 parseklog: parseklib.o
 
 rewriteklog: parseklib.o

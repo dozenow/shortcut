@@ -26,6 +26,7 @@
 #include <linux/times.h>
 #include <linux/rwlock.h>
 #include "./uthash.h"
+#include <linux/export.h>
 
 
 //TODO  add rw lock
@@ -43,6 +44,7 @@ struct startup_entry* startup_db = NULL;
 void init_startup_db (void) { 
 	//read from disk
 }
+EXPORT_SYMBOL(init_startup_db);
 
 void sync_startup_db (void) {
 	//write to disk
@@ -84,9 +86,23 @@ int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* resu
 int find_startup_cache_user_argv (const char __user *const __user *__argv, struct startup_db_result* result) { 
 	int arglen;
 	char* argbuf = copy_args (__argv, NULL, &arglen);
-	int ret = find_startup_cache (argbuf, arglen, result);
+	int ret = 0;
+	if (argbuf == NULL) { 
+		printk ("find_startup_cache_user_argv: cannot copy args.\n");
+		return 0;
+	}
+	{
+		int i = 0;
+		printk ("Find in startup cache, len %d:", arglen);
+		while (i<arglen) { 
+			printk ("%c,", argbuf[i]);
+			++i;
+		}
+		printk ("\n");
+	}
+
 	//free argbuf
-	BUG_ON (argbuf == NULL);
+	ret = find_startup_cache (argbuf, arglen, result);
 	kfree (argbuf);
 	return ret;
 }
@@ -99,9 +115,20 @@ void add_to_startup_cache (char* argbuf, int arglen, __u64 group_id, unsigned lo
 	memcpy (e->argbuf, argbuf, arglen);
 	e->arglen = arglen;
 	e->group_id = group_id;
-	e->ckpt_clock = group_id;
+	e->ckpt_clock = ckpt_clock;
 	HASH_ADD_KEYPTR (hh, startup_db, e->argbuf, arglen, e);
+	{
+		int i = 0;
+		printk ("Add to startup cache, len %d: ", arglen);
+		while (i<arglen) { 
+			printk ("%c,", argbuf[i]);
+			++i;
+		}
+		printk ("\n");
+	}
+
 }
+EXPORT_SYMBOL(add_to_startup_cache);
 
 
 

@@ -81,6 +81,7 @@ u_long* map_shared_clock (int fd_spec);
 long check_for_redo (int fd_spec);
 long redo_mmap (int fd_spec, u_long* prc, u_long* plen);
 long redo_munmap (int fd_spec);
+void add_to_startup_db (int fd, char* argbuf, int arglen, uint64_t group_id, unsigned long ckpt_clock);
 
 #ifdef __cplusplus
 }

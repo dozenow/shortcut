@@ -310,3 +310,12 @@ u_long* map_shared_clock (int fd_spec)
     close (fd);
     return clock;
 }
+
+void add_to_startup_db (int fd_spec, char* argbuf, int arglen, uint64_t group_id, unsigned long ckpt_clock) { 
+	struct add_startup_db_data data; 
+	data.argbuf = argbuf;
+	data.arglen = arglen;
+	data.group_id = group_id;
+	data.ckpt_clock = ckpt_clock;
+	ioctl (fd_spec, SPECI_STARTUP_DB_ADD, &data);
+}

@@ -5,9 +5,13 @@
 #include <stdint.h>
 #include <sys/resource.h>
 #include <time.h>
+#include <string.h>
+#include "util.h"
 
 // redefined from the kernel
 #define _NSIGS 64
+int add_startup_cache = 0;
+unsigned long ckpt_clock = 0;
 struct k_sigaction {
 	unsigned long sa_handler;
 	unsigned long sa_flags;
@@ -28,10 +32,22 @@ int main (int argc, char* argv[])
     struct rlimit rlimits[RLIM_NLIMITS];
     struct k_sigaction sighands[_NSIGS];
     struct timespec time;
+    char* argbuf = malloc (1024*1024);
+    int arglen = 0;
 
-    if (argc != 2) {
-	printf ("format: parseckpt <dir>\n");
+    if (argbuf == NULL) { 
+	    printf ("cannot allocate memory.\n");
+	    exit (EXIT_FAILURE);
+    }
+    if (argc != 2 && argc != 4) {
+	printf ("format: parseckpt <dir> -a ckpt_clock\n");
 	return -1;
+    }
+    if (argc == 4) { 
+	    if(strcmp(argv[2], "-a") == 0) {
+		    add_startup_cache = 1;
+		    ckpt_clock = atol (argv[3]);
+	    }
     }
     
     sprintf (buf, "%s/ckpt", argv[1]);
@@ -95,6 +111,10 @@ int main (int argc, char* argv[])
 	printf ("parseckpt: tried to read record pid, got rc %ld\n", copyed);
 	return -1;
     }
+    if (add_startup_cache) { 
+	    memcpy (argbuf + arglen, (char*) &args_cnt, sizeof(args_cnt));
+	    arglen += sizeof(args_cnt);
+    }
 	
     // Now read in each argument
     for (i = 0; i < args_cnt; i++) {
@@ -103,12 +123,27 @@ int main (int argc, char* argv[])
 	    printf ("parseckpt: tried to read argument %d len, got rc %ld\n", i, copyed);
 	    return -1;
 	}
+	if (add_startup_cache) { 
+		memcpy (argbuf + arglen, (char*) &len, sizeof(len));
+		arglen += sizeof(len);
+	}
+
 	copyed = read(fd, buf, len);
 	if (copyed != len) {
 	    printf ("parseckpt: tried to read argument %d, got rc %ld\n", i, copyed);
 	    return -1;
 	}
+	if (add_startup_cache) { 
+		memcpy (argbuf + arglen, (char*) buf, len);
+		arglen += len;
+	}
+
 	printf ("Argument %d is %s\n", i, buf);
+    }
+    //hack: TODO remove this if we include env into the startup cache 
+    if (add_startup_cache) { 
+	    *((int*)(argbuf + arglen)) = 0;
+	    arglen += sizeof(int);
     }
 
     // Next, read the number of env. objects
@@ -142,5 +177,15 @@ int main (int argc, char* argv[])
     printf ("time of replay is: %ld sec %ld nsec\n", time.tv_sec, time.tv_nsec);
 
     close (fd);
+    if (add_startup_cache) { 
+	    int fd_spec = open ("/dev/spec0", O_RDWR);
+	    printf ("add to startup cache.\n");
+	    if (fd_spec < 0) { 
+		    perror ("cannot open spec0\n");
+	    }
+	    add_to_startup_db (fd_spec, argbuf, arglen, rg_id, ckpt_clock);
+	    close (fd_spec);
+    }
+    if (argbuf) free (argbuf);
     return 0;
 }
