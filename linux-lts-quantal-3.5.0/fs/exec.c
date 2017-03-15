@@ -1633,7 +1633,7 @@ int do_execve(const char *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 	//hack
-	if (strcmp (filename, "/usr/lib/gcc/i686-linux-gnu/4.6/cc1") == 0) { 
+	if (strcmp (filename, "/usr/lib/gcc/i686-linux-gnu/4.6/cc1") == 0 && current->record_thrd == NULL) { 
 		//query the startup db
 		//TODO: include this linker in the startup db
 		char* linker = "/home/dozenow/omniplay/eglibc-2.15/prefix/lib/ld-linux.so.2";

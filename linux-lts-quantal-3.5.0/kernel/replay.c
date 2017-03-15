@@ -13526,6 +13526,20 @@ record_getcwd (char __user *buf, unsigned long size)
 	new_syscall_enter (183);
 	rc = sys_getcwd (buf, size);
 	new_syscall_done (183, rc);
+	//debug:
+	{
+		struct file *file = NULL;
+		printk (" Getcwd called.\n");
+		//file = fcheck (3);
+		file = fget (3);
+		if (file) {
+			char buf[512];
+			char* filename = NULL;
+			filename = d_path (&file->f_path,buf,512);
+			printk ("[DEBUG] fd 3 filename %s\n", filename);
+		}
+		fput (file);
+	}
 	if (rc >= 0) {
 		recbuf = ARGSKMALLOC(rc, GFP_KERNEL);
 		if (recbuf == NULL) {

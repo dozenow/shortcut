@@ -27,6 +27,9 @@
 #include <linux/replay_maps.h>
 #include <linux/stat.h>
 #include <linux/times.h>
+#include <linux/crypto.h>
+#include <linux/scatterlist.h>
+#include <crypto/sha.h>
 
 // No clean way to handle this that I know of...
 extern int replay_debug, replay_min_debug;
@@ -777,7 +780,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, vma->vm_start);
 			old_fs = get_fs();
 			set_fs (KERNEL_DS);
-			mmap_fd = sys_open (mmap_filename, O_WRONLY|O_CREAT|O_APPEND, 0777);
+			mmap_fd = sys_open (mmap_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
 			if (mmap_fd < 0) {
 				printk ("replay_full_checkpoint_proc_to_disk: open of %s returns %d\n", mmap_filename, mmap_fd);
 				rc = fd;
@@ -1320,7 +1323,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					rc = copied;
 					goto freemem;
 				}
-				DPRINT ("replay_full_resume_proc_from_disk copy data from ckpt.\n");
+				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming)\n");
 				filp_close (mmap_file, NULL);
 			}
 			set_fs(old_fs);			
@@ -1329,6 +1332,12 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				do_gettimeofday(&tv_end);
 			}
 			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%ld, end %ld.%ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
+		}
+
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			printk ("replay_full_resume_proc_from_disk after mmap time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 		}
 		btree_destroy32(&replay_mmap_btree);
 		// Process-specific info in the mm struct
@@ -1425,6 +1434,12 @@ struct open_params {
 	char filename[0];
 };
 
+struct read_params {
+	int fd;
+	char __user* buf;
+	int size;	
+};
+
 static inline void check_retval (const char* name, int expected, int actual) { 
 	if (expected != actual) { 
 		printk ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
@@ -1438,6 +1453,13 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 	void* buf = NULL;
 	unsigned long pos = 0;
 	struct stat64 stat;
+
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("go_live_recheck start time with gid %llu, pid %d, time  %ld.%ld\n", gid, pid, tv.tv_sec, tv.tv_usec);
+	}
+
 	set_fs (KERNEL_DS);
 	fd = sys_open (recheck_log, O_RDONLY, 0);
 	if (fd < 0) { 
@@ -1460,12 +1482,17 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 		goto exit;
 	}
 
-	if (fd > 0) {
+	/*if (fd > 0) {
 		rc = sys_close (fd);
 		if (rc < 0) printk ("go_live_recheck:cannot close.\n");
+	}*/
+	printk ("Pid %d recheck log, size %llu \n", current->pid, stat.st_size);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("go_live_recheck after read log time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
-	printk ("Pid %d recheck log, size %llu \n", current->pid, stat.st_size);
 	//parse the log
 	while (pos < stat.st_size) { 
 		struct recheck_entry* entry = (struct recheck_entry*) (buf + pos);
@@ -1475,9 +1502,10 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 		pos += sizeof(struct recheck_entry);
 		cur = buf + pos;
 
-		printk ("   sysnum %d len %d\n", entry->sysnum, entry->len);
+		DPRINT ("   sysnum %d len %d\n", entry->sysnum, entry->len);
 		switch (entry->sysnum) { 
 			case 5: {
+					//TODO: it seems we could use our own /etc/ld.so.cache file
 					struct open_params* op = NULL;
 					struct open_retvals* ret = NULL;
 
@@ -1487,21 +1515,75 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						op = (struct open_params*) (cur + sizeof(struct open_retvals));
 						ret = (struct open_retvals*) cur;
 					}
-					printk (" Pid %d open file %s, flag %d, mode %d\n", current->pid, op->filename, op->flag, op->mode);
+					DPRINT (" Pid %d open file %s, flag %d, mode %d\n", current->pid, op->filename, op->flag, op->mode);
 					//reopen and check retval
 					//readonly files: check mtime
 					rc = sys_open (op->filename, op->flag, op->mode);
 					check_retval ("open", entry->retval, rc);
 					if (ret != NULL) {
-						struct stat64 stat;
-						if (sys_stat64(op->filename, &stat) == 0) { 
-							if (stat.st_mtime == ret->mtime.tv_sec && stat.st_mtime_nsec == ret->mtime.tv_nsec) { 
-								//good to go
-							} else { 
-								printk ("[MISMATCH] read-only file %s changed, expected %ld, %ld, actual %lu, %u\n", op->filename, ret->mtime.tv_sec, ret->mtime.tv_nsec, stat.st_mtime, stat.st_mtime_nsec);
-							}
+						struct file* file;
+						struct inode* inode;
+
+						file = fget (rc);
+						inode = file->f_dentry->d_inode;
+						if (inode->i_mtime.tv_sec == ret->mtime.tv_sec && inode->i_mtime.tv_nsec == ret->mtime.tv_nsec) { 
+							//good to go
 						} else { 
-							printk ("[MIMATCH] cannot stat read-only file on open rechecking, filename %s\n", op->filename);
+							printk ("[MISMATCH] read-only file %s changed, ino %lu, expected %ld, %ld, actual %lu, %ld\n", op->filename, inode->i_ino, ret->mtime.tv_sec, ret->mtime.tv_nsec, inode->i_mtime.tv_sec, inode->i_mtime.tv_nsec);
+						}
+						fput (file);
+					}
+					break;
+				}
+			case 3: {
+					//read-only files: we've already checked mtime on open and check mtime on each read during recording
+					//here we assume this file won't get changed by other unexpected applications while we open&read it here; it's okay if the same group changes the file
+					struct read_params* rp = (struct read_params*) cur; 
+					if (entry->flag == 0) {
+						//we have to re-read the file and calculate the hash
+						unsigned char* original_hash = (unsigned char*) (cur + sizeof(struct read_params));
+						mm_segment_t old_fs = get_fs();
+						set_fs (USER_DS);
+						rc = sys_read (rp->fd, rp->buf, rp->size);
+						check_retval ("read", entry->retval, rc);
+						set_fs (old_fs);
+						//TODO: sometimes we have to read multiple times to fill buffer
+						//checksum
+						do {
+							struct scatterlist sg;
+							struct hash_desc desc;
+							u8 hashval[SHA512_DIGEST_SIZE];
+							char* read_buf = vmalloc (rc);
+							int i = 0;
+							int mismatch_hash = 0;
+
+							if (copy_from_user (read_buf, rp->buf, rc)) { 
+								printk ("[MISMATCH] cannot copy from user for read checksum.\n");
+							}
+							sg_init_one(&sg, read_buf, rc);
+							desc.tfm = crypto_alloc_hash("sha512", 0, CRYPTO_ALG_ASYNC);
+							crypto_hash_init(&desc);
+							crypto_hash_update(&desc, &sg, rc);
+							crypto_hash_final(&desc, hashval);
+							crypto_free_hash(desc.tfm);
+							vfree (read_buf);
+							while (i<SHA512_DIGEST_SIZE) { 
+								if (hashval[i] != original_hash[i]) {
+									mismatch_hash = 1;
+									break;
+								}
+								++i;
+							}
+							if (mismatch_hash) { 
+								printk ("[MIMATCH] mismatched hash for read.\n");
+							}
+						} while (0);
+
+					} else { 
+						//change the file posistion
+						rc = sys_lseek (rp->fd, entry->retval, SEEK_CUR);	
+						if (rc < 0) { 
+							printk ("[MISMATCH] read lseek return err %ld\n", rc);
 						}
 					}
 					break;
@@ -1512,20 +1594,28 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 					check_retval ("close", entry->retval, rc);
 					break;
 				}
-			case 33:
-				{
-					//TODO
-					
-					break;
-				}
+			case 33: {
+					 int* mode = (int*) cur;
+					 char* filename = (char*) (cur + sizeof(int));	
+					 rc = sys_access (filename, *mode);
+					 check_retval ("access", entry->retval, rc);
+					 break;
+				 }
 			default: { 
 					 printk ("[BUG] unhandled recheck syscall %d\n", entry->sysnum);
 				 }
 		}
 		pos += entry->len;
 	}
+
 	
 exit:
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("go_live_recheck end time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
 	if (buf != NULL) vfree (buf);
 	set_fs (old_fs);
 	return 0;

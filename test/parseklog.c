@@ -7,11 +7,14 @@
 #include <getopt.h>
 
 #include <assert.h>
+#include <openssl/sha.h>
+#include "../dift/params_log.h"
 
 int startup_ignore_flag = 1;
 int params_log_fd = -1;
 int recheck_fd = -1;
 int generate_startup = 0;
+long ckpt_clock = 0;
 struct params_log_entry {
 	int sysnum;
 	int len;
@@ -29,6 +32,10 @@ static void startup_default_printfcn (FILE* out, struct klog_result* res) {
 	int rc = 0;
 	struct params_log_entry entry;
 	void* buf = NULL;
+
+	if (generate_startup && res->start_clock >= ckpt_clock) {
+		exit (EXIT_SUCCESS);
+	}
 
 	default_printfcn (out, res);
 	//read from params_log log
@@ -261,11 +268,6 @@ static void print_mmap(FILE *out, struct klog_result *res) {
 //here is the recheck heuristic:
 //for READ ONLY files(should already be cached), recheck on open;
 //otherwise, recheck on each read
-struct open_params { 
-	int flag;
-	int mode;
-	char filename[0];
-};
 static void print_open(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
 
@@ -285,6 +287,7 @@ static void print_open(FILE *out, struct klog_result *res) {
 			printf ("     Open cache file filename %s, mtime %lu %lu\n", filename, or->mtime.tv_sec, or->mtime.tv_nsec);
 		} else {
 			write_header_into_recheck_log (5, res->retval, 1, res->params_log_retsize);
+			printf ("     Open writable file filename %s\n", filename);
 		}
 		if (filename != NULL) { 
 			write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
@@ -373,19 +376,27 @@ static void print_read(FILE *out, struct klog_result *res) {
 	}
 	if (generate_startup)  {
 		int write_content = 0;
+		struct read_params* rp = res->params_log_retparams;
 		if (psr->flags & SR_HAS_RETPARAMS) { 
 			char* buf = res->retparams;
 			int is_cache_read = *((int*)buf);
 
 			if ((is_cache_read & CACHE_MASK) == 0) {
-				//include all bytes into recheck log
+				//calculate the hash 
+				unsigned char hash[SHA512_DIGEST_LENGTH];
+				SHA512 (res->retparams + sizeof(int), res->retval, hash);
+				write_header_into_recheck_log (3, res->retval, 0, SHA512_DIGEST_LENGTH + res->params_log_retsize); 
+				write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
+				write_content_into_recheck_log (hash, SHA512_DIGEST_LENGTH);
+				/*//include all bytes into recheck log
 				write_header_into_recheck_log (3, res->retval, 0, res->retval);
-				write_content_into_recheck_log (res->retparams + sizeof(int), res->retval);
+				write_content_into_recheck_log (res->retparams + sizeof(int), res->retval);*/
 				write_content = 1;
 			}
 		}
 		if (write_content == 0) { 
-			write_header_into_recheck_log (3, res->retval, 1, 0);
+			write_header_into_recheck_log (3, res->retval, 1, res->params_log_retsize);
+			write_content_into_recheck_log (res->params_log_retparams, res->params_log_retsize);
 		}
 	}
 }
@@ -522,7 +533,7 @@ int main(int argc, char **argv) {
 	unsigned long gid;
 	int pid;
 
-	while ((opt = getopt(argc, argv, "gphs")) != -1) {
+	while ((opt = getopt(argc, argv, "gphs:")) != -1) {
 		switch (opt) {
 			case 'g':
 				type = GRAPH;
@@ -535,6 +546,8 @@ int main(int argc, char **argv) {
 				exit(EXIT_SUCCESS);
 			case 's':
 				generate_startup = 1;
+				printf ("ckpt_clock %s\n", optarg);
+				ckpt_clock = atol(optarg);
 				break;
 			default:
 				print_usage(stderr, argv[0]);

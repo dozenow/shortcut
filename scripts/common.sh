@@ -104,7 +104,7 @@ function check_for_prog() {
 #Assumes spec is inserted!
 #arg1 is absolute path to binary
 function launch_recording() {
-	local my_pthread=$OMNIPLAY_DIR/eglibc-2.15/prefix/lib:/lib:/lib/i386-linux-gnu:/usr/lib:/usr/lib/i386-linux-gnu
+	local my_pthread=$OMNIPLAY_DIR/eglibc-2.15/prefix/lib:/usr/lib/i386-linux-gnu:/lib/i386-linux-gnu:/usr/lib:/lib
 
 	local record="$OMNIPLAY_DIR/test/launcher -m --pthread $my_pthread "
 

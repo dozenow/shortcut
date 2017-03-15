@@ -38,6 +38,7 @@ using namespace std;
 #include "trace_x.h"
 #include "splice.h"
 #include "taint_nw.h"
+#include "params_log.h"
 
 #define PIN_NORMAL         0
 #define PIN_ATTACH_RUNNING 1
@@ -173,7 +174,7 @@ unsigned long long inst_count = 0;
 int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
-unsigned int checkpoint_clock = 0;
+unsigned int checkpoint_clock = UINT_MAX;
 int params_log_fd = -1;
 const char* filter_read_filename = NULL;
 u_long segment_length = 0;
@@ -616,8 +617,10 @@ static void write_into_params_log (struct thread_data* tdata, int sysnum, void* 
 	if (rc != sizeof(struct params_log_entry)) { 
 		assert (0 && "cannot write into params_log");
 	}
-	if (buf == NULL) 
+	if (buf == NULL) {
+		fprintf (stderr, " [UNHANDLED] syscall %d\n", sysnum);
 		return;
+	}
 	rc = write (tdata->params_log_fd, buf, len);
 	if (rc != len) { 
 		assert (0 && "cannot write into params_log buf");
@@ -649,12 +652,6 @@ static void create_connect_info_name(char* connect_info_name, int domain,
         strcpy(connect_info_name, "UNKNOWN_SOCKET");
     }
 }
-
-struct open_params {
-	int flags;
-	int mode;
-	char filename[0];
-};
 
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
@@ -704,12 +701,10 @@ char* get_file_ext(char* filename){
 
 static inline void sys_open_stop(int rc)
 {
-    SYSCALL_DEBUG(stderr, "open_stop, fd: %d\n",rc);
-
     if (rc > 0) {
       struct open_info* oi = (struct open_info *) current_thread->save_syscall_info; 
         monitor_add_fd(open_fds, rc, 0, current_thread->save_syscall_info);
-	SYSCALL_DEBUG(stderr, "open: added fd %d\n", rc);
+	//SYSCALL_DEBUG(stderr, "open: added fd %d\n", rc);
 #ifdef OUTPUT_FILENAMES
         write_filename_mapping(filenames_f, oi->fileno, oi->name);
 #endif
@@ -719,13 +714,13 @@ static inline void sys_open_stop(int rc)
         add_taint_fd(rc, cloexec);
 #endif
     }
-    SYSCALL_DEBUG (stderr, "open_stop: rc %d\n", rc);
+    fprintf (stdout, "#PARAMS_LOG:open:%s:%d\n", ((struct open_info*) current_thread->save_syscall_info)->name, rc);
     current_thread->save_syscall_info = NULL;
 }
 
 static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
-    SYSCALL_DEBUG (stderr, "close_start:fd = %d\n", fd);
+    //SYSCALL_DEBUG (stderr, "close_start:fd = %d\n", fd);
     tdata->save_syscall_info = (void *) fd;
 #ifdef PARAMS_LOG
     write_into_params_log (tdata, 6, &fd, sizeof(fd));
@@ -736,6 +731,7 @@ static inline void sys_close_stop(int rc)
 {
     int fd = (int) current_thread->save_syscall_info;
     // remove the fd from the list of open files
+    fprintf (stdout, "#PARAMS_LOG:close:%d:%lu\n", fd, *ppthread_log_clock-1);
     if (!rc) {
         if (monitor_has_fd(open_fds, fd)) {
             struct open_info* oi = (struct open_info *) monitor_get_fd_data(open_fds, fd);
@@ -761,6 +757,19 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
+#ifdef PARAMS_LOG
+    //for read, if the file is read-only (included in the cache), we can safely ignore them;
+    //as we already have the mtime, so here we include the hash for the file read (handled by the parseklog)
+    //write_into_params_log (tdata, 5, ri->buf, rc);
+
+    do {
+	    struct read_params rp;
+	    rp.fd = fd;
+	    rp.buf = buf;
+	    rp.size = size;
+	    write_into_params_log (tdata, 3, &rp, sizeof(rp));
+    } while (0);
+#endif
 }
 
 static inline void sys_read_stop(int rc)
@@ -814,10 +823,6 @@ static inline void sys_read_stop(int rc)
         if (is_fd_tainted(ri->fd)) {
             taint_add_fd2mem((u_long) ri->buf, rc, ri->fd);
         }
-#endif
-#ifdef PARAMS_LOG
-    //as we already have the mtime, so here we include the hash for the file read
-    //write_into_params_log (tdata, 5, ri->buf, rc);
 #endif
 
     }
@@ -1580,7 +1585,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_read:
 	    sys_read_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
 #ifdef PARAMS_LOG 
-	    write_into_params_log (tdata, 3, NULL, 0);
 	    //for read, if the file is read-only (included in the cache), we can safely ignore them;
 	    //TODO However, the application may open the same file and write and close during params_log?
 #endif
@@ -1665,9 +1669,21 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    write_into_params_log (tdata, 45, NULL, 0);
 	    break;
 	case SYS_access:
-	    filename = (char*) syscallarg0;
-	    write_into_params_log (tdata, 33, filename, strlen (filename)  + 1); 
-	    break;
+	    {
+		    int mode = (int) syscallarg1;
+		    char* params = NULL;
+		    int len = 0;
+		    filename = (char*) syscallarg0;
+		    len = strlen (filename) + 1 + sizeof(int);
+		    params = (char*)malloc (len);
+		    assert (params != NULL);
+		    memset (params, 0, len);
+		    *((int*) params) = mode;
+		    memcpy (params + sizeof(int), filename, strlen(filename) + 1);
+		    write_into_params_log (tdata, 33, params, len); 
+		    free (params);
+		    break;
+	    }
 	case SYS_fstat64:
 	    //currently we only detect mtime, assuming atime is not affecting ctrlflow
 	    //if mtime is changed, the open syscall should already detect it (fstat always requires an open before it)
@@ -1703,8 +1719,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 		    ret.resource = resource;
 		    memcpy (&ret.rlim, new_limit, sizeof(struct rlimit));
 		    write_into_params_log (tdata, 340, &ret, sizeof(ret));
-
-		    fprintf (stderr, "[ERROR] cannot handle prlimit changes\n");
 	    }
 	    break;
 	    }
@@ -15737,6 +15751,8 @@ int main(int argc, char** argv)
     all_output = KnobAllOutput.Value();
     fork_flags = KnobForkFlags.Value().c_str();
     checkpoint_clock = KnobCheckpointClock.Value();
+    if (checkpoint_clock == 0) 
+	    checkpoint_clock = UINT_MAX;
 
 #ifdef RETAINT
     retaint = KnobRetaintEpochs.Value().c_str();

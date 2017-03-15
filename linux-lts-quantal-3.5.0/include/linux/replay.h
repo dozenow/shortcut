@@ -202,7 +202,7 @@ struct startup_db_result {
 
 void init_startup_db (void);
 void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned long ckpt_clock);
-int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* result);
+//int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* result);
 int find_startup_cache_user_argv (const char __user *const __user *__argv, struct startup_db_result* result);
 char* copy_args (const char __user* const __user* args, const char __user* const __user* env, int* buflen);
 

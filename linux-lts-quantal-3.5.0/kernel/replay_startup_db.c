@@ -50,6 +50,27 @@ void sync_startup_db (void) {
 	//write to disk
 }
 
+static inline void fuzzy_string (char* argbuf, int arglen) { 
+	//hacky for cc1 only
+	//TODO: fix this after we can generate slice
+	char* exe = "/usr/lib/gcc/i686-linux-gnu/4.6/cc1";
+	if (strncmp (argbuf + 8, exe, strlen(exe)) == 0) {
+		char* index = memchr (argbuf + arglen - 17, '/', 17);
+		if (index != NULL) { 
+			char* end = NULL;
+			printk ("fuzzy string before: %s\n", index);
+			if ((end = strstr (index, ".s")) != NULL) {
+				char* i = index + 1;
+				while (i < end) { 
+					*i = 'x';
+					++i;
+				}
+				printk ("fuzzy string: %s\n", index);
+			}
+		}
+	}
+}
+
 void free_startup_db (void) { 
 	struct startup_entry* s = NULL;
 	struct startup_entry* tmp = NULL;
@@ -73,6 +94,7 @@ void dump_startup_db (void) {
 //return 0 if not found, return 1 if found
 int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* result) {  
 	struct startup_entry* e = NULL;
+	fuzzy_string (argbuf, arglen);
 	HASH_FIND (hh, startup_db, argbuf, arglen, e);
 	if (e == NULL) { 
 		return 0;
@@ -109,23 +131,35 @@ int find_startup_cache_user_argv (const char __user *const __user *__argv, struc
 
 //the key is the content in argbuf
 //IMPORTANT: check existence of the key before adding it!
-void add_to_startup_cache (char* argbuf, int arglen, __u64 group_id, unsigned long ckpt_clock) { 
-	struct startup_entry* e = vmalloc (sizeof (struct startup_entry));
-	e->argbuf = vmalloc (arglen);
-	memcpy (e->argbuf, argbuf, arglen);
-	e->arglen = arglen;
-	e->group_id = group_id;
-	e->ckpt_clock = ckpt_clock;
-	HASH_ADD_KEYPTR (hh, startup_db, e->argbuf, arglen, e);
+void add_to_startup_cache (char* old_argbuf, int arglen, __u64 group_id, unsigned long ckpt_clock) { 
+	struct startup_entry* e = NULL;
+	char* argbuf = vmalloc (arglen);
+	memcpy (argbuf, old_argbuf, arglen);
+	
+	fuzzy_string (argbuf, arglen);
+	HASH_FIND (hh, startup_db, argbuf, arglen, e);
+	if (e == NULL) { 
+		e = vmalloc (sizeof (struct startup_entry));
+		e->argbuf = vmalloc (arglen);
+		memcpy (e->argbuf, argbuf, arglen);
+		e->arglen = arglen;
+		e->group_id = group_id;
+		e->ckpt_clock = ckpt_clock;
+		HASH_ADD_KEYPTR (hh, startup_db, e->argbuf, arglen, e);
+	} else {
+		e->group_id = group_id;
+		e->ckpt_clock = ckpt_clock;
+	}
 	{
 		int i = 0;
-		printk ("Add to startup cache, len %d: ", arglen);
+		printk ("Add to startup cache, len %d, id %llu, clock %lu: ", arglen, group_id, ckpt_clock);
 		while (i<arglen) { 
 			printk ("%c,", argbuf[i]);
 			++i;
 		}
 		printk ("\n");
 	}
+	vfree (argbuf);
 
 }
 EXPORT_SYMBOL(add_to_startup_cache);

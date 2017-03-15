@@ -1,7 +1,7 @@
 CC := gcc
 
 CFLAGS :=  -g
-LDFLAGS := -Wall -Werror -g 
+LDFLAGS := -Wall -Werror -g
 
 #LDLIBS := libutil.a
 
@@ -34,7 +34,8 @@ filemap: libutil.a
 
 parseckpt: libutil.a
 
-parseklog: parseklib.o
+parseklog: libutil.a parseklog.o parseklib.o
+	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
 rewriteklog: parseklib.o
 
