@@ -73,6 +73,7 @@ int core_uses_pid;
 char core_pattern[CORENAME_MAX_SIZE] = "core";
 unsigned int core_pipe_limit;
 int suid_dumpable = 0;
+extern int check_startup_db;
 
 struct core_name {
 	char *corename;
@@ -1633,25 +1634,29 @@ int do_execve(const char *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 	//hack
-	if (strcmp (filename, "/usr/lib/gcc/i686-linux-gnu/4.6/cc1") == 0 && current->record_thrd == NULL) { 
-		//query the startup db
-		//TODO: include this linker in the startup db
-		char* linker = "/home/dozenow/omniplay/eglibc-2.15/prefix/lib/ld-linux.so.2";
-		struct startup_db_result result;
-		if (find_startup_cache_user_argv (__argv, &result)) {
-			char logdir[256], ckptname[256], uniquename[256];
-			get_logdir_for_replay_id (result.group_id, logdir);
-			sprintf (ckptname, "ckpt.%lu", result.ckpt_clock);
-			sprintf (uniquename, "%d", current->pid);
-			printk ("Found a command that can be speeded up.\n");
+	//BEGIN: REPLAY
+	if (check_startup_db) { 
+		if (strcmp (filename, "/usr/lib/gcc/i686-linux-gnu/4.6/cc1") == 0 && current->record_thrd == NULL) { 
+			//query the startup db
+			//TODO: include this linker in the startup db
+			char* linker = "/home/dozenow/omniplay/eglibc-2.15/prefix/lib/ld-linux.so.2";
+			struct startup_db_result result;
+			if (find_startup_cache_user_argv (__argv, &result)) {
+				char logdir[256], ckptname[256], uniquename[256];
+				get_logdir_for_replay_id (result.group_id, logdir);
+				sprintf (ckptname, "ckpt.%lu", result.ckpt_clock);
+				sprintf (uniquename, "%d", current->pid);
+				printk ("Found a command that can be speeded up.\n");
 
-			return replay_full_ckpt_wakeup (0, logdir, ckptname, linker, uniquename, -1, 0, 0, 0, 0, 0, NULL, 1); 
-		} else { 
-			//write out to the todo list
-			//TODO: record the program in this case
-			return do_execve_common (filename, argv, envp, regs);
+				return replay_full_ckpt_wakeup (0, logdir, ckptname, linker, uniquename, -1, 0, 0, 0, 0, 0, NULL, 1); 
+			} else { 
+				//write out to the todo list
+				//TODO: record the program in this case
+				return do_execve_common (filename, argv, envp, regs);
+			}
 		}
 	}
+	//END: REPLAY
 	return do_execve_common(filename, argv, envp, regs);
 }
 

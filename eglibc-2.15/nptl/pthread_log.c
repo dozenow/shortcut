@@ -92,6 +92,8 @@ static void pthread_log_init (void)
     
     INTERNAL_SYSCALL_DECL(__err);
     INTERNAL_SYSCALL(pthread_init,__err,3,&pthread_log_status,(u_long)pthread_log_record,(u_long)pthread_log_replay);
+    //close the shared mmap file
+    INTERNAL_SYSCALL (close, __err, 1, fd);
 }
 
 // This informs the kernel about a newly allocated log

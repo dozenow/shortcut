@@ -855,7 +855,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				}
 				KFREE(ppages);
 				ppages = NULL;
-				printk ("replay_full_checkpoint_hdr_to_disk file %s start %lx end %lx, size %ld, nrp_page %ld\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_start-pvmas->vmas_end, nr_pages);
+				printk ("replay_full_checkpoint_hdr_to_disk file %s start %lx end %lx, size %ld, flag %d, nrp_page %ld\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags, nr_pages);
 			} else {
 				set_fs(old_fs);
 				copied = vfs_write(mmap_file, (char *) pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, &mmap_ppos);
@@ -1034,7 +1034,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	set_fs(KERNEL_DS);
@@ -1153,9 +1153,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk before mapping files %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
 		}
-		
+
 		// Map each VMA and copy data from the file - assume VDSO handled separately - so use map_count-1
 		btree_init32(&replay_mmap_btree);
 		for (i = 0; i < map_count-1; i++) {
@@ -1171,6 +1172,15 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				goto freemem;
 			}				
 			DPRINT ("replay_full_resume_proc_from_disk file %s\n", pvmas->vmas_file);
+			//sanity check	
+			//MAP_PRIVATE should use copy-on-write if we write into the memory region and changes are not carried out to the underlying files. Therefore, for writable memory regions, it's safe to mmap with MAP_PRIVATE
+			//however, if the memory region is also shared, it may be tricky
+			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
+				printk ("[CHECK] memory regions is shared and writable! %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
+				printk ("In this case, we need a copy of that file to avoid any modification to our underlying checkpoint-mmap files.\n");
+				BUG();
+			}
+			
 			if (pvmas->vmas_file[0]) { 
 				flags = O_RDONLY;
 				if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) {
@@ -1260,17 +1270,30 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					}
 				}
 			} else { 
-				map_file = NULL;
+				if (pvmas->vmas_flags & VM_GROWSDOWN) {
+					map_file = NULL; 
+				} else {
+					char mmap_filename[256];
+					MPRINT ("Opening file %s\n", pvmas->vmas_file);
+					sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+					flags = O_RDWR;
+					map_file = filp_open (mmap_filename, flags, 0);
+					if (IS_ERR(map_file)) {
+						rc = PTR_ERR(map_file);
+						printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, mmap_filename, rc);
+						goto freemem;
+					}
+				}
 			}
 
 			if (!premapped) { 
-				DPRINT ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx\n", 
+				DPRINT ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
 					map_file, pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, 
 					(pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
 					(pvmas->vmas_flags & VM_WRITE),
 					((pvmas->vmas_flags&VM_MAYSHARE) ? MAP_SHARED : MAP_PRIVATE) | 
 					MAP_FIXED | (pvmas->vmas_flags & VM_GROWSDOWN), 
-					pvmas->vmas_pgoff);
+					pvmas->vmas_pgoff, pvmas->vmas_flags);
 
 
 				//mmap from ckpt file instead individual replay cache files
@@ -1303,7 +1326,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			}
 		     
 			set_fs(KERNEL_DS);
-			if (!map_file || (pvmas->vmas_flags& VM_WRITE)) {
+			if (!map_file) {
 				char mmap_filename[256];
 				struct file* mmap_file = NULL;
 				loff_t mmap_ppos = 0;
@@ -1323,7 +1346,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					rc = copied;
 					goto freemem;
 				}
-				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming)\n");
+				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
 				filp_close (mmap_file, NULL);
 			}
 			set_fs(old_fs);			
@@ -1331,13 +1354,13 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (replay_debug) {
 				do_gettimeofday(&tv_end);
 			}
-			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%ld, end %ld.%ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
+			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%06ld, end %ld.%06ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
 		}
 
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk after mmap time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
 		btree_destroy32(&replay_mmap_btree);
 		// Process-specific info in the mm struct
@@ -1411,7 +1434,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk end time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (replay_debug) print_vmas(current);
@@ -1453,11 +1476,13 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 	void* buf = NULL;
 	unsigned long pos = 0;
 	struct stat64 stat;
+	int* modified_fds = vmalloc (sizeof(int)*128);
+	BUG_ON (modified_fds == NULL);
 
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck start time with gid %llu, pid %d, time  %ld.%ld\n", gid, pid, tv.tv_sec, tv.tv_usec);
+		printk ("go_live_recheck start time with gid %llu, pid %d, time  %ld.%06ld\n", gid, pid, tv.tv_sec, tv.tv_usec);
 	}
 
 	set_fs (KERNEL_DS);
@@ -1482,15 +1507,15 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 		goto exit;
 	}
 
-	/*if (fd > 0) {
+	if (fd > 0) {
 		rc = sys_close (fd);
 		if (rc < 0) printk ("go_live_recheck:cannot close.\n");
-	}*/
-	printk ("Pid %d recheck log, size %llu \n", current->pid, stat.st_size);
+	}
+	DPRINT ("Pid %d recheck log, size %llu \n", current->pid, stat.st_size);
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck after read log time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("go_live_recheck after read log time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	//parse the log
@@ -1530,6 +1555,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 							//good to go
 						} else { 
 							printk ("[MISMATCH] read-only file %s changed, ino %lu, expected %ld, %ld, actual %lu, %ld\n", op->filename, inode->i_ino, ret->mtime.tv_sec, ret->mtime.tv_nsec, inode->i_mtime.tv_sec, inode->i_mtime.tv_nsec);
+							modified_fds[rc] = 1;
 						}
 						fput (file);
 					}
@@ -1539,10 +1565,11 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 					//read-only files: we've already checked mtime on open and check mtime on each read during recording
 					//here we assume this file won't get changed by other unexpected applications while we open&read it here; it's okay if the same group changes the file
 					struct read_params* rp = (struct read_params*) cur; 
-					if (entry->flag == 0) {
+					if (entry->flag == 0 || modified_fds[rp->fd] == 1) {
 						//we have to re-read the file and calculate the hash
 						unsigned char* original_hash = (unsigned char*) (cur + sizeof(struct read_params));
 						mm_segment_t old_fs = get_fs();
+						printk ("read: check hash for fd %d.\n", rp->fd);
 						set_fs (USER_DS);
 						rc = sys_read (rp->fd, rp->buf, rp->size);
 						check_retval ("read", entry->retval, rc);
@@ -1592,6 +1619,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 					int* fd = (int*) cur;	
 					rc = sys_close (*fd);
 					check_retval ("close", entry->retval, rc);
+					if (modified_fds[rc]) modified_fds[rc] = 0;
 					break;
 				}
 			case 33: {
@@ -1613,10 +1641,11 @@ exit:
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck end time %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("go_live_recheck end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (buf != NULL) vfree (buf);
+	vfree (modified_fds);
 	set_fs (old_fs);
 	return 0;
 }

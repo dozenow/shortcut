@@ -31,6 +31,8 @@
 
 //TODO  add rw lock
 //TODO  add environment variables also as key
+extern unsigned int replay_debug;
+#define DPRINT if(replay_debug) printk
 struct startup_entry {
 	char* argbuf; //key
 	int arglen;
@@ -58,14 +60,14 @@ static inline void fuzzy_string (char* argbuf, int arglen) {
 		char* index = memchr (argbuf + arglen - 17, '/', 17);
 		if (index != NULL) { 
 			char* end = NULL;
-			printk ("fuzzy string before: %s\n", index);
+			DPRINT ("fuzzy string before: %s\n", index);
 			if ((end = strstr (index, ".s")) != NULL) {
 				char* i = index + 1;
 				while (i < end) { 
 					*i = 'x';
 					++i;
 				}
-				printk ("fuzzy string: %s\n", index);
+				DPRINT ("fuzzy string: %s\n", index);
 			}
 		}
 	}
@@ -110,10 +112,10 @@ int find_startup_cache_user_argv (const char __user *const __user *__argv, struc
 	char* argbuf = copy_args (__argv, NULL, &arglen);
 	int ret = 0;
 	if (argbuf == NULL) { 
-		printk ("find_startup_cache_user_argv: cannot copy args.\n");
+		DPRINT ("find_startup_cache_user_argv: cannot copy args.\n");
 		return 0;
 	}
-	{
+	if (replay_debug) {
 		int i = 0;
 		printk ("Find in startup cache, len %d:", arglen);
 		while (i<arglen) { 
@@ -150,7 +152,7 @@ void add_to_startup_cache (char* old_argbuf, int arglen, __u64 group_id, unsigne
 		e->group_id = group_id;
 		e->ckpt_clock = ckpt_clock;
 	}
-	{
+	if (replay_debug) {
 		int i = 0;
 		printk ("Add to startup cache, len %d, id %llu, clock %lu: ", arglen, group_id, ckpt_clock);
 		while (i<arglen) { 

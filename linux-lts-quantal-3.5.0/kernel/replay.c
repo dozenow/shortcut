@@ -125,6 +125,7 @@ unsigned int replay_pause_tool = 0;
 //xdou
 //#define TRACE_TIMINGS
 unsigned int trace_timings = 0;
+int check_startup_db = 1;
 
 //#define KFREE(x) my_kfree(x, __LINE__)
 //#define KMALLOC(size, flags) my_kmalloc(size, flags, __LINE__)
@@ -13532,13 +13533,14 @@ record_getcwd (char __user *buf, unsigned long size)
 		printk (" Getcwd called.\n");
 		//file = fcheck (3);
 		file = fget (3);
-		if (file) {
+		if (file != NULL) {
 			char buf[512];
 			char* filename = NULL;
 			filename = d_path (&file->f_path,buf,512);
-			printk ("[DEBUG] fd 3 filename %s\n", filename);
+			if (filename != NULL) 
+				printk ("[DEBUG] fd 3 filename %s\n", filename);
+			fput (file);
 		}
-		fput (file);
 	}
 	if (rc >= 0) {
 		recbuf = ARGSKMALLOC(rc, GFP_KERNEL);
@@ -16702,6 +16704,13 @@ static struct ctl_table replay_ctl[] = {
 		.procname	= "trace_timings",
 		.data		= &trace_timings,
 		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "check_startup_db",
+		.data		= &check_startup_db,
+		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
