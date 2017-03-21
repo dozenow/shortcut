@@ -25,6 +25,8 @@ struct recheck_entry {
 	long retval;
 	int len;
 };
+int sou
+
 static void empty_printfcn(FILE *out, struct klog_result *res) {
 }
 
@@ -253,6 +255,7 @@ static void print_mmap(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
 
 	parseklog_default_print(out, res);
+	printf (stderr, "MMAP: recheck not-readonly files.\n");
 
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		fprintf(out, "         dev is %lx\n",

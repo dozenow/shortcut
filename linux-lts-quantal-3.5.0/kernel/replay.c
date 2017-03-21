@@ -995,6 +995,7 @@ struct record_thread {
 #endif
 
 	struct record_cache_files* rp_cache_files; // Info about open cache files
+	int rp_exe_flag; 		//flag for special handling of some application checkpoints
 };
 
 /* FIXME: Put this somewhere that doesn't suck */
@@ -9154,6 +9155,21 @@ replay_write (unsigned int fd, const char __user * buf, size_t count)
 
 asmlinkage ssize_t shim_write (unsigned int fd, const char __user * buf, size_t count) SHIM_CALL (write, 4, fd, buf, count);
 
+char* get_file_ext(char* filename){
+    char* last = strrchr(filename, '/');
+    char* dot;
+    if (!last) {
+        dot = strrchr(filename, '.');
+    }
+    else {
+        dot = strrchr(last, '.');
+    }
+    if(!dot || dot == filename) {
+        return NULL;
+    }
+    return dot+1;
+}
+
 static asmlinkage long							
 record_open (const char __user * filename, int flags, int mode)
 {								
@@ -9181,6 +9197,57 @@ record_open (const char __user * filename, int flags, int mode)
 			fput(file);
 		} while (0);
 		*/
+		//hacky: for cc1, we reserve some disk space for source files
+		//disable for now
+#ifdef NOTHING
+		if (current->record_thrd->rp_exe_flag == 1) {
+			int len = strlen_user (filename);
+			char* tmp_filename = KMALLOC (len, GFP_KERNEL);
+			char* ext = get_file_ext(tmp_filename);
+			if (ext != NULL && strcmp (ext, ".c") == 0) {
+				int tmp_fd = sys_open (filename, O_RDWR, mode);
+				if (tmp_fd > 0) { 
+					//allocate at block boundary
+					struct kstat;
+					int retval; 
+					int already_preallocated = 0;
+
+					retval = vfs_fstat (tmp_fd, &kstat);
+					BUG_ON (retval != 0);
+
+					if (kstat->size % 4096 == 0) {
+						//check if the last byte is zero or not
+						//If so, it's likely that we already allocate extra space for this file before, then we do nothing
+						loff_t ppos = 0;
+						char last_byte;
+						mm_segment_t old_fs = get_fs();
+						struct file* filp = NULL;
+
+						filp = fget (tmp_fd);
+						BUG_ON (filp == NULL);
+						ppos = kstat->size - 1;
+						set_fs (KERNEL_DS);
+						retval = vfs_read (filp, &last_byte, 1, &ppos);
+						set_fs (old_fs);
+						if (last_byte == '\0') { 
+							already_preallocated = 1;
+						}
+						fput (filp);
+					}
+
+					if (already_preallocated == 0) { 
+						loff_t new_size = (kstat->size /4096 + 1)*4096;
+						retval = vfs_fallocate (tmp, FALLOC_FL_KEEP_SIZE, kstat->size, new_size - kstat->size);
+						BUG_ON (retval != 0);
+					}
+				} else { 
+					printk ("[BUG] cannot preallocate disk space for source file.\n");
+					BUG ();
+				}
+			}
+			KFREE (tmp_filename);
+		}
+#endif
 		MPRINT ("record_open of name %s with flags %x returns fd %ld\n", filename, flags, rc);
 		if ((flags&O_ACCMODE) == O_RDONLY && !(flags&(O_CREAT|O_DIRECTORY))) {
 			file = fget (rc);
@@ -9541,6 +9608,9 @@ record_execve(const char *filename, const char __user *const __user *__argv, con
 		rg_lock(prt->rp_group);
 		add_file_to_cache_by_name (filename, &pretval->data.same_group.dev, &pretval->data.same_group.ino, &pretval->data.same_group.mtime);
 		rg_unlock(prt->rp_group);
+		if (strstr (filename, "cc1") != NULL) {
+			current->record_thrd->rp_exe_flag = 1;
+		}
 	}
 	if (argbuf) KFREE (argbuf);
 	new_syscall_exit (11, pretval);

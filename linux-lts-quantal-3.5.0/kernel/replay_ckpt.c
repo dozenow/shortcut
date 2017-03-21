@@ -1161,6 +1161,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		btree_init32(&replay_mmap_btree);
 		for (i = 0; i < map_count-1; i++) {
 			struct timeval tv_start, tv_end;
+			int shared_file = 0;
 			if (replay_debug) {
 				do_gettimeofday(&tv_start);
 			}
@@ -1177,7 +1178,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			//however, if the memory region is also shared, it may be tricky
 			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
 				printk ("[CHECK] memory regions is shared and writable! %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
-				printk ("In this case, we need a copy of that file to avoid any modification to our underlying checkpoint-mmap files.\n");
+				printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
+				shared_file = 1;
 				BUG();
 			}
 			
@@ -1214,7 +1216,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 						}
 						else { 
 							char mmap_filename[256];
-							sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+							if (shared_file) 
+								sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+							else 
+								sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+
 							flags = O_RDWR;
 							//map_file = filp_open (pvmas->vmas_file, flags, 0);
 							map_file = filp_open (mmap_filename, flags, 0);
@@ -1259,7 +1265,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					else { 
 						char mmap_filename[256];
 						MPRINT ("Opening file %s\n", pvmas->vmas_file);
-						sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+						if (shared_file) 
+							sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+						else 
+							sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
 						flags = O_RDWR;
 						map_file = filp_open (mmap_filename, flags, 0);
 						if (IS_ERR(map_file)) {
@@ -1275,7 +1284,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				} else {
 					char mmap_filename[256];
 					MPRINT ("Opening file %s\n", pvmas->vmas_file);
-					sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+					if (shared_file) 
+						sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+					else 
+						sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
 					flags = O_RDWR;
 					map_file = filp_open (mmap_filename, flags, 0);
 					if (IS_ERR(map_file)) {
@@ -1332,6 +1344,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				loff_t mmap_ppos = 0;
 
 				sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+
 				flags = O_RDWR;
 				mmap_file = filp_open (mmap_filename, flags, 0);
 				if (IS_ERR(mmap_file)) {
@@ -1597,12 +1610,13 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 							while (i<SHA512_DIGEST_SIZE) { 
 								if (hashval[i] != original_hash[i]) {
 									mismatch_hash = 1;
-									break;
+									printk ("hash val %u, original_hash %u\n", hashval[i], original_hash[i]);
+									//break;
 								}
 								++i;
 							}
 							if (mismatch_hash) { 
-								printk ("[MIMATCH] mismatched hash for read.\n");
+								printk ("[MIMATCH] mismatched hash for read, fd %d.\n", rp->fd);
 							}
 						} while (0);
 

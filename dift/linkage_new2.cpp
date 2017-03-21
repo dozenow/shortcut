@@ -653,6 +653,21 @@ static void create_connect_info_name(char* connect_info_name, int domain,
     }
 }
 
+char* get_file_ext(char* filename){
+    char* last = strrchr(filename, '/');
+    char* dot;
+    if (!last) {
+        dot = strrchr(filename, '.');
+    }
+    else {
+        dot = strrchr(last, '.');
+    }
+    if(!dot || dot == filename) {
+        return NULL;
+    }
+    return dot+1;
+}
+
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
     SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
@@ -671,32 +686,6 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     memcpy (op->filename, filename, strlen(filename) + 1);
     write_into_params_log (tdata, 5, op, sizeof(struct open_params) + strlen (filename) + 1);
 #endif
-}
-
-char* get_file_ext(char* filename){
-    char* last = strrchr(filename, '/');
-    char* dot;
-    if (!last) {
-        dot = strrchr(filename, '.');
-    }
-    else {
-        dot = strrchr(last, '.');
-    }
-    if(!dot || dot == filename) {
-        char* ret;
-        ret = (char*) malloc(5 * sizeof(char));
-	if (!ret) {
-	    fprintf (stderr, "Unable to malloc file ext\n");
-	    assert (0);
-	}
-        strcpy(ret, "none");
-        return ret;
-    }
-    if (!strncmp(dot-2, "so", 2)) {
-        strcpy(dot, "so");
-        return dot;
-    }
-    return dot+1;
 }
 
 static inline void sys_open_stop(int rc)
@@ -809,6 +798,7 @@ static inline void sys_read_stop(int rc)
         tci.offset = 0;
         tci.fileno = read_fileno;
         tci.data = 0;
+	tci.type = TOK_READ;
 
         LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
                         rc, (unsigned long) ri->buf);
