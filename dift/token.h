@@ -26,10 +26,15 @@ extern "C" {
 #define TOK_RECV 5
 #define TOK_SENDMSG 6
 #define TOK_RECVMSG 7
-#define TOK_PREAD 8
+#define TOK_PREAD 8  
 /* Select on a file descriptor */
 #define TOK_SELECT 9
 #define TOK_READ_RET 10
+#define TOK_MMAP 11
+#define TOK_GETTIMEOFDAY 12
+#define TOK_CLOCK_GETTIME 13
+#define TOK_GETPID 14
+#define TOK_GETRUSAGE 15
 
 
 /* A token represents one or more contiguous inputs,

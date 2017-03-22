@@ -1,19 +1,70 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <assert.h>
 
 #include "taint_interface/taint.h"
 #include "taint_interface/taint_creation.h"
 #include "xray_token.h"
 #include "maputil.h"
+#include "uthash.h"
+#include "taint_nw.h"
 
 
 #define MAX_INPUT_SYSCALLS 128
+
+struct read_syscall { 
+	int pid;           
+	long index;    //syscall index
+	long start;    //start of buffer that affects the control flow
+	long end;   
+	UT_hash_handle hh;
+};
+struct read_syscall* sys_reads = NULL;  //this is a hash list: it contains all read syscalls we care about
+//for each read syscall we checked, we maintain the start location of the read buffer that affects the control flow as well as the end location
+struct read_syscall_key { 
+	int pid;
+	long index;
+};
+
+static inline void change_read_syscall_boundary (int pid, long index, long pos) {
+	struct read_syscall_key lookup_key;
+	struct read_syscall* entry = NULL;
+
+	memset (&lookup_key, 0, sizeof(struct read_syscall_key));
+	lookup_key.pid = pid;
+	lookup_key.index = index;
+	HASH_FIND (hh, sys_reads, &lookup_key.pid, sizeof(struct read_syscall_key), entry);
+	if (entry == NULL) {
+		//add it 
+		entry = (struct read_syscall*) malloc (sizeof(struct read_syscall));
+		if (entry == NULL) {
+			fprintf (stderr, "cannot allocate memory.\n");
+			exit (EXIT_FAILURE);
+		}
+		memset (entry, 0, sizeof(struct read_syscall));
+		entry->pid = pid;
+		entry->index = index;
+		entry->start = LONG_MAX;
+		entry->end = -1;
+		HASH_ADD (hh, sys_reads, pid, sizeof(struct read_syscall_key), entry);
+	}
+	if (entry->start > pos) entry->start = pos;
+	if (entry->end < pos) entry->end = pos;
+}
+
+int sys_read_sort (void *first, void *second) { 
+	struct read_syscall_key* a = (struct read_syscall_key*) first;
+	struct read_syscall_key* b = (struct read_syscall_key*) second;
+	if (a->pid != b->pid) return a->pid - b->pid;
+	else return a->index - b->index;
+}
 
 int main (int argc, char* argv[])
 {
     char tokfile[80], outfile[80], mergefile[80];
     int tfd, ofd, mfd;
+    int sys_reads_analysis = 0;
     u_long tdatasize, odatasize, mdatasize, tmapsize, omapsize, mmapsize;
     char* tbuf, *obuf, *mbuf, *dir, *pid = NULL, opt;
     u_long* mptr;
@@ -23,7 +74,7 @@ int main (int argc, char* argv[])
 
     while (1) 
     {
-	opt = getopt(argc, argv, "p:");
+	opt = getopt(argc, argv, "p:r");
 	if (opt == -1) 
 	{
 	    if(optind < argc) 
@@ -33,7 +84,7 @@ int main (int argc, char* argv[])
 	    }
 	    else 
 	    { 
-		fprintf (stderr, "format: showall <dirno> [-p pid]\n");
+		fprintf (stderr, "format: showall <dirno> [-p pid] [-r filename_of_read_syscall_indices]\n");
 		return -1;
 	    }
 	}
@@ -41,6 +92,9 @@ int main (int argc, char* argv[])
 	{
 	case 'p': 
 	    pid = optarg;
+	    break;
+	case 'r':
+	    sys_reads_analysis = 1;
 	    break;
 	default:
 	    fprintf(stderr, "Unrecognized option\n");
@@ -80,7 +134,6 @@ int main (int argc, char* argv[])
 	    do {
 		if (*mptr) {
 		    u_long tokval = *mptr;
-		    printf ("output pid/syscall %u/%lu offset %lu (%lx) type %d addr %x fileno %d <- (%lx)", record_pid, syscall, i, ocnt, tci->type, tci->data, tci->fileno, *mptr);
 
 		    struct token* ptok = (struct token *) tbuf;
 		    while (tokval > ptok->size) {
@@ -88,7 +141,11 @@ int main (int argc, char* argv[])
 			ptok++;
 		    } 
 
-		    printf ("input pid/syscall %d/%d offset %lu type %d\n", ptok->record_pid, ptok->syscall_cnt, tokval, ptok->type);
+		    if (sys_reads_analysis == 0 || (sys_reads_analysis == 1 && (ptok->type == TOK_READ || ptok->type == TOK_RECV || ptok->type == TOK_RECVMSG || ptok->type == TOK_PREAD))) { 
+			    printf ("output pid/syscall %u/%lu offset %lu (%lx) type %d addr %x fileno %d <- (%lx)", record_pid, syscall, i, ocnt, tci->type, tci->data, tci->fileno, *mptr);
+			    printf ("input pid/syscall %d/%d offset %lu type %d\n", ptok->record_pid, ptok->syscall_cnt, tokval, ptok->type);
+			    if (sys_reads_analysis == 1) change_read_syscall_boundary (ptok->record_pid, ptok->syscall_cnt, tokval);
+		    }
 		    mptr++;
 		} else {
 		    mptr++;
@@ -98,6 +155,15 @@ int main (int argc, char* argv[])
 	    obuf += sizeof(u_long) + sizeof(taint_t);
 	    ocnt++;
 	}
+    }
+    if (sys_reads_analysis) { 
+	    printf ("##### sys_read/pread analysis####\n");
+	    //sort
+	    HASH_SORT (sys_reads, sys_read_sort); 
+	    struct read_syscall * s;
+	    for (s = sys_reads; s!= NULL; s=s->hh.next) { 
+		    printf ("pid %d, index %ld, start %ld, end %ld\n", s->pid, s->index, s->start, s->end); 
+	    }
     }
 
     return 0;

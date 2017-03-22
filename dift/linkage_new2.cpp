@@ -860,6 +860,7 @@ static inline void sys_pread_stop(int rc)
         tci.offset = 0;
         tci.fileno = read_fileno;
         tci.data = 0;
+	tci.type = TOK_READ;
 
         LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
                         rc, (unsigned long) ri->buf);
@@ -944,6 +945,7 @@ static void sys_mmap_stop(int rc)
             tci.offset = 0;
             tci.fileno = read_fileno;
             tci.data = 0;
+	    tci.type = TOK_MMAP;
 
             fprintf(stderr, "mmap: call create taints from buffer %#lx, %d\n", (u_long) rc, mmi->length);
             create_taints_from_buffer ((void *) rc, mmi->length, &tci, tokens_fd,
@@ -1275,6 +1277,7 @@ static void sys_recv_stop(int rc)
         tci.offset = 0;
         tci.fileno = read_fileno;
         tci.data = 0;
+	tci.type = TOK_RECV;
 
         LOG_PRINT ("Create taints from buffer sized %d at location %#lx, clock %lu\n",
 		   rc, (unsigned long) ri->buf, *ppthread_log_clock );
@@ -1331,6 +1334,7 @@ static void sys_recvmsg_stop(int rc)
         tci.offset = 0;
         tci.fileno = read_fileno;
         tci.data = 0;
+	tci.type = TOK_RECVMSG;
 
         for (i = 0; i < rmi->msg->msg_iovlen; i++) {
             struct iovec* vi = (rmi->msg->msg_iov + i);
@@ -1474,6 +1478,7 @@ static inline void sys_gettimeofday_stop (int rc) {
 	if (rc == 0) {
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "gettimeofday-tv";
+		tci.type = TOK_GETTIMEOFDAY;
 		tci.rg_id = current_thread->rg_id;
 		tci.record_pid = current_thread->record_pid;
 		tci.syscall_cnt = current_thread->syscall_cnt;
@@ -1504,6 +1509,7 @@ static inline void sys_clock_gettime_stop (int rc) {
 	if (rc == 0) { 
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "clock_gettime";
+		tci.type = TOK_CLOCK_GETTIME;
 		tci.rg_id = current_thread->rg_id;
 		tci.record_pid = current_thread->record_pid;
 		tci.syscall_cnt = current_thread->syscall_cnt;
@@ -1531,6 +1537,7 @@ static inline void sys_getpid_stop (int rc) {
 	tci.offset = 0;
 	tci.fileno = -1;
 	tci.data = 0;
+	tci.type = TOK_GETPID;
 	create_syscall_retval_taint (&tci, tokens_fd, channel_name);
 	LOG_PRINT ("Done with getpid.\n");
 }
@@ -1554,6 +1561,7 @@ static inline void sys_getrusage_stop (int rc) {
 		tci.offset = 0;
 		tci.fileno = -1;
 		tci.data = 0;
+		tci.type = TOK_GETRUSAGE;
 		create_taints_from_buffer (ri->usage, sizeof(struct rusage), &tci, tokens_fd, channel_name);	
 	}
 	memset (&current_thread->getrusage_info_cache, 0, sizeof(struct rusage));
@@ -15529,6 +15537,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         tci.offset = 0;
         tci.fileno = FILENO_ARGS;
         tci.data = 0;
+	tci.type = 0;
         while (1) {
             char* arg;
             arg = *args;
