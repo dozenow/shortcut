@@ -9,15 +9,16 @@
 #include "maputil.h"
 #include "uthash.h"
 #include "taint_nw.h"
-
+#include "bitmap.h"
 
 #define MAX_INPUT_SYSCALLS 128
+
+//TODO: a mix use of int and long for buffer size/bitmap size/file size
 
 struct read_syscall { 
 	int pid;           
 	long index;    //syscall index
-	long start;    //start of buffer that affects the control flow
-	long end;   
+	bitmap* map;    //location of buffer that affects the control flow
 	UT_hash_handle hh;
 };
 struct read_syscall* sys_reads = NULL;  //this is a hash list: it contains all read syscalls we care about
@@ -25,6 +26,11 @@ struct read_syscall* sys_reads = NULL;  //this is a hash list: it contains all r
 struct read_syscall_key { 
 	int pid;
 	long index;
+};
+
+struct range { 
+	long start;
+	long end;
 };
 
 static inline void change_read_syscall_boundary (int pid, long index, long pos) {
@@ -45,12 +51,10 @@ static inline void change_read_syscall_boundary (int pid, long index, long pos) 
 		memset (entry, 0, sizeof(struct read_syscall));
 		entry->pid = pid;
 		entry->index = index;
-		entry->start = LONG_MAX;
-		entry->end = -1;
+		entry->map = bitmap_allocate(pos*2);
 		HASH_ADD (hh, sys_reads, pid, sizeof(struct read_syscall_key), entry);
 	}
-	if (entry->start > pos) entry->start = pos;
-	if (entry->end < pos) entry->end = pos;
+	bitmap_set (entry->map, pos);
 }
 
 int sys_read_sort (void *first, void *second) { 
@@ -58,6 +62,49 @@ int sys_read_sort (void *first, void *second) {
 	struct read_syscall_key* b = (struct read_syscall_key*) second;
 	if (a->pid != b->pid) return a->pid - b->pid;
 	else return a->index - b->index;
+}
+
+int blur = 0;  //sometimes, the interval between the previous range and the next range is pretty small, so we may ignore some small spaces between ranges
+//#define BLUR
+
+
+//first range starts at 1
+void scan_bitmap_find_range (bitmap* map) { 
+	long i = 0;
+	long start = 0;
+	long end = 0;
+	int blur_step = 0;
+	for (; i<map->bits; ++i) { 
+		if (bitmap_read (map, i)) { 
+			if (!start) start = i;
+		} else { 
+			if (start) {
+				end = i-1;
+#ifdef BLUR
+				if (blur > 0){
+					//wait before we output
+					++ blur_step;
+					if (blur_step == blur) { 
+						end -= blur - 1;
+						printf ("      range: %ld %ld\n", start, end);
+						start = 0;
+						end = 0;
+						blur_step = 0;
+					} 
+				} else { 
+					printf ("      range: %ld %ld\n", start, end);
+					start = 0;
+					end = 0;
+					blur_step = 0;
+				}
+#else
+				printf ("      range: %ld %ld\n", start, end);
+				start = 0;
+				end = 0;
+#endif
+			}
+		}
+	}
 }
 
 int main (int argc, char* argv[])
@@ -74,7 +121,7 @@ int main (int argc, char* argv[])
 
     while (1) 
     {
-	opt = getopt(argc, argv, "p:r");
+	opt = getopt(argc, argv, "p:r:");
 	if (opt == -1) 
 	{
 	    if(optind < argc) 
@@ -162,7 +209,8 @@ int main (int argc, char* argv[])
 	    HASH_SORT (sys_reads, sys_read_sort); 
 	    struct read_syscall * s;
 	    for (s = sys_reads; s!= NULL; s=s->hh.next) { 
-		    printf ("pid %d, index %ld, start %ld, end %ld\n", s->pid, s->index, s->start, s->end); 
+		    printf ("pid %d, index %ld\n", s->pid, s->index); 
+		    scan_bitmap_find_range (s->map);
 	    }
     }
 
