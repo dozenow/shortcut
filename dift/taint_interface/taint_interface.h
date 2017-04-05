@@ -94,12 +94,18 @@ TAINTSIGN taint_wmem2dwreg (u_long mem_loc, int reg);
 TAINTSIGN taint_wmem2qwreg (u_long mem_loc, int reg);
 
 TAINTSIGN taint_dwmem2qwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_reg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, ADDRINT ip);
+TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask);
 
-TAINTSIGN taint_regmem2flag (u_long mem_loc, uint32_t reg, uint32_t mask, ADDRINT ip, uint32_t size);
-TAINTSIGN taint_memimm2flag (u_long mem_loc, uint32_t mask, ADDRINT ip, uint32_t size);
-TAINTSIGN taint_regimm2flag (uint32_t reg, uint32_t mask, ADDRINT ip, uint32_t size);
+TAINTSIGN taint_regmem2flag (u_long mem_loc, uint32_t reg, uint32_t mask, uint32_t size);
+TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t reg2, uint32_t size_reg, uint32_t size2, uint32_t implicit);
+TAINTSIGN taint_regmem2flag_with_different_size (u_long mem_loc, uint32_t reg, uint32_t mask, uint32_t size_mem, uint32_t size_reg);
+TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, uint32_t size);
+TAINTSIGN taint_mem2flag (u_long mem_loc, uint32_t mask, uint32_t size);
+TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
+TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip);
+TAINTSIGN taint_cmps (ADDRINT ip);
+TAINTSIGN taint_scas (ADDRINT ip);
 
 // mem2reg extend
 TAINTSIGN taintx_bmem2hwreg (u_long mem_loc, int reg);

@@ -65,15 +65,17 @@ int sys_read_sort (void *first, void *second) {
 }
 
 int blur = 0;  //sometimes, the interval between the previous range and the next range is pretty small, so we may ignore some small spaces between ranges
+
 //#define BLUR
 
-
 //first range starts at 1
-void scan_bitmap_find_range (bitmap* map) { 
+void scan_bitmap_find_range (bitmap* map, int fd) { 
 	long i = 0;
 	long start = 0;
 	long end = 0;
+#ifdef BLUR
 	int blur_step = 0;
+#endif
 	for (; i<map->bits; ++i) { 
 		if (bitmap_read (map, i)) { 
 			if (!start) start = i;
@@ -118,6 +120,7 @@ int main (int argc, char* argv[])
     u_long buf_size, i;
     long rc;
     u_long ocnt = 0;
+    char* output_dir = NULL;
 
     while (1) 
     {
@@ -131,7 +134,7 @@ int main (int argc, char* argv[])
 	    }
 	    else 
 	    { 
-		fprintf (stderr, "format: showall <dirno> [-p pid] [-r filename_of_read_syscall_indices]\n");
+		fprintf (stderr, "format: showall <dirno> [-p pid] [-r output_dir]\n");
 		return -1;
 	    }
 	}
@@ -142,6 +145,7 @@ int main (int argc, char* argv[])
 	    break;
 	case 'r':
 	    sys_reads_analysis = 1;
+	    output_dir = optarg;
 	    break;
 	default:
 	    fprintf(stderr, "Unrecognized option\n");
@@ -189,8 +193,10 @@ int main (int argc, char* argv[])
 		    } 
 
 		    if (sys_reads_analysis == 0 || (sys_reads_analysis == 1 && (ptok->type == TOK_READ || ptok->type == TOK_RECV || ptok->type == TOK_RECVMSG || ptok->type == TOK_PREAD))) { 
-			    printf ("output pid/syscall %u/%lu offset %lu (%lx) type %d addr %x fileno %d <- (%lx)", record_pid, syscall, i, ocnt, tci->type, tci->data, tci->fileno, *mptr);
-			    printf ("input pid/syscall %d/%d offset %lu type %d\n", ptok->record_pid, ptok->syscall_cnt, tokval, ptok->type);
+			    //if (sys_reads_analysis == 0) { 
+				    printf ("output pid/syscall %u/%lu offset %lu (%lx) type %d addr %x fileno %d <- (%lx)", record_pid, syscall, i, ocnt, tci->type, tci->data, tci->fileno, *mptr);
+				    printf ("input pid/syscall %d/%d offset %lu type %d\n", ptok->record_pid, ptok->syscall_cnt, tokval, ptok->type);
+			    //}
 			    if (sys_reads_analysis == 1) change_read_syscall_boundary (ptok->record_pid, ptok->syscall_cnt, tokval);
 		    }
 		    mptr++;
@@ -204,13 +210,27 @@ int main (int argc, char* argv[])
 	}
     }
     if (sys_reads_analysis) { 
+	    char outputfilename[256];
+	    int fd = -1;
 	    printf ("##### sys_read/pread analysis####\n");
 	    //sort
 	    HASH_SORT (sys_reads, sys_read_sort); 
 	    struct read_syscall * s;
+	    int cur_pid = -1;
 	    for (s = sys_reads; s!= NULL; s=s->hh.next) { 
 		    printf ("pid %d, index %ld\n", s->pid, s->index); 
-		    scan_bitmap_find_range (s->map);
+		    if (cur_pid != s->pid) {
+			    cur_pid = s->pid;
+			    if (fd > 0) close (fd);
+			    memset (outputfilename, 0, 256);
+			    sprintf (outputfilename, "%s/%d\n", output_dir, cur_pid);
+			    fd = open (outputfilename, O_RDWR | O_TRUNC | O_CREAT, 0644);
+			    if (fd < 0) {
+				    fprintf (stderr, "cannot open output file %s\n", outputfilename);
+				    exit(EXIT_FAILURE);
+			    }
+		    }
+		    scan_bitmap_find_range (s->map, fd);
 	    }
     }
 

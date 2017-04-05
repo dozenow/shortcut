@@ -395,7 +395,6 @@ void create_taints_from_buffer(void* buf, int size,
     int i = 0;
     taint_t start;
     u_long buf_addr = (u_long) buf;
-    //fprintf (stderr, "create_taints_from_buffer:size %d buf %p, tci %p, outfd %d channel name %s\n", size, buf, tci, outfd, channel_name);
     if (size <= 0) return;
     if (!buf) return;
 
@@ -432,6 +431,7 @@ void create_taints_from_buffer(void* buf, int size,
 
     start = taint_num;
     //fprintf (stderr, "create_taints_from_buffer: taint num %u(%x)\n", start, start);
+    fprintf (stderr, "create_taints_from_buffer:size %d buf %p, tci %p, outfd %d channel name %s, start_taint %u\n", size, buf, tci, outfd, channel_name, taint_num);
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
                 !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
