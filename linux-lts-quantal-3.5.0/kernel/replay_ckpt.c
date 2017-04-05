@@ -43,6 +43,9 @@ extern int replay_debug, replay_min_debug;
 #define WRITABLE_MMAPS_LEN 21
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
+//print timings
+//#define TPRINT(...)
+#define TPRINT printk
 
 
 /* Prototypes not in header files */
@@ -1034,7 +1037,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		TPRINT ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	set_fs(KERNEL_DS);
@@ -1153,7 +1156,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			TPRINT ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 			printk ("VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
 		}
 
@@ -1280,6 +1283,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				}
 			} else { 
 				if (pvmas->vmas_flags & VM_GROWSDOWN) {
+					//it seems we're not allowed to combine mmap backed file with GROWSDOWN flag; let's copy all data in
 					map_file = NULL; 
 				} else {
 					char mmap_filename[256];
@@ -1299,7 +1303,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			}
 
 			if (!premapped) { 
-				DPRINT ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
+				printk ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
 					map_file, pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, 
 					(pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
 					(pvmas->vmas_flags & VM_WRITE),
@@ -1373,7 +1377,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			TPRINT ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
 		btree_destroy32(&replay_mmap_btree);
 		// Process-specific info in the mm struct
@@ -1447,7 +1451,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		TPRINT ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (replay_debug) print_vmas(current);
@@ -1495,7 +1499,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck start time with gid %llu, pid %d, time  %ld.%06ld\n", gid, pid, tv.tv_sec, tv.tv_usec);
+		TPRINT ("go_live_recheck start time with gid %llu, pid %d, time  %ld.%06ld\n", gid, pid, tv.tv_sec, tv.tv_usec);
 	}
 
 	set_fs (KERNEL_DS);
@@ -1528,7 +1532,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck after read log time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		TPRINT("go_live_recheck after read log time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	//parse the log
@@ -1610,8 +1614,8 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 							while (i<SHA512_DIGEST_SIZE) { 
 								if (hashval[i] != original_hash[i]) {
 									mismatch_hash = 1;
-									printk ("hash val %u, original_hash %u\n", hashval[i], original_hash[i]);
-									//break;
+									//printk ("hash val %u, original_hash %u\n", hashval[i], original_hash[i]);
+									break;
 								}
 								++i;
 							}
@@ -1655,7 +1659,7 @@ exit:
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("go_live_recheck end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		TPRINT ("go_live_recheck end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (buf != NULL) vfree (buf);

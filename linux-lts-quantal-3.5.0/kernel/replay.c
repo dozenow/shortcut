@@ -4657,13 +4657,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	atomic_set(&prept->ckpt_restore_done,1);
 	
 	if (go_live) {
-		current->replay_thrd = NULL;
-		printk ("replay pid %d goes live\n", current->pid);
-		{
-			struct timeval tv;
-			do_gettimeofday (&tv);
-			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-		}
 		//reopen necessary files
 		//sys_open ("/tmp/cctTZrh1.s", O_RDWR|O_CREAT|O_TRUNC|O_LARGEFILE, 0666);
 #ifdef RECHECK
@@ -4673,6 +4666,16 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
 		}
 #endif
+		//free up resources
+		destroy_replay_group (current->replay_thrd->rp_group);
+		//TODO: what should we do for multi-threaded programs?
+		current->replay_thrd = NULL;
+		printk ("replay pid %d goes live\n", current->pid);
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		}
 	}
 
 	return retval;
@@ -4835,6 +4838,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	if (go_live) {
 		current->replay_thrd = NULL;
 		printk ("replay pid %d goes live (not fully tested for multi-process)\n", current->pid);
+		BUG();
 	}
 
 	if(prept->rp_ckpt_pthread_block_clock){
