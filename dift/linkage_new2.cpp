@@ -72,6 +72,9 @@ u_int redo_syscall = 0;
 #if defined(USE_NW) || defined(USE_SHMEM)
 int s = -1;
 #endif
+//A principle for control flow checks (startup speedups)
+//if any instruction depends on a flag register, it must be re-checked on re-execution or it must be guaranteed to be the same
+//We assume if the input (data and flag registers) is the same for the same instruction, the output and branches should remain the same (determinism of instructions)
 
 // List of available Linkage macros
 // // DO NOT TURN THESE ON HERE. Turn these on in makefile.rules.
@@ -95,8 +98,8 @@ int s = -1;
 
 #define LOGGING_ON
 #define LOG_F log_f
-//#define ERROR_PRINT fprintf
-#define ERROR_PRINT(x,...);
+#define ERROR_PRINT fprintf
+//#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
 #define LOG_PRINT(args...) \
 {                           \
@@ -261,6 +264,9 @@ KNOB<string> KnobForkFlags(KNOB_MODE_WRITEONCE,
 KNOB<unsigned int> KnobCheckpointClock(KNOB_MODE_WRITEONCE,
     "pintool", "ckpt_clock", "",
     "taint tracking until ckpt_clock(inclusive) and generates params_log logs. The clock should always be the end clock of a syscall (checkpoint files has the same property in namings)");
+KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
+    "pintool", "group_dir", "",
+    "the directory for the output files");
 #ifdef RETAINT
 KNOB<string> KnobRetaintEpochs(KNOB_MODE_WRITEONCE,
     "pintool", "retaint", "",
@@ -374,6 +380,7 @@ FILE* stats_f;
 
 extern void write_token_finish (int fd);
 extern void output_finish (int fd);
+void instrument_test_or_cmp(INS ins, uint32_t mask);
 
 //In here we need to mess with stuff for if we are no longer following this process
 static int dift_done ()
@@ -741,7 +748,7 @@ static inline void sys_close_stop(int rc)
 
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-    SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d\n", fd);
+    SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct read_info* ri = &tdata->read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
@@ -11795,7 +11802,74 @@ void taint_whole_mem2mem(ADDRINT src_mem_loc, ADDRINT dst_mem_loc,
 		   ea_src_mem_loc); 
 #endif
     taint_mem2mem(ea_src_mem_loc, ea_dst_mem_loc, size);
+    fprintf (stderr, "taint_whole_mem2mem: src %x (%x), dst %x (%x), size %u\n", src_mem_loc, ea_src_mem_loc, dst_mem_loc, ea_dst_mem_loc, op_size);
 }
+
+void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
+                         ADDRINT eflags, ADDRINT counts, UINT32 op_size, uint32_t check_zf, uint32_t mask, ADDRINT ip)
+{
+    int size = (int)(counts * op_size);
+    if (!size) return;
+    ADDRINT ea_mem_loc1 = computeEA(mem_loc1, eflags, counts, op_size);
+    ADDRINT ea_mem_loc2 = computeEA(mem_loc2, eflags, counts, op_size);
+#ifdef TRACE_TAINT_OPS
+    assert (0);//TODO
+    trace_taint_op(trace_taint_outfd, 
+		   PIN_ThreadId(),
+		   0, // TODO fill ip in later
+		   TAINT_MEM2MEM,
+		   ea_mem_loc1,
+		   ea_mem_loc2); 
+#endif
+     //Input to CMPS: string in memory,
+    //Output : DF/ZF FLAG..., also depends on DF value ,change EDI and ESI, which means CMPS is actually affecting branches; it should be regarded as one of the JUMP instructions
+    //
+    //Input to REP: ECX (count register) and ZF(for REPZ/REPNZ)
+    //Output: count register
+    //
+    INSTRUMENT_PRINT (stderr, "taint_whole_memmem2flag: size %d, ip %x, ea_mem %x %x, original %x %x, char %s\n", size, ip, ea_mem_loc1, ea_mem_loc2, mem_loc1, mem_loc2, (char*) mem_loc1);
+    //first taint the cmps, as it should be executed first before rep
+    taint_memmem2flag(ea_mem_loc1, ea_mem_loc2, mask, size);
+    //then taint count register (ecx) and ZF, and also output tokens for REP
+    //In this case, this instruction are affected by DF and input String (for CMPS), ZF and ECX (for REPZ)
+    //here we don't write output tokens for CMPS as it can be included with REPZ
+    if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
+    else taint_rep (DF_FLAG, ip);
+}
+
+void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
+                         ADDRINT eflags, ADDRINT counts, UINT32 op_size, UINT32 reg_size, uint32_t check_zf, uint32_t mask, ADDRINT ip)
+{
+    int size = (int)(counts * op_size);
+    if (!size) return;
+    ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
+#ifdef TRACE_TAINT_OPS
+    assert (0);//TODO
+    trace_taint_op(trace_taint_outfd, 
+		   PIN_ThreadId(),
+		   0, // TODO fill ip in later
+		   TAINT_MEM2MEM,
+		   ea_mem_loc1,
+		   ea_mem_loc2); 
+#endif
+    //Input to REP: ECX (count register) and ZF(for REPZ/REPNZ)
+    //Output: count register
+    //
+    INSTRUMENT_PRINT (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
+    if (size < 0) { 
+	    fprintf (stderr, "[BUG] taint_whole_regmem2flag : size < 0\n");
+	    size = 10;
+    }
+    //first taint the scas, as it should be executed first before rep
+    taint_regmem2flag_with_different_size(ea_mem_loc, reg, mask, size, reg_size);
+    //then taint count register (ecx) and ZF, and also output tokens for REP
+    //In this case, this instruction are affected by DF and input String (for CMPS), ZF and ECX (for REPZ)
+    //here we don't write output tokens for CMPS as it can be included with REPZ
+    if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
+    else taint_rep (DF_FLAG, ip);
+}
+
+
 
 void taint_whole_lbreg2mem(ADDRINT dst_mem_loc,
 			   REG reg,
@@ -11858,6 +11932,7 @@ void instrument_move_string(INS ins)
     UINT32 opw = INS_OperandWidth(ins, 0);
     UINT32 size = opw / 8;
     if (INS_RepPrefix(ins)) {
+    	ERROR_PRINT (stderr, "[UNHANDLED] control flow instructions, the control flow relies on ecx (REPx, LOOPx not handled correctly)\n");
         assert(size == INS_MemoryOperandSize(ins, 0));
         INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
                 IARG_FIRST_REP_ITERATION,
@@ -11882,6 +11957,256 @@ void instrument_move_string(INS ins)
         }
     }
 }
+
+//Input to CMPS: string in memory,
+//Output : DF/ZF FLAG..., also depends on DF value ,change EDI and ESI, which means CMPS is actually affecting branches; it should be regarded as one of the JUMP instructions
+//refer to comments in taint_whole_memmem2flag
+TAINTSIGN instrument_cmps_without_rep (u_long mem_loc1, u_long mem_loc2, uint32_t mask, uint32_t size, ADDRINT ip) { 
+	taint_memmem2flag (mem_loc1, mem_loc2, mask, size);
+	taint_cmps (ip);
+}
+
+void instrument_compare_string(INS ins, uint32_t mask)
+{
+	UINT32 opw = INS_OperandWidth(ins, 0);
+	UINT32 size = opw / 8;
+
+	assert(size == INS_MemoryOperandSize(ins, 0));
+	INSTRUMENT_PRINT (log_f, "instrument_cmps: size %u\n", size);
+
+	if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
+
+		INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
+				IARG_FIRST_REP_ITERATION,
+				IARG_END);
+		INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_memmem2flag,
+				IARG_MEMORYREAD_EA,
+				IARG_MEMORYREAD2_EA,
+				IARG_REG_VALUE, REG_EFLAGS, 
+				//TODO: this doesn't seem to be right for REPZ
+				IARG_REG_VALUE, INS_RepCountRegister(ins),
+				//TODO
+				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+				IARG_UINT32, INS_RepnePrefix(ins),
+				IARG_UINT32, mask,
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+	} else {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(instrument_cmps_without_rep),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_MEMORYREAD_EA,
+				IARG_MEMORYREAD2_EA,
+				IARG_UINT32, mask, 
+				IARG_UINT32, size,
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+
+#ifdef LINKAGE_DATA_OFFSET
+		//not handled
+		//we need to taint esi and edi probably in this case
+		assert (0);
+#endif
+
+	}
+}
+
+//Input to SCAS: string in memory, EAX or AX or AL, DF_FLAG
+//Output : ZF FLAG..., also depends on DF value ,change EDI and ESI, which means CMPS is actually affecting branches; it should be regarded as one of the JUMP instructions
+TAINTSIGN instrument_scas_without_rep (u_long mem_loc, uint32_t mask, uint32_t size, ADDRINT ip) { 
+    	INSTRUMENT_PRINT (stderr, "instrument_scas_without_rep: size %u, ip %x, ea_mem %lx \n", size, ip, mem_loc);
+	taint_regmem2flag (mem_loc, translate_reg (LEVEL_BASE::REG_EAX), mask, size);	
+	taint_scas (ip);
+}
+void instrument_scan_string(INS ins, uint32_t mask)
+{
+	UINT32 opw = INS_OperandWidth(ins, 0);
+	UINT32 size = opw / 8;
+
+	assert(size == INS_MemoryOperandSize(ins, 0));
+	INSTRUMENT_PRINT (stderr, "instrument_scas: size %u\n", size);
+
+	if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
+
+		INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
+				IARG_FIRST_REP_ITERATION,
+				IARG_END);
+		INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_regmem2flag,
+				IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
+				IARG_MEMORYREAD_EA,
+				IARG_REG_VALUE, REG_EFLAGS, 
+				//TODO: this doesn't seem to be right
+				IARG_REG_VALUE, INS_RepCountRegister(ins),
+				//TODO
+				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+				IARG_UINT32, size, 
+				IARG_UINT32, INS_RepnePrefix(ins),
+				IARG_UINT32, mask,
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+	} else {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(instrument_scas_without_rep),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_MEMORYREAD_EA,
+				IARG_UINT32, mask, 
+				IARG_UINT32, size,
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+
+#ifdef LINKAGE_DATA_OFFSET
+		//not handled
+		//we need to taint esi and edi probably in this case
+		assert (0);
+#endif
+
+	}
+}
+
+TAINTSIGN pcmpestri_reg_mem (uint32_t reg1, PIN_REGISTER* reg1content, u_long mem_loc2, uint32_t size1, uint32_t size2, ADDRINT ip) { 
+	char str1[17] = {0};
+	char str2[17] = {0};
+	if (reg1content) strncpy (str1, (char*) reg1content, 16);
+	if (mem_loc2) strncpy (str2, (char*) mem_loc2, 16);
+
+	fprintf (stderr, "pcmpestri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
+	taint_regmem2flag_pcmpxstri (reg1, mem_loc2, 0, size1, size2, 0);
+}
+TAINTSIGN pcmpestri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content, uint32_t size1, uint32_t size2, ADDRINT ip) {
+	char str1[17] = {0};
+	char str2[17] = {0};
+	if (reg1content) strncpy (str1, (char*) reg1content, 16);
+	if (reg2content) strncpy (str2, (char*) reg2content, 16);
+	fprintf (stderr, "pcmpestri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
+	taint_regmem2flag_pcmpxstri (reg1, 0, reg2, size1, size2, 0);
+}
+
+//INPUT: EAX, EDX, two operands
+//OUTPUT: ECX, FLAGS
+void instrument_pcmpestri (INS ins) { 
+	int op1reg;
+	int op2mem;
+	int op2reg;
+	int reg1;
+	int reg2;
+
+	op1reg = INS_OperandIsReg(ins, 0);
+	op2mem = INS_OperandIsMemory(ins, 1);
+	op2reg = INS_OperandIsReg(ins, 1);
+
+	fprintf (stderr, "instrument_pcmpestri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
+	if (op1reg && op2mem) { 
+		reg1 = translate_reg (INS_OperandReg (ins, 0));
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(pcmpestri_reg_mem),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, reg1, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
+				IARG_MEMORYREAD_EA,
+				IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 
+				IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+	} else if (op1reg && op2reg) { 
+		reg1 = translate_reg (INS_OperandReg (ins, 0));
+		reg2 = translate_reg (INS_OperandReg (ins, 1));
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(pcmpestri_reg_reg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, reg1, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
+				IARG_UINT32, reg2, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 1), 
+				IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 
+				IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+
+	} else { 
+		ERROR_PRINT (stderr, "[BUG] unrecognized instruction: pcmpestri\n");
+	}
+}
+
+TAINTSIGN pcmpistri_reg_mem (uint32_t reg1, PIN_REGISTER* reg1content, u_long mem_loc2, ADDRINT ip) { 
+	char str1[17] = {0};
+	char str2[17] = {0};
+	uint32_t size1;
+	uint32_t size2;
+	if (reg1content) strncpy (str1, (char*) reg1content, 16);
+	if (mem_loc2) strncpy (str2, (char*) mem_loc2, 16);
+	size1 = strlen (str1);
+	size2 = strlen (str2);
+
+	fprintf (stderr, "pcmpistri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
+	taint_regmem2flag_pcmpxstri (reg1, mem_loc2, 0, size1, size2, 1);
+}
+TAINTSIGN pcmpistri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content, ADDRINT ip) {
+	char str1[17] = {0};
+	char str2[17] = {0};
+	uint32_t size1;
+	uint32_t size2;
+	if (reg1content) strncpy (str1, (char*) reg1content, 16);
+	if (reg2content) strncpy (str2, (char*) reg2content, 16);
+	size1 = strlen (str1);
+	size2 = strlen (str2);
+	fprintf (stderr, "pcmpistri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
+	taint_regmem2flag_pcmpxstri (reg1, 0, reg2, size1, size2, 1);
+}
+
+//INPUT: EAX, EDX, two operands
+//OUTPUT: ECX, FLAGS
+void instrument_pcmpistri (INS ins) { 
+	int op1reg;
+	int op2mem;
+	int op2reg;
+	int reg1;
+	int reg2;
+
+	op1reg = INS_OperandIsReg(ins, 0);
+	op2mem = INS_OperandIsMemory(ins, 1);
+	op2reg = INS_OperandIsReg(ins, 1);
+
+	fprintf (stderr, "instrument_pcmpistri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
+	if (op1reg && op2mem) { 
+		reg1 = translate_reg (INS_OperandReg (ins, 0));
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(pcmpistri_reg_mem),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, reg1, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
+				IARG_MEMORYREAD_EA,
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+	} else if (op1reg && op2reg) { 
+		reg1 = translate_reg (INS_OperandReg (ins, 0));
+		reg2 = translate_reg (INS_OperandReg (ins, 1));
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(pcmpistri_reg_reg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, reg1, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
+				IARG_UINT32, reg2, 
+				IARG_REG_REFERENCE, INS_OperandReg(ins, 1), 
+				IARG_ADDRINT, INS_Address(ins),
+				IARG_END);
+
+	} else { 
+		ERROR_PRINT (stderr, "[BUG] unrecognized instruction: pcmpistri\n");
+	}
+}
+
 
 void instrument_store_string(INS ins)
 {
@@ -14318,12 +14643,11 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 			mem_ea,
 			IARG_UINT32, treg,
 			IARG_UINT32, flags, 
-			IARG_ADDRINT, INS_Address(ins),
 			IARG_UINT32, regsize,
 			IARG_END);
 }
 
-inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
+inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
 	int src_treg;
@@ -14337,20 +14661,20 @@ inline void instrument_taint_reg2flag (INS ins, REG dst_reg, REG src_reg, uint32
 	if (dst_regsize != src_regsize) 
 		fprintf (stderr, "TODO: fix regsize problem\n");
 
-	INSTRUMENT_PRINT (log_f, "instrument_taint_reg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
-	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_reg2flag),
+	//INSTRUMENT_PRINT (log_f, "instrument_taint_regreg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
 #endif
 			IARG_UINT32, dst_treg,
 			IARG_UINT32, src_treg,
 			IARG_UINT32, flags, 
-			IARG_ADDRINT, INS_Address(ins),
 			IARG_END);
 }
 
 void instrument_test_or_cmp (INS ins, uint32_t mask)
 {
+	//TODO: I didn't check the size of the reg here! This could be over tainting
     int op1mem, op1reg, op2reg, op2imm, op2mem;
     string instruction;
     REG reg;
@@ -14361,7 +14685,7 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
     op2mem = INS_OperandIsMemory(ins, 1);
-    if((op1mem && op2reg) || (op1reg && op2mem)) { //it doesn't matter of ordering
+    if((op1mem && op2reg) || (op1reg && op2mem)) { //ordering doesn't matter
 	    REG reg = INS_OperandReg(ins, 1);
 	    if (!REG_valid (reg))
 		    return;
@@ -14375,25 +14699,25 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
         reg = INS_OperandReg(ins, 1);
         INSTRUMENT_PRINT(log_f, "instrument_test: op1 and op2 of are registers %d(%s), %d(%s)\n", 
                 dstreg, REG_StringShort(dstreg).c_str(), reg, REG_StringShort(reg).c_str());
-	//INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
+	INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
         if(!REG_valid(dstreg) || !REG_valid(reg)) {
 		INSTRUMENT_PRINT (log_f, "instrument_test: not valid registers.\n");
             	return;
         } 
+	assert (REG_Size(reg) == REG_Size(dstreg));
 	//instrument_taint_reg2reg (ins, dstreg, reg, 1);
 	//taint flag register
-	instrument_taint_reg2flag (ins, dstreg, reg, mask);
+	instrument_taint_regreg2flag (ins, dstreg, reg, mask);
     } else if(op1mem && op2imm) {
 	    addrsize = INS_MemoryReadSize(ins);
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_memimm2flag),
+			    AFUNPTR(taint_mem2flag),
 #ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
 #endif
 			    IARG_MEMORYREAD_EA,
 			    IARG_UINT32, mask, 
-			    IARG_ADDRINT, INS_Address(ins),
 			    IARG_UINT32, addrsize,
 			    IARG_END);
     }else if(op1reg && op2imm){
@@ -14402,13 +14726,12 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 		    return;
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is reg and op2 is imm\n");
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_regimm2flag),
+			    AFUNPTR(taint_reg2flag),
 #ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
 #endif
 			    IARG_UINT32, reg, 
 			    IARG_UINT32, mask, 
-			    IARG_ADDRINT, INS_Address(ins),
 			    IARG_UINT32, REG_Size(reg),
 			    IARG_END);
     }else{
@@ -14418,6 +14741,10 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
         instruction = INS_Disassemble(ins);
         printf("unknown combination of CMP ins: %s\n", instruction.c_str());
     }
+}
+
+TAINTSIGN instrument_unhandled_inst (ADDRINT ip) {
+	fprintf (stderr, "unhanded inst %x\n", ip);
 }
 
 void instrument_jump (INS ins, uint32_t flags) {
@@ -14530,6 +14857,8 @@ void instruction_instrumentation(INS ins, void *v)
 #ifdef USE_CODEFLUSH_TRICK
     if (option_cnt != 0) {
 #endif
+    int rep_handled = 0;
+
     if (INS_IsMov(ins)) {
         instrument_mov(ins);
     } else if (category == XED_CATEGORY_CMOV) {
@@ -14631,8 +14960,10 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst(ins);
 #else
                 instrument_addorsub(ins);
-#ifdef CTRL_FLOW_OLD
-                // TODO extra taint movement for flags
+#ifdef CTRL_FLOW
+                // extra taint movement for flags
+		// TODO: definitely tainted too much for flags with the following function
+		//instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
 #endif
 #endif
                 break;
@@ -14793,6 +15124,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_SETS:
             case XED_ICLASS_SETZ:
             case XED_ICLASS_SETNZ:
+		ERROR_PRINT(stderr, "[UNHANDLED control flow] %s\n", INS_Disassemble(ins).c_str());
                 instrument_clear_dst(ins);
                 break;
 #endif
@@ -14809,58 +15141,76 @@ void instruction_instrumentation(INS ins, void *v)
 #endif
 #ifdef CTRL_FLOW
 	   case XED_ICLASS_TEST:
-                INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
+                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
                 instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG);
 		break;
 	   case XED_ICLASS_CMP:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
 		instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
 		break;
+	   case XED_ICLASS_PTEST:
+		instrument_test_or_cmp(ins, ZF_FLAG | CF_FLAG);
+		break;
+	   case XED_ICLASS_CMPSB:
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
+		instrument_compare_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
+		rep_handled = 1;
+		break;
+	   case XED_ICLASS_SCASB:
+		instrument_scan_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
+		rep_handled = 1;
+		break;
+	   case XED_ICLASS_PCMPESTRI:
+		instrument_pcmpestri (ins);
+		break;
+	   case XED_ICLASS_PCMPISTRI: 
+		instrument_pcmpistri (ins);
+		break;
 	   case XED_ICLASS_JNZ:
-                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins));
+                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins)); instrument_jump (ins, ZF_FLAG);
 		instrument_jump (ins, ZF_FLAG);
 		break;
        	   case XED_ICLASS_JZ:
-                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JZ/JE\n", INS_Address(ins));
+                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JZ/JE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG);
 		break;
 	   case XED_ICLASS_JMP:
-                INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
+                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
 		instrument_jump (ins, 0);
 		break;
         case XED_ICLASS_JB:
         case XED_ICLASS_JNB:
-           	INSTRUMENT_PRINT(log_f, "%#x: about to instrument JB/JNB\n", INS_Address(ins));
+           	//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JB/JNB\n", INS_Address(ins));
 		instrument_jump (ins, CF_FLAG);
 		break;
         case XED_ICLASS_JBE:
         case XED_ICLASS_JNBE:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JBE/JNBE\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JBE/JNBE\n", INS_Address(ins));
 		instrument_jump (ins, CF_FLAG|ZF_FLAG);
 		break;
         case XED_ICLASS_JL:
         case XED_ICLASS_JNL:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JL/JNL\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JL/JNL\n", INS_Address(ins));
 		instrument_jump (ins, SF_FLAG|OF_FLAG);
 		break;
 	case XED_ICLASS_JLE:
         case XED_ICLASS_JNLE: 
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JLE/JNLE\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JLE/JNLE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
 		break;
 	case XED_ICLASS_JNO:
         case XED_ICLASS_JO:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JO/JNO\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JO/JNO\n", INS_Address(ins));
 		instrument_jump (ins, OF_FLAG);
 		break;
 	case XED_ICLASS_JNP:
         case XED_ICLASS_JP:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JP/JNP\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JP/JNP\n", INS_Address(ins));
 		instrument_jump (ins, PF_FLAG);
 		break;
         case XED_ICLASS_JNS:
         case XED_ICLASS_JS:
-		INSTRUMENT_PRINT(log_f, "%#x: about to instrument JS/JNS\n", INS_Address(ins));
+		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JS/JNS\n", INS_Address(ins));
 		instrument_jump (ins, SF_FLAG);
 		break;
 #else
@@ -14892,13 +15242,11 @@ void instruction_instrumentation(INS ins, void *v)
 		break;
 #endif
 #ifndef CTRL_FLOW_OLD
-            // these instructions only affect control flow
-            case XED_ICLASS_PTEST:
-                break;
             case XED_ICLASS_NOT:
                 break;
             case XED_ICLASS_LEAVE:
                 break;
+		//TODO : should clear flag taint
             case XED_ICLASS_CLD:
                 break;
             case XED_ICLASS_BT:
@@ -14931,13 +15279,28 @@ void instruction_instrumentation(INS ins, void *v)
                 if (instrumented) {
                     break;
                 }
-                ERROR_PRINT(log_f, "[NOOP] ERROR: instruction %s is not instrumented, address: %#x\n",
+                ERROR_PRINT(stderr, "[NOOP] ERROR: instruction %s is not instrumented, address: %#x\n",
                         INS_Disassemble(ins).c_str(), (unsigned)INS_Address(ins));
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(instrument_unhandled_inst),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_ADDRINT, INS_Address(ins),
+			IARG_END);
                 // XXX This printing may cause a deadlock in Pin!
                 // print_static_address(log_f, INS_Address(ins));
                 break;
         }
     }
+    //assertation for REPx
+    //REP/REPE/REPNE usually affects INS, MOVS, OUTS, LODS, STOS, CMPS, SCAS
+    if (INS_RepPrefix(ins) || (INS_RepnePrefix(ins))) {
+	    if (rep_handled == 0) { 
+		    ERROR_PRINT(stderr, "[NOOP] ERROR: instruction %s is not instrumented with REP, address: %#x\n", INS_Disassemble(ins).c_str(), (unsigned)INS_Address(ins));
+
+	    }
+    }
+	
 #ifdef USE_CODEFLUSH_TRICK
     }
 #endif
@@ -15707,6 +16070,7 @@ int get_open_file_descriptors ()
 int main(int argc, char** argv) 
 {    
     int rc;
+    const char* tmp_filename = NULL;
 
     // This is a very specific trick to figure out if we're a child or not
     if (!strcmp(argv[4], "--")) { // pin injected into forked process
@@ -15729,7 +16093,11 @@ int main(int argc, char** argv)
     global_syscall_cnt = 0;
 
     /* Create a directory for logs etc for this replay group*/
-    snprintf(group_directory, 256, "/tmp/%d", PIN_GetPid());
+    tmp_filename = KnobGroupDirectory.Value().c_str();
+    if (tmp_filename && strlen(tmp_filename) > 0)  
+	    strcpy (group_directory, tmp_filename);
+    else 
+    	snprintf(group_directory, 256, "/tmp/%d", PIN_GetPid());
 #ifndef NO_FILE_OUTPUT
     if (mkdir(group_directory, 0755)) {
         if (errno == EEXIST) {

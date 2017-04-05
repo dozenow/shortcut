@@ -13,8 +13,10 @@
 #define REG_SIZE 16
 
 // flag register (status) 
-#define NUM_FLAGS 6
+#define NUM_FLAGS 7
 
+//These are only flags, not corresponding to the actual hardware mask
+//The actual flag register taints are layed out according to these FLAGs instead of the actual hardware layouts
 #define CF_FLAG 0x01
 #define PF_FLAG 0x02
 #define AF_FLAG 0x04
@@ -23,6 +25,9 @@
 #define OF_FLAG 0x20
 #define DF_FLAG 0x40
 
+#define DF_INDEX 6
+
+//actual hardware mask// Don't use them directly (only used once in computeEA function) 
 #define CF_MASK 0x01
 #define PF_MASK 0x04
 #define AF_MASK 0x10
