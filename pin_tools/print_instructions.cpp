@@ -148,6 +148,9 @@ void set_address_one(ADDRINT syscall_num, ADDRINT ebx_value, ADDRINT syscallarg0
 	if (sysnum == SYS_stat64) { 
 		printf ("try to stat %s\n", (char*) syscallarg0);
 	}
+	if (sysnum == 3) { 
+		printf ("read buffer %x\n", (uint32_t) syscallarg1);
+	}
 
 #ifdef PLUS_TWO
 	    g_hash_table_add(sysexit_addr_table, GINT_TO_POINTER(ip+2));
@@ -209,17 +212,19 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     current_thread->syscall_cnt = 0;
 }
 
-void instrument_inst_print (ADDRINT ip)
+void instrument_inst_print (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2)
 {
     if (global_syscall_cnt > print_limit && global_syscall_cnt < print_stop) {
 	PIN_LockClient();
-	printf ("#%x\n", ip);
+	printf ("#%x %s mem_read %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
+	//printf ("#%x\n", ip);
         /*printf("[INST] Pid %d (tid: %d) (record %d) - %#x, ", PIN_GetPid(), PIN_GetTid(), get_record_pid(), ip);
 	if (IMG_Valid(IMG_FindByAddress(ip))) {
 		printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
 	} else 
 		printf ("\n");
 	*/	
+	//if (ins) free (ins);
 	PIN_UnlockClient();
     }
 }
@@ -227,7 +232,66 @@ void instrument_inst_print (ADDRINT ip)
 void track_inst(INS ins, void* data) 
 {
     if (print_limit != print_stop) {
-	INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, IARG_INST_PTR, IARG_END);
+	const char* tmp = INS_Disassemble(ins).c_str();
+	char* str = NULL;
+	int len = strlen(tmp) + 1;
+	int count = INS_MemoryOperandCount (ins);
+	int mem1read = 0;
+	int mem2read = 0;
+	
+	if (tmp == NULL) 
+		tmp = "CANNOT PARSE";
+	str = (char*) malloc (len);
+	if (str) strcpy (str, tmp);
+	if (count >= 1) {
+		mem1read = INS_MemoryOperandIsRead (ins, 0);
+		if (count == 2) {
+			mem2read = INS_MemoryOperandIsRead (ins, 1);
+		}
+	}
+
+	if (count == 2) {
+		if (mem1read && mem2read) {
+			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, 
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_MEMORYREAD_EA, 
+				IARG_MEMORYREAD2_EA, 
+				IARG_END);
+		} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, 
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_MEMORYREAD_EA, 
+				IARG_MEMORYWRITE_EA,
+				IARG_END);
+		} else {
+			assert (0);
+		}
+	} else if (count == 1) {
+		if (mem1read) {
+			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, 
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYREAD_EA, 
+					IARG_ADDRINT, 0,
+					IARG_END);
+		} else {
+			INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, 
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYWRITE_EA, 
+					IARG_ADDRINT, 0,
+					IARG_END);
+		}
+	} else { 
+		INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_inst_print, 
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_ADDRINT, 0,
+				IARG_ADDRINT, 0,
+				IARG_END);
+	}
     }
 #ifdef USE_TLS_SCRATCH
     if(INS_IsSyscall(ins)) {
@@ -479,6 +543,7 @@ int main(int argc, char** argv)
     function_print_limit = atoi(KnobFunctionPrintLimit.Value().c_str());
     function_print_stop = atoi(KnobFunctionPrintStop.Value().c_str());
 #endif
+    printf ("print limit and stop %ld %ld\n", print_limit, print_stop);
     
     addr_load = (char *) KnobLoadSyscallAddrs.Value().c_str();
     addr_save = (char *) KnobSaveSyscallAddrs.Value().c_str();

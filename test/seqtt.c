@@ -14,6 +14,8 @@
 
 #define MAX_PROCESSES  2
 #define BUFFER_SIZE 1024
+
+//TODO: Currently, we only use data flow tool, probably should also enable the index tool in the future
 int main (int argc, char* argv[]) 
 {
     struct timeval tv_start, tv_attach, tv_tool_done, tv_done;
@@ -33,11 +35,12 @@ int main (int argc, char* argv[])
     size_t n = BUFFER_SIZE;
     FILE* fp; 
     int instruction_only = 0;
+    char* group_dir = NULL;
     
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir]\n");
 	return -1;
     }
 
@@ -67,6 +70,9 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index],"-filter_output_after",BUFFER_SIZE)) {
 		filter_output_after_str = argv[index+1];
 		filter_output_after = atoi(argv[index+1]);
+		index += 2;
+	    } else if (!strncmp(argv[index], "-group_dir", BUFFER_SIZE)) { 
+		group_dir = argv[index + 1];
 		index += 2;
 	    } else {
 		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
@@ -140,6 +146,10 @@ int main (int argc, char* argv[])
 	    args[argcnt++] = "-ckpt_clock";
 	    args[argcnt++] = ckpt_clock;
 	}
+	if (group_dir) { 
+		args[argcnt++] = "-group_dir";
+		args[argcnt++] = group_dir;
+	}
 	args[argcnt++] = NULL;
 	rc = execv ("../../pin/pin", (char **) args);
 	fprintf (stderr, "execv of pin tool failed, rc=%d, errno=%d\n", rc, errno);
@@ -163,7 +173,10 @@ int main (int argc, char* argv[])
     
     printf("DIFT finished\n");
     sprintf(tmpdir, "/tmp/%d",cpid);
-    sprintf(lscmd, "/bin/ls %s/dataflow.result*", tmpdir);
+    if (group_dir)
+    	sprintf(lscmd, "/bin/ls %s/dataflow.result*", group_dir);
+    else
+    	sprintf(lscmd, "/bin/ls %s/dataflow.result*", tmpdir);
     fp = popen(lscmd, "r");
     if(fp == NULL) { 
 	fprintf(stderr, "popen failed: errno %d", errno);
@@ -187,7 +200,10 @@ int main (int argc, char* argv[])
 
 	post_process_pids[next_child] = fork(); 
 	if (post_process_pids[next_child] == 0) {
-	    sprintf(tmpdir, "/tmp/%d",cpid);
+	    if (group_dir)
+		strcpy (tmpdir, group_dir);
+	    else 
+	    	sprintf(tmpdir, "/tmp/%d",cpid);
 	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, "-p", pid, NULL);
 	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	    return -1;
@@ -198,9 +214,13 @@ int main (int argc, char* argv[])
 
     ppid = fork();
     if (ppid == 0) {
-	sprintf(tmpdir, "/tmp/%d",cpid);
-	rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, NULL);
-	fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
+	    if (group_dir)
+		strcpy (tmpdir, group_dir);
+	    else 
+		sprintf(tmpdir, "/tmp/%d",cpid);
+
+	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, NULL);
+	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     }
 

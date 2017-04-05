@@ -1,3 +1,7 @@
+#!/bin/sh
+exec scala -nc "$0" "$@"
+!#
+
 import sys.process._
 import java.io._
 import scala.io.Source
@@ -8,13 +12,13 @@ import scala.io.Source
 
 if (args.size < 2) println("wrong params")
 var fast = false
-if(args(2) == "-fast") { 
+if(args.size == 3 && args(2) == "-fast") { 
 	fast = true	
 }
 
 val outputfilename = "ckpt_clocks"
 val pw = new PrintWriter(new FileOutputStream(new File(outputfilename), true))
-val all_clocks = Source.fromFile("outputfilename").getLines.map(s=> s.split(",")(0).toLong -> s.split(",")(0).toLong).toMap
+val all_clocks = Source.fromFile(outputfilename).getLines.map(s=> s.split(",")(0).toLong -> s.split(",")(1).toLong).toMap
 
 for(i <- args(0).toInt to args(1).toInt) {
 	println ("Processing group " + i)
@@ -24,11 +28,11 @@ for(i <- args(0).toInt to args(1).toInt) {
 	if (parseckpt_result.contains ("record filename: /usr/lib/gcc/i686-linux-gnu/4.6/cc1")) {
 		println ("####Executable is cc1")
 		//2. run linkage tool to generate params log
-		var ckpt_clock = 0
+		var ckpt_clock = 0L
 		if (fast == false) { 
 			//we need to calculate the ckpt_clock
 			//seqtt /replay_logdb/rec_77829 -ckpt_clock 1191
-			val link_command = "./seqtt  /replay_logdb/rec_" + i
+			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -group_dir /startup_db/" + i
 			println ("####Executing " + link_command)
 			val link_result = link_command!!;
 			var last_header_fd = -1
@@ -52,12 +56,12 @@ for(i <- args(0).toInt to args(1).toInt) {
 			//read ckpt_clock from the file
 			val clock = all_clocks.get(i)
 			if (clock != None) { 
-				println ("####Checkpoint clock (read from file) should be " + clock)
-				ckpt_clock = clock
+				println ("####Checkpoint clock (read from file) should be " + clock.get)
+				ckpt_clock = clock.get
 			} else { 
 				throw new Exception ("Cannot find the clock in ckpt_clocks file")
 			}
-			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock" + ckpt_clock
+			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock " + ckpt_clock + " -group_dir /startup_db/" + i
 			println ("####Executing " + link_command)
 			val link_result = link_command!!;
 		}
@@ -80,8 +84,10 @@ for(i <- args(0).toInt to args(1).toInt) {
 		val add_command = "./parseckpt /replay_logdb/rec_" + i + " -a " + ckpt_clock
 		println ("####Excuting " + add_command)
 		add_command!!;
-		pw.println (i + "," + ckpt_clock)
-		pw.flush
+		if (fast == false) { 
+			pw.println (i + "," + ckpt_clock)
+			pw.flush
+		}
 	} else {
 		println ("####Skipping...")
 	}

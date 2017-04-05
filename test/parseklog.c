@@ -25,7 +25,6 @@ struct recheck_entry {
 	long retval;
 	int len;
 };
-int sou
 
 static void empty_printfcn(FILE *out, struct klog_result *res) {
 }
@@ -395,6 +394,7 @@ static void print_read(FILE *out, struct klog_result *res) {
 				write_header_into_recheck_log (3, res->retval, 0, res->retval);
 				write_content_into_recheck_log (res->retparams + sizeof(int), res->retval);*/
 				write_content = 1;
+				fprintf (out, "     calculate hash, len %d\n", res->retval);
 			}
 		}
 		if (write_content == 0) { 
