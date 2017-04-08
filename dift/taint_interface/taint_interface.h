@@ -106,6 +106,8 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_cmps (ADDRINT ip);
 TAINTSIGN taint_scas (ADDRINT ip);
+TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue);
+TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size);
 
 // mem2reg extend
 TAINTSIGN taintx_bmem2hwreg (u_long mem_loc, int reg);

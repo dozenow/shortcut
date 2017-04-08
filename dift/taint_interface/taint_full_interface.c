@@ -2036,6 +2036,43 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
+TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size) { 
+	uint32_t offset = 0;
+	u_long mem_offset = mem_loc;
+	int tainted = 0;
+
+	while (offset < size) { 
+		taint_t* mem_taints = NULL;
+		uint32_t count = get_cmem_taints_internal (mem_offset, size - offset, &mem_taints);
+		if (mem_taints) {
+			uint32_t i = 0;
+			for (; i<count; ++i) { 
+				if (mem_taints[i] != 0) {
+					tainted = 1;
+					break;
+				}
+			}
+			if (tainted) break;
+		}
+		offset += count;
+		mem_offset += count;
+	}
+
+	if (tainted) printf ("[SLICE] #%x %s \t\tmem_read_addr %lx\n", ip, ins_str, mem_loc);
+}
+
+TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue) {
+	int tainted = 0;
+	uint32_t i = 0;
+	for (; i<size; ++i) { 
+		if (current_thread->shadow_reg_table[reg*REG_SIZE + i] != 0) {
+			tainted = 1;
+			break;
+		}
+	}
+	if (tainted) printf ("[SLICE] #%x %s \t\t mem_write_addr %lx, reg_read_value %u\n", ip, ins_str, mem_loc, regvalue);
+}
+
 TAINTSIGN taint_lbreg2mem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_lbreg2mem");

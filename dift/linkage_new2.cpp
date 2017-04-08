@@ -92,6 +92,7 @@ int s = -1;
 // #define CONFAID
 #define RECORD_TRACE_INFO 
 #define PARAMS_LOG
+#define FW_SLICE
 
 //used in order to trace instructions! 
 //#define TRACE_INST
@@ -376,6 +377,7 @@ u_long collisions = 0;
 u_long hash_flushes = 0;
 //u_long entries = 0;
 FILE* stats_f;
+u_long num_of_inst_executed = 0;
 #endif
 
 extern void write_token_finish (int fd);
@@ -490,6 +492,7 @@ static int dift_done ()
 	retaint_time -= (float) retaint_us/1000000.0;
 	fprintf (stats_f, "Retaint execution time: %.3f seconds\n", retaint_time);
 #endif
+	fprintf (stats_f, "Total number of inst executed: %lu\n", num_of_inst_executed);
 	finish_and_print_taint_stats(stats_f);
 	fclose (stats_f);
     }
@@ -2437,6 +2440,19 @@ static ADDRINT returnArg (BOOL arg)
     return arg;
 }
 
+static inline char* get_copy_of_disasm (INS ins) { 
+	const char* tmp = INS_Disassemble (ins).c_str();
+	char* str = NULL;
+	assert (tmp != NULL);
+	str = (char*) malloc (strlen (tmp) + 1);
+	strcpy (str, tmp);
+	return str;
+}
+static inline void put_copy_of_disasm (char* str) { 
+	//if (str) free (str);
+	//TODO memory leak
+}
+
 /* Add instrumentation to taint from src reg to dst reg before 
  * instruction INS.
  *
@@ -3466,6 +3482,25 @@ void instrument_taint_reg2mem(INS ins, REG reg, int extend)
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
 
+#ifdef FW_SLICE
+    do {
+	    char* str = get_copy_of_disasm (ins);
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(fw_slice_reg),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_INST_PTR,
+			    IARG_PTR, str,
+			    IARG_UINT32, treg,
+			    IARG_UINT32, regsize,
+			    IARG_MEMORYWRITE_EA,
+			    IARG_REG_VALUE, reg,
+			    IARG_END);
+	    put_copy_of_disasm (str);
+    } while (0);
+#endif
+
     if (regsize == memsize) {
         switch(regsize) {
             case 1:
@@ -4484,6 +4519,23 @@ void instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
     int treg = translate_reg((int)dstreg);
     UINT32 regsize = REG_Size(dstreg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
+    assert (memsize > 0);
+#ifdef FW_SLICE
+    do {
+	    char* str = get_copy_of_disasm (ins);
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(fw_slice_mem),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_INST_PTR,
+			    IARG_PTR, str,
+			    IARG_MEMORYREAD_EA,
+			    IARG_UINT32, INS_MemoryReadSize(ins),
+			    IARG_END);
+	    put_copy_of_disasm (str);
+    } while (0);
+#endif
 
     if (regsize == memsize) {
         switch(regsize) {
@@ -7059,6 +7111,26 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
     src_treg = translate_reg((int)srcreg);
     dst_regsize = REG_Size(dstreg);
     src_regsize = REG_Size(srcreg);
+
+#ifdef FW_SLICE
+    do {
+	    char* str = get_copy_of_disasm (ins);
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(fw_slice_reg),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_INST_PTR,
+			    IARG_PTR, str,
+			    IARG_UINT32, src_treg,
+			    IARG_UINT32, src_regsize,
+			    IARG_ADDRINT, 0,
+			    IARG_REG_VALUE, srcreg,
+			    IARG_END);
+	    put_copy_of_disasm (str);
+    } while (0);
+#endif
+
 
     if (dst_regsize == src_regsize) {
         switch(dst_regsize) {
@@ -14813,6 +14885,10 @@ void trace_inst(ADDRINT ip)
 }
 #endif
 
+void count_inst_executed (void) { 
+	++num_of_inst_executed;
+}
+
 void instruction_instrumentation(INS ins, void *v)
 {
     OPCODE opcode;
@@ -14821,6 +14897,8 @@ void instruction_instrumentation(INS ins, void *v)
 
 #ifdef TAINT_STATS
     inst_instrumented++;
+    /*INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (count_inst_executed),
+		    IARG_END);*/
 #endif
     if(INS_IsSyscall(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),

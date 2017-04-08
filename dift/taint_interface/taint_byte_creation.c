@@ -465,7 +465,26 @@ void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, ch
 		return;
 	}
 
-	//TODO may add filters here
+	if (filter_input()) {
+		int pass = 0;
+		if (num_filter_input_files &&
+				filter_filename(channel_name)) {
+			pass = 1; 
+		}
+		if (num_filter_part_filenames &&
+				filter_partfilename(channel_name)) {
+			pass = 1;
+		}
+		if (num_filter_input_syscalls &&
+				filter_syscall(tci->syscall_cnt)) {
+			pass = 1;
+		}
+
+		if (!pass) {
+			return;
+		}
+	}
+
 	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
 	
 	for (; i < REG_SIZE; ++i) {

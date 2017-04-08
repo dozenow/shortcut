@@ -31,6 +31,8 @@ int main (int argc, char* argv[])
     char* ckpt_clock = NULL;
     char* filter_output_after_str = NULL;
     char* filter_partfile = NULL;
+    char* filter_byterange = NULL;
+    char* filter_syscall = NULL;
     int next_child = 0, i;
     size_t n = BUFFER_SIZE;
     FILE* fp; 
@@ -40,7 +42,7 @@ int main (int argc, char* argv[])
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir]\n");
 	return -1;
     }
 
@@ -67,6 +69,12 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index],"-filter_partfile",BUFFER_SIZE)) {
 		filter_partfile = argv[index+1];
 		index += 2;
+	    } else if (!strncmp(argv[index],"-filter_byterange",BUFFER_SIZE)) {
+		filter_byterange = argv[index+1];
+		index += 2;
+	    } else if (!strncmp(argv[index],"-filter_syscall",BUFFER_SIZE)) {
+		filter_syscall = argv[index+1];
+		index += 2;
 	    } else if (!strncmp(argv[index],"-filter_output_after",BUFFER_SIZE)) {
 		filter_output_after_str = argv[index+1];
 		filter_output_after = atoi(argv[index+1]);
@@ -75,7 +83,7 @@ int main (int argc, char* argv[])
 		group_dir = argv[index + 1];
 		index += 2;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
 		return -1;
 	    }
 	}
@@ -137,6 +145,14 @@ int main (int argc, char* argv[])
 	    args[argcnt++] = "-i";
 	    args[argcnt++] = "-e";
 	    args[argcnt++] = filter_partfile;
+	} else if (filter_byterange) {
+	    args[argcnt++] = "-i";
+	    args[argcnt++] = "-b";
+	    args[argcnt++] = filter_byterange;
+	} else if (filter_syscall) { 
+		args[argcnt++] = "-i";
+		args[argcnt++] = "-s";
+		args[argcnt++] = filter_syscall;
 	}
 	if (stop_at) {
 	    args[argcnt++] = "-l";
