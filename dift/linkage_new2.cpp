@@ -2506,6 +2506,7 @@ static inline void fw_slice_src_mem (INS ins) {
 	    put_copy_of_disasm (str);
 }
 //the following three functions merges taints from two operands and also consider different operand sizes
+//dstreg does not necessarily mean the destination register, refer to instrument_lea
 static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize) { 
 	    char* str = get_copy_of_disasm (ins);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
@@ -13455,6 +13456,11 @@ void instrument_lea(INS ins)
 
     if (REG_valid (index_reg) && !REG_valid(base_reg)) {
         // This is a nummeric calculation in disguise
+	// xdou: I don't think this ever happens
+	assert (0);
+#ifdef FW_SLICE
+	    fw_slice_src_reg (ins, index_reg, REG_Size(index_reg), 0);
+#endif
         INSTRUMENT_PRINT (log_f, "LEA: index reg is %d(%s) base reg invalid, dst %d(%s)\n",
                 index_reg, REG_StringShort(index_reg).c_str(),
                 dstreg, REG_StringShort(dstreg).c_str());
@@ -13474,9 +13480,10 @@ void instrument_lea(INS ins)
                 ERROR_PRINT (log_f, "[ERROR] instrument_lea\n");
                 break;
         }
-    } else {
-        //loading an effective address clears the dep set of the target
-        //register.. then we add the depsets of the base/index regs used.
+    } else if(REG_valid(base_reg) && REG_valid (index_reg)) {
+#ifdef FW_SLICE
+	    fw_slice_src_regreg (ins, base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg));
+#endif
         switch(REG_Size(dstreg)) {
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
@@ -13495,14 +13502,56 @@ void instrument_lea(INS ins)
                 assert(0);
                 break;
         }
+    } else if (!REG_valid (index_reg) && REG_valid(base_reg)) {
+#ifdef FW_SLICE
+	    fw_slice_src_reg (ins, base_reg, REG_Size(base_reg), 0);
+#endif
+        INSTRUMENT_PRINT (log_f, "LEA: base reg is %d(%s) index reg invalid, dst %d(%s)\n",
+                base_reg, REG_StringShort(base_reg).c_str(),
+                dstreg, REG_StringShort(dstreg).c_str());
+        assert(REG_Size(base_reg) == REG_Size(dstreg));
+        switch(REG_Size(dstreg)) {
+            case 4:
+                INS_InsertCall(ins, IPOINT_BEFORE,
+                        AFUNPTR(taint_wreg2wreg),
+#ifdef FAST_INLINE
+                        IARG_FAST_ANALYSIS_CALL,
+#endif
+                        IARG_UINT32, dstreg,
+                        IARG_UINT32, base_reg,
+                        IARG_END);
+                break;
+            default:
+                ERROR_PRINT (log_f, "[ERROR] instrument_lea\n");
+                break;
+        }
+    } else { 
+	    //operand should be immval
+	    switch(REG_Size(dstreg)) {
+		    case 4:
+			    INS_InsertCall(ins, IPOINT_BEFORE,
+					    AFUNPTR(taint_immval2wreg),
+#ifdef FAST_INLINE
+					    IARG_FAST_ANALYSIS_CALL,
+#endif
+					    IARG_UINT32, dstreg,
+					    IARG_END);
+			    break;
+		    default:
+			    ERROR_PRINT (log_f, "[ERROR] taint_immval2reg dstreg %d(%s) size is %d\n",
+					    dstreg, REG_StringShort(dstreg).c_str(), REG_Size(dstreg));
+			    assert(0);
+			    break;
+
+	    }
     }
 }
 
 void instrument_push(INS ins)
 {
-    USIZE addrsize = INS_MemoryWriteSize(ins);
-    int src_reg = INS_OperandIsReg(ins, 0);
-    int src_imm = INS_OperandIsImmediate(ins, 0);
+	USIZE addrsize = INS_MemoryWriteSize(ins);
+	int src_reg = INS_OperandIsReg(ins, 0);
+	int src_imm = INS_OperandIsImmediate(ins, 0);
 
     if (src_imm) {
         switch(addrsize) {
@@ -14868,6 +14917,10 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 		assert(0);
 	}
 
+#ifdef FW_SLICE
+	    fw_slice_src_regmem (ins, reg, regsize, mem_ea, memsize);
+#endif
+
 	if (regsize != memsize) 
 		fprintf (stderr, "TODO: instrument_taint_regmem2flag: fix regsize problem\n");
 
@@ -14896,6 +14949,9 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 	src_regsize = REG_Size(src_reg);
 	if (dst_regsize != src_regsize) 
 		fprintf (stderr, "TODO: fix regsize problem\n");
+#ifdef FW_SLICE
+	fw_slice_src_regreg (ins, dst_reg, dst_regsize, src_reg, src_regsize);
+#endif
 
 	//INSTRUMENT_PRINT (log_f, "instrument_taint_regreg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag),
@@ -14922,9 +14978,8 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
     op2imm = INS_OperandIsImmediate(ins, 1);
     op2mem = INS_OperandIsMemory(ins, 1);
     if((op1mem && op2reg) || (op1reg && op2mem)) { //ordering doesn't matter
-	    REG reg = INS_OperandReg(ins, 1);
-	    if (!REG_valid (reg))
-		    return;
+	    REG reg = (op1reg?INS_OperandReg(ins, 0):INS_OperandReg(ins,1));
+	    assert (REG_valid (reg));
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is register\n");
 	    addrsize = INS_MemoryReadSize(ins);
 	    assert (REG_Size(reg) == addrsize);
@@ -14937,14 +14992,14 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
                 dstreg, REG_StringShort(dstreg).c_str(), reg, REG_StringShort(reg).c_str());
 	INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
         if(!REG_valid(dstreg) || !REG_valid(reg)) {
-		INSTRUMENT_PRINT (log_f, "instrument_test: not valid registers.\n");
+		ERROR_PRINT (stderr, "[ERROR]instrument_test: not valid registers.\n");
             	return;
         } 
 	assert (REG_Size(reg) == REG_Size(dstreg));
 	//instrument_taint_reg2reg (ins, dstreg, reg, 1);
 	//taint flag register
 	instrument_taint_regreg2flag (ins, dstreg, reg, mask);
-    } else if(op1mem && op2imm) {
+   } else if(op1mem && op2imm) {
 	    addrsize = INS_MemoryReadSize(ins);
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
 	    INS_InsertCall(ins, IPOINT_BEFORE,
@@ -14956,10 +15011,13 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, addrsize,
 			    IARG_END);
+#ifdef FW_SLICE
+	    fw_slice_src_mem(ins);
+#endif
     }else if(op1reg && op2imm){
 	    REG reg = INS_OperandReg (ins, 0);
-	    if (!REG_valid (reg)) 
-		    return;
+	    uint32_t regsize = REG_Size (reg);
+	    assert (REG_valid (reg));
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is reg and op2 is imm\n");
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_reg2flag),
@@ -14968,8 +15026,11 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 #endif
 			    IARG_UINT32, reg, 
 			    IARG_UINT32, mask, 
-			    IARG_UINT32, REG_Size(reg),
+			    IARG_UINT32, regsize,
 			    IARG_END);
+#ifdef FW_SLICE
+	    fw_slice_src_reg(ins, reg, regsize, 0);
+#endif
     }else{
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
@@ -15185,6 +15246,7 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_LEA:
                 instrument_lea(ins);
+		slice_handed = 1;
                 break;
             case XED_ICLASS_XADD:
                 instrument_xchg(ins);
@@ -15396,13 +15458,16 @@ void instruction_instrumentation(INS ins, void *v)
 	   case XED_ICLASS_TEST:
                 //INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
                 instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG);
+		slice_handed = 1;
 		break;
 	   case XED_ICLASS_CMP:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
 		instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
+		slice_handed = 1;
 		break;
 	   case XED_ICLASS_PTEST:
 		instrument_test_or_cmp(ins, ZF_FLAG | CF_FLAG);
+		slice_handed = 1;
 		break;
 	   case XED_ICLASS_CMPSB:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
