@@ -2557,6 +2557,20 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 			IARG_END);
 	put_copy_of_disasm (str);
 }
+
+static inline void fw_slice_src_flag (INS ins, uint32_t mask) { 
+	char* str = get_copy_of_disasm (ins);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_flag),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_INST_PTR,
+			IARG_PTR, str,
+			IARG_UINT32, mask,
+			IARG_END);
+	put_copy_of_disasm (str);
+}
 #endif
 
 /* Add instrumentation to taint from src reg to dst reg before 
@@ -13456,8 +13470,6 @@ void instrument_lea(INS ins)
 
     if (REG_valid (index_reg) && !REG_valid(base_reg)) {
         // This is a nummeric calculation in disguise
-	// xdou: I don't think this ever happens
-	assert (0);
 #ifdef FW_SLICE
 	    fw_slice_src_reg (ins, index_reg, REG_Size(index_reg), 0);
 #endif
@@ -15045,6 +15057,9 @@ TAINTSIGN instrument_unhandled_inst (ADDRINT ip) {
 }
 
 void instrument_jump (INS ins, uint32_t flags) {
+#ifdef FW_SLICE
+	fw_slice_src_flag (ins, flags);
+#endif
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -15180,6 +15195,16 @@ void instruction_instrumentation(INS ins, void *v)
         instrument_clear_dst(ins);
 #else
         // instrument_shift(ins);
+#endif
+#ifdef FW_SLICE
+	REG reg = INS_OperandReg (ins, 0);	
+	if (REG_valid (reg)) {
+		fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
+		slice_handed = 1;
+	} else { 
+		fprintf (stderr, "%s\n", INS_Disassemble(ins).c_str());
+		assert (0);
+	}
 #endif
     } else {
         switch(opcode) {
@@ -15487,49 +15512,59 @@ void instruction_instrumentation(INS ins, void *v)
 	   case XED_ICLASS_JNZ:
                 //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins)); instrument_jump (ins, ZF_FLAG);
 		instrument_jump (ins, ZF_FLAG);
+		slice_handed = 1;
 		break;
        	   case XED_ICLASS_JZ:
                 //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JZ/JE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG);
+		slice_handed = 1;
 		break;
 	   case XED_ICLASS_JMP:
                 //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
 		instrument_jump (ins, 0);
+		slice_handed = 1;
 		break;
         case XED_ICLASS_JB:
         case XED_ICLASS_JNB:
            	//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JB/JNB\n", INS_Address(ins));
 		instrument_jump (ins, CF_FLAG);
+		slice_handed = 1;
 		break;
         case XED_ICLASS_JBE:
         case XED_ICLASS_JNBE:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JBE/JNBE\n", INS_Address(ins));
 		instrument_jump (ins, CF_FLAG|ZF_FLAG);
+		slice_handed = 1;
 		break;
         case XED_ICLASS_JL:
         case XED_ICLASS_JNL:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JL/JNL\n", INS_Address(ins));
 		instrument_jump (ins, SF_FLAG|OF_FLAG);
+		slice_handed = 1;
 		break;
 	case XED_ICLASS_JLE:
         case XED_ICLASS_JNLE: 
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JLE/JNLE\n", INS_Address(ins));
 		instrument_jump (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
+		slice_handed = 1;
 		break;
 	case XED_ICLASS_JNO:
         case XED_ICLASS_JO:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JO/JNO\n", INS_Address(ins));
 		instrument_jump (ins, OF_FLAG);
+		slice_handed = 1;
 		break;
 	case XED_ICLASS_JNP:
         case XED_ICLASS_JP:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JP/JNP\n", INS_Address(ins));
 		instrument_jump (ins, PF_FLAG);
+		slice_handed = 1;
 		break;
         case XED_ICLASS_JNS:
         case XED_ICLASS_JS:
 		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JS/JNS\n", INS_Address(ins));
 		instrument_jump (ins, SF_FLAG);
+		slice_handed = 1;
 		break;
 #else
 	   case XED_ICLASS_CMP:

@@ -111,6 +111,7 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, 
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size);
 TAINTSIGN fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_read_size, uint32_t mem_write_size);
 TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, int reg_size, u_long mem_loc, uint32_t mem_size);
+TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask);
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
 // mem2reg extend

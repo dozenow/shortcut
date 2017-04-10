@@ -1851,7 +1851,6 @@ TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size) {
 	for (i = 0; i<size; ++i) {
 		result = merge_taints (result, shadow_reg_table[reg*REG_SIZE +i]);
 	}
-	
 
 	for (i = 0; i<NUM_FLAGS; ++i) {
 		if (mask & ( 1 << i)) {
@@ -2114,6 +2113,20 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, int reg_size, u_l
 		tainted = is_mem_tainted (mem_loc, mem_size);
 	}
 	if (tainted) printf ("[SLICE] #%x %s \t\t mem_addr %lx, reg_value(before instruction) TODO\n", ip, ins_str, mem_loc);
+}
+
+TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask) {
+	uint32_t i = 0;
+	int tainted = 0;
+	for (; i<NUM_FLAGS; ++i) {
+		if (mask & (i<<i)) {
+			if (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i] != 0) {
+				tainted = 1;
+				break;
+			}
+		}
+	}
+	if (tainted) printf ("[SLICE] #%x %s \n", ip, ins_str);
 }
 
 TAINTSIGN taint_lbreg2mem (u_long mem_loc, int reg)
