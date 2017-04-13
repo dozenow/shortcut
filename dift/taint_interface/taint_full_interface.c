@@ -2100,6 +2100,19 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, 
 	if (tainted) printf ("[SLICE] #%x %s \t\t reg_write_value %u, reg_read_value %u\n", ip, ins_str, dst_regvalue, src_regvalue);
 }
 
+
+TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue, ADDRINT count_regvalue) { 
+	int tainted = is_reg_tainted (dst_reg, dst_regsize);
+	if (tainted == 0) {
+		tainted = is_reg_tainted (src_reg, src_regsize);
+		if (tainted == 0) { 
+			tainted = is_reg_tainted (count_reg, count_regsize);
+		}
+	}
+
+	if (tainted) printf ("[SLICE] #%x %s \t\t reg_write_value %u, reg_read_value %u, reg_count_value %u\n", ip, ins_str, dst_regvalue, src_regvalue, count_regvalue);
+}
+
 TAINTSIGN fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_readsize, uint32_t mem_writesize) { 
 	int tainted = is_mem_tainted (mem_read, mem_readsize);
 	if (tainted == 0) tainted = is_mem_tainted (mem_write, mem_writesize);
@@ -2107,12 +2120,23 @@ TAINTSIGN fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long me
 	if (tainted) printf ("[SLICE] #%x %s \t\t mem_read_addr %lx, mem_write_addr %lx\n", ip, ins_str, mem_read, mem_write);
 }
 
-TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, int reg_size, u_long mem_loc, uint32_t mem_size) { 
+TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, u_long mem_loc, uint32_t mem_size) { 
 	int tainted = is_reg_tainted (reg, reg_size);
 	if (tainted == 0) { 
 		tainted = is_mem_tainted (mem_loc, mem_size);
 	}
 	if (tainted) printf ("[SLICE] #%x %s \t\t mem_addr %lx, reg_value(before instruction) TODO\n", ip, ins_str, mem_loc);
+}
+
+TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, int reg2, uint32_t reg2_size, u_long mem_loc, uint32_t mem_size) { 
+	int tainted = is_reg_tainted (reg1, reg1_size);
+	if (tainted == 0) { 
+		tainted = is_mem_tainted (mem_loc, mem_size);
+		if (tainted == 0) { 
+			tainted = is_reg_tainted (reg2, reg2_size);
+		}
+	}
+	if (tainted) printf ("[SLICE] #%x %s \t\t mem_addr %lx, reg_value 1_2(before instruction) TODO\n", ip, ins_str, mem_loc);
 }
 
 TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask) {
