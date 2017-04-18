@@ -2455,6 +2455,11 @@ static inline void put_copy_of_disasm (char* str) {
 	//TODO memory leak
 }
 static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, int is_dst_mem) { 
+	if (src_regsize > 4) {
+		fprintf (stderr, "[ERROR]UNHANDLED reg size %s\n", INS_Disassemble (ins).c_str());
+		return;
+	}
+
 	char* str = get_copy_of_disasm (ins);
 	IARG_TYPE mem_ea = IARG_INVALID;
 	if (is_dst_mem == 0) { 
@@ -2509,6 +2514,10 @@ static inline void fw_slice_src_mem (INS ins) {
 //the following three functions merges taints from two operands and also consider different operand sizes
 //dstreg does not necessarily mean the destination register, refer to instrument_lea
 static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize) { 
+	if (dst_regsize > 4) {
+		fprintf (stderr, "[ERROR]UNHANDLED reg size %s\n", INS_Disassemble (ins).c_str());
+		return;
+	}
 	    char* str = get_copy_of_disasm (ins);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(fw_slice_regreg),
@@ -2543,6 +2552,11 @@ static inline void fw_slice_src_memmem (INS ins, uint32_t memread_size, uint32_t
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize) { 
+	if (reg_size > 4) {
+		fprintf (stderr, "[ERROR]UNHANDLED reg size %s\n", INS_Disassemble (ins).c_str());
+		return;
+	}
+
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memreg),
@@ -2574,6 +2588,11 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 }
 
 static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize, REG countreg, uint32_t count_regsize) { 
+	if (dst_regsize > 4) {
+		fprintf (stderr, "[ERROR]UNHANDLED reg size %s\n", INS_Disassemble (ins).c_str());
+		return;
+	}
+
 	    char* str = get_copy_of_disasm (ins);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(fw_slice_regregreg),
@@ -2612,6 +2631,40 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 			IARG_END);
 	put_copy_of_disasm (str);
 }
+
+static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32_t reg_size) {
+	char* str = get_copy_of_disasm (ins);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_regflag),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_INST_PTR,
+			IARG_PTR, str,
+			IARG_UINT32, mask,
+			IARG_ADDRINT, translate_reg (reg), 
+			IARG_UINT32, reg_size,
+			IARG_REG_VALUE, reg,
+			IARG_END);
+	put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_ea, uint32_t memsize) { 
+	char* str = get_copy_of_disasm (ins);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_memflag),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_INST_PTR,
+			IARG_PTR, str,
+			IARG_UINT32, mask,
+			mem_ea, 
+			IARG_UINT32, memsize,
+			IARG_END);
+	put_copy_of_disasm (str);
+}
+
 static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_size);
 static void fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size) { 
 	int size = (int) (counts*op_size);
@@ -9335,6 +9388,42 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
     }
 }
 
+void pred_instrument_taint_memflag2reg (INS ins, uint32_t mask, REG dstreg) { 
+	int treg = translate_reg (dstreg);
+	UINT32 regsize = REG_Size (dstreg);
+	UINT32 memsize = INS_MemoryReadSize (ins);
+	assert (regsize == memsize);
+	
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
+			AFUNPTR(taint_memflag2reg),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_UINT32, mask,
+			IARG_UINT32, treg, 
+			IARG_MEMORYREAD_EA,
+			IARG_UINT32, regsize,
+			IARG_END);
+}
+
+
+void pred_instrument_taint_regflag2reg (INS ins, uint32_t mask, REG dstreg, REG srcreg) {
+	UINT32 dst_regsize = REG_Size (dstreg);
+	UINT32 src_regsize = REG_Size (srcreg);
+	assert (dst_regsize == src_regsize);
+
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
+			AFUNPTR(taint_regflag2reg),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_UINT32, mask,
+			IARG_UINT32, translate_reg(dstreg), 
+			IARG_UINT32, translate_reg(srcreg), 
+			IARG_UINT32, dst_regsize,
+			IARG_END);
+}
+
 void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 {
     int treg = translate_reg((int)dstreg);
@@ -12096,7 +12185,7 @@ void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
 		   ea_mem_loc2); 
 #endif
      //Input to CMPS: string in memory,
-    //Output : DF/ZF FLAG..., also depends on DF value ,change EDI and ESI, which means CMPS is actually affecting branches; it should be regarded as one of the JUMP instructions
+    //Output : DF/ZF FLAG..., also depends on DF value ,change EDI and ESI, which means CMPS is actually affecting branches
     //
     //Input to REP: ECX (count register) and ZF(for REPZ/REPNZ)
     //Output: count register
@@ -12109,6 +12198,8 @@ void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
     //here we don't write output tokens for CMPS as it can be included with REPZ
     if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
     else taint_rep (DF_FLAG, ip);
+#ifdef FW_SLICE
+#endif
 }
 
 void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
@@ -12274,7 +12365,6 @@ void instrument_compare_string(INS ins, uint32_t mask)
 	INSTRUMENT_PRINT (log_f, "instrument_cmps: size %u\n", size);
 
 	if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
-
 		INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
 				IARG_FIRST_REP_ITERATION,
 				IARG_END);
@@ -12336,7 +12426,7 @@ void instrument_scan_string(INS ins, uint32_t mask)
 				IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
 				IARG_MEMORYREAD_EA,
 				IARG_REG_VALUE, REG_EFLAGS, 
-				//TODO: this doesn't seem to be right
+				//TODO: this doesn't seem to be right: overtainting
 				IARG_REG_VALUE, INS_RepCountRegister(ins),
 				//TODO
 				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
@@ -13000,6 +13090,38 @@ void instrument_bswap (INS ins)
 
 void instrument_cmpxchg (INS ins)
 {
+	REG srcreg = INS_OperandReg (ins, 1);
+	uint32_t size = REG_Size (srcreg);
+	
+	if (INS_IsMemoryRead(ins) || INS_IsMemoryWrite(ins)) { 
+#ifdef FW_SLICE
+		//EAX with size can also represent AX/AL
+		fw_slice_src_regmem (ins, LEVEL_BASE::REG_EAX, size, IARG_MEMORYREAD_EA, size);
+#endif
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_mem),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_REG_VALUE, srcreg,
+				IARG_MEMORYREAD_EA,
+				IARG_UINT32, translate_reg(srcreg),
+				IARG_UINT32, size,
+				IARG_END);
+	} else { 
+		REG dstreg = INS_OperandReg (ins, 0);
+#ifdef FW_SLICE
+		fw_slice_src_regreg (ins, dstreg, size, LEVEL_BASE::REG_EAX, size);
+#endif
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_reg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_REG_VALUE, dstreg,
+				IARG_UINT32, translate_reg(dstreg),
+				IARG_UINT32, translate_reg(srcreg),
+				IARG_UINT32, size,
+				IARG_END);
+	}
 }
 
 void instrument_mov (INS ins) 
@@ -13286,14 +13408,14 @@ void instrument_movx (INS ins)
     }
 } 
 
-void instrument_cmov(INS ins)
+void instrument_cmov(INS ins, uint32_t mask)
 {
     int ismemread = 0, ismemwrite = 0;
     int immval = 0;
     USIZE addrsize = 0;
     REG reg = REG_INVALID();
     REG dstreg = REG_INVALID();
-    int treg = (int)REG_INVALID();
+    //int treg = (int)REG_INVALID();
 
     assert(INS_IsPredicated(ins));
 
@@ -13341,8 +13463,20 @@ void instrument_cmov(INS ins)
 #endif
 #else
  #ifndef LINKAGE_DATA_OFFSET
-            pred_instrument_taint_mem2reg(ins, reg, 0);
+	    if (mask != 0) {
+		    //dst reg size is also equal to the memory read size
+		    //control flow
+		    pred_instrument_taint_memflag2reg (ins, mask, reg);
+#ifdef FW_SLICE
+		    fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
+#endif
+	    } else {
+		    pred_instrument_taint_mem2reg(ins, reg, 0);
+	    }
  #else
+#if defined(CTRL_FLOW) || defined(FW_SLICE)
+	    assert (0); //not handled with data linkage
+#endif
             REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 
@@ -13363,7 +13497,8 @@ void instrument_cmov(INS ins)
 #endif // ONLY_COPY
         }
     } else if(ismemwrite) {
-        if(!immval) {
+	    assert (0);//shouldn't happen for cmov
+        /*if(!immval) {
             //mov register to memory location
             INSTRUMENT_PRINT(log_f, "instrument mov is mem write: reg: %d, \
                     reg size %u, size of mem write is %u\n",
@@ -13394,9 +13529,11 @@ void instrument_cmov(INS ins)
         } else {
             //move immediate to memory location
             pred_instrument_taint_immval2mem(ins);
-        }
+        }*/
     } else if (!SPECIAL_REG(dstreg)) {
         if(immval) {
+		assert (0);// shouldn't happen
+		/*
             treg = translate_reg((int)dstreg);
             //mov immediate value into register
             switch(addrsize) {
@@ -13442,7 +13579,7 @@ void instrument_cmov(INS ins)
                     break;
                default:
                     break;
-            }
+            }*/
         } else {
             //mov one reg val into another
             assert(REG_Size(reg) == REG_Size(dstreg));
@@ -13450,6 +13587,16 @@ void instrument_cmov(INS ins)
             int src_treg = translate_reg((int)reg);
 
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
+	    if (mask != 0) {
+		    //control flow
+		    pred_instrument_taint_regflag2reg (ins, mask, dstreg, reg);
+#ifdef FW_SLICE
+		    fw_slice_src_regflag (ins, mask, reg, REG_Size(reg));
+#endif
+	    } else {
+#ifdef FW_SLICE
+		    assert (0); //must be enabled along with control flow 
+#endif
             switch(REG_Size(reg)) {
                 case 1:
                     if (REG_is_Lower8(dstreg) && REG_is_Lower8(reg)) {
@@ -13533,19 +13680,61 @@ void instrument_cmov(INS ins)
                             IARG_END);
                     break;
             }
+	}
         }
     }
 }
 
+//This function doesn't handle RCR and RCL
 void instrument_rotate(INS ins)
 {
-    // TODO
-    assert(0);
-    if (INS_OperandWidth(ins, 0) == 8) {
-        // we only track taint at a byte granularily,
-        //  rotating 8 bits doesn't affect the taint
-        return;
-    }
+	int op1reg = INS_OperandIsReg (ins, 0);
+	int op1mem = INS_OperandIsMemory (ins, 0);
+	int op2imm = INS_OperandIsImmediate (ins, 1);
+	int op2reg = INS_OperandIsReg (ins, 1);
+	if (op2imm) {
+		UINT64 imm = INS_OperandImmediate (ins, 1);
+		assert (imm != 1); //we also need to taint OF in this case
+	}
+	if (op1reg) { 
+		REG reg = INS_OperandReg (ins, 0);
+		uint32_t regsize = REG_Size (reg);
+		if (regsize == 1) assert (REG_is_Lower8(reg));
+#ifdef FW_SLICE
+		fw_slice_src_reg (ins, reg, regsize, 0);
+#endif
+		if (regsize == 1) {
+			// we only track taint at a byte granularily,
+			//  rotating 8 bits doesn't affect the taint
+			return;
+		}
+		INS_InsertCall (ins, IPOINT_BEFORE, 
+				AFUNPTR (taint_rotate_reg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, translate_reg (reg),
+				IARG_UINT32, regsize,
+				IARG_UINT32, op2reg,
+				IARG_END);
+	} else if (op1mem) { 
+		uint32_t size = INS_MemoryWriteSize (ins);
+#ifdef FW_SLICE
+		fw_slice_src_mem (ins);
+#endif
+		if (size == 1) return;
+		INS_InsertCall (ins, IPOINT_BEFORE, 
+				AFUNPTR (taint_rotate_mem),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_MEMORYWRITE_EA,
+				IARG_UINT32, size,
+				IARG_UINT32, op2reg,
+				IARG_END);
+	} else { 
+		assert (0);
+	}
 }
 
 void instrument_shift(INS ins)
@@ -15110,8 +15299,7 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 	src_treg = translate_reg ((int) src_reg);
 	dst_regsize = REG_Size(dst_reg);
 	src_regsize = REG_Size(src_reg);
-	if (dst_regsize != src_regsize) 
-		fprintf (stderr, "TODO: fix regsize problem\n");
+	assert (dst_regsize == src_regsize);
 #ifdef FW_SLICE
 	fw_slice_src_regreg (ins, dst_reg, dst_regsize, src_reg, src_regsize);
 #endif
@@ -15124,6 +15312,7 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 			IARG_UINT32, dst_treg,
 			IARG_UINT32, src_treg,
 			IARG_UINT32, flags, 
+			IARG_UINT32, src_regsize,
 			IARG_END);
 }
 
@@ -15218,6 +15407,20 @@ void instrument_jump (INS ins, uint32_t flags) {
 			IARG_REG_VALUE, REG_EFLAGS,
 			IARG_UINT32, flags, 
 			IARG_ADDRINT, INS_Address(ins),
+			IARG_END);
+}
+
+void instrument_jump_ecx (INS ins, uint32_t size) {
+#ifdef FW_SLICE
+	fw_slice_src_reg (ins, LEVEL_BASE::REG_ECX, size, 0);
+#endif
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump_ecx),
+#ifdef FAST_INLINE
+			IARG_FAST_ANALYSIS_CALL,
+#endif
+			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+			IARG_UINT32, size,
+			IARG_INST_PTR,
 			IARG_END);
 }
 
@@ -15368,6 +15571,79 @@ void instrument_incdec_neg (INS ins) {
 #endif
 }
 
+void instrument_set (INS ins, uint32_t mask) { 
+#ifdef FW_SLICE
+	fw_slice_src_flag (ins, mask);
+#endif
+	if (INS_IsMemoryWrite(ins)) {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(taint_flag2mem),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_MEMORYWRITE_EA,
+				IARG_UINT32,mask, 
+				IARG_UINT32, 1,
+				IARG_END);
+	} else { 
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(taint_flag2reg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_UINT32, translate_reg(INS_OperandReg(ins, 0)),
+				IARG_UINT32, mask, 
+				IARG_UINT32, 1,
+				IARG_END);
+	}
+
+}
+
+void instrument_bt (INS ins) { 
+	int op1reg = INS_OperandIsReg (ins, 0);
+	int op2reg = INS_OperandIsReg (ins, 1);
+	int op1mem = INS_OperandIsMemory (ins, 0);
+	int op2imm = INS_OperandIsImmediate (ins, 1);
+	if (op1reg && op2reg) { 
+		instrument_taint_regreg2flag (ins, INS_OperandReg (ins, 0), INS_OperandReg(ins, 1), CF_FLAG);
+	} else if (op1mem && op2reg) { 
+		instrument_taint_regmem2flag (ins, INS_OperandReg(ins, 1), CF_FLAG);
+	} else if (op1reg && op2imm) { 
+	    REG reg = INS_OperandReg (ins, 0);
+	    uint32_t regsize = REG_Size (reg);
+	    assert (REG_valid (reg));
+#ifdef FW_SLICE
+	    fw_slice_src_reg(ins, reg, regsize, 0);
+#endif
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(taint_reg2flag),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_UINT32, reg, 
+			    IARG_UINT32, CF_FLAG, 
+			    IARG_UINT32, regsize,
+			    IARG_END);
+	} else if (op1mem && op2imm) { 
+	    uint32_t addrsize = INS_MemoryReadSize(ins);
+#ifdef FW_SLICE
+	    fw_slice_src_mem(ins);
+#endif
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			    AFUNPTR(taint_mem2flag),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_MEMORYREAD_EA,
+			    IARG_UINT32, CF_FLAG, 
+			    IARG_UINT32, addrsize,
+			    IARG_END);
+	} else { 
+		assert (0);
+	}
+
+}
+
 void count_inst_executed (void) { 
 	++num_of_inst_executed;
 }
@@ -15395,6 +15671,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_SYSARG_VALUE, 4,
                 IARG_SYSARG_VALUE, 5,
                 IARG_END);
+	slice_handed = 1;
     }
 
     opcode = INS_Opcode(ins);
@@ -15427,11 +15704,27 @@ void instruction_instrumentation(INS ins, void *v)
     } else if (category == XED_CATEGORY_CMOV) {
         // We separate out the tainting of the movement of data with
         //  cf, since we can do so much faster if we don't care about cf
-#ifdef CTRL_FLOW_OLD
-        // TODO
-        instrument_cmov_cf(ins);
+#ifdef CTRL_FLOW
+	switch (opcode) {
+		case XED_ICLASS_CMOVBE:
+		case XED_ICLASS_CMOVNBE:
+			instrument_cmov (ins, CF_FLAG | ZF_FLAG);
+			break;
+		case XED_ICLASS_CMOVZ:
+		case XED_ICLASS_CMOVNZ:
+			instrument_cmov (ins, ZF_FLAG);
+			break;
+		case XED_ICLASS_CMOVB:
+		case XED_ICLASS_CMOVNB:
+			instrument_cmov (ins, CF_FLAG);
+			break;
+		default:
+			fprintf (stderr, "cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
+			break;
+	}
+	slice_handed = 1;
 #else
-        instrument_cmov(ins);
+        instrument_cmov(ins, 0);
 #endif
     } else if (category == XED_CATEGORY_SHIFT) {
 #ifdef COPY_ONLY
@@ -15510,11 +15803,10 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_BSWAP:
                 instrument_bswap(ins);
                 break;
-                /*
             case XED_ICLASS_CMPXCHG:
                 instrument_cmpxchg(ins);
+		slice_handed = 1;
                 break;
-                */
             case XED_ICLASS_PUSH:
                 instrument_push(ins);
 		slice_handed = 1;
@@ -15680,33 +15972,56 @@ void instruction_instrumentation(INS ins, void *v)
 		slice_handed = 1;
                 break;
 #endif
-                /*
-            case XED_ICLASS_ROR:
-            case XED_ICLASS_ROL:
-            case XED_ICLASS_RCL:
+#ifdef CTRL_FLOW
+            /*case XED_ICLASS_RCL:
             case XED_ICLASS_RCR:
                 instrument_rotate(ins);
                 // flags affected: CF, OF
-                break;
-                */
-#ifdef CTRL_FLOW_OLD
+                break;*/
+            case XED_ICLASS_ROL:
+	    case XED_ICLASS_ROR:
+		instrument_rotate (ins);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETB:
             case XED_ICLASS_SETNB:
+		instrument_set (ins, CF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETL:
             case XED_ICLASS_SETNL:
+		instrument_set (ins, SF_FLAG | OF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETNBE:
             case XED_ICLASS_SETBE:
+		instrument_set (ins, CF_FLAG | ZF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETLE:
             case XED_ICLASS_SETNLE:
+		instrument_set (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETNO:
             case XED_ICLASS_SETO:
+		instrument_set (ins, OF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETNP:
             case XED_ICLASS_SETP:
+		instrument_set (ins, PF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETNS:
             case XED_ICLASS_SETS:
+		instrument_set (ins, SF_FLAG);
+		slice_handed = 1;
+		break;
             case XED_ICLASS_SETZ:
             case XED_ICLASS_SETNZ:
-                // TODO
+		instrument_set (ins, ZF_FLAG);
+		slice_handed = 1;
                 break;
 #else
             case XED_ICLASS_SETB:
@@ -15725,7 +16040,6 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_SETS:
             case XED_ICLASS_SETZ:
             case XED_ICLASS_SETNZ:
-		ERROR_PRINT(stderr, "[UNHANDLED control flow] %s\n", INS_Disassemble(ins).c_str());
                 instrument_clear_dst(ins);
                 break;
 #endif
@@ -15827,6 +16141,11 @@ void instruction_instrumentation(INS ins, void *v)
 		instrument_jump (ins, SF_FLAG);
 		slice_handed = 1;
 		break;
+	case XED_ICLASS_JRCXZ:
+		//TODO: should use different size for JCXZ..
+		instrument_jump_ecx (ins, 4);
+		slice_handed = 1;
+		break;
 #else
 	   case XED_ICLASS_CMP:
 		break;
@@ -15870,6 +16189,8 @@ void instruction_instrumentation(INS ins, void *v)
 		slice_handed = 1;
                 break;
             case XED_ICLASS_BT:
+		instrument_bt (ins);
+		slice_handed = 1;
                 break;
 #endif
             case XED_ICLASS_CPUID:
@@ -15886,6 +16207,7 @@ void instruction_instrumentation(INS ins, void *v)
                 if (INS_IsInterrupt(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument an interrupt\n",
                             INS_Address(ins));
+		    slice_handed = 1;
                     break;
                 }
                 if (INS_IsRDTSC(ins)) {
@@ -16932,6 +17254,8 @@ int main(int argc, char** argv)
 #ifdef HEARTBLEED
     fprintf(stderr, "heartbleed defined\n");
 #endif
+    PIN_SetSyntaxIntel();
+
 
     PIN_StartProgram();
 
