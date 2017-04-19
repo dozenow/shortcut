@@ -73,6 +73,7 @@ struct slab_alloc node_alloc;
 extern u_long taint_debug_inst;
 extern FILE* debug_f;
 #endif
+extern FILE* slice_f;
 
 // use taint numbers instead
 taint_t taint_num;

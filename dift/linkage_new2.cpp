@@ -366,6 +366,7 @@ extern u_long debug_taint_cnt;
 FILE* debug_f;
 u_long taint_debug_inst = 0;
 #endif
+FILE* slice_f;
 
 #ifdef TAINT_STATS
 struct timeval begin_tv, end_tv;
@@ -16922,6 +16923,14 @@ void init_logs(void)
 	//log_f = stdout;
     }
 
+#ifdef FW_SLICE
+    char slice_file_name[256];
+    if (!slice_f) { 
+	    snprintf (slice_f, 256, "%s/slice", group_directory);
+	    slice_f = fopen (slice_file_name, "w");
+	    assert (slice_f != NULL);
+    }
+#endif
 
 #ifdef TAINT_DEBUG
     {
