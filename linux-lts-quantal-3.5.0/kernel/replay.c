@@ -4658,7 +4658,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	
 	if (go_live) {
 		//reopen necessary files
-		//sys_open ("/tmp/cctTZrh1.s", O_RDWR|O_CREAT|O_TRUNC|O_LARGEFILE, 0666);
 #ifdef RECHECK
 		{
 			char recheck_log_name[256];
