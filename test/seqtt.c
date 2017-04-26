@@ -132,7 +132,7 @@ int main (int argc, char* argv[])
 	if (instruction_only) 
 	args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
 	else
-		args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+		args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;

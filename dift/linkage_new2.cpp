@@ -2442,6 +2442,9 @@ static ADDRINT returnArg (BOOL arg)
     return arg;
 }
 
+TAINTSIGN do_nothing () { 
+}
+
 #ifdef FW_SLICE
 static inline char* get_copy_of_disasm (INS ins) { 
 	const char* tmp = INS_Disassemble (ins).c_str();
@@ -2455,6 +2458,62 @@ static inline void put_copy_of_disasm (char* str) {
 	//if (str) free (str);
 	//TODO memory leak
 }
+
+static inline void fw_slice_check_address (INS ins) { 
+	UINT32 count = INS_OperandCount (ins);
+	UINT32 i = 0;
+	int has_mem_operand = 0;
+	for (; i<count; ++i) { 
+		if (INS_OperandIsMemory(ins, i)) { 
+			REG base_reg = INS_OperandMemoryBaseReg(ins, i);			
+			REG index_reg = INS_OperandMemoryIndexReg(ins, i);			
+			if (REG_valid (base_reg) && REG_valid(index_reg)) {
+				INS_InsertThenCall(ins, IPOINT_BEFORE,
+						AFUNPTR(fw_slice_addressing),
+#ifdef FAST_INLINE
+						IARG_FAST_ANALYSIS_CALL,
+#endif
+						IARG_INST_PTR,
+						IARG_UINT32, translate_reg (base_reg),
+						IARG_UINT32, REG_Size(base_reg),
+						IARG_REG_VALUE, base_reg,
+						IARG_UINT32, translate_reg(index_reg),
+						IARG_UINT32, REG_Size(index_reg),
+						IARG_REG_VALUE, index_reg,
+						IARG_END);
+				has_mem_operand = 1;
+			} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
+				INS_InsertThenCall(ins, IPOINT_BEFORE,
+						AFUNPTR(fw_slice_addressing),
+#ifdef FAST_INLINE
+						IARG_FAST_ANALYSIS_CALL,
+#endif
+						IARG_INST_PTR,
+						IARG_UINT32, translate_reg (base_reg),
+						IARG_UINT32, REG_Size(base_reg),
+						IARG_REG_VALUE, base_reg,
+						IARG_UINT32, 0,
+						IARG_UINT32, 0, 
+						IARG_UINT32, 0, 
+						IARG_END);
+				has_mem_operand = 1;
+			} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
+				//do nothing
+			} else 
+				assert (0);
+		}
+	}
+	if (has_mem_operand == 0) { 
+		fprintf (stderr, "[ERROR] unrecognized mem operands %s, operand count %d\n", INS_Disassemble(ins).c_str(), count);
+		INS_InsertThenCall (ins, IPOINT_BEFORE, 
+				AFUNPTR(do_nothing),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_END);
+	}
+}
+
 static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, int is_dst_mem) { 
 	if (src_regsize > 4) {
 		fprintf (stderr, "[ERROR]UNHANDLED reg size %s\n", INS_Disassemble (ins).c_str());
@@ -2483,25 +2542,42 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 			mem_ea = IARG_MEMORYWRITE_EA;
 		}
 
-		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_reg),
+		if (INS_MemoryOperandCount (ins) > 0) {
+			INS_InsertIfCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_reg),
 #ifdef FAST_INLINE
-				IARG_FAST_ANALYSIS_CALL,
+					IARG_FAST_ANALYSIS_CALL,
 #endif
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_UINT32, translate_reg (srcreg),
-				IARG_UINT32, src_regsize,
-				mem_ea,
-				IARG_REG_VALUE, srcreg,
-				IARG_END);
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_UINT32, translate_reg (srcreg),
+					IARG_UINT32, src_regsize,
+					mem_ea,
+					IARG_REG_VALUE, srcreg,
+					IARG_END);
+
+			fw_slice_check_address (ins);
+		} else 
+			INS_InsertCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_reg),
+#ifdef FAST_INLINE
+					IARG_FAST_ANALYSIS_CALL,
+#endif
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_UINT32, translate_reg (srcreg),
+					IARG_UINT32, src_regsize,
+					mem_ea,
+					IARG_REG_VALUE, srcreg,
+					IARG_END);
+
 	}
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 	    char* str = get_copy_of_disasm (ins);
 	    if (is_dst_mem) { 
-		    INS_InsertCall(ins, IPOINT_BEFORE,
+		    INS_InsertIfCall(ins, IPOINT_BEFORE,
 				    AFUNPTR(fw_slice_mem),
 #ifdef FAST_INLINE
 				    IARG_FAST_ANALYSIS_CALL,
@@ -2512,7 +2588,22 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 				    IARG_UINT32, INS_MemoryReadSize(ins),
 				    IARG_MEMORYWRITE_EA,
 				    IARG_END);
+		    fw_slice_check_address(ins);
 	    } else { 
+		 if (INS_MemoryOperandCount (ins) > 0) {
+			INS_InsertIfCall(ins, IPOINT_BEFORE,
+				    AFUNPTR(fw_slice_mem),
+#ifdef FAST_INLINE
+				    IARG_FAST_ANALYSIS_CALL,
+#endif
+				    IARG_INST_PTR,
+				    IARG_PTR, str,
+				    IARG_MEMORYREAD_EA,
+				    IARG_UINT32, INS_MemoryReadSize(ins),
+				    IARG_ADDRINT, 0,
+				    IARG_END);
+			fw_slice_check_address (ins);
+		} else 
 		    INS_InsertCall(ins, IPOINT_BEFORE,
 				    AFUNPTR(fw_slice_mem),
 #ifdef FAST_INLINE
@@ -2537,25 +2628,43 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 	}
 	assert (INS_IsMemoryWrite(ins) == 0);
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_regreg),
+	if (INS_MemoryOperandCount (ins) > 0) {
+		INS_InsertIfCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regreg),
 #ifdef FAST_INLINE
-			IARG_FAST_ANALYSIS_CALL,
+				IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_UINT32, translate_reg (dstreg),
-			IARG_UINT32, translate_reg (srcreg),
-			IARG_UINT32, dst_regsize,
-			IARG_UINT32, src_regsize,
-			IARG_REG_VALUE, dstreg,
-			IARG_REG_VALUE, srcreg,
-			IARG_END);
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, translate_reg (dstreg),
+				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, dst_regsize,
+				IARG_UINT32, src_regsize,
+				IARG_REG_VALUE, dstreg,
+				IARG_REG_VALUE, srcreg,
+				IARG_END);
+		fw_slice_check_address (ins);
+	} else {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regreg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, translate_reg (dstreg),
+				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, dst_regsize,
+				IARG_UINT32, src_regsize,
+				IARG_REG_VALUE, dstreg,
+				IARG_REG_VALUE, srcreg,
+				IARG_END);
+	}
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_memmem (INS ins, uint32_t memread_size, uint32_t memwrite_size) { 
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
+	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memmem),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -2567,6 +2676,7 @@ static inline void fw_slice_src_memmem (INS ins, uint32_t memread_size, uint32_t
 			IARG_UINT32, memread_size,
 			IARG_UINT32, memwrite_size,
 			IARG_END);
+	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize) { 
@@ -2576,7 +2686,7 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 	}
 
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
+	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memreg),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -2585,23 +2695,38 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 			IARG_PTR, str,
 			IARG_ADDRINT, translate_reg (reg), 
 			IARG_UINT32, reg_size,
+			IARG_REG_VALUE, reg, 
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
+	fw_slice_check_address(ins);
 	put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_flag (INS ins, uint32_t mask) { 
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_flag),
+	if (INS_MemoryOperandCount(ins) > 0) {
+		INS_InsertIfCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_flag),
 #ifdef FAST_INLINE
-			IARG_FAST_ANALYSIS_CALL,
+				IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_UINT32, mask,
-			IARG_END);
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, mask,
+				IARG_END);
+		fw_slice_check_address(ins);
+	} else {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_flag),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, mask,
+				IARG_END);
+	}
 	put_copy_of_disasm (str);
 }
 
@@ -2611,30 +2736,51 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 		return;
 	}
 	assert (INS_IsMemoryWrite(ins) == 0);
-
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_regregreg),
+
+	if (INS_MemoryOperandCount(ins) > 0) { 
+		INS_InsertIfCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regregreg),
 #ifdef FAST_INLINE
-			IARG_FAST_ANALYSIS_CALL,
+				IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_UINT32, translate_reg (dstreg),
-			IARG_UINT32, translate_reg (srcreg),
-			IARG_UINT32, translate_reg (countreg),
-			IARG_UINT32, dst_regsize,
-			IARG_UINT32, src_regsize,
-			IARG_UINT32, count_regsize,
-			IARG_REG_VALUE, dstreg,
-			IARG_REG_VALUE, srcreg,
-			IARG_REG_VALUE, countreg,
-			IARG_END);
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, translate_reg (dstreg),
+				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, translate_reg (countreg),
+				IARG_UINT32, dst_regsize,
+				IARG_UINT32, src_regsize,
+				IARG_UINT32, count_regsize,
+				IARG_REG_VALUE, dstreg,
+				IARG_REG_VALUE, srcreg,
+				IARG_REG_VALUE, countreg,
+				IARG_END);
+		fw_slice_check_address (ins);
+	} else {
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regregreg),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, translate_reg (dstreg),
+				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, translate_reg (countreg),
+				IARG_UINT32, dst_regsize,
+				IARG_UINT32, src_regsize,
+				IARG_UINT32, count_regsize,
+				IARG_REG_VALUE, dstreg,
+				IARG_REG_VALUE, srcreg,
+				IARG_REG_VALUE, countreg,
+				IARG_END);
+	}
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize) { 
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
+	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memregreg),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -2643,34 +2789,52 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 			IARG_PTR, str,
 			IARG_ADDRINT, translate_reg (reg1), 
 			IARG_UINT32, reg1_size,
+			IARG_REG_VALUE, reg1, 
 			IARG_ADDRINT, translate_reg (reg2), 
 			IARG_UINT32, reg2_size,
+			IARG_REG_VALUE, reg2, 
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
+	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32_t reg_size) {
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_regflag),
+	if (INS_MemoryOperandCount (ins) > 0) {
+		INS_InsertIfCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regflag),
 #ifdef FAST_INLINE
-			IARG_FAST_ANALYSIS_CALL,
+				IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_UINT32, mask,
-			IARG_ADDRINT, translate_reg (reg), 
-			IARG_UINT32, reg_size,
-			IARG_REG_VALUE, reg,
-			IARG_END);
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, mask,
+				IARG_ADDRINT, translate_reg (reg), 
+				IARG_UINT32, reg_size,
+				IARG_REG_VALUE, reg,
+				IARG_END);
+		fw_slice_check_address (ins);
+	} else 
+		INS_InsertCall(ins, IPOINT_BEFORE,
+				AFUNPTR(fw_slice_regflag),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_INST_PTR,
+				IARG_PTR, str,
+				IARG_UINT32, mask,
+				IARG_ADDRINT, translate_reg (reg), 
+				IARG_UINT32, reg_size,
+				IARG_REG_VALUE, reg,
+				IARG_END);
 	put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_ea, uint32_t memsize) { 
 	char* str = get_copy_of_disasm (ins);
-	INS_InsertCall(ins, IPOINT_BEFORE,
+	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memflag),
 #ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
@@ -2681,6 +2845,7 @@ static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_e
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
+	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
 
@@ -13202,33 +13367,45 @@ void instrument_mov (INS ins)
         REG dst_reg = INS_OperandReg(ins, 0);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-        ADDRDELTA displacement = INS_MemoryDisplacement(ins);
-        if (displacement >= 0x8000000 && REG_valid(base_reg) && !REG_valid(index_reg)) {
+        //ADDRDELTA displacement = INS_MemoryDisplacement(ins);
+	/*uint32_t addrsize = INS_MemoryReadSize(ins);
+	fprintf (stderr, "%x mov from mem dst reg %d, base %d, index %d, displacement %u valid %d %d\n", INS_Address(ins), dst_reg, base_reg, index_reg, displacement, REG_valid(base_reg), REG_valid(index_reg));
+	fprintf(stderr, "[ERROR] remember to remove redundant slicing for the same instruction via different functions.\n");*/
+        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
             // arithmetic operation
-#ifdef FW_SLICE
-		fprintf(stderr, "[ERROR] remember to remove redundant slicing for the same instruction via different functions.\n");
+/*#ifdef FW_SLICE
 		fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, addrsize);
-#endif
+#endif*/
+		//addressing mode: base+index+offset
+/*
+   +-------------+----------------------------+-----------------------------+
+    | Mode        | Intel                      | AT&T                        |
+    +-------------+----------------------------+-----------------------------+
+    | Immediate   | MOV EAX, [0100]            | movl           0x0100, %eax |
+    | Register    | MOV EAX, [ESI]             | movl           (%esi), %eax |
+    | Reg + Off   | MOV EAX, [EBP-8]           | movl         -8(%ebp), %eax |
+    | R*W + Off   | MOV EAX, [EBX*4 + 0100]    | movl   0x100(,%ebx,4), %eax |
+    | B + R*W + O | MOV EAX, [EDX + EBX*4 + 8] | movl 0x8(%edx,%ebx,4), %eax |
+    +-------------+----------------------------+-----------------------------+
+*/
             instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
             instrument_taint_add_mem2reg(ins, dst_reg);
         } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            if (displacement >= 0x8000000) {
-                instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-                instrument_taint_add_reg2reg(ins, dst_reg, base_reg);
-                instrument_taint_add_mem2reg(ins, dst_reg);
-#ifdef FW_SLICE
+		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
+		instrument_taint_add_reg2reg(ins, dst_reg, base_reg);
+		instrument_taint_add_mem2reg(ins, dst_reg);
+/*#ifdef FW_SLICE
 		fw_slice_src_regregmem (ins, base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, addrsize);
-#endif
+#endif*/
+	} else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
+/*#ifdef FW_SLICE
 
-            } else {
-                instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-                instrument_taint_add_mem2reg(ins, dst_reg);
-#ifdef FW_SLICE
 		fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, addrsize);
-#endif
-            }
-        } else {
-            instrument_taint_mem2reg(ins, dst_reg, 1);
+#endif*/
+		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
+		instrument_taint_add_mem2reg(ins, dst_reg);
+	} else {
+	    instrument_taint_mem2reg(ins, dst_reg, 1);
         }
  #endif // LINKAGE_DATA_OFFSET
 #endif // COPY_ONLY
@@ -13243,23 +13420,17 @@ void instrument_mov (INS ins)
  #else
             REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
-            ADDRDELTA displacement = INS_MemoryDisplacement(ins);
+            //ADDRDELTA displacement = INS_MemoryDisplacement(ins);
         
-            if (displacement >= 0x8000000 &&
-                    REG_valid(base_reg) && !REG_valid(index_reg)) {
+            if (REG_valid(base_reg) && !REG_valid(index_reg)) {
                 // arithmetic operation
                 instrument_taint_reg2mem(ins, base_reg, 0);
                 instrument_taint_add_reg2mem(ins, reg);
-            } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-                if (displacement >= 0x8000000) {
-                    instrument_taint_reg2mem(ins, index_reg, 0);
-                    instrument_taint_add_reg2mem(ins, base_reg);
-                    instrument_taint_add_reg2mem(ins, reg);
-                } else {
-                    instrument_taint_reg2mem(ins, index_reg, 0);
-                    instrument_taint_add_reg2mem(ins, reg);
-                }
-            } else {
+	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
+		    instrument_taint_reg2mem(ins, index_reg, 0);
+		    instrument_taint_add_reg2mem(ins, base_reg);
+		    instrument_taint_add_reg2mem(ins, reg);
+	    } else {
                 instrument_taint_reg2mem(ins, reg, 1);
             }
  #endif // LINKAGE_DATA_OFFSET
@@ -13367,28 +13538,13 @@ void instrument_movx (INS ins)
 #ifdef COPY_ONLY
         instrument_taint_mem2reg(ins, dst_reg, 1);
 #else
+ #ifndef LINKAGE_DATA_OFFSET
+        instrument_taint_mem2reg(ins, dst_reg, 1);
+ #else
 
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
- #ifndef LINKAGE_DATA_OFFSET
-        ADDRDELTA displacement = INS_MemoryDisplacement(ins);
-        if (displacement >= 0x8000000 && REG_valid(base_reg) && !REG_valid(index_reg)) {
-            // arithmetic operation
-            instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
-            instrument_taint_add_mem2reg(ins, dst_reg);
-        } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            if (displacement >= 0x8000000) {
-                instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-                instrument_taint_add_reg2reg(ins, dst_reg, base_reg);
-                instrument_taint_add_mem2reg(ins, dst_reg);
-            } else {
-                instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-                instrument_taint_add_mem2reg(ins, dst_reg);
-            }
-        } else {
-            instrument_taint_mem2reg(ins, dst_reg, 1);
-        }
- #else
+
         // no filtering in index mode
         if (REG_valid(base_reg) && REG_valid(index_reg)) {
             instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
@@ -13504,7 +13660,7 @@ void instrument_cmov(INS ins, uint32_t mask)
 	    }
  #else
 #if defined(CTRL_FLOW) || defined(FW_SLICE)
-	    assert (0); //not handled with data linkage
+	    fprintf (stderr, "[ERROR] index tool.\n");
 #endif
             REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -13938,22 +14094,7 @@ void instrument_push(INS ins)
         int treg = translate_reg(reg);
 	assert(addrsize == REG_Size(reg));
 #ifdef FW_SLICE
-	do {
-		char* str = get_copy_of_disasm (ins);
-		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_reg),
-#ifdef FAST_INLINE
-				IARG_FAST_ANALYSIS_CALL,
-#endif
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_UINT32, treg,
-				IARG_UINT32, REG_Size(reg),
-				IARG_MEMORYWRITE_EA,
-				IARG_REG_VALUE, reg,
-				IARG_END);
-		put_copy_of_disasm (str);
-	} while (0);
+	fw_slice_src_reg (ins, reg, REG_Size(reg), 1);
 #endif
         switch(addrsize) {
             case 1:
@@ -13994,21 +14135,7 @@ void instrument_push(INS ins)
     } else {
         assert(INS_OperandIsMemory(ins, 0));
 #ifdef FW_SLICE
-    do {
-	    char* str = get_copy_of_disasm (ins);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
-			    IARG_FAST_ANALYSIS_CALL,
-#endif
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_UINT32, INS_MemoryReadSize(ins),
-			    IARG_MEMORYWRITE_EA,
-			    IARG_END);
-	    put_copy_of_disasm (str);
-    } while (0);
+    	fw_slice_src_mem (ins, 1);
 #endif
         switch(addrsize) {
             case 1:
@@ -14054,21 +14181,7 @@ void instrument_pop(INS ins)
     USIZE addrsize = INS_MemoryReadSize(ins);
     if (INS_OperandIsMemory(ins, 0)) {
 #ifdef FW_SLICE
-    do {
-	    char* str = get_copy_of_disasm (ins);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
-			    IARG_FAST_ANALYSIS_CALL,
-#endif
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_UINT32, INS_MemoryReadSize(ins),
-			    IARG_MEMORYWRITE_EA,
-			    IARG_END);
-	    put_copy_of_disasm (str);
-    } while (0);
+    	fw_slice_src_mem (ins, 1);
 #endif
 
         switch(addrsize) {
@@ -14177,21 +14290,7 @@ void instrument_pop(INS ins)
         REG reg = INS_OperandReg(ins, 0);
         int treg = translate_reg(reg);
 #ifdef FW_SLICE
-    do {
-	    char* str = get_copy_of_disasm (ins);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
-			    IARG_FAST_ANALYSIS_CALL,
-#endif
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_UINT32, INS_MemoryReadSize(ins),
-			    IARG_ADDRINT, 0,
-			    IARG_END);
-	    put_copy_of_disasm (str);
-    } while (0);
+    	fw_slice_src_mem (ins, 0);
 #endif
 
         if (!SPECIAL_REG(reg)) {
@@ -15320,7 +15419,7 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 	}
 
 #ifdef FW_SLICE
-	    fw_slice_src_regmem (ins, reg, regsize, mem_ea, memsize);
+	fw_slice_src_regmem (ins, reg, regsize, mem_ea, memsize);
 #endif
 
 	if (regsize != memsize) 
@@ -15723,6 +15822,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_END);
 	slice_handed = 1;
     }
+    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
 
     opcode = INS_Opcode(ins);
     category = INS_Category(ins);
