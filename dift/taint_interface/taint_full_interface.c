@@ -2287,7 +2287,7 @@ static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t me
 	printf ("[SLICE_EXTRA] mov $addr(%lx,%u), %u  //comes with %x\n", mem_loc, mem_size, get_mem_value(mem_loc, mem_size), ip);
 }
 
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value) { 
+TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc) { 
 	//first check if both registers are not tainted
 	int all_clean = 1;
 	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size)) 
@@ -2296,16 +2296,18 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 		all_clean = 0;
 	if (all_clean) { 
 		//the address doesn't depend on base or index register, we can safely replace it with a constant
-		printf ("[SLICE_ADDRESSING] direct_address %lx  //come with %x (move upwards)\n", mem_loc, ip);
+		printf ("[SLICE_ADDRESSING] immediate_address 0x%lx  //come with %x (move upwards)\n", mem_loc, ip);
 	} else {
 		if (base_reg_size > 0) { 
-			if (is_reg_tainted (base_reg, base_reg_size) == 0)
+			if (is_reg_tainted (base_reg, base_reg_size) == 0){
+				assert (base_reg != 6);//TODO: move value to esp is dangerous! this can probably mess up the whole stack, especially for call/ret
 				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
-			else 
+			} else 
 				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", base_reg, base_reg_size, ip);
 		} 
 		if (index_reg_size > 0) { 
 			if (is_reg_tainted (index_reg, index_reg_size) == 0) {
+				assert (index_reg != 6); //esp 
 				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
 				fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
 			} else { 
@@ -2313,6 +2315,12 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			}
 		}
 	}
+}
+
+TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, 
+		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2) { 
+	fw_slice_addressing (ip, base_reg1, base_reg_size1, base_reg_value1, index_reg1, index_reg_size1, index_reg_value1, mem_loc1);
+	fw_slice_addressing (ip, base_reg2, base_reg_size2, base_reg_value2, index_reg2, index_reg_size2, index_reg_value2, mem_loc2);
 }
 
 //source operand is mem

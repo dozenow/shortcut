@@ -15,6 +15,7 @@ object PreProcess {
 		var lastLine:String = null
 		val lines = Source.fromFile("m2").getLines().toList 
 		val buffer = new Queue[String]()
+		//first round: process all SLICE_EXTRA : TODO merge two rounds
 		for (val i <- 0 to lines.length - 1) {
 			val s = lines.apply (i)
 			val index = s.indexOf ("$reg(")
@@ -40,13 +41,19 @@ object PreProcess {
 					assert (lastLine.startsWith ("[SLICE]"))
 					val inst = lastLine.substring(0, lastLine.indexOf("[SLICE_INFO]")).split("#")(2)
 					val operands = inst.substring (inst.indexOf(" ") + 1).split(",")
-					operands.foreach (op => { 
-						if(op.contains ("ptr")) {
-							val out = s.replace (s.substring(addrIndex, s.indexOf(")", addrIndex + 1) + 1), op)
-							//println (out)
-							buffer += out
-						}
-					})
+					//special case: to avoid affecting esp, we change pos/push to mov
+					//special case: if inst is mov and mem operand is dst operand, there is no need to initialize this address
+					if (ins.startsWith ("mov ") && operands(0).containts("ptr")) {
+						buffer += "/*Eliminated SLICE_EXTRA" + s + "*/\n"
+					} else {
+						operands.foreach (op => { 
+							if(op.contains ("ptr")) {
+								val out = s.replace (s.substring(addrIndex, s.indexOf(")", addrIndex + 1) + 1), op)
+								//println (out)
+								buffer += out
+							}
+						})
+					}
 				} else 
 					if(lastLine != null) {
 						//println (lastLine)
@@ -58,13 +65,15 @@ object PreProcess {
 		}
 		//println (lastLine)
 		buffer += lastLine
+		//second round
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
 		buffer.foreach (s => { 
+			//SLICE_ADDRESSING comes first, then SLICE_EXTRA then SLICE
 			if (s.startsWith ("[SLICE_EXTRA]")) {
 				extraLines += s
-			}else if (s.startsWith("[SLICE]")) {
+			} else if (s.startsWith("[SLICE]")) {
 				while (extraLines.size > 0) 
 					println (cleanupExtraline(extraLines.dequeue()))
 				println (cleanupSliceLine(s))

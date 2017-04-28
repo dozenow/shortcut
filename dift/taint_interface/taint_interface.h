@@ -117,7 +117,9 @@ TAINTSIGN taint_rotate_mem (u_long mem_loc, uint32_t size, int is_count_reg);
 TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) ;
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value);
+TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc);
+TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, 
+		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2);
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue);
 TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, uint32_t dst_regsize, uint32_t src_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue);
 TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc);

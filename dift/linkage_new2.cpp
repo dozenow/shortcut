@@ -2463,46 +2463,144 @@ static inline void fw_slice_check_address (INS ins) {
 	UINT32 count = INS_OperandCount (ins);
 	UINT32 i = 0;
 	int has_mem_operand = 0;
-	for (; i<count; ++i) { 
-		if (INS_OperandIsMemory(ins, i)) { 
-			REG base_reg = INS_OperandMemoryBaseReg(ins, i);			
-			REG index_reg = INS_OperandMemoryIndexReg(ins, i);			
-			if (REG_valid (base_reg) && REG_valid(index_reg)) {
-				INS_InsertThenCall(ins, IPOINT_BEFORE,
-						AFUNPTR(fw_slice_addressing),
+	assert (INS_HasMemoryRead2(ins) == 0); //TODO: handle this
+	if (INS_MemoryOperandCount(ins) == 1) {
+		for (; i<count; ++i) { 
+			if (INS_OperandIsMemory(ins, i)) { 
+				IARG_TYPE mem_ea = IARG_INVALID;
+				if (INS_IsMemoryRead(ins)) {
+					mem_ea = IARG_MEMORYREAD_EA;
+				} else if (INS_IsMemoryWrite(ins)) {
+					mem_ea = IARG_MEMORYWRITE_EA;
+				}
+
+				REG base_reg = INS_OperandMemoryBaseReg(ins, i);			
+				REG index_reg = INS_OperandMemoryIndexReg(ins, i);			
+				if (REG_valid (base_reg) && REG_valid(index_reg)) {
+					INS_InsertThenCall(ins, IPOINT_BEFORE,
+							AFUNPTR(fw_slice_addressing),
 #ifdef FAST_INLINE
-						IARG_FAST_ANALYSIS_CALL,
+							IARG_FAST_ANALYSIS_CALL,
 #endif
-						IARG_INST_PTR,
-						IARG_UINT32, translate_reg (base_reg),
-						IARG_UINT32, REG_Size(base_reg),
-						IARG_REG_VALUE, base_reg,
-						IARG_UINT32, translate_reg(index_reg),
-						IARG_UINT32, REG_Size(index_reg),
-						IARG_REG_VALUE, index_reg,
-						IARG_END);
-				has_mem_operand = 1;
-			} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
-				INS_InsertThenCall(ins, IPOINT_BEFORE,
-						AFUNPTR(fw_slice_addressing),
+							IARG_INST_PTR,
+							IARG_UINT32, translate_reg (base_reg),
+							IARG_UINT32, REG_Size(base_reg),
+							IARG_REG_VALUE, base_reg,
+							IARG_UINT32, translate_reg(index_reg),
+							IARG_UINT32, REG_Size(index_reg),
+							IARG_REG_VALUE, index_reg,
+							mem_ea,
+							IARG_END);
+					has_mem_operand = 1;
+				} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
+					INS_InsertThenCall(ins, IPOINT_BEFORE,
+							AFUNPTR(fw_slice_addressing),
 #ifdef FAST_INLINE
-						IARG_FAST_ANALYSIS_CALL,
+							IARG_FAST_ANALYSIS_CALL,
 #endif
-						IARG_INST_PTR,
-						IARG_UINT32, translate_reg (base_reg),
-						IARG_UINT32, REG_Size(base_reg),
-						IARG_REG_VALUE, base_reg,
-						IARG_UINT32, 0,
-						IARG_UINT32, 0, 
-						IARG_UINT32, 0, 
-						IARG_END);
-				has_mem_operand = 1;
-			} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
-				has_mem_operand = 1;
-			} else 
-				assert (0);
+							IARG_INST_PTR,
+							IARG_UINT32, translate_reg (base_reg),
+							IARG_UINT32, REG_Size(base_reg),
+							IARG_REG_VALUE, base_reg,
+							IARG_UINT32, 0,
+							IARG_UINT32, 0, 
+							IARG_UINT32, 0, 
+							mem_ea,
+							IARG_END);
+					has_mem_operand = 1;
+				} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
+					INS_InsertThenCall(ins, IPOINT_BEFORE,
+							AFUNPTR(fw_slice_addressing),
+#ifdef FAST_INLINE
+							IARG_FAST_ANALYSIS_CALL,
+#endif
+							IARG_INST_PTR,
+							IARG_UINT32, 0,
+							IARG_UINT32, 0, 
+							IARG_UINT32, 0, 
+							IARG_UINT32, 0,
+							IARG_UINT32, 0, 
+							IARG_UINT32, 0, 
+							mem_ea,
+							IARG_END);
+					has_mem_operand = 1;
+				} else 
+					assert (0);
+			}
 		}
-	}
+	} else if (INS_MemoryOperandCount (ins) == 2) {
+		REG base_reg[2];
+		REG index_reg[2];
+		uint32_t base_reg_size[2] = {0};
+		uint32_t index_reg_size[2] = {0};
+		IARG_TYPE base_type[2] = {IARG_INVALID, IARG_INVALID};
+		IARG_TYPE index_type[2] = {IARG_INVALID, IARG_INVALID};
+		int base_value[2] = {0};
+		int index_value[2] = {0};
+		uint32_t index = 0;
+		IARG_TYPE mem_type[2];
+		if (INS_MemoryOperandIsWritten(ins, 0)) {
+			mem_type[0] = IARG_MEMORYWRITE_EA;
+		} else if(INS_MemoryOperandIsRead(ins, 0)) {
+			mem_type[0] = IARG_MEMORYREAD_EA;
+		} else 
+			assert (0);
+		if (INS_MemoryOperandIsWritten(ins, 1)) {
+			mem_type[1] = IARG_MEMORYWRITE_EA;
+		} else if(INS_MemoryOperandIsRead(ins, 1)) {
+			mem_type[1] = IARG_MEMORYREAD_EA;
+		} else 
+			assert (0);
+
+		//printf ("[DEBUG]two mem operands: %s\n", INS_Disassemble(ins).c_str());
+		for (i=0; i<count; ++i) { 
+			if (INS_OperandIsMemory(ins, i)) { 
+				base_reg[index] = INS_OperandMemoryBaseReg(ins, i);			
+				index_reg[index] = INS_OperandMemoryIndexReg(ins, i);			
+				if (REG_valid (base_reg[index])) {
+					base_reg_size[index] = REG_Size(base_reg[index]);
+					base_type[index] = IARG_REG_VALUE;
+					base_value[index] = base_reg[index];
+				} else { 
+					base_reg_size[index] = 0;
+					base_type[index] = IARG_UINT32;
+					base_value[index] = 0;
+				}
+				if (REG_valid (index_reg[index])) {
+					index_reg_size[index] = REG_Size (index_reg[index]);
+					index_type[index] = IARG_REG_VALUE;
+					index_value[index] = index_reg[index];
+				} else { 
+					index_reg_size[index] = 0;
+					index_type[index] = IARG_UINT32;
+					index_value[index] = 0;
+				}
+				++index;
+			}
+		}
+		INS_InsertThenCall(ins, IPOINT_BEFORE, AFUNPTR(fw_slice_addressing_check_two),
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
+				IARG_INST_PTR,
+				IARG_UINT32, translate_reg(base_reg[0]),
+				IARG_UINT32, base_reg_size[0],
+				base_type[0], base_value[0],
+				IARG_UINT32, translate_reg(index_reg[0]),
+				IARG_UINT32, index_reg_size[0],
+				index_type[0], index_value[0],
+				mem_type[0],
+				IARG_UINT32, translate_reg(base_reg[1]),
+				IARG_UINT32, base_reg_size[1],
+				base_type[1], base_value[1],
+				IARG_UINT32, translate_reg(index_reg[1]),
+				IARG_UINT32, index_reg_size[1],
+				index_type[1], index_value[1],
+				mem_type[1],
+				IARG_END);
+		has_mem_operand = 1;
+	} else 
+		assert (0);
 	if (has_mem_operand == 0) { 
 		fprintf (stderr, "[ERROR] unrecognized mem operands %s, operand count %d\n", INS_Disassemble(ins).c_str(), count);
 		INS_InsertThenCall (ins, IPOINT_BEFORE, 
@@ -15822,7 +15920,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_END);
 	slice_handed = 1;
     }
-    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
+    printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
 
     opcode = INS_Opcode(ins);
     category = INS_Category(ins);
