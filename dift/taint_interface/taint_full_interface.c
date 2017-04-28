@@ -2288,18 +2288,29 @@ static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t me
 }
 
 TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value) { 
-	if (base_reg_size > 0) { 
-		if (is_reg_tainted (base_reg, base_reg_size) == 0)
-			printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
-		else 
-			printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", base_reg, base_reg_size, ip);
-	} 
-	if (index_reg_size > 0) { 
-		if (is_reg_tainted (index_reg, index_reg_size) == 0) {
-			printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
-			fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
-		} else { 
-			printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", index_reg, index_reg_size, ip);
+	//first check if both registers are not tainted
+	int all_clean = 1;
+	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size)) 
+		all_clean = 0;
+	if (index_reg_size > 0 && is_reg_tainted(index_reg, index_reg_size))
+		all_clean = 0;
+	if (all_clean) { 
+		//the address doesn't depend on base or index register, we can safely replace it with a constant
+		printf ("[SLICE_ADDRESSING] direct_address %lx  //come with %x (move upwards)\n", mem_loc, ip);
+	} else {
+		if (base_reg_size > 0) { 
+			if (is_reg_tainted (base_reg, base_reg_size) == 0)
+				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
+			else 
+				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", base_reg, base_reg_size, ip);
+		} 
+		if (index_reg_size > 0) { 
+			if (is_reg_tainted (index_reg, index_reg_size) == 0) {
+				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
+				fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
+			} else { 
+				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", index_reg, index_reg_size, ip);
+			}
 		}
 	}
 }

@@ -2498,7 +2498,7 @@ static inline void fw_slice_check_address (INS ins) {
 						IARG_END);
 				has_mem_operand = 1;
 			} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
-				//do nothing
+				has_mem_operand = 1;
 			} else 
 				assert (0);
 		}
