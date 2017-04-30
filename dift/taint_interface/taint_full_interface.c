@@ -2437,7 +2437,7 @@ TAINTINT fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_
 	return 0;
 }
 
-TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask) {
+TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) {
 	uint32_t i = 0;
 	int tainted = 0;
 	for (; i<NUM_FLAGS; ++i) {
@@ -2450,7 +2450,7 @@ TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask) {
 	}
 	if (tainted) {
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
-		printf ("    [SLICE_INFO] #src_flag[%x:1:4] #flag_value TODO\n", mask);
+		printf ("    [SLICE_INFO] #src_flag[%x:1:4] #branch_taken %d\n", mask, (int) taken);
 		return 1;
 	}
 	return 0;

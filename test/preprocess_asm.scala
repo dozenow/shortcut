@@ -32,6 +32,18 @@ object PreProcess {
 				val tmp = s.replace ("#pop ", "#mov ")
 				return tmp.replace ("    [SLICE_INFO]", ", " + memSizeToPrefix(size.toInt) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)")
 			}
+		} else if (s.contains ("#j")) { //change jump instruction
+			val index = s.indexOf ("#j")		
+			val spaceIndex = s.indexOf (" ", index)
+			val inst = s.substring (index +1, spaceIndex)
+			val address = s.substring (spaceIndex + 1, s.indexOf (" ", spaceIndex + 1))
+			assert (jumpMap.contains(inst))
+			if (s.contains ("branch_taken 1")) //if the original branch is taken, then we jump to error if not taken as before
+				return s.replace (inst, jumpMap(inst)).replace(address, "0x0000004")
+			else if (s.contains ("branch_taken 0")) 
+				return s.replace(address, "0x0000000")
+			else 
+				assert (false)
 		}
 		s
 	}
@@ -174,5 +186,10 @@ object PreProcess {
 		"(9,4)" -> "ecx",
 		"(10,4)" -> "eax"
 	)
+	val jumpMap = Map (
+		"jns" -> "js",
+		"jnz" -> "jz",
+		"jz" -> "jnz"
+		)
 	
 }

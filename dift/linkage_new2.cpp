@@ -2812,6 +2812,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
+				IARG_BRANCH_TAKEN,
 				IARG_END);
 		fw_slice_check_address(ins);
 	} else {
@@ -2823,6 +2824,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
+				IARG_BRANCH_TAKEN,
 				IARG_END);
 	}
 	put_copy_of_disasm (str);
@@ -13843,7 +13845,7 @@ void instrument_cmov(INS ins, uint32_t mask)
 	    }
  #else
 #if defined(CTRL_FLOW) || defined(FW_SLICE)
-	    fprintf (stderr, "[ERROR] index tool is not verified for cmov\n");
+	    printf ("[ERROR] index tool is not verified for cmov\n");
 #endif
             REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -15739,6 +15741,7 @@ void instrument_jump (INS ins, uint32_t flags) {
 			IARG_REG_VALUE, REG_EFLAGS,
 			IARG_UINT32, flags, 
 			IARG_ADDRINT, INS_Address(ins),
+			IARG_BRANCH_TAKEN,
 			IARG_END);
 }
 
@@ -15753,6 +15756,7 @@ void instrument_jump_ecx (INS ins, uint32_t size) {
 			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
 			IARG_UINT32, size,
 			IARG_INST_PTR,
+			IARG_BRANCH_TAKEN,
 			IARG_END);
 }
 
@@ -16050,6 +16054,9 @@ void instruction_instrumentation(INS ins, void *v)
 		case XED_ICLASS_CMOVB:
 		case XED_ICLASS_CMOVNB:
 			instrument_cmov (ins, CF_FLAG);
+			break;
+		case XED_ICLASS_CMOVS:
+			instrument_cmov (ins, SF_FLAG);
 			break;
 		default:
 			fprintf (stderr, "cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
