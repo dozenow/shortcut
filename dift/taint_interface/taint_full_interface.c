@@ -2296,7 +2296,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 		all_clean = 0;
 	if (all_clean) { 
 		//the address doesn't depend on base or index register, we can safely replace it with a constant
-		printf ("[SLICE_ADDRESSING] immediate_address 0x%lx  //come with %x (move upwards)\n", mem_loc, ip);
+		printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
 	} else {
 		if (base_reg_size > 0) { 
 			if (is_reg_tainted (base_reg, base_reg_size) == 0){

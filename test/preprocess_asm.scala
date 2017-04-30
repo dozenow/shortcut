@@ -10,55 +10,113 @@ object PreProcess {
 	}
 	def cleanupExtraline (s:String):String = s.substring(s.indexOf("]") + 2, s.indexOf("//")) + " /* [SLICE_EXTRA]" + s.substring(s.indexOf("//")) + "*/"
 	def cleanupAddressingLine (s:String):String = s.substring(s.indexOf("]") + 2, s.indexOf("//")) + " /* [SLICE_ADDRESSING]" + s.substring(s.indexOf("//")) + "*/"
+	def memSizeToPrefix(size:Int) = size match {
+		case 1 => " byte ptr "
+		case 2 => " word ptr "
+		case 4 => " dword ptr "
+		case _ => throw new Exception ()
+	}
+	def rewriteInst (s:String):String = {
+		if (s == null) return null
+		if (s.contains ("#push") || s.contains ("#pop")) { 
+			val index = s.indexOf("_mem[")
+			val memParams = s.substring (index+5, s.indexOf("]", index)).split(":")
+			val addr = memParams(0)
+			val size = memParams(2)
+			var newInst:String = null
+			if (s.contains("#push")) { 
+				val tmp = s.replace ("#push ", "#mov " + memSizeToPrefix(size.toInt) + "[" + addr + "], ") 
+				return tmp.replace ("[SLICE_INFO]", "[SLICE_INFO] push instruction (rewrite)")
+			} 
+			if (s.contains ("#pop")) { 
+				val tmp = s.replace ("#pop ", "#mov ")
+				return tmp.replace ("    [SLICE_INFO]", ", " + memSizeToPrefix(size.toInt) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)")
+			}
+		}
+		s
+	}
+	def replaceReg (s:String):String = {
+		val index = s.indexOf ("$reg(")
+		if (index > 0) { 
+			//replace reg
+			val lastIndex = s.indexOf (")", index +1)
+			val regIndex = s.substring (index + 4, lastIndex + 1)
+			if (regMap.contains (regIndex)) {
+				val out = s.replace (s.substring (index, lastIndex + 1), regMap(regIndex))
+				//println (out)
+				return out
+			} else  {
+				System.err.println ("cannot find corresponding reg!!!!!!.")
+				println (s)
+				assert (false)
+			}
+		} 
+		return null
+	}
+
+	def replaceMem (s:String, instStr:String):String = {
+		if (s.contains("$addr(")) {
+			val addrIndex = s.indexOf("$addr(")
+			//replace the mem operand in this line
+			//copy the original slice code's addressing mode
+			assert (instStr.indexOf (" ptr " ) > 0)
+			//I haven't handled the case where more than one operand is mem
+			assert (instStr.indexOf (" ptr " ) == instStr.lastIndexOf(" ptr "))
+			assert (instStr.startsWith ("[SLICE]"))
+			val inst = instStr.substring(0, instStr.indexOf("[SLICE_INFO]")).split("#")(2)
+			val operands = inst.substring (inst.indexOf(" ") + 1).split(",")
+			var out = ""
+			//println ("replaceMem: " + instStr + ", " + s + ", " + operands)
+			//replace address with base+index registers
+			operands.foreach (op => { 
+				//println ("replaceMem: " + op)
+				if(op.contains ("ptr")) {
+					out = s.replace (s.substring(addrIndex, s.indexOf(")", addrIndex + 1) + 1), op)
+				}
+			})
+			return out
+		}
+		return s
+	}
+
 
 	def main (args:Array[String]):Unit = {
 		var lastLine:String = null
 		val lines = Source.fromFile("m2").getLines().toList 
 		val buffer = new Queue[String]()
 		//first round: process all SLICE_EXTRA : TODO merge two rounds
-		for (val i <- 0 to lines.length - 1) {
+		for (i <- 0 to lines.length - 1) {
 			val s = lines.apply (i)
-			val index = s.indexOf ("$reg(")
-			if (index > 0) { 
+			val regStr = replaceReg (s)
+			//special case: to avoid affecting esp, we change pos/push to mov instructions
+			lastLine = rewriteInst(lastLine)
+
+			if (regStr != null)  {
 				//replace reg
-				val lastIndex = s.indexOf (")", index +1)
-				val regIndex = s.substring (index + 4, lastIndex + 1)
-				if (regMap.contains (regIndex)) {
-					val out = s.replace (s.substring (index, lastIndex + 1), regMap(regIndex))
-					//println (out)
-					buffer += out
-				} else 
-					System.err.println ("cannot find corresponding reg!!!!!!.")
+				buffer += regStr
 			} else {
 				//replace mem
 				val addrIndex = s.indexOf ("$addr(")
 				if (addrIndex > 0) { 
 					//println (lastLine)
-					//copy the original slice code's addressing mode
-					assert (lastLine.indexOf (" ptr " ) > 0)
-					//I haven't handled the case where more than one operand is mem
-					assert (lastLine.indexOf (" ptr " ) == lastLine.lastIndexOf(" ptr "))
-					assert (lastLine.startsWith ("[SLICE]"))
-					val inst = lastLine.substring(0, lastLine.indexOf("[SLICE_INFO]")).split("#")(2)
-					val operands = inst.substring (inst.indexOf(" ") + 1).split(",")
-					//special case: to avoid affecting esp, we change pos/push to mov
-					//special case: if inst is mov and mem operand is dst operand, there is no need to initialize this address
-					if (ins.startsWith ("mov ") && operands(0).containts("ptr")) {
-						buffer += "/*Eliminated SLICE_EXTRA" + s + "*/\n"
+					if (s.contains ("immediate_address ")) {
+						//replace the mem operand in the SLICE instead of this line
+						val immAddress = s.substring(s.indexOf("$addr(") + 6, s.indexOf(")"))
+						var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
+						var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
+						lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
+
+						buffer += s
 					} else {
-						operands.foreach (op => { 
-							if(op.contains ("ptr")) {
-								val out = s.replace (s.substring(addrIndex, s.indexOf(")", addrIndex + 1) + 1), op)
-								//println (out)
-								buffer += out
-							}
-						})
+						//replace the mem operand in this line later
+						buffer += s
 					}
 				} else 
 					if(lastLine != null) {
 						//println (lastLine)
 						buffer += lastLine
 					}
+
 			}
 			if(s.startsWith ("[SLICE]"))
 				lastLine = s
@@ -69,16 +127,28 @@ object PreProcess {
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
+		val immAddress = new Queue[String]() //here I can handle multiple address convertion
 		buffer.foreach (s => { 
 			//SLICE_ADDRESSING comes first, then SLICE_EXTRA then SLICE
 			if (s.startsWith ("[SLICE_EXTRA]")) {
 				extraLines += s
 			} else if (s.startsWith("[SLICE]")) {
-				while (extraLines.size > 0) 
-					println (cleanupExtraline(extraLines.dequeue()))
+				while (extraLines.size > 0) {
+					//special case: if inst is mov, the src reg/mem operand must have been tainted; and there is no need to initialize the dst operand 
+					//therefore, SLICE_EXTRA is not necessary
+					if (s.contains("#mov ") || s.contains("#movzx ")) {
+						println ("/*Eliminated SLICE_EXTRA" + extraLines.dequeue() + "*/")
+					} else 
+						println (cleanupExtraline(replaceMem(extraLines.dequeue(), s)))
+				}
 				println (cleanupSliceLine(s))
 			} else if (s.startsWith("[SLICE_ADDRESSING]")) {
-				println (cleanupAddressingLine(s))
+				if (s.contains("immediate_address")) {
+					println ("/*Eliminated " + s + "*/")
+				} else {
+
+					println (cleanupAddressingLine(s))
+				}
 			} else {
 				println ("/*" + s + "*/")
 			}

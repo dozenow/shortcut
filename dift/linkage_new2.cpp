@@ -15535,6 +15535,8 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 			IARG_END);
 }
 
+//inline void instrument_taint_regindex2mem (INS ins, REG src_reg, REG index_reg
+
 inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
 	//TODO add TRACE_TAINT_OPS
 	int dst_treg;
