@@ -124,6 +124,12 @@ object PreProcess {
 		//println (lastLine)
 		buffer += lastLine
 		//second round
+		//write out headers
+		println	(".intel_syntax noprefix")
+		println (".section	.text")
+   		println (".globl _start")
+		println ("_start:")
+
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
@@ -153,6 +159,7 @@ object PreProcess {
 				println ("/*" + s + "*/")
 			}
 		})
+		println ("ret")
 	}
 
 	//register list from PIN
