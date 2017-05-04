@@ -2,7 +2,7 @@ import scala.io.Source
 import scala.collection.mutable.Queue
 
 //replace registers with meaning full name
-//replace memory address if necessary (TODO: currently, replace aggressively, which means even if base/index registers are neither tainted, we still use base+index addressing mode, even though immediate addressing mode is better)
+//replace memory address if necessary 
 object PreProcess {
 	def cleanupSliceLine (s:String):String = {
 		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
@@ -94,7 +94,7 @@ object PreProcess {
 
 	def main (args:Array[String]):Unit = {
 		var lastLine:String = null
-		val lines = Source.fromFile("m2").getLines().toList 
+		val lines = Source.fromFile(args(0)).getLines().toList 
 		val buffer = new Queue[String]()
 		//first round: process all SLICE_EXTRA : TODO merge two rounds
 		for (i <- 0 to lines.length - 1) {
