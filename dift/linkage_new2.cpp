@@ -92,7 +92,7 @@ int s = -1;
 // #define CONFAID
 #define RECORD_TRACE_INFO 
 #define PARAMS_LOG
-//#define FW_SLICE
+#define FW_SLICE
 //TODO: xdou  we may print out the same instruction several times, such as instrument_movx: it calls instrument_taint_xxxx functions several times
 
 //used in order to trace instructions! 

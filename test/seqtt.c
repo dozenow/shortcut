@@ -141,6 +141,7 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
 	else
 		args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
+		//args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;
@@ -258,6 +259,7 @@ int main (int argc, char* argv[])
 	    fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
 	}
     }
+    printf ("wait for %d\n", ppid);
     rc = waitpid (ppid, &status, 0);
     if (rc < 0) {
 	fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
