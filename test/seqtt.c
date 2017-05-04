@@ -229,6 +229,7 @@ int main (int argc, char* argv[])
 		strcpy (tmpdir, group_dir);
 	    else 
 	    	sprintf(tmpdir, "/tmp/%d",cpid);
+	    printf ("tmpdir is %s, pid %d\n", tmpdir, pid);
 	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, "-p", pid, NULL);
 	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	    return -1;
