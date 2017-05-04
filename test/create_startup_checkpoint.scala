@@ -51,6 +51,7 @@ for(i <- args(0).toInt to args(1).toInt) {
 				println(s)
 			})
 			println ("####Checkpoint clock should be " + last_header_clock)
+			assert (last_header_clock != -1)
 			ckpt_clock = last_header_clock
 		} else { 
 			//read ckpt_clock from the file

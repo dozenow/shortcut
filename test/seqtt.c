@@ -38,11 +38,12 @@ int main (int argc, char* argv[])
     FILE* fp; 
     int instruction_only = 0;
     char* group_dir = NULL;
+    int attach_gdb = 0;
     
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb]\n");
 	return -1;
     }
 
@@ -82,6 +83,9 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index], "-group_dir", BUFFER_SIZE)) { 
 		group_dir = argv[index + 1];
 		index += 2;
+	    } else if (!strncmp(argv[index], "-attach_gdb", BUFFER_SIZE)) { 
+		    attach_gdb = 1;
+		    index ++;
 	    } else {
 		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
 		return -1;
@@ -128,6 +132,10 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "-pid";
 	sprintf (cpids, "%d", cpid);
 	args[argcnt++] = cpids;
+	if (attach_gdb) { 
+		args[argcnt++] = "-pause_tool";
+		args[argcnt++] = "15";
+	}
 	args[argcnt++] = "-t";
 	if (instruction_only) 
 	args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";

@@ -92,7 +92,7 @@ int s = -1;
 // #define CONFAID
 #define RECORD_TRACE_INFO 
 #define PARAMS_LOG
-#define FW_SLICE
+//#define FW_SLICE
 //TODO: xdou  we may print out the same instruction several times, such as instrument_movx: it calls instrument_taint_xxxx functions several times
 
 //used in order to trace instructions! 
@@ -2451,6 +2451,7 @@ static inline char* get_copy_of_disasm (INS ins) {
 	char* str = NULL;
 	assert (tmp != NULL);
 	str = (char*) malloc (strlen (tmp) + 1);
+	assert (str != NULL);
 	strcpy (str, tmp);
 	return str;
 }
@@ -12608,7 +12609,9 @@ void taint_whole_wreg2mem(ADDRINT dst_mem_loc,
 
 void move_string_rep_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size) {
 	taint_whole_mem2mem (src_mem_loc, dst_mem_loc, eflags, counts, op_size);
+#ifdef FW_SLICE
 	fw_slice_string_internal (ip, inst_str, src_mem_loc, eflags, counts, op_size, 1);
+#endif
 }
 
 void instrument_move_string(INS ins)
@@ -13520,9 +13523,9 @@ void instrument_mov (INS ins)
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0);
 		fw_slice_src_regregmem (ins, base_reg, REG_Size (base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	} else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-		assert (0);
 		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0);
+	        fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	} else {
 	    instrument_taint_mem2reg(ins, dst_reg, 1);
         }
@@ -13567,7 +13570,11 @@ void instrument_mov (INS ins)
 		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
 		    instrument_taint_add_reg2mem_slice(ins, base_reg, 0);
 		    instrument_taint_add_reg2mem_slice(ins, reg, 0);
-	    		fw_slice_src_regregreg (ins, reg, REG_Size (reg), base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg));
+		    fw_slice_src_regregreg (ins, reg, REG_Size (reg), base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg));
+	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
+		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
+		    instrument_taint_add_reg2mem_slice(ins, reg, 0);
+		    fw_slice_src_regreg (ins, reg, REG_Size (reg), index_reg, REG_Size(index_reg));
 	    } else {
 		    instrument_taint_reg2mem(ins, reg, 1);
 	    }
@@ -13707,7 +13714,9 @@ void instrument_movx (INS ins)
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0);
 		fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	} else if (REG_valid(index_reg)) {
-		assert(0);
+		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
+		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0);
+		fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	} else {
 		instrument_taint_mem2reg(ins, dst_reg, 1);
 	}
@@ -13717,12 +13726,13 @@ void instrument_movx (INS ins)
             instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
             instrument_taint_add_reg2reg(ins, dst_reg, base_reg);
             instrument_taint_add_mem2reg(ins, dst_reg);
-        } else if (REG_valid(base_reg)) {
+        } else if (REG_valid(base_reg) && !REG_valid(index_reg)) {
             instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
             instrument_taint_add_mem2reg(ins, dst_reg);
-        } else if (REG_valid(index_reg)) {
-            assert(0);
-        } else {
+	} else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
+		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
+		instrument_taint_add_mem2reg(ins, dst_reg);
+	} else {
             instrument_taint_mem2reg(ins, dst_reg, 1);
         }
    #endif
@@ -13750,7 +13760,9 @@ void instrument_movx (INS ins)
             instrument_taint_add_reg2mem_slice(ins, src_reg, 0);
 	    fw_slice_src_regreg (ins, src_reg, REG_Size (src_reg), base_reg, REG_Size(base_reg));
         } else if (REG_valid(index_reg)) {
-            assert(0);
+            instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
+            instrument_taint_add_reg2mem_slice(ins, src_reg, 0);
+	    fw_slice_src_regreg (ins, src_reg, REG_Size (src_reg), index_reg, REG_Size(index_reg));
         } else {
             instrument_taint_mem2reg(ins, src_reg, 1);
         }
@@ -16587,11 +16599,11 @@ void instruction_instrumentation(INS ins, void *v)
 	    }
     }
     //assertion for forward slicing
-#ifdef FW_SLICE
     if (slice_handed == 0) { 
+#ifdef FW_SLICE
 	    ERROR_PRINT (stderr, "[NOOP] ERROR: instruction %s is not handled for forward slicing, address %#x\n", INS_Disassemble(ins).c_str(), (unsigned)INS_Address(ins));
-    }
 #endif
+    }
 	
 #ifdef USE_CODEFLUSH_TRICK
     }
