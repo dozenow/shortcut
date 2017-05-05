@@ -96,7 +96,7 @@ int s = -1;
 //TODO: xdou  we may print out the same instruction several times, such as instrument_movx: it calls instrument_taint_xxxx functions several times
 
 //used in order to trace instructions! 
-//#define TRACE_INST
+#define TRACE_INST
 
 #define LOGGING_ON
 #define LOG_F log_f
@@ -578,6 +578,8 @@ static inline void increment_syscall_cnt (int syscall_num)
 #endif
 */
         }
+	fprintf (stderr, "pid %d syscall %d global syscall cnt %lu num %d clock %ld\n", current_thread->record_pid, 
+		 current_thread->syscall_cnt, global_syscall_cnt, syscall_num, *ppthread_log_clock);
 #if 0
 #ifdef TAINT_DEBUG
 	fprintf (debug_f, "pid %d syscall %d global syscall cnt %lu num %d clock %ld\n", current_thread->record_pid, 
@@ -1851,6 +1853,8 @@ void instrument_syscall(ADDRINT syscall_num,
 {   
     int sysnum = (int) syscall_num;
 
+    printf ("[DEBUG] In instrument_syscall sysnum=%d\n", sysnum);
+
     // Because of Pin restart issues, this function alone has to use PIN thread-specific data
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     tdata->sysnum = sysnum;
@@ -1932,6 +1936,7 @@ void instrument_syscall(ADDRINT syscall_num,
 		  syscallarg3, syscallarg4, syscallarg5);
     
     tdata->app_syscall = syscall_num;
+    printf ("[DEBUG] Out instrument_syscall\n");
 }
 
 #ifdef RECORD_TRACE_INFO
@@ -15797,49 +15802,12 @@ void trace_inst(ADDRINT ptr)
 #ifdef TRACE_INST
 void trace_inst(ADDRINT ip)
 {
-    if (*ppthread_log_clock > 9411409 && *ppthread_log_clock < 9411485) { 
-	PIN_LockClient();
-        fprintf(stderr,"[INST] Pid %d (tid: %d) (record %d) - %#x clock %lu\n", PIN_GetPid(), PIN_GetTid(), get_record_pid(), ip, *ppthread_log_clock);
-	if (IMG_Valid(IMG_FindByAddress(ip))) {
-	    fprintf(stderr,"%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-	}
-	else { 
-	    string file ="";
-	    long offset = -1;
-	       
-	    if (0xb7662000 <= ip && ip <= 0xb7662000 + (136 *1024)){
-		offset = ip - 0xb7662000;
-		file = "e5d9ad";
-	    }
-	    else if (0xb65e6000 <= ip && ip <= 0xb65e6000 + (544 * 1024)) { 
-		offset = ip - 0xb65e6000;
-		file = "4024a6";
-	    }
-	    else if (0xb74c3000 <= ip && ip <= 0xb74c3000 + (1632 * 1024)) { 
-		offset = ip - 0xb74c3000;
-		file = "e5b12f";
-	    }
-	    else if (0xb77c7000 <= ip && ip <= 0xb77c7000 + (4 * 1024)) { 
-		offset = ip - 0xb77c7000;
-		file = "weird anon region";
-	    }
-	    else if (0xb3b9a000 <= ip && ip <= 0xb3b9a000 + (33648 * 1024)) { 
-		offset = ip - 0xb3b9a000;
-		file = "4024ad";
-	    }
-	    else if (0xb6945000 <= ip && ip < 0xb6945000 + (8 * 1024)) { 
-		offset = ip - 0xb6945000;
-		file = "40241d";
-	    }
-
-	    else { 
-		fprintf(stderr, "Can't place ip %#x\n",ip);
-	    }
-
-	    fprintf(stderr,"%s %#lx\n",file.c_str(),offset);
-	}
-	PIN_UnlockClient();
+    PIN_LockClient();
+    fprintf(stderr,"[INST] Pid %d (tid: %d) (record %d) - %#x clock %lu\n", PIN_GetPid(), PIN_GetTid(), get_record_pid(), ip, *ppthread_log_clock);
+    if (IMG_Valid(IMG_FindByAddress(ip))) {
+	fprintf(stderr,"%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
+    PIN_UnlockClient();
 }
 #endif
 
@@ -16021,7 +15989,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_END);
 	slice_handed = 1;
     }
-    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
+    printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
 
     opcode = INS_Opcode(ins);
     category = INS_Category(ins);
