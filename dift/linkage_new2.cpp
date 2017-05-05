@@ -92,7 +92,7 @@ int s = -1;
 // #define CONFAID
 #define RECORD_TRACE_INFO 
 #define PARAMS_LOG
-//#define FW_SLICE
+#define FW_SLICE
 //TODO: xdou  we may print out the same instruction several times, such as instrument_movx: it calls instrument_taint_xxxx functions several times
 
 //used in order to trace instructions! 
@@ -2525,8 +2525,26 @@ static inline void fw_slice_check_address (INS ins) {
 							mem_ea,
 							IARG_END);
 					has_mem_operand = 1;
-				} else 
+				} else if (!REG_valid (base_reg) && REG_valid (index_reg)) {
+					INS_InsertThenCall(ins, IPOINT_BEFORE,
+							AFUNPTR(fw_slice_addressing),
+#ifdef FAST_INLINE
+							IARG_FAST_ANALYSIS_CALL,
+#endif
+							IARG_INST_PTR,
+							IARG_UINT32, 0,
+							IARG_UINT32, 0, 
+							IARG_UINT32, 0, 
+							IARG_UINT32, translate_reg (index_reg),
+							IARG_UINT32, REG_Size(index_reg),
+							IARG_REG_VALUE, index_reg,
+							mem_ea,
+							IARG_END);
+					has_mem_operand = 1;
+				} else {
+					fprintf (stderr, "[ERROR] unrecognized mem addr %s\n", INS_Disassemble(ins).c_str());
 					assert (0);
+				}
 			}
 		}
 	} else if (INS_MemoryOperandCount (ins) == 2) {
@@ -2951,43 +2969,76 @@ static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_e
 }
 
 static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_size);
-static void fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size, UINT32 is_dst_mem) { 
+TAINTSIGN fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size, u_long dst_mem) { 
 	int size = (int) (counts*op_size);
 	if (!size) return;
 	ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
-	fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, 1);
+	fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
+	fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
 }
 
 static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) { 
 	char* str = get_copy_of_disasm (ins);
-	if (rep)
-		INS_InsertCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_string_internal),
+	if (rep) {
+		if (is_dst_mem) 
+			INS_InsertCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_string_internal),
 #ifdef FAST_INLINE
-			IARG_FAST_ANALYSIS_CALL,
+					IARG_FAST_ANALYSIS_CALL,
 #endif
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_MEMORYREAD_EA,
-			IARG_REG_VALUE, REG_EFLAGS, 
-			IARG_REG_VALUE, INS_RepCountRegister (ins),
-			IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			IARG_UINT32, is_dst_mem, 
-			IARG_END);
-	else 
-		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_string_internal),
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYREAD_EA,
+					IARG_REG_VALUE, REG_EFLAGS, 
+					IARG_REG_VALUE, INS_RepCountRegister (ins),
+					IARG_UINT32, INS_MemoryOperandSize (ins,0),
+					IARG_MEMORYWRITE_EA,
+					IARG_END);
+		else 
+			INS_InsertCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_string_internal),
 #ifdef FAST_INLINE
-				IARG_FAST_ANALYSIS_CALL,
+					IARG_FAST_ANALYSIS_CALL,
 #endif
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_MEMORYREAD_EA,
-				IARG_REG_VALUE, REG_EFLAGS, 
-				IARG_UINT32, 1,
-				IARG_UINT32, INS_MemoryOperandSize (ins,0),
-				IARG_UINT32, is_dst_mem, 
-				IARG_END);
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYREAD_EA,
+					IARG_REG_VALUE, REG_EFLAGS, 
+					IARG_REG_VALUE, INS_RepCountRegister (ins),
+					IARG_UINT32, INS_MemoryOperandSize (ins,0),
+					IARG_UINT32, 0, 
+					IARG_END);
+	} else {
+		if (is_dst_mem)  
+			INS_InsertCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_string_internal),
+#ifdef FAST_INLINE
+					IARG_FAST_ANALYSIS_CALL,
+#endif
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYREAD_EA,
+					IARG_REG_VALUE, REG_EFLAGS, 
+					IARG_UINT32, 1,
+					IARG_UINT32, INS_MemoryOperandSize (ins,0),
+					IARG_MEMORYWRITE_EA,
+					IARG_END);
+
+		else
+			INS_InsertCall(ins, IPOINT_BEFORE,
+					AFUNPTR(fw_slice_string_internal),
+#ifdef FAST_INLINE
+					IARG_FAST_ANALYSIS_CALL,
+#endif
+					IARG_INST_PTR,
+					IARG_PTR, str,
+					IARG_MEMORYREAD_EA,
+					IARG_REG_VALUE, REG_EFLAGS, 
+					IARG_UINT32, 1,
+					IARG_UINT32, INS_MemoryOperandSize (ins,0),
+					IARG_UINT32, 0, 
+					IARG_END);
+	}
 
 	put_copy_of_disasm (str);
 }
@@ -12607,10 +12658,10 @@ void taint_whole_wreg2mem(ADDRINT dst_mem_loc,
     taint_rep_wreg2mem(effective_addr, reg, counts);
 }
 
-void move_string_rep_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size) {
+TAINTSIGN move_string_rep_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size, u_long dst_mem) {
 	taint_whole_mem2mem (src_mem_loc, dst_mem_loc, eflags, counts, op_size);
 #ifdef FW_SLICE
-	fw_slice_string_internal (ip, inst_str, src_mem_loc, eflags, counts, op_size, 1);
+	fw_slice_string_internal (ip, inst_str, src_mem_loc, eflags, counts, op_size, dst_mem);
 #endif
 }
 
@@ -12628,6 +12679,9 @@ void instrument_move_string(INS ins)
 	do {
 		char* str = get_copy_of_disasm (ins);
 		INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)move_string_rep_internal,
+#ifdef FAST_INLINE
+				IARG_FAST_ANALYSIS_CALL,
+#endif
 				IARG_INST_PTR, 
 				IARG_PTR, str,
 				IARG_MEMORYREAD_EA,
@@ -12635,6 +12689,7 @@ void instrument_move_string(INS ins)
 				IARG_REG_VALUE, REG_EFLAGS,
 				IARG_REG_VALUE, INS_RepCountRegister(ins),
 				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+				IARG_MEMORYWRITE_EA,
 				IARG_END);
 
 		put_copy_of_disasm (str);
@@ -16009,6 +16064,21 @@ void instruction_instrumentation(INS ins, void *v)
     /*INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (count_inst_executed),
 		    IARG_END);*/
 #endif
+    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
+    //DEBUG: print out instructions 
+    /*{
+	    char* str = get_copy_of_disasm (ins);
+	    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (debug_print_instr),
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_INST_PTR, 
+			    IARG_PTR, str, 
+			    IARG_END);
+	    put_copy_of_disasm(str);
+    }*/
+
+   
     if(INS_IsSyscall(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),
                 IARG_SYSCALL_NUMBER, 
@@ -16021,7 +16091,6 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_END);
 	slice_handed = 1;
     }
-    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
 
     opcode = INS_Opcode(ins);
     category = INS_Category(ins);
