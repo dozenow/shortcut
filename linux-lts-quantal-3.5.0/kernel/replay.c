@@ -1041,6 +1041,7 @@ struct replay_thread {
 	short rp_replay_exit;          // Set after a rollback
 	u_char rp_signals;             // Set if sig should be delivered
 	u_long app_syscall_addr;       // Address in user-land that is set when the syscall should be replayed
+	u_long app_syscall_chk;        // Address in user-land that refines info from above
 
 	int rp_status;                  // One of the replay statuses above
 	u_long rp_wait_clock;           // Valid if waiting for kernel or user-level clock according to rp_status
@@ -2229,6 +2230,7 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 	MPRINT ("New replay thread %p prg %p reppid %ld\n", prp, prg, reppid);
 
 	prp->app_syscall_addr = 0;
+	prp->app_syscall_chk = 0;
 	prp->argv = 0;
 	prp->envp = 0;
 	prp->gdb_state = 0;
@@ -3144,7 +3146,7 @@ int add_sysv_shm(u_long addr, u_long len)
 
 
 /* A pintool uses this for specifying the start of the thread specific data structure.  The function returns the pid on success */
-int set_pin_address (u_long pin_address, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx)
+int set_pin_address (u_long pin_address, u_long pin_chk, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx)
 {
 	struct replay_thread* prept = current->replay_thrd;
 
@@ -3152,6 +3154,7 @@ int set_pin_address (u_long pin_address, u_long thread_data, u_long __user* curt
 		printk ("set_pin_address: pin address for pid %d is %lx attaching %d status %d\n",
 			current->pid, pin_address, prept->rp_pin_attaching, prept->rp_status);
 		prept->app_syscall_addr = pin_address;
+		prept->app_syscall_chk = pin_chk;
 		prept->rp_pin_thread_data = thread_data;
 		prept->rp_pin_curthread_ptr = curthread_ptr;
 
@@ -5846,7 +5849,7 @@ get_next_syscall_enter (struct replay_thread* prt, struct replay_group* prg, int
 	MPRINT ("Replay Pid %d, index %ld sys %d\n", current->pid, prt->rp_out_ptr, psr->sysnum);
 //	dump_stack(); // how did we get here? for debugging purposes
 
-	MPRINT ("Pid %d (%d) get_next_syfscall_enter (beginning) syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+	MPRINT ("Pid %d (%d) get_next_syscall_enter (beginning) syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, prect->rp_record_pid,prect->rp_log[prt->rp_out_ptr].sysnum, prt->rp_out_ptr, prt->rp_expected_clock, prt->rp_ckpt_pthread_block_clock);
 
 	if (prt->rp_pin_attaching == PIN_ATTACHING_FF || prt->rp_pin_attaching == PIN_ATTACHING_RESTART) {
@@ -12161,6 +12164,7 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 		// inherit the parent's app_syscall_addr
 		tsk->replay_thrd->app_syscall_addr = current->replay_thrd->app_syscall_addr;
+		tsk->replay_thrd->app_syscall_chk = current->replay_thrd->app_syscall_chk;
 
 		MPRINT ("Pid %d, tsk->pid %d refcnt for replay thread %p now %d\n", current->pid, tsk->pid, tsk->replay_thrd,
 			atomic_read(&tsk->replay_thrd->rp_refcnt));
@@ -13834,6 +13838,7 @@ replay_vfork_handler (struct task_struct* tsk)
 
 	// inherit the parent's app_syscall_addr
 	tsk->replay_thrd->app_syscall_addr = current->replay_thrd->app_syscall_addr;
+	tsk->replay_thrd->app_syscall_chk = current->replay_thrd->app_syscall_chk;
 	
 	MPRINT ("Pid %d, tsk->pid %d refcnt for replay thread %p now %d\n", current->pid, tsk->pid, tsk->replay_thrd,
 		atomic_read(&tsk->replay_thrd->rp_refcnt));
@@ -14028,7 +14033,13 @@ replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 
 	MPRINT ("%d: mmap(%lx, %lx, %lu, %lu, %lu, %lu)\n", current->pid, addr, len, prot, flags, fd, pgoff);
 	if (is_pin_attached()) {
-		DPRINT ("replay_mmap_pgoff - is_pin_attached() - pin is attached\n");
+		u_long chk;
+		get_user (chk, ((u_long __user *) prt->app_syscall_chk));
+		DPRINT ("replay_mmap_pgoff - is_pin_attached() - pin is attached chk %lx len %lx prot %lx\n", chk, len, prot);
+		if (chk != len + prot) {
+			DPRINT ("replay_mmap_pgoff - check does not mathch - this is a pin mmap\n");
+			return sys_mmap_pgoff (addr, len, prot, flags, fd, pgoff);
+		}
 		rc = prt->rp_saved_rc;
 		recbuf = (struct mmap_pgoff_retvals *) prt->rp_saved_retparams;
 		psr = prt->rp_saved_psr;
@@ -14081,7 +14092,7 @@ replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 	MPRINT("mmap'd (%#lx, %#lx) from fd %d\n",retval, retval + len, given_fd);
 
 	DPRINT ("Pid %d replays mmap_pgoff with address %lx len %lx input address %lx fd %d flags %lx prot %lx pgoff %lx returning %lx, flags & MAP_FIXED %lu\n", current->pid, addr, len, rc, given_fd, flags, prot, pgoff, retval, flags & MAP_FIXED);
-	
+
 	if (rc != retval) {
 		printk ("Replay mmap_pgoff returns different value %lx than %lx\n", retval, rc);
 		if (IS_ERR((void *) retval)) {

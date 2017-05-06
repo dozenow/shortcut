@@ -32,7 +32,7 @@ for(i <- args(0).toInt to args(1).toInt) {
 		if (fast == false) { 
 			//we need to calculate the ckpt_clock
 			//seqtt /replay_logdb/rec_77829 -ckpt_clock 1191
-			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -group_dir /startup_db/" + i
+			val link_command = "./seqtt  /replay_logdb/rec_" + i 
 			println ("####Executing " + link_command)
 			val link_result = link_command!!;
 			var last_header_fd = -1
@@ -62,7 +62,7 @@ for(i <- args(0).toInt to args(1).toInt) {
 			} else { 
 				throw new Exception ("Cannot find the clock in ckpt_clocks file")
 			}
-			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock " + ckpt_clock + " -group_dir /startup_db/" + i
+			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock " + ckpt_clock 
 			println ("####Executing " + link_command)
 			val link_result = link_command!!;
 		}

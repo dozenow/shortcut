@@ -1578,6 +1578,7 @@ int parse_merge (char* results_filename, GHashTable* merge_node_table)
 	pout += sizeof(u_long);
 	buf_size = *((u_long *) pout);
 	pout += sizeof(u_long);
+	if ((int)(pout-buf) % 1000 == 0) printf ("%d, %lu, %lu\n", (int)(pout -buf), outsize, mapsize);
 
         // now read the taints
         for (u_long i = 0; i < buf_size; i++) {

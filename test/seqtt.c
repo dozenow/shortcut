@@ -141,6 +141,7 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
 	else
 		args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
+		//args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;
@@ -181,7 +182,7 @@ int main (int argc, char* argv[])
     }
 
     // Wait for cpid to complete
-    printf ("waiting for finishing, fd %d, cpid %ld\n", fd,cpid);
+    printf ("waiting for finishing, fd %d, cpid %d\n", fd, cpid);
 
     rc = wait_for_replay_group(fd, cpid);
     printf ("waitpid starts.\n");
@@ -228,6 +229,7 @@ int main (int argc, char* argv[])
 		strcpy (tmpdir, group_dir);
 	    else 
 	    	sprintf(tmpdir, "/tmp/%d",cpid);
+	    printf ("tmpdir is %s, pid %s\n", tmpdir, pid);
 	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, "-p", pid, NULL);
 	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	    return -1;
@@ -258,6 +260,7 @@ int main (int argc, char* argv[])
 	    fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
 	}
     }
+    printf ("wait for %d\n", ppid);
     rc = waitpid (ppid, &status, 0);
     if (rc < 0) {
 	fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);

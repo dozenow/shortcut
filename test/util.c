@@ -140,12 +140,13 @@ int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uni
     return ioctl (fd_spec, SPECI_CKPT_PROC_RESUME, &data);    
 }
 
-int set_pin_addr (int fd_spec, u_long app_syscall_addr, void* pthread_data, void** pcurthread, int* pattach_ndx)
+int set_pin_addr (int fd_spec, u_long app_syscall_addr, u_long app_syscall_chk, void* pthread_data, void** pcurthread, int* pattach_ndx)
 {
     struct set_pin_address_data data;
     long rc;
 
     data.pin_address = app_syscall_addr;
+    data.pin_chk = app_syscall_chk;
     data.pthread_data = (u_long) pthread_data;
     data.pcurthread = (u_long *) pcurthread;
     rc = ioctl (fd_spec, SPECI_SET_PIN_ADDR, &data);

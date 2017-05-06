@@ -243,7 +243,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 		}
 		if (copy_from_user (&pin_data, (void *) data, sizeof(pin_data)))
 			return -EFAULT;
-		rc = set_pin_address (pin_data.pin_address, pin_data.pthread_data, pin_data.pcurthread, 
+		rc = set_pin_address (pin_data.pin_address, pin_data.pin_chk, pin_data.pthread_data, pin_data.pcurthread, 
 				      &pin_data.attach_ndx);
 		if (copy_to_user ((void *) data, &pin_data, sizeof(pin_data)))
 			return -EFAULT;

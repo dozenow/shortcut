@@ -57,7 +57,7 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
 		       ,u_long nfake_calls, u_long* fake_calls, int go_live);
 
 int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char *uniqueid, int ckpt_pos, int go_live);
-int set_pin_addr (int fd_spec, u_long app_syscall_addr, void* pthread_data, void** pcurthread, int* pattach_ndx);
+int set_pin_addr (int fd_spec, u_long app_syscall_addr, u_long app_syscall_chk, void* pthread_data, void** pcurthread, int* pattach_ndx);
 int check_clock_before_syscall (int fd_spec, int syscall);
 int check_clock_after_syscall (int fd_spec);
 int get_log_id (int fd_spec);

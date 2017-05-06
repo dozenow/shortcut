@@ -42,7 +42,7 @@ struct used_address {
     u_long end;
 };
 
-int set_pin_address (u_long pin_address, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx);
+int set_pin_address (u_long pin_address, u_long pin_chk, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx);
 long get_log_id (void);
 unsigned long get_clock_value (void);
 long check_clock_before_syscall (int syscall);

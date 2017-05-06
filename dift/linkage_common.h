@@ -141,6 +141,7 @@ struct thread_data {
     int                      threadid;
     // This stuff only used for replay
     u_long                   app_syscall; // Per thread address for specifying pin vs. non-pin system calls
+    u_long                   app_syscall_chk; // Per thread address for helping disambiguate pin vs. non-pin system calls with same app_sycall
     int                      record_pid;  // Ask kernel for corresponding record pid and save it here
     uint64_t                 rg_id;       // record group id
     u_long                   ignore_flag; // location of the ignore flag

@@ -97,6 +97,7 @@ struct get_replay_pid_data {
 
 struct set_pin_address_data {
 	u_long pin_address;
+	u_long pin_chk;
 	u_long pthread_data;
 	u_long __user* pcurthread;
 	int attach_ndx;
