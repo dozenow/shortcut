@@ -252,10 +252,8 @@ static void print_clock_gettime(FILE *out, struct klog_result *res) {
 
 static void print_mmap(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
-
 	parseklog_default_print(out, res);
-	printf (stderr, "MMAP: recheck not-readonly files.\n");
-
+	//fprintf (stderr, "MMAP: recheck not-readonly files.\n");
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		fprintf(out, "         dev is %lx\n",
 				((struct mmap_pgoff_retvals *)res->retparams)->dev);
@@ -394,7 +392,7 @@ static void print_read(FILE *out, struct klog_result *res) {
 				write_header_into_recheck_log (3, res->retval, 0, res->retval);
 				write_content_into_recheck_log (res->retparams + sizeof(int), res->retval);*/
 				write_content = 1;
-				fprintf (out, "     calculate hash, len %d\n", res->retval);
+				fprintf (out, "     calculate hash, len %ld\n", res->retval);
 			}
 		}
 		if (write_content == 0) { 
