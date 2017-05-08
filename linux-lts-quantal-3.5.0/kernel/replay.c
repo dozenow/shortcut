@@ -4668,7 +4668,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
 		}
 #endif
-		//free up resources
+		//free up resources, otherwise a few thousand executions cause out-of-memory error
 		destroy_replay_group (current->replay_thrd->rp_group);
 		//TODO: what should we do for multi-threaded programs?
 		current->replay_thrd = NULL;
@@ -4683,6 +4683,442 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	return retval;
 }
 EXPORT_SYMBOL(replay_full_ckpt_wakeup);
+
+long
+replay_full_ckpt_wakeup_begin (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
+			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
+			 u_long nfake_calls, u_long *fake_call_points, int go_live)
+{
+	struct ckpt_waiter* pckpt_waiter = NULL;
+	struct record_group* precg; 
+	struct record_thread* prect;
+	struct replay_group* prepg;
+	struct replay_thread* prept;
+	long record_pid, rc;
+	char ckpt[MAX_LOGDIR_STRLEN+20];
+	__u64 rg_id;
+	long retval = 0;
+	u_long consumed, num_procs;
+	loff_t pos;
+	int clock, i, is_thread = 1;
+	
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("starting replay_full_ckpt_wakeup_begin %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	if (current->record_thrd || current->replay_thrd) {
+		printk ("replay_full_ckpt_wakeup: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
+		return -EINVAL;
+	}
+
+	// First create a record group and thread for this replay
+	precg = new_record_group (logdir);
+	if (precg == NULL) return -ENOMEM;
+	precg->rg_save_mmap_flag = save_mmap;
+
+	prect = new_record_thread(precg, 0, NULL);
+	if (prect == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prepg = new_replay_group (precg, follow_splits);
+	if (prepg == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prept = new_replay_thread (prepg, prect, current->pid, 0, NULL, NULL);
+	if (prept == NULL) {
+		destroy_replay_group (prepg);
+		destroy_record_group (precg);
+		return -ENOMEM;
+	}
+
+
+	//I grab the lock just so that get_attach status doesn't freak out. 
+	rg_lock (precg);
+	
+	//we shouldn't recheckpoint:
+	prepg->finished_ckpt = 1;
+
+	prept->rp_status = REPLAY_STATUS_RUNNING;
+	// Since there is no recording going on, we need to dec record_thread's refcnt
+	atomic_dec(&prect->rp_refcnt);
+	atomic_set(&prept->ckpt_restore_done,0);  //we aren't done restoring
+
+
+	// Restore the checkpoint
+	sprintf (ckpt, "%s/%s",logdir, filename);
+
+	// Create a replay group and thread for this process
+	current->replay_thrd = prept;
+	current->record_thrd = NULL;
+
+	rc = replay_full_resume_hdr_from_disk(ckpt, &rg_id, &clock, &num_procs, &pos);
+	if (rc < 0) return rc;
+	atomic_set(precg->rg_pkrecord_clock, clock);
+
+//HERE! please add in a check of that pkrecord_clock// 
+	current->replay_thrd->rp_record_thread->rp_group->rg_id = rg_id;
+	MPRINT ("Pid %d set_record_group_id to %llu\n", current->pid, rg_id);
+	rg_unlock (precg); //I'm worried that the other threads might need to grab the lock later	
+	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
+	if (num_procs > 1) {
+	        mutex_lock(&ckpt_mutex);
+		__init_ckpt_waiters();
+
+		pckpt_waiter = KMALLOC(sizeof(struct ckpt_waiter), GFP_KERNEL);
+		if (pckpt_waiter == NULL) {
+			printk ("replay_full_ckpt_wakeup cannot allocate wait structure\n");
+			return -ENOMEM;
+		}
+		strncpy (pckpt_waiter->ckpt, ckpt, MAX_LOGDIR_STRLEN+1024);
+		strncpy (pckpt_waiter->uniqueid, uniqueid, MAX_LOGDIR_STRLEN+1024);
+		pckpt_waiter->prepg = prepg;
+		pckpt_waiter->clock_pid = current->pid;
+		ds_list_insert (ckpt_waiters, pckpt_waiter);
+		num_ckpts++;
+		wake_up_interruptible (&ckpt_waitq);
+		sema_init(&pckpt_waiter->sem, 0);
+		sema_init(&pckpt_waiter->sem2, 0);
+		sema_init(&pckpt_waiter->wproc_sem, 0);
+		mutex_unlock(&ckpt_mutex);
+	}
+	
+	if (num_procs > 1) { 
+		MPRINT ("Pid %d: waiting for %lu to catchup\n", current->pid, num_procs-1);
+		for (i = 0; i < num_procs-1; i++) {
+			down (&pckpt_waiter->wproc_sem);
+		}
+	}
+
+	if (current->tgid == current->pid) { 
+		is_thread = 0;
+		MPRINT("%d is a process!\n",current->pid);
+	}
+	else {
+		MPRINT("%d is a thread!\n",current->pid);
+	}
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup_begin from_disk starts %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+	record_pid = replay_full_resume_proc_from_disk_begin(ckpt, current->pid, is_thread,
+						       &retval, &prect->rp_read_log_pos, 
+						       &prept->rp_out_ptr, &consumed, 
+						       &prept->rp_expected_clock, 
+						       &prept->rp_ckpt_pthread_block_clock, 
+						       (u_long*)&prect->rp_ignore_flag_addr, 
+						       (u_long*)&prect->rp_user_log_addr,
+						       (u_long*)&prect->rp_read_ulog_pos,
+						       (u_long*)&current->clear_child_tid, 
+						       (u_long*)&prept->rp_replay_hook, 
+						       &pos);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup_begin from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	return retval;
+}
+EXPORT_SYMBOL(replay_full_ckpt_wakeup_begin);
+
+long
+replay_full_ckpt_wakeup_finish (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
+			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
+			 u_long nfake_calls, u_long *fake_call_points, int go_live)
+{
+	struct ckpt_waiter* pckpt_waiter = NULL;
+	struct record_group* precg; 
+	struct record_thread* prect;
+	struct replay_group* prepg;
+	struct replay_thread* prept;
+	struct task_struct *tsk;
+	long record_pid, rc;
+	char ckpt[MAX_LOGDIR_STRLEN+20];
+	__u64 rg_id;
+	long retval;
+	u_long consumed, num_procs;
+	loff_t pos;
+	int clock, i, is_thread = 1;
+	
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("starting replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	if (current->record_thrd || current->replay_thrd) {
+		printk ("replay_full_ckpt_wakeup: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
+		return -EINVAL;
+	}
+
+	printk("%d in replay_full_ckpt_wakeup, debug %d\n",current->pid, replay_min_debug || replay_debug);
+	// First create a record group and thread for this replay
+	precg = new_record_group (logdir);
+	if (precg == NULL) return -ENOMEM;
+	precg->rg_save_mmap_flag = save_mmap;
+
+	prect = new_record_thread(precg, 0, NULL);
+	if (prect == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prepg = new_replay_group (precg, follow_splits);
+	if (prepg == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prept = new_replay_thread (prepg, prect, current->pid, 0, NULL, NULL);
+	if (prept == NULL) {
+		destroy_replay_group (prepg);
+		destroy_record_group (precg);
+		return -ENOMEM;
+	}
+
+
+	//I grab the lock just so that get_attach status doesn't freak out. 
+	rg_lock (precg);
+	
+	//we shouldn't recheckpoint:
+	prepg->finished_ckpt = 1;
+
+	prept->rp_status = REPLAY_STATUS_RUNNING;
+	// Since there is no recording going on, we need to dec record_thread's refcnt
+	atomic_dec(&prect->rp_refcnt);
+	atomic_set(&prept->ckpt_restore_done,0);  //we aren't done restoring
+
+
+	// Restore the checkpoint
+	sprintf (ckpt, "%s/%s",logdir, filename);
+
+	// Create a replay group and thread for this process
+	current->replay_thrd = prept;
+	current->record_thrd = NULL;
+
+	rc = replay_full_resume_hdr_from_disk(ckpt, &rg_id, &clock, &num_procs, &pos);
+	if (rc < 0) return rc;
+	atomic_set(precg->rg_pkrecord_clock, clock);
+
+//HERE! please add in a check of that pkrecord_clock// 
+	current->replay_thrd->rp_record_thread->rp_group->rg_id = rg_id;
+	MPRINT ("Pid %d set_record_group_id to %llu\n", current->pid, rg_id);
+	rg_unlock (precg); //I'm worried that the other threads might need to grab the lock later	
+	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
+	if (num_procs > 1) {
+	        mutex_lock(&ckpt_mutex);
+		__init_ckpt_waiters();
+
+		pckpt_waiter = KMALLOC(sizeof(struct ckpt_waiter), GFP_KERNEL);
+		if (pckpt_waiter == NULL) {
+			printk ("replay_full_ckpt_wakeup cannot allocate wait structure\n");
+			return -ENOMEM;
+		}
+		strncpy (pckpt_waiter->ckpt, ckpt, MAX_LOGDIR_STRLEN+1024);
+		strncpy (pckpt_waiter->uniqueid, uniqueid, MAX_LOGDIR_STRLEN+1024);
+		pckpt_waiter->prepg = prepg;
+		pckpt_waiter->clock_pid = current->pid;
+		ds_list_insert (ckpt_waiters, pckpt_waiter);
+		num_ckpts++;
+		wake_up_interruptible (&ckpt_waitq);
+		sema_init(&pckpt_waiter->sem, 0);
+		sema_init(&pckpt_waiter->sem2, 0);
+		sema_init(&pckpt_waiter->wproc_sem, 0);
+		mutex_unlock(&ckpt_mutex);
+	}
+	
+	if (num_procs > 1) { 
+		MPRINT ("Pid %d: waiting for %lu to catchup\n", current->pid, num_procs-1);
+		for (i = 0; i < num_procs-1; i++) {
+			down (&pckpt_waiter->wproc_sem);
+		}
+	}
+
+	if (current->tgid == current->pid) { 
+		is_thread = 0;
+		MPRINT("%d is a process!\n",current->pid);
+	}
+	else {
+		MPRINT("%d is a thread!\n",current->pid);
+	}
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup from_disk starts %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
+						       &retval, &prect->rp_read_log_pos, 
+						       &prept->rp_out_ptr, &consumed, 
+						       &prept->rp_expected_clock, 
+						       &prept->rp_ckpt_pthread_block_clock, 
+						       (u_long*)&prect->rp_ignore_flag_addr, 
+						       (u_long*)&prect->rp_user_log_addr,
+						       (u_long*)&prect->rp_read_ulog_pos,
+						       (u_long*)&current->clear_child_tid, 
+						       (u_long*)&prept->rp_replay_hook, 
+						       &pos);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	printk ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
+
+
+	if (record_pid < 0) {
+		if (num_procs > 1) pckpt_waiter->prepg = NULL;
+		return record_pid;
+	}
+
+	// Read in the log records 
+	prect->rp_record_pid = record_pid;
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+	rc = skip_and_read_log_data (prect);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup endend  skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
+	if (rc < 0) {
+		if (num_procs > 1) pckpt_waiter->prepg = NULL;
+		return rc;
+	}
+
+	if (consumed > 0) argsconsume(prect, consumed);
+
+	if (linker) {
+		strncpy (current->replay_thrd->rp_group->rg_rec_group->rg_linker, linker, MAX_LOGDIR_STRLEN);
+		MPRINT ("Set linker for replay process to %s\n", linker);
+	}
+
+	if (num_procs > 1) {
+		DPRINT ("Pid %d: waking %lu checkpoint processes\n", current->pid, num_procs-1);
+		pckpt_waiter->pos = pos;
+		pckpt_waiter->index = 1;
+
+		//wakeup only on thread, because only one can read ckpt file at a time anyway!
+		up (&pckpt_waiter->sem);
+
+		MPRINT ("Pid %d: waiting for %lu wakeups on sem %p\n", 
+			current->pid, num_procs-1, &pckpt_waiter->sem2);
+		for (i = 0; i < num_procs-1; i++) {
+			down (&pckpt_waiter->sem2);
+		}
+		MPRINT("Pid %d: got wakeups\n", current->pid);
+	}
+
+	//we need to get the cache files from whoever set them up
+	if (is_thread) { 
+		put_replay_cache_files(current->replay_thrd->rp_cache_files);
+		tsk = pid_task(find_vpid(current->tgid), PIDTYPE_PID);
+		if (!tsk->replay_thrd) { 
+			printk("%d what? the tgid has to have a replay_thrd!\n", current->pid);
+		}
+		get_replay_cache_files(tsk->replay_thrd->rp_cache_files);
+		prept->rp_cache_files = tsk->replay_thrd->rp_cache_files;
+		arch_restore_sysenter_return(current->mm->context.vdso);
+
+	}
+
+	/*
+	 * If pin, set the process to sleep, so that we can manually attach pin
+	 * We would then have to wake up the process after pin has been attached.
+	 */
+	if (attach_device) {
+		printk("Debugging device will be attached: Device - %i, Pid - %i, Syscall Index - %lld\n",
+			attach_device, attach_pid, attach_index);
+
+		rc = read_mmap_log(precg);
+		prepg->rg_attach_clock = attach_index;
+		prepg->rg_attach_pid = attach_pid;
+		prepg->rg_attach_device = attach_device;
+		if (rc) {
+			printk("replay_ckpt_wakeup: could not read memory log for Pin support\n");
+			return rc;
+		}
+		preallocate_memory(precg); // Actually do the prealloaction for this process
+		if (attach_index <= 0) {
+			printk("Pid %d sleeping in order to let you attach pin/gdb\n", current->pid);
+			/* Attach Pin before process begins */
+			if (attach_device == ATTACH_PIN) {
+				prept->app_syscall_addr = 1;  // Will be set to actual value later
+			}
+
+			if (attach_device == ATTACH_GDB) {
+				prept->gdb_state = 1;
+			}
+
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule();
+			printk("Pid %d woken up\n", current->pid);
+		}
+	}
+	set_thread_flag(TIF_IRET); // We are updating regs so need full iret
+
+
+	if (nfake_calls) {
+		prepg->rg_nfake_calls = nfake_calls;
+		prepg->rg_fake_calls = fake_call_points;
+		atomic_set(precg->rg_pkrecord_clock+1,fake_call_points[0]);        
+	}
+
+
+	//finally, remove the ckpt_waiter entry we created: 
+	if (num_procs > 1) { 	
+		mutex_lock(&ckpt_mutex); 	
+		if (ds_list_remove(ckpt_waiters, pckpt_waiter) == NULL) { 
+			printk("hmm... couldn't remove?");
+		}
+		else { 
+			KFREE(pckpt_waiter);
+		}
+		mutex_unlock(&ckpt_mutex); 	
+	}
+
+	if (fd >= 0) {
+		rc = sys_close (fd);
+		if (rc < 0) printk ("replay_full_ckpt_wakeup: unable to close fd %d, rc=%ld\n", fd, rc);
+	}
+
+	printk ("replay_full_ckpt_wakeup returning retval %ld\n", retval);
+	atomic_set(&prept->ckpt_restore_done,1);
+	
+	if (go_live) {
+		//reopen necessary files
+#ifdef RECHECK
+		{
+			char recheck_log_name[256];
+			sprintf (recheck_log_name, "/startup_db/%llu/startup.%d.recheck", precg->rg_id, prect->rp_record_pid);
+			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
+		}
+#endif
+		//free up resources, otherwise a few thousand executions cause out-of-memory error
+		destroy_replay_group (current->replay_thrd->rp_group);
+		//TODO: what should we do for multi-threaded programs?
+		current->replay_thrd = NULL;
+		printk ("replay pid %d goes live\n", current->pid);
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		}
+	}
+
+	return retval;
+}
+EXPORT_SYMBOL(replay_full_ckpt_wakeup_finish);
 
 long
 replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live)

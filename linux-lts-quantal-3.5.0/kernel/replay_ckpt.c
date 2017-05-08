@@ -706,6 +706,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 	}
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
+	//TODO: xdou: why this is called twice in this function?????
 	checkpoint_sysv_mappings (tsk, file, ppos);
 
 	// Write out the floating point registers: 
@@ -1461,6 +1462,527 @@ freemem:
 exit:
 	if (fd >= 0) {
 		if (sys_close (fd) < 0) printk ("replay_full_resume_proc_from_disk: close returns %d\n", rc);
+	}
+	if (file) fput(file);
+	set_fs(old_fs);
+	if (rc < 0) return rc;
+	return record_pid;
+}
+long replay_full_resume_proc_from_disk_begin (char* filename, pid_t clock_pid, int is_thread, 
+					long* pretval, loff_t* plogpos, u_long* poutptr, 
+					u_long* pconsumed, u_long* pexpclock, 
+					u_long* pthreadclock, u_long *ignore_flag, 
+					u_long *user_log_addr, ulong *user_log_pos,
+					u_long *child_tid,u_long *replay_hook, loff_t* ppos, loff_t* skip_sysvmappings_size, loff_t* rlimit_start_offset)
+{
+	mm_segment_t old_fs = get_fs();
+	int rc = 0, fd, exe_fd, copied, i, map_count, key, shmflg=0, id, premapped = 0, new_file = 0;
+	struct file* file = NULL, *map_file;
+	pid_t record_pid = -1;
+	struct vm_area_struct* vma, *vma_next;
+	struct vma_stats* pvmas = NULL;
+	struct mm_info* pmminfo = NULL;
+	u_long addr;
+	struct ckpt_proc_data cpdata;
+	struct user_desc desc;
+	int flags;
+	struct btree_head32 replay_mmap_btree;
+	struct fpu *fpu = NULL;
+	loff_t sysvmappings_size = 0;
+
+	char fpu_is_allocated;
+	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
+
+	set_fs(KERNEL_DS);
+	fd = sys_open (filename, O_RDONLY, 0);
+	if (fd < 0) {
+		printk ("replay_checkpoint_from_disk: open of %s returns %d\n", filename, fd);
+		rc = fd;
+		goto exit;
+	}
+	file = fget(fd);
+
+	// Read the process checkpoint data
+	copied = vfs_read(file, (char *) &cpdata, sizeof(cpdata), ppos);
+	if (copied != sizeof(cpdata)) {
+		printk ("replay_full_resume_proc_from_disk: tried to read checkpoint process data, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}
+
+	record_pid = cpdata.record_pid;
+	*pretval = cpdata.retval;
+	*plogpos = cpdata.logpos;
+	*poutptr = cpdata.outptr;
+	*pconsumed = cpdata.consumed;
+	*pexpclock = cpdata.expclock;
+	*pthreadclock = cpdata.pthreadclock;
+	*ignore_flag = cpdata.p_ignore_flag;
+	*user_log_addr = cpdata.p_user_log_addr;
+	*user_log_pos  = cpdata.user_log_pos;
+	*child_tid = cpdata.p_clear_child_tid; 
+	*replay_hook = cpdata.p_replay_hook;
+
+	// Restore the user-level registers later
+	printk ("replay_full_resume_proc_from_disk_begin: ppos: %llu\n", ppos);
+	ppos += sizeof(struct pt_regs);
+	printk ("replay_full_resume_proc_from_disk_begin: ppos: %llu\n", ppos);
+	
+	//this is a part of the replay_thrd, so we do it regardless of thread / process
+	restore_sysv_mappings (file, ppos);
+
+	// Restore the floating point registers later
+	printk ("replay_full_resume_proc_from_disk_begin: ppos: %llu\n", ppos);
+	copied = vfs_read(file, &(fpu_is_allocated), sizeof(char), ppos);
+	if (copied != sizeof(char)) {
+		printk ("replay_full_checkpoint_proc_to_disk: tried to read fpu_is_allocated, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}	
+
+	if (fpu_is_allocated) { 
+		printk ("replay_full_resume_proc_from_disk_begin: xstate_size %d\n", xstate_size);
+		ppos += sizeof(unsigned int) + sizeof(unsigned int) + xstate_size;
+	}
+	printk ("replay_full_resume_proc_from_disk_begin: ppos: %llu\n", ppos);
+
+	//this is a part of the replay_thrd, so we do it regardless of thread / process
+	sysvmappings_size = ppos;
+	restore_sysv_mappings (file, ppos);
+	sysvmappings_size = ppos - sysvmappings_size;
+	skip_sysvmappings_size = sysvmappings_size;
+
+	if (!is_thread) { 
+		
+		// restore the replay cache state (this is going to be done on per process)
+		restore_replay_cache_files (file, ppos);
+
+
+		// Delete all the vm areas of current process 
+		down_write (&current->mm->mmap_sem);
+		vma = current->mm->mmap;
+		while(vma) {
+			vma_next = vma->vm_next;
+			do_munmap(current->mm, vma->vm_start, vma->vm_end - vma->vm_start);
+			vma = vma_next;
+		} 
+		up_write (&current->mm->mmap_sem);
+
+		// Next - read the number of VM area
+		copied = vfs_read(file, (char *) &map_count, sizeof(int), ppos);
+		if (copied != sizeof(int)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read map_count, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+		
+		/* This is too big to put on the kernel stack */
+		pvmas = KMALLOC (sizeof(struct vma_stats), GFP_KERNEL);
+		if (!pvmas) {
+			printk ("replay_full_resume_proc_from_disk: cannot allocate memory\n");
+			rc = -ENOMEM;
+			goto exit;
+		}
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			TPRINT ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
+		}
+
+		// Map each VMA and copy data from the file - assume VDSO handled separately - so use map_count-1
+		btree_init32(&replay_mmap_btree);
+		for (i = 0; i < map_count-1; i++) {
+			struct timeval tv_start, tv_end;
+			int shared_file = 0;
+			if (replay_debug) {
+				do_gettimeofday(&tv_start);
+			}
+			premapped = 0;
+			copied = vfs_read (file, (char *) pvmas, sizeof(struct vma_stats), ppos);
+			if (copied != sizeof(struct vma_stats)) {
+				printk ("replay_full_resume_proc_from_disk: tried to read vma info, got rc %d\n", copied);
+				rc = copied;
+				goto freemem;
+			}				
+			DPRINT ("replay_full_resume_proc_from_disk file %s\n", pvmas->vmas_file);
+			//sanity check	
+			//MAP_PRIVATE should use copy-on-write if we write into the memory region and changes are not carried out to the underlying files. Therefore, for writable memory regions, it's safe to mmap with MAP_PRIVATE
+			//however, if the memory region is also shared, it may be tricky
+			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
+				printk ("[CHECK] memory regions is shared and writable! %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
+				printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
+				shared_file = 1;
+				BUG();
+			}
+			
+			if (pvmas->vmas_file[0]) { 
+				flags = O_RDONLY;
+				if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) {
+					MPRINT ("special vma for /dev/zero!\n");
+					map_file = NULL;
+				} else {
+					if (!strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
+						flags = O_RDWR;
+						MPRINT ("special uclock vma\n");
+						sprintf (pvmas->vmas_file, "/run/shm/uclock%d", clock_pid);
+					}
+					if (!strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN)) { 
+						new_file = get_replay_mmap(&replay_mmap_btree, pvmas->vmas_file);
+						if (new_file) { 
+							flags = O_CREAT|O_RDWR;					
+							map_file = filp_open (pvmas->vmas_file, flags, 0777);
+							if (IS_ERR(map_file)) {
+								rc = PTR_ERR(map_file);
+								printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, pvmas->vmas_file, rc);
+								goto freemem;
+							}				
+							rc = do_truncate (map_file->f_path.dentry,
+									  pvmas->vmas_end - pvmas->vmas_start, 
+									  ATTR_MTIME | ATTR_CTIME, map_file);
+
+							if (rc) { 
+								printk("%d problem with do_truncate, rc %d \n",
+								       current->pid, rc);
+								goto freemem;
+							}
+						}
+						else { 
+							char mmap_filename[256];
+							if (shared_file) 
+								sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+							else 
+								sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+
+							flags = O_RDWR;
+							//map_file = filp_open (pvmas->vmas_file, flags, 0);
+							map_file = filp_open (mmap_filename, flags, 0);
+							if (IS_ERR(map_file)) {
+								rc = PTR_ERR(map_file);
+								printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__,  mmap_filename, rc);
+								goto freemem;
+							}
+						}
+					}
+					else if (!strncmp(pvmas->vmas_file, "/SYSV",5)) { 
+						sscanf(pvmas->vmas_file, "/SYSV%08x",&key);						
+						id = find_sysv_mapping_by_key(key); 
+						if (id < 0) { 
+							printk("whoops.. what happened, key isn't in sysvmappings\n");
+							goto freemem; 
+						}
+
+						//get the correct shmflags
+						if (pvmas->vmas_flags&VM_EXEC) { 
+							shmflg |= SHM_EXEC;
+						}
+						else if (pvmas->vmas_flags&VM_READ && 
+							 !(pvmas->vmas_flags&VM_WRITE)) { 
+							shmflg |= SHM_RDONLY; 
+						}
+
+						addr = sys_shmat(id, (char __user *)pvmas->vmas_start, shmflg); 
+						
+						rc = add_sysv_shm((u_long)pvmas->vmas_start, 
+							     (u_long)(pvmas->vmas_end - pvmas->vmas_start));
+						if (rc < 0) { 
+							printk("whoops... add_sysv_shm returns negative?\n");
+							goto freemem;
+						}
+
+
+						premapped = 1;
+						map_file = NULL; //just to be sure something weird doesn't happen
+					}
+
+					else { 
+						char mmap_filename[256];
+						MPRINT ("Opening file %s\n", pvmas->vmas_file);
+						if (shared_file) 
+							sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+						else 
+							sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+						flags = O_RDWR;
+						map_file = filp_open (mmap_filename, flags, 0);
+						if (IS_ERR(map_file)) {
+							rc = PTR_ERR(map_file);
+							printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, mmap_filename, rc);
+							goto freemem;
+						}
+					}
+				}
+			} else { 
+				if (pvmas->vmas_flags & VM_GROWSDOWN) {
+					//it seems we're not allowed to combine mmap backed file with GROWSDOWN flag; let's copy all data in
+					map_file = NULL; 
+				} else {
+					char mmap_filename[256];
+					MPRINT ("Opening file %s\n", pvmas->vmas_file);
+					if (shared_file) 
+						sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
+					else 
+						sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+					flags = O_RDWR;
+					map_file = filp_open (mmap_filename, flags, 0);
+					if (IS_ERR(map_file)) {
+						rc = PTR_ERR(map_file);
+						printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, mmap_filename, rc);
+						goto freemem;
+					}
+				}
+			}
+
+			if (!premapped) { 
+				printk ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
+					map_file, pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, 
+					(pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
+					(pvmas->vmas_flags & VM_WRITE),
+					((pvmas->vmas_flags&VM_MAYSHARE) ? MAP_SHARED : MAP_PRIVATE) | 
+					MAP_FIXED | (pvmas->vmas_flags & VM_GROWSDOWN), 
+					pvmas->vmas_pgoff, pvmas->vmas_flags);
+
+
+				//mmap from ckpt file instead individual replay cache files
+				addr = do_mmap_pgoff(map_file, pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, 
+					     (pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
+					     ((pvmas->vmas_flags&VM_MAYSHARE) ? MAP_SHARED : MAP_PRIVATE) | 
+						     MAP_FIXED | 
+						     (pvmas->vmas_flags&VM_GROWSDOWN), 
+					     //pvmas->vmas_pgoff);
+					     0);
+
+			}						
+			if (map_file) filp_close (map_file, NULL);
+			if (IS_ERR((char *) addr)) {
+				printk ("replay_full_resume_proc_from_disk: mmap error %ld\n", PTR_ERR((char *) addr));
+				if (map_file) filp_close (map_file, NULL);
+				rc = addr;
+				goto freemem;
+			}
+			
+			if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) continue; /* Skip writing this one */
+			if (!(pvmas->vmas_flags&VM_READ) || 
+			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
+			     strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN))) {
+				continue;  // Not in checkpoint - so skip writing this one
+			}				
+			if (!(pvmas->vmas_flags&VM_WRITE)){
+                                // force it to writable temproarilly
+				rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, PROT_WRITE); 
+			}
+		     
+			set_fs(KERNEL_DS);
+			if (!map_file) {
+				char mmap_filename[256];
+				struct file* mmap_file = NULL;
+				loff_t mmap_ppos = 0;
+
+				sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+
+				flags = O_RDWR;
+				mmap_file = filp_open (mmap_filename, flags, 0);
+				if (IS_ERR(mmap_file)) {
+					rc = PTR_ERR(mmap_file);
+					printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, mmap_filename, rc);
+					goto freemem;
+				}
+				copied = vfs_read (mmap_file, (char *) pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, &mmap_ppos);
+				if (copied != pvmas->vmas_end - pvmas->vmas_start) {
+					printk ("%d reading from ckpt file into (0x%lx,0x%lx)\n", current->pid, pvmas->vmas_start, pvmas->vmas_start + (pvmas->vmas_end - pvmas->vmas_start));
+					print_vmas(current);
+					rc = copied;
+					goto freemem;
+				}
+				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
+				filp_close (mmap_file, NULL);
+			}
+			set_fs(old_fs);			
+			if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections		
+			if (replay_debug) {
+				do_gettimeofday(&tv_end);
+			}
+			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%06ld, end %ld.%06ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
+		}
+
+		{
+			struct timeval tv;
+			do_gettimeofday (&tv);
+			TPRINT ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		}
+		btree_destroy32(&replay_mmap_btree);
+		// Process-specific info in the mm struct
+		pmminfo = KMALLOC (sizeof(struct mm_info), GFP_KERNEL);
+		if (pmminfo == NULL) {
+			printk ("replay_full_resume_proc_from_disk: unable to allocate mm_info structure\n");
+			rc = -ENOMEM;
+			goto freemem;
+		}
+		copied = vfs_read (file, (char *) pmminfo, sizeof(struct mm_info), ppos);
+		if (copied != sizeof(struct mm_info)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read mm info, got rc %d\n", copied);
+			rc = copied;
+			goto freemem;
+		}
+		
+
+		current->mm->start_code =  pmminfo->start_code;
+		current->mm->end_code =	pmminfo->end_code;
+		current->mm->start_data = pmminfo->start_data;
+		current->mm->end_data =	pmminfo->end_data;
+		current->mm->start_brk = pmminfo->start_brk;
+		current->mm->brk = pmminfo->brk;
+		current->mm->start_stack = pmminfo->start_stack;
+		current->mm->arg_start = pmminfo->arg_start;
+		current->mm->arg_end =	pmminfo->arg_end;
+		current->mm->env_start = pmminfo->env_start;
+		current->mm->env_end =	pmminfo->env_end;
+		memcpy (current->mm->saved_auxv, pmminfo->saved_auxv, sizeof(pmminfo->saved_auxv));
+		current->mm->context.vdso = pmminfo->vdso;
+		arch_restore_additional_pages (current->mm->context.vdso);
+#ifdef CONFIG_PROC_FS
+		exe_fd = sys_open (pmminfo->exe_file, O_RDONLY, 0);
+		set_mm_exe_file (current->mm, fget(exe_fd));
+		sys_close (exe_fd);
+#endif
+
+	}
+	else { 
+		arch_restore_sysenter_return(current->mm->context.vdso);
+	}
+
+	// Read in TLS info
+	for (i = 0; i < GDT_ENTRY_TLS_ENTRIES; i++) {
+		copied = vfs_read (file, (char *) &desc, sizeof(desc), ppos);
+		if (copied != sizeof(desc)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read TLS entry #%d, got rc %d\n", i, copied);
+			rc = copied;
+			goto freemem;
+		}
+		set_tls_desc(current, GDT_ENTRY_TLS_MIN+i, &desc, 1);
+		MPRINT ("Pid %d resume ckpt set GDT entry %d base_addr %x limit %x\n", current->pid, GDT_ENTRY_TLS_MIN+i, desc.base_addr, desc.limit);
+	}
+
+	// read the rlimit info later
+	*rlimit_start_offset = ppos;
+	printk ("replay_full_resume_proc_from_disk_begin: ppos %llu\n", ppos);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		TPRINT ("replay_full_resume_proc_from_disk_begin end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	if (replay_debug) print_vmas(current);
+freemem:
+	KFREE (pmminfo);
+	KFREE (pvmas);
+exit:
+	if (fd >= 0) {
+		if (sys_close (fd) < 0) printk ("replay_full_resume_proc_from_disk_begin: close returns %d\n", rc);
+	}
+	if (file) fput(file);
+	set_fs(old_fs);
+	if (rc < 0) return rc;
+	return record_pid;
+}
+
+long replay_full_resume_proc_from_disk_finish (char* filename, pid_t clock_pid, int is_thread, 
+					loff_t* ppos, loff_t skip_sysvmappings_size, loff_t rlimit_start_offset)
+{
+	mm_segment_t old_fs = get_fs();
+	int rc = 0, fd, exe_fd, copied, i, map_count, key, shmflg=0, id, premapped = 0, new_file = 0;
+	struct fpu *fpu = NULL;
+
+	char fpu_is_allocated;
+	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		TPRINT ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+	}
+
+	set_fs(KERNEL_DS);
+	fd = sys_open (filename, O_RDONLY, 0);
+	if (fd < 0) {
+		printk ("replay_checkpoint_from_disk: open of %s returns %d\n", filename, fd);
+		rc = fd;
+		goto exit;
+	}
+	file = fget(fd);
+
+	// Read the process checkpoint data already
+	ppos += sizeof(struct ckpt_proc_data);
+	// Restore the user-level registers
+	copied = vfs_read(file, (char *) get_pt_regs(NULL), sizeof(struct pt_regs), ppos);
+	if (copied != sizeof(struct pt_regs)) {
+		printk ("replay_full_resume_proc_from_disk: tried to read regs, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}
+
+	//skip sysvmappings
+	ppos += skip_sysvmappings_size;
+
+	// Restore the floating point registers: 
+	fpu = &(current->thread.fpu);
+
+	copied = vfs_read(file, &(fpu_is_allocated), sizeof(char), ppos);
+	if (copied != sizeof(char)) {
+		printk ("replay_full_checkpoint_proc_to_disk: tried to read fpu_is_allocated, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}	
+
+	if (fpu_is_allocated) { 
+
+		//allocate the new fpu if we need it and it isn't setup
+		if (!fpu_allocated(fpu)) {
+			printk("allocating fpu\n");
+			fpu_alloc(fpu);
+		}
+
+		copied = vfs_read(file, (char *) &(fpu->last_cpu), sizeof(unsigned int), ppos);
+		if (copied != sizeof(unsigned int)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read last cpu, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+		copied = vfs_read(file, (char *) &(fpu->has_fpu), sizeof(unsigned int), ppos);
+		if (copied != sizeof(unsigned int)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read has_fpu, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+		copied = vfs_read(file, (char *) fpu->state, xstate_size, ppos);
+		if (copied != sizeof(union thread_xstate)) {
+			printk ("replay_full_resume_proc_from_disk: tried to read thread_xstate, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+	}
+	ppos = rlimit_start_offset;
+	//read rlimit
+	copied = vfs_read(file, (char *) &current->signal->rlim, sizeof(struct rlimit)*RLIM_NLIMITS, ppos);
+	if (copied != sizeof(struct rlimit)*RLIM_NLIMITS) {
+		printk ("replay_full_resume_proc_from_disk: tried to read rlimits, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}
+
+	copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
+	if (copied != sizeof(struct k_sigaction)*_NSIG) {
+		printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}
+
+	{
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		TPRINT ("replay_full_resume_proc_from_disk_finish end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+	}
+exit:
+	if (fd >= 0) {
+		if (sys_close (fd) < 0) printk ("replay_full_resume_proc_from_disk_finish: close returns %d\n", rc);
 	}
 	if (file) fput(file);
 	set_fs(old_fs);

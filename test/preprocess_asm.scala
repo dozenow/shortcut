@@ -142,6 +142,7 @@ object PreProcess {
    		println (".globl _start")
 		println ("_start:")
 
+		//second round
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
