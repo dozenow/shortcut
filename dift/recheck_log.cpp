@@ -165,6 +165,7 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     } else {
 	srchk.has_retvals = 0;
     }
+    //check here wesley5-10
     srchk.buf = buf;
     write_data_into_recheck_log (handle->recheckfd, &srchk, sizeof(srchk));
     write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname)+1);
