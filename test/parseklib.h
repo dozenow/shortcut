@@ -233,9 +233,6 @@ struct splice_retvals {
 	loff_t off_out;
 };
 
-u_long scount[512];
-u_long bytes[512];
-
 /* grabbed from asm/stat.h - ick - cannot include */
 /* for 32bit emulation and 32 bit kernels */
 struct __old_kernel_stat {
@@ -315,8 +312,6 @@ struct klog_result {
 	struct klog_signal *signal;
 
 	void (*printfcn)(FILE *, struct klog_result *);
-	int params_log_retsize;
-	void* params_log_retparams;
 };
 
 struct parse_rules {

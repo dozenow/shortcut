@@ -91,9 +91,6 @@ static void free_active_psrs(struct klogfile *log) {
 		if (apsr->retparams) {
 			free(apsr->retparams);
 		}
-		if (apsr->params_log_retparams) 
-			free (apsr->params_log_retparams);
-
 		while (sig) {
 			struct klog_signal *n;
 			n = sig->next;

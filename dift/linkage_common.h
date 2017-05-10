@@ -169,7 +169,7 @@ struct thread_data {
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;
-    int params_log_fd;
+    struct recheck_handle* recheck_handle;
 };
 
 struct memcpy_header {
