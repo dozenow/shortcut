@@ -15,8 +15,10 @@ struct recheck_handle {
 struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
+    char recheck_filename[512];
 
     sprintf (klog_filename, "/replay_logdb/rec_%lu/klog.id.%d", record_grp, record_pid);
+    sprintf (recheck_filename, "/tmp/recheck.%d", record_pid);
 
     struct recheck_handle* handle = (struct recheck_handle *) malloc(sizeof(struct recheck_handle));
     if (handle == NULL) {
@@ -27,7 +29,7 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
     handle->log = parseklog_open(klog_filename);
     if (handle->log == NULL) return NULL;
 
-    handle->recheckfd = open ("/tmp/recheck", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (handle->recheckfd < 0) {
 	fprintf (stderr, "Cannot open recheck log\n");
 	return NULL;
@@ -80,7 +82,6 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 	res = parseklog_get_next_psr(handle->log);
 	printf ("Index %lld syscall %d\n", res->index, res->psr.sysnum);
     } while (res->psr.sysnum != syscall);
-    printf ("Processing\n");
 
     return res;
 }

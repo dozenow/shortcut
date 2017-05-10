@@ -17213,6 +17213,7 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
     active_threads.erase(tdata->record_pid);
+    if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
 }
 
 #ifndef NO_FILE_OUTPUT
