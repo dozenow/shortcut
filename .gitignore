@@ -20,4 +20,7 @@ linux-lts-quantal-3.5.0/ubuntu/aufs/conf.str.tmp
 m
 pin_tools/cscope.out
 pin_tools/obj-ia32/
-
+file_server
+lib_fuse
+fuse
+server-client

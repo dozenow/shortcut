@@ -103,4 +103,13 @@ write_filemap
 .backups/
 make.s
 parseklog.d.back
+*.class
+*.so
+*.o
+*.s
+*.asm
+parserecheck
+runpintool
+*cscope.out
+ckpt_clocks
 
