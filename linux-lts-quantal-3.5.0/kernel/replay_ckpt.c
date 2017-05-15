@@ -706,6 +706,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 	}
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
+	//TODO: xdou: why this is called twice in this function?????
 	checkpoint_sysv_mappings (tsk, file, ppos);
 
 	// Write out the floating point registers: 
@@ -772,6 +773,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			rc = -ENOMEM;
 			goto unlock;
 		}
+		if (replay_debug) print_vmas (current);
 
 		// Next - info and data for each vma
 		for (vma = tsk->mm->mmap; vma; vma = vma->vm_next) {
@@ -793,6 +795,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			set_fs (old_fs);
 			
 			if (vma->vm_start == (u_long) tsk->mm->context.vdso) {
+				printk ("Pid %d replay_full_checkpoint_proc_to_disk: skip vdso %lx to %lx\n", current->pid, vma->vm_start, vma->vm_end);
 				continue; // Don't save VDSO - will regenerate it on restore
 			}
 			
@@ -1001,7 +1004,6 @@ long replay_full_resume_hdr_from_disk (char* filename, __u64* prg_id, int* pcloc
 	rc = restore_task_xray_monitor (current, file, ppos);
 
 	MPRINT ("replay_full_resume_hdr_from_disk done\n");
-
 exit:
 	if (fd >= 0) {
 		if (sys_close (fd) < 0) printk ("replay_full_resume_hdr_from_disk: close returns %d\n", rc);
@@ -1031,6 +1033,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	int flags;
 	struct btree_head32 replay_mmap_btree;
 	struct fpu *fpu = NULL;
+	struct pt_regs* regs = NULL;
 
 	char fpu_is_allocated;
 	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
@@ -1071,7 +1074,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	*replay_hook = cpdata.p_replay_hook;
 
 	// Restore the user-level registers
-	copied = vfs_read(file, (char *) get_pt_regs(NULL), sizeof(struct pt_regs), ppos);
+	regs = get_pt_regs(NULL);
+	copied = vfs_read(file, (char *) regs, sizeof(struct pt_regs), ppos);
 	if (copied != sizeof(struct pt_regs)) {
 		printk ("replay_full_resume_proc_from_disk: tried to read regs, got rc %d\n", copied);
 		rc = copied;
@@ -1092,7 +1096,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	}	
 
 	if (fpu_is_allocated) { 
-
 		//allocate the new fpu if we need it and it isn't setup
 		if (!fpu_allocated(fpu)) {
 			printk("allocating fpu\n");
@@ -1393,7 +1396,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			rc = copied;
 			goto freemem;
 		}
-		
 
 		current->mm->start_code =  pmminfo->start_code;
 		current->mm->end_code =	pmminfo->end_code;
@@ -1666,4 +1668,119 @@ exit:
 	vfree (modified_fds);
 	set_fs (old_fs);
 	return 0;
+}
+
+static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
+	//the start addr of the stack is also the start of fw_slice_info (one region grows upwards and the other downwards)
+	if (regs->sp %4096 != 0) {
+		//should be aligned; other wise we have unpoped variable
+		printk ("get_fw_slice_info: sp is %lx\n", regs->sp);
+		BUG();
+	}
+	return (struct fw_slice_info*) regs->sp;
+}
+
+#define SLICE_INFO_SIZE 4096
+asmlinkage long sys_execute_fw_slice (int finish, char* filename) { 
+	int stack_size = 4096;
+	printk ("sys_execute_fw_slice: %d, %p\n", finish, filename);
+	if (finish == 0) { 
+		//start to execute the slice
+		long addr = 0;
+		long extra_space_addr = 0;
+		int fd = 0;
+		struct stat64 stat;
+		int rc = 0;
+		struct pt_regs* regs = get_pt_regs(current);
+		unsigned long size = 0;
+		unsigned int entry = 0;
+		struct fw_slice_info* slice_info = NULL;
+
+		fd = sys_open (filename, O_RDONLY, 0);
+		if (fd < 0) { 
+			printk ("sys_execute_fw_slice cannot open slice file %s\n", filename);
+			return -ENOENT;
+		} 
+		rc = sys_fstat64 (fd, &stat);
+		if (rc != 0) {
+			printk ("sys_execute_fw_slice: cannot stat file %s\n", filename);
+			sys_close (fd);
+			return -ENOENT;
+		}
+		size = (stat.st_size/4096+1)*4096;
+		//allocate more for checkpointing and restoring untainted addresses
+		addr = sys_mmap_pgoff (0, size, PROT_EXEC|PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_DENYWRITE, fd, 0);
+		if (IS_ERR((void *) addr)) {
+			printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %lu\n", size);
+			sys_close(fd);
+			return -EPERM;
+		}
+		if (replay_debug) printk ("sys_execute_fw_slice addr is %lx, size is %lu, end_addr is %lx\n", addr, size, addr+size);
+		//read elf to get the slice entry point
+		BUG_ON (*(char*)(addr+0x4) != 0x1 || *(char*)(addr+0x5) != 0x1); //only works 32bit little endian systems
+		entry = *(unsigned int*) (addr + 0x18);	
+		//let's allocate space for the restore stack and also for storing some fw slice info
+		extra_space_addr = sys_mmap_pgoff (0, stack_size + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+		if (IS_ERR((void *) extra_space_addr)) {
+			printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %lu\n", size);
+			sys_close(fd);
+			return -ENOMEM;
+		}
+		//first page of this space: stack (grows downwards)
+		if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + stack_size);
+
+		//second page: extra info for the slice (grows upwards)
+		if (fpu_allocated (&(current->thread.fpu))) {
+			printk ("[???] sys_execute_fw_slice: Not tested with fpu.\n");
+		}
+		slice_info = (struct fw_slice_info*) (extra_space_addr+stack_size);
+		slice_info->text_addr = addr;
+		slice_info->text_size = size;
+		slice_info->extra_addr = extra_space_addr;
+		slice_info->extra_size = stack_size + SLICE_INFO_SIZE;
+		//checkpoint the current registers
+		memcpy (&slice_info->regs, regs, sizeof(struct pt_regs));
+		//change instruction pointer
+		regs->ip = addr+entry;
+		//change stack pointer
+		regs->sp = extra_space_addr + stack_size;
+		if (replay_debug) printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
+		if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+
+		set_thread_flag (TIF_IRET);
+
+		rc = sys_close (fd);
+		if (rc != 0) { 
+			printk ("sys_execute_fw_slice: cannot close file.\n");
+			return -EIO;
+		}
+		return 0;
+	} else {
+		//finish executing the slice and restore register states
+		long rc = 0;
+		//struct mm_info* pmminfo = &mm_info;
+		struct pt_regs* regs = get_pt_regs (current);
+		struct fw_slice_info* slice_info = get_fw_slice_info (regs);
+		struct pt_regs* regs_cache = &slice_info->regs;
+		//restore the registers
+		printk ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
+				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
+		memcpy (regs, regs_cache, sizeof(struct pt_regs));
+		printk ("sys_execute_fw_slice ends: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
+				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
+		set_thread_flag (TIF_IRET);
+
+		//unmap the slice
+		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
+		if (rc != 0) { 
+			printk ("sys_execute_fw_slice: cannot munmap");
+			return -1;
+		}
+		rc = sys_munmap (slice_info->extra_addr, slice_info->extra_size);
+		if (rc != 0) { 
+			printk ("sys_execute_fw_slice: cannot munmap");
+			return -1;
+		}
+		return 0;
+	}
 }

@@ -3,7 +3,8 @@ import scala.collection.mutable.Queue
 
 //replace registers with meaning full name
 //replace memory address if necessary 
-object PreProcess {
+object preprocess_asm {
+	class AddrToRestore (val loc:String, val isImm:Int, val size:Int)
 	def cleanupSliceLine (s:String):String = {
 		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
@@ -90,58 +91,78 @@ object PreProcess {
 		}
 		return s
 	}
+	def parseRestoreAddress (s:String):AddrToRestore = {
+		val index = s.indexOf(":")
+		val strs = s.substring(index + 2).split(", ")
+		new AddrToRestore (strs(0), strs(1).toInt, strs(2).toInt)
+	}
 
 
 	def main (args:Array[String]):Unit = {
 		var lastLine:String = null
 		val lines = Source.fromFile(args(0)).getLines().toList 
 		val buffer = new Queue[String]()
-		//first round: process all SLICE_EXTRA : TODO merge two rounds
+		val restoreAddress = new Queue[AddrToRestore]()
+		var totalRestoreSize = 0
+		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
+		//2. convert instructions if necessary
+		//3. get all mem addresses we need to restore
 		for (i <- 0 to lines.length - 1) {
 			val s = lines.apply (i)
-			val regStr = replaceReg (s)
-			//special case: to avoid affecting esp, we change pos/push to mov instructions
-			lastLine = rewriteInst(lastLine)
-
-			if (regStr != null)  {
-				//replace reg
-				buffer += regStr
+			if (s.startsWith ("[SLICE_RESTORE_ADDRESS]")) {
+				val tmp =  parseRestoreAddress(s)
+				restoreAddress += tmp
+				totalRestoreSize += tmp.size
 			} else {
-				//replace mem
-				val addrIndex = s.indexOf ("$addr(")
-				if (addrIndex > 0) { 
-					//println (lastLine)
-					if (s.contains ("immediate_address ")) {
-						//replace the mem operand in the SLICE instead of this line
-						val immAddress = s.substring(s.indexOf("$addr(") + 6, s.indexOf(")"))
-						var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
-						var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
-						lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
+				val regStr = replaceReg (s)
+				//special case: to avoid affecting esp, we change pos/push to mov instructions
+				lastLine = rewriteInst(lastLine)
 
-						buffer += s
-					} else {
-						//replace the mem operand in this line later
-						buffer += s
-					}
-				} else 
-					if(lastLine != null) {
+				if (regStr != null)  {
+					//replace reg
+					buffer += regStr
+				} else {
+					//replace mem
+					val addrIndex = s.indexOf ("$addr(")
+					if (addrIndex > 0) { 
 						//println (lastLine)
-						buffer += lastLine
-					}
+						if (s.contains ("immediate_address ")) {
+							//replace the mem operand in the SLICE instead of this line
+							val immAddress = s.substring(s.indexOf("$addr(") + 6, s.indexOf(")"))
+							var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
+							var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
+							lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
 
+							buffer += s
+						} else {
+							//replace the mem operand in this line later
+							buffer += s
+						}
+					} else 
+						if(lastLine != null) {
+							//println (lastLine)
+							buffer += lastLine
+						}
+
+				}
+				if(s.startsWith ("[SLICE]"))
+					lastLine = s
 			}
-			if(s.startsWith ("[SLICE]"))
-				lastLine = s
 		}
 		//println (lastLine)
 		buffer += lastLine
+		assert (totalRestoreSize < 4096) //currently we only allocated 4096 bytes for this restore stack
 		//second round
 		//write out headers
 		println	(".intel_syntax noprefix")
 		println (".section	.text")
    		println (".globl _start")
 		println ("_start:")
+		//write out all restore address
+		println ("/*first checkpoint necessary addresses*/")
+		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
 
+		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
@@ -167,11 +188,19 @@ object PreProcess {
 
 					println (cleanupAddressingLine(s))
 				}
-			} else {
+			} else if (s.startsWith("[SLICE_VERIFICATION]")) {
 				println ("/*" + s + "*/")
+			} else { 
+				println (s)
+				assert (false)
 			}
 		})
-		println ("ret")
+		println ("/* restoring address */")
+		restoreAddress.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		println ("/* slice finishes and return to kernel */")
+		println ("mov ebx, 1")
+		println ("mov eax, 350")
+		println ("int 0x80")
 	}
 
 	//register list from PIN

@@ -30,8 +30,8 @@ int fork_replay (char __user * logdir, const char __user *const __user *args,
 /* Linker may be NULL - otherwise points to special libc linker */
 long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
 			 int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, int ckpt_at, int record_timing, u_long nfake_calls, u_long* fake_call_points);
-long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, int go_live);
-long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live);
+long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, int go_live, char* execute_slice_name);
+long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name);
 
 /* Returns linker for exec to use */
 char* get_linker (void);
@@ -205,5 +205,12 @@ void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned lon
 //int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* result);
 int find_startup_cache_user_argv (const char __user *const __user *__argv, struct startup_db_result* result);
 char* copy_args (const char __user* const __user* args, const char __user* const __user* env, int* buflen);
+struct fw_slice_info {
+	unsigned long text_addr;
+	unsigned long text_size;
+	unsigned long extra_addr;
+	unsigned long extra_size;
+	struct pt_regs regs;
+};
 
 #endif

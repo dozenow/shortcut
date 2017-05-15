@@ -1743,6 +1743,12 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	list_for_each_entry (fds, &open_fds->fds, list) {
 		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
+	//let's scan over all memory address included in the slice
+	printf ("check mem taints in forward slice.\n");
+        if (fw_slice_check_final_mem_taint () == 0) { 
+		printf ("all mem address in the slice are also tainted in the final checkpoint\n");
+	}
+
 	//stop tracing after this 
 	int calling_dd = dift_done ();
 	while (!calling_dd || is_pin_attaching(dev_fd)) {
@@ -2379,10 +2385,13 @@ static inline void fw_slice_check_address (INS ins) {
 		for (; i<count; ++i) { 
 			if (INS_OperandIsMemory(ins, i)) { 
 				IARG_TYPE mem_ea = IARG_INVALID;
+				UINT32 memsize = 0;
 				if (INS_IsMemoryRead(ins)) {
 					mem_ea = IARG_MEMORYREAD_EA;
+					memsize = INS_MemoryReadSize(ins);
 				} else if (INS_IsMemoryWrite(ins)) {
 					mem_ea = IARG_MEMORYWRITE_EA;
+					memsize = INS_MemoryWriteSize(ins);
 				}
 
 				REG base_reg = INS_OperandMemoryBaseReg(ins, i);			
@@ -2401,6 +2410,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, REG_Size(index_reg),
 							IARG_REG_VALUE, index_reg,
 							mem_ea,
+							IARG_UINT32, memsize, 
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
@@ -2417,6 +2427,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
 							mem_ea,
+							IARG_UINT32, memsize, 
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
@@ -2433,6 +2444,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
 							mem_ea,
+							IARG_UINT32, memsize, 
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (!REG_valid (base_reg) && REG_valid (index_reg)) {
@@ -2449,6 +2461,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, REG_Size(index_reg),
 							IARG_REG_VALUE, index_reg,
 							mem_ea,
+							IARG_UINT32, memsize, 
 							IARG_END);
 					has_mem_operand = 1;
 				} else {
@@ -2468,6 +2481,7 @@ static inline void fw_slice_check_address (INS ins) {
 		int index_value[2] = {0};
 		uint32_t index = 0;
 		IARG_TYPE mem_type[2];
+		UINT32 memsize[2];
 		if (INS_MemoryOperandIsWritten(ins, 0)) {
 			mem_type[0] = IARG_MEMORYWRITE_EA;
 		} else if(INS_MemoryOperandIsRead(ins, 0)) {
@@ -2480,6 +2494,8 @@ static inline void fw_slice_check_address (INS ins) {
 			mem_type[1] = IARG_MEMORYREAD_EA;
 		} else 
 			assert (0);
+		memsize[0] = INS_MemoryOperandSize (ins, 0);
+		memsize[1] = INS_MemoryOperandSize (ins, 1);
 
 		//printf ("[DEBUG]two mem operands: %s\n", INS_Disassemble(ins).c_str());
 		for (i=0; i<count; ++i) { 
@@ -2519,6 +2535,7 @@ static inline void fw_slice_check_address (INS ins) {
 				IARG_UINT32, index_reg_size[0],
 				index_type[0], index_value[0],
 				mem_type[0],
+				IARG_UINT32, memsize[0],
 				IARG_UINT32, translate_reg(base_reg[1]),
 				IARG_UINT32, base_reg_size[1],
 				base_type[1], base_value[1],
@@ -2526,6 +2543,7 @@ static inline void fw_slice_check_address (INS ins) {
 				IARG_UINT32, index_reg_size[1],
 				index_type[1], index_value[1],
 				mem_type[1],
+				IARG_UINT32, memsize[0],
 				IARG_END);
 		has_mem_operand = 1;
 	} else 
@@ -12415,6 +12433,15 @@ void instrument_clear_reg(INS ins, REG reg)
             IARG_END);
 }
 
+void instrument_clear_mem_src (INS ins) {
+	uint32_t addrsize = INS_MemoryReadSize(ins);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+                AFUNPTR(clear_mem_taints),
+                IARG_MEMORYREAD_EA,
+                IARG_UINT32, addrsize,
+                IARG_END);
+}
+
 static inline ADDRINT computeEA(ADDRINT firstEA, UINT eflags,
                                  UINT32 count, UINT32 op_size)
 {
@@ -14559,6 +14586,8 @@ void instrument_pop(INS ins)
             }
         }
     }
+    //I think we should clear the source mem for POP, since that memory address is not freed
+    instrument_clear_mem_src (ins);
 }
 
 void instrument_addorsub(INS ins)
@@ -17022,6 +17051,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     } else {
 	ptdata->recheck_handle = NULL;
     }	
+    ptdata->address_taint_set = NULL;
 
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 

@@ -4395,7 +4395,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
-			 u_long nfake_calls, u_long *fake_call_points, int go_live)
+			 u_long nfake_calls, u_long *fake_call_points, int go_live, char* execute_slice_name)
 {
 	struct ckpt_waiter* pckpt_waiter = NULL;
 	struct record_group* precg; 
@@ -4638,7 +4638,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		atomic_set(precg->rg_pkrecord_clock+1,fake_call_points[0]);        
 	}
 
-
 	//finally, remove the ckpt_waiter entry we created: 
 	if (num_procs > 1) { 	
 		mutex_lock(&ckpt_mutex); 	
@@ -4656,11 +4655,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		if (rc < 0) printk ("replay_full_ckpt_wakeup: unable to close fd %d, rc=%ld\n", fd, rc);
 	}
 
-	printk ("replay_full_ckpt_wakeup returning retval %ld\n", retval);
+	printk ("replay_full_ckpt_wakeup returning retval %ld, task size %d\n", retval, sizeof(struct task_struct));
 	atomic_set(&prept->ckpt_restore_done,1);
-	
+
 	if (go_live) {
-		//reopen necessary files
+		//allocate temporary resources
 #ifdef RECHECK
 		{
 			char recheck_log_name[256];
@@ -4668,7 +4667,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
 		}
 #endif
-		//free up resources
+		//free up resources directly, otherwise a few thousand executions cause out-of-memory error
 		destroy_replay_group (current->replay_thrd->rp_group);
 		//TODO: what should we do for multi-threaded programs?
 		current->replay_thrd = NULL;
@@ -4676,7 +4675,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("ending replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("ending replay_go_live %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		}
+
+		if (execute_slice_name) { 
+			//run slice ;jumps back to the user space
+			sys_execute_fw_slice (0, execute_slice_name);	 
 		}
 	}
 
@@ -4685,7 +4689,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 EXPORT_SYMBOL(replay_full_ckpt_wakeup);
 
 long
-replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live)
+replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live, char* execute_slice_name)
 {
 	struct ckpt_waiter* pckpt_waiter;
 	struct record_thread* prect;
