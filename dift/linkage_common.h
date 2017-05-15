@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "taint_interface/taint.h"
+#include "uthash.h"
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -136,6 +137,13 @@ struct clock_gettime_info {
 	struct timespec* tp;
 };
 
+struct address_taint_set {
+	u_long loc;
+	int is_imm;
+	uint32_t size;
+	UT_hash_handle hh;
+};
+
 // Per-thread data structure
 struct thread_data {
     int                      threadid;
@@ -170,6 +178,7 @@ struct thread_data {
     struct thread_data*      next;
     struct thread_data*      prev;
     int params_log_fd;
+    struct address_taint_set* address_taint_set;
 };
 
 struct memcpy_header {

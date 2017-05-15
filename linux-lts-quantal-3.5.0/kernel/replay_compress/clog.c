@@ -4,10 +4,10 @@
 #include <asm-generic/syscalls.h>
 #include <linux/inet.h>
 
-extern struct record_thread;
+/*&extern struct record_thread;
 extern struct syscall_result;
 extern struct replay_thread;
-
+*/
 
 
 

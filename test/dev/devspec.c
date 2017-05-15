@@ -61,6 +61,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 	char logdir[MAX_LOGDIR_STRLEN+1];
 	char filename[MAX_LOGDIR_STRLEN+1];
 	char uniqueid[MAX_LOGDIR_STRLEN+1];
+	char slice_filename[MAX_LOGDIR_STRLEN+1];
 	char* tmp = NULL;
 	long rc;
 	int device;
@@ -200,10 +201,17 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 			return -EFAULT;
 		    }
 		}
+		if (wcdata.slice_filename) { 
+			retval = strncpy_from_user (slice_filename, wcdata.slice_filename, MAX_LOGDIR_STRLEN);
+			if (retval < 0 || retval >= MAX_LOGDIR_STRLEN) { 
+				printk ("ioctl SPECI_FOR_REPLAY fails, strcpy returns %d\n", retval);
+				return -EINVAL;
+			}
+		}	
 
 		rc = replay_full_ckpt_wakeup(device, logdir, filename, tmp, uniqueid, wcdata.fd,
 					     wcdata.follow_splits, wcdata.save_mmap, wcdata.attach_index,
-					     wcdata.attach_pid,wcdata.nfake_calls, fake_calls, wcdata.go_live);
+					     wcdata.attach_pid,wcdata.nfake_calls, fake_calls, wcdata.go_live, wcdata.slice_filename?slice_filename:NULL);
 
 		if (tmp) putname (tmp);
 		return rc;
@@ -230,8 +238,14 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 			printk ("ioctl SPECI_FOR_REPLAY fails, strcpy returns %d\n", retval);
 			return -EINVAL;
 		}
-
-		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos, wcdata.go_live);
+		if (wcdata.slice_filename) { 
+			retval = strncpy_from_user (slice_filename, wcdata.slice_filename, MAX_LOGDIR_STRLEN);
+			if (retval < 0 || retval >= MAX_LOGDIR_STRLEN) { 
+				printk ("ioctl SPECI_FOR_REPLAY fails, strcpy returns %d\n", retval);
+				return -EINVAL;
+			}
+		}
+		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos, wcdata.go_live, wcdata.slice_filename?slice_filename:NULL);
 
 		if (tmp) putname (tmp);
 		return rc;
