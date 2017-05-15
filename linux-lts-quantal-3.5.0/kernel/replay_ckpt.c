@@ -1588,7 +1588,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						//we have to re-read the file and calculate the hash
 						unsigned char* original_hash = (unsigned char*) (cur + sizeof(struct read_params));
 						mm_segment_t old_fs = get_fs();
-						printk ("read: check hash for fd %d.\n", rp->fd);
+						printk ("read: check hash for fd %d, buf %p, size %lu.\n", rp->fd, rp->buf, rp->size);
 						set_fs (USER_DS);
 						rc = sys_read (rp->fd, rp->buf, rp->size);
 						check_retval ("read", entry->retval, rc);

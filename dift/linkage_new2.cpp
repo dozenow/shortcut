@@ -91,7 +91,7 @@ int s = -1;
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
-#define FW_SLICE
+//#define FW_SLICE
 //TODO: xdou  we may print out the same instruction several times, such as instrument_movx: it calls instrument_taint_xxxx functions several times
 
 //used in order to trace instructions! 
@@ -100,6 +100,7 @@ int s = -1;
 #define LOGGING_ON
 #define LOG_F log_f
 #define ERROR_PRINT fprintf
+//#define EXTRA_DEBUG
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
 #define LOG_PRINT(args...) \
@@ -2901,7 +2902,7 @@ TAINTSIGN fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_
 	int size = (int) (counts*op_size);
 	if (!size) return;
 	ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
-	fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
+	//fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
 	fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
 }
 
@@ -12468,7 +12469,7 @@ void taint_whole_mem2mem(ADDRINT src_mem_loc, ADDRINT dst_mem_loc,
 		   ea_src_mem_loc); 
 #endif
     taint_mem2mem(ea_src_mem_loc, ea_dst_mem_loc, size);
-    fprintf (stderr, "taint_whole_mem2mem: src %x (%x), dst %x (%x), size %u\n", src_mem_loc, ea_src_mem_loc, dst_mem_loc, ea_dst_mem_loc, op_size);
+    //fprintf (stderr, "taint_whole_mem2mem: src %x (%x), dst %x (%x), size %u\n", src_mem_loc, ea_src_mem_loc, dst_mem_loc, ea_dst_mem_loc, op_size);
 }
 
 void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
@@ -12510,6 +12511,10 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
 {
     int size = (int)(counts * op_size);
     if (!size) return;
+    if (size < 0) { 
+	    fprintf (stderr, "[BUG] taint_whole_regmem2flag : size < 0\n");
+	    size = 10;
+    }
     ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
 #ifdef TRACE_TAINT_OPS
     assert (0);//TODO
@@ -12524,10 +12529,6 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
     //Output: count register
     //
     INSTRUMENT_PRINT (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
-    if (size < 0) { 
-	    fprintf (stderr, "[BUG] taint_whole_regmem2flag : size < 0\n");
-	    size = 10;
-    }
     //first taint the scas, as it should be executed first before rep
     taint_regmem2flag_with_different_size(ea_mem_loc, reg, mask, size, reg_size);
     //then taint count register (ecx) and ZF, and also output tokens for REP
@@ -12771,7 +12772,7 @@ TAINTSIGN pcmpestri_reg_mem (uint32_t reg1, PIN_REGISTER* reg1content, u_long me
 	if (reg1content) strncpy (str1, (char*) reg1content, 16);
 	if (mem_loc2) strncpy (str2, (char*) mem_loc2, 16);
 
-	fprintf (stderr, "pcmpestri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
+	//fprintf (stderr, "pcmpestri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, mem_loc2, 0, size1, size2, 0);
 }
 TAINTSIGN pcmpestri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content, uint32_t size1, uint32_t size2, ADDRINT ip) {
@@ -12779,7 +12780,7 @@ TAINTSIGN pcmpestri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t 
 	char str2[17] = {0};
 	if (reg1content) strncpy (str1, (char*) reg1content, 16);
 	if (reg2content) strncpy (str2, (char*) reg2content, 16);
-	fprintf (stderr, "pcmpestri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
+	//fprintf (stderr, "pcmpestri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, 0, reg2, size1, size2, 0);
 }
 
@@ -12796,7 +12797,7 @@ void instrument_pcmpestri (INS ins) {
 	op2mem = INS_OperandIsMemory(ins, 1);
 	op2reg = INS_OperandIsReg(ins, 1);
 
-	fprintf (stderr, "instrument_pcmpestri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
+	INSTRUMENT_PRINT(log_f, "instrument_pcmpestri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
 	if (op1reg && op2mem) { 
 		reg1 = translate_reg (INS_OperandReg (ins, 0));
 		INS_InsertCall(ins, IPOINT_BEFORE,
@@ -12843,7 +12844,7 @@ TAINTSIGN pcmpistri_reg_mem (uint32_t reg1, PIN_REGISTER* reg1content, u_long me
 	size1 = strlen (str1);
 	size2 = strlen (str2);
 
-	fprintf (stderr, "pcmpistri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
+	//fprintf (stderr, "pcmpistri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, mem_loc2, 0, size1, size2, 1);
 }
 TAINTSIGN pcmpistri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content, ADDRINT ip) {
@@ -12855,7 +12856,7 @@ TAINTSIGN pcmpistri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t 
 	if (reg2content) strncpy (str2, (char*) reg2content, 16);
 	size1 = strlen (str1);
 	size2 = strlen (str2);
-	fprintf (stderr, "pcmpistri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
+	//fprintf (stderr, "pcmpistri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, 0, reg2, size1, size2, 1);
 }
 
@@ -12872,7 +12873,7 @@ void instrument_pcmpistri (INS ins) {
 	op2mem = INS_OperandIsMemory(ins, 1);
 	op2reg = INS_OperandIsReg(ins, 1);
 
-	fprintf (stderr, "instrument_pcmpistri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
+	INSTRUMENT_PRINT(log_f, "instrument_pcmpistri, %s, reg1 %u, addr %x\n", INS_Disassemble(ins).c_str(), INS_OperandReg(ins, 0), INS_Address(ins));
 	if (op1reg && op2mem) { 
 		reg1 = translate_reg (INS_OperandReg (ins, 0));
 		INS_InsertCall(ins, IPOINT_BEFORE,
@@ -15972,9 +15973,9 @@ void instruction_instrumentation(INS ins, void *v)
     /*INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (count_inst_executed),
 		    IARG_END);*/
 #endif
-    //printf ("[DEBUG] inst %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
-    //DEBUG: print out instructions 
-    /*{
+#ifdef EXTRA_DEBUG
+    {
+	    //DEBUG: print out dynamic instructions 
 	    char* str = get_copy_of_disasm (ins);
 	    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (debug_print_instr),
 #ifdef FAST_INLINE
@@ -15984,8 +15985,8 @@ void instruction_instrumentation(INS ins, void *v)
 			    IARG_PTR, str, 
 			    IARG_END);
 	    put_copy_of_disasm(str);
-    }*/
-
+    }
+#endif
    
     if(INS_IsSyscall(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),

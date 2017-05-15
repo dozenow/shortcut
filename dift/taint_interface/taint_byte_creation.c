@@ -440,7 +440,7 @@ void create_taints_from_buffer(void* buf, int size,
 		start = taint_num;
 	    }
             continue;
-        }
+        } 
 
         create_and_taint_option(buf_addr + i);
     }

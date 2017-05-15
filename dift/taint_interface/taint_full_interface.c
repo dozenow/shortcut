@@ -1781,7 +1781,7 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 
 		shadow_reg_table[ecx *REG_SIZE + i] = result;
 	}
-	fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
+	//fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
 }
 
 
@@ -1831,7 +1831,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			}
 		} else { 
 			//do nothing
-			fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
+			//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
 		}
 		offset += count;
 	}
@@ -1846,7 +1846,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			}
 		} else { 
 			//do nothing
-			fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
+			//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
 		}
 		offset += count;
 	}
@@ -1856,7 +1856,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = result;
 		}
 	}
-	fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d\n", mask, result, size);
+	//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d\n", mask, result, size);
 }
 
 TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size) {
@@ -2335,8 +2335,14 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 	} else { 
 		//if already exits, do sanity check
 		//it's tricky if one tainted address is both directly addressable and indirectly addressable
-		assert (addr_struct->is_imm == all_clean);
-		assert (addr_struct->size == mem_size);
+		if (addr_struct->is_imm != all_clean) { 
+			printf ("[BUG][SLICE] tricky: the memory address is not immediate (for checking taints on the final checkpoint, %x\n", ip);
+			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+		}
+		if (addr_struct->size != mem_size) { 
+			printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
+			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+		}
 	}
 }
 
