@@ -1597,11 +1597,14 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
 	    break;
 	case SYS_access:
+	  //params = syscallarg1; filename = (char*) syscallarg0
 	    if (tdata->recheck_handle) recheck_access (tdata->recheck_handle, (char *) syscallarg0, (int) syscallarg1);
 	    break;
+	    //open a file (used if you have a path to a file)
 	case SYS_stat64:
 	    if (tdata->recheck_handle) recheck_stat64 (tdata->recheck_handle, (char *) syscallarg0, (void *) syscallarg1);
 	    break;
+	    //open a file descriptor
 	case SYS_fstat64:
 	    if (tdata->recheck_handle) recheck_fstat64 (tdata->recheck_handle, (int) syscallarg0, (void *) syscallarg1);
 	    break;

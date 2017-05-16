@@ -9,6 +9,8 @@ struct recheck_entry {
     int flag;
     long retval;
     int len; /* Length of syscall specifc data to follow */
+  //code poke belowWes Remove after
+  int mode;
 };
 
 /************************* Syscall-specific data ******************************/
