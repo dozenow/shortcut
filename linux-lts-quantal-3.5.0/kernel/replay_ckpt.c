@@ -1588,6 +1588,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						mm_segment_t old_fs = get_fs();
 						printk ("read: check hash for fd %d.\n", rp->fd);
 						set_fs (USER_DS);
+						//wes wcoomber look at this wesley
 						rc = sys_read (rp->fd, rp->buf, rp->size);
 						check_retval ("read", entry->retval, rc);
 						set_fs (old_fs);

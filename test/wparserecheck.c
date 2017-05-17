@@ -66,7 +66,7 @@ int main (int argc, char* argv[])
 	  {
 	    struct open_recheck* popen;
 
-	    popen = &buf;
+	    popen = (struct open_recheck*)buf;
 	    char* fileName = buf+sizeof(*popen);
 	    printf("has ret vals %d\n",(*popen).has_retvals);
 	    //how to retrieve the actual return values from the retval struct?
@@ -81,10 +81,10 @@ int main (int argc, char* argv[])
 	  {
 	    struct stat64_recheck* pstat64;
 
-	    pstat64 = &buf;
+	    pstat64 = (struct stat64_recheck*)buf;
 	    char* pathName = buf+sizeof(*pstat64);
 	    printf("has ret vals %d\n",(*pstat64).has_retvals);
-	    
+	    //to verify just a memcpr from struct pointer to new struct pointer
 	    printf("struct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pstat64).retvals).st_dev,((*pstat64).retvals).st_ino,((*pstat64).retvals).st_mode,((*pstat64).retvals).st_nlink,((*pstat64).retvals).st_uid,((*pstat64).retvals).st_gid,((*pstat64).retvals).st_rdev,((*pstat64).retvals).st_size,((*pstat64).retvals).st_atime,((*pstat64).retvals).st_mtime,((*pstat64).retvals).st_ctime,((*pstat64).retvals).st_blksize,((*pstat64).retvals).st_blocks); 
 	    printf("buf %p\n",(*pstat64).buf);
 	    printf("pathname %s\n", pathName);
@@ -95,7 +95,7 @@ int main (int argc, char* argv[])
 	  {
 	    struct fstat64_recheck* pfstat64;
 
-	    pfstat64 = &buf;
+	    pfstat64 = (struct fstat64_recheck*)buf;
 	    //char* pathName = buf+sizeof(*pfstat64);
 	    printf("has ret vals %d\n",(*pfstat64).has_retvals);
 	    //how to retrieve the actual return values from the retval struct?
@@ -110,7 +110,7 @@ int main (int argc, char* argv[])
 	  {
 	    struct read_recheck* pread;
 
-	    pread = &buf;
+	    pread = (struct read_recheck*)buf;
 	    char* readData = buf+sizeof(*pread);
 	    printf("has ret vals %d\n",(*pread).has_retvals);
 	    
@@ -126,7 +126,7 @@ int main (int argc, char* argv[])
 	  {
 	    struct close_recheck* pclose;
 
-	    pclose = &buf;
+	    pclose = (struct close_recheck*)buf;
 	    //char* pathName = buf+sizeof(*pclose);
 	    printf("fd %d\n",(*pclose).fd);
 	    
