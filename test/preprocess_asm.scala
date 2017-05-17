@@ -15,13 +15,18 @@ object preprocess_asm {
 		case 1 => " byte ptr "
 		case 2 => " word ptr "
 		case 4 => " dword ptr "
-		case _ => throw new Exception ()
+		case 16 => " xmmword ptr "
+		case _ => {
+			println ("unrecognized mem size " + size)
+			throw new Exception ()
+		}
 	}
 	def rewriteInst (s:String):String = {
 		if (s == null) return null
 		if (s.contains ("#push") || s.contains ("#pop")) { 
 			val index = s.indexOf("_mem[")
 			val memParams = s.substring (index+5, s.indexOf("]", index)).split(":")
+			if (memParams.size != 3) println (s)
 			val addr = memParams(0)
 			val size = memParams(2)
 			var newInst:String = null
@@ -38,7 +43,7 @@ object preprocess_asm {
 			val spaceIndex = s.indexOf (" ", index)
 			val inst = s.substring (index +1, spaceIndex)
 			val address = s.substring (spaceIndex + 1, s.indexOf (" ", spaceIndex + 1))
-			assert (jumpMap.contains(inst))
+			//assert (jumpMap.contains(inst))
 			if (s.contains ("branch_taken 1")) //if the original branch is taken, then we jump to error if not taken as before
 				return s.replace (inst, jumpMap(inst)).replace(address, "0x0000004")
 			else if (s.contains ("branch_taken 0")) 
@@ -128,9 +133,17 @@ object preprocess_asm {
 						//println (lastLine)
 						if (s.contains ("immediate_address ")) {
 							//replace the mem operand in the SLICE instead of this line
-							val immAddress = s.substring(s.indexOf("$addr(") + 6, s.indexOf(")"))
+							val immAddressIndex = s.indexOf("$addr(")
+							if (immAddressIndex == -1 || s.indexOf (")") == -1) {
+								println (s)
+							}
+							val immAddress = s.substring(immAddressIndex + 6, s.indexOf(")"))
 							var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
 							var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
+							if (memPtrIndex == -1 || memPtrEnd == -1) {
+								println ("line " + i + ":" + lastLine)
+								assert (false)
+							}
 							lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
 
 							buffer += s
@@ -211,14 +224,29 @@ object preprocess_asm {
 		"(5,4)"-> "ebp",
 		"(6,4)" -> "esp",
 		"(7,4)" -> "ebx",
+		"(7,1)" -> "bl",
 		"(8,4)" -> "edx",
+		"(8,1)" -> "dl",
 		"(9,4)" -> "ecx",
-		"(10,4)" -> "eax"
+		"(9,1)" -> "cl",
+		"(10,4)" -> "eax",
+		"(10,1)" -> "al"
 	)
-	val jumpMap = Map (
+	/*val jumpMap = Map (
 		"jns" -> "js",
+		"js"  -> "jns",
 		"jnz" -> "jz",
-		"jz" -> "jnz"
-		)
+		"jz" -> "jnz",
+		"ja" -> "jna",
+		"jae" -> "jnae",
+		"jb" -> "jnb",
+		"jbe" -> "jnbe",
+		)*/
+       def jumpMap(ins:String):String = {
+	       if (ins.charAt(1) == 'n')
+		       "j" + ins.substring (2)
+	       else 
+			"jn" + ins.substring (1)
+       }
 	
 }
