@@ -55,7 +55,6 @@ static int write_header_into_recheck_log (int recheckfd, int sysnum, long retval
     entry.sysnum = sysnum;
     entry.retval = retval;
     entry.len = len;
-    entry.mode = len;
     
     rc = write (recheckfd, (void*) &entry, sizeof(entry));
     if (rc != sizeof(entry)) { 

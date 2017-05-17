@@ -1625,8 +1625,9 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						} while (0);
 
 					} else { 
-						//change the file posistion
-						rc = sys_lseek (rp->fd, entry->retval, SEEK_CUR);	
+				 						//change the file posistion
+					  //this is for the read only optimization to make sure your next read starts in the right place	
+					  rc = sys_lseek (rp->fd, entry->retval, SEEK_CUR);	
 						if (rc < 0) { 
 							printk ("[MISMATCH] read lseek return err %ld\n", rc);
 						}

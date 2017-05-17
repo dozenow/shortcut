@@ -18,7 +18,7 @@ int main (int argc, char* argv[])
     int fd, rc;
     struct recheck_entry entry;
     char buf[10000];
-    //struct access_recheck access1;
+    struct access_recheck access1;
     //struct open_recheck open1;
     int count;
 
@@ -36,7 +36,7 @@ int main (int argc, char* argv[])
 	    return rc;
 	}
 	
-	printf ("sysnum %d retval %ld len %d mode %d\n", entry.sysnum, entry.retval, entry.len,entry.mode);
+	printf ("sysnum %d retval %ld len %d\n", entry.sysnum, entry.retval, entry.len);
 	if (entry.len > sizeof(buf)) {
 	    fprintf (stderr, "recheck entry is %d bytes - seems too large\n", entry.len);
 	    return -1;
@@ -49,15 +49,87 @@ int main (int argc, char* argv[])
 	}
 
 	switch(entry.sysnum) {
+	  //sys_access parse data
 	case 33:
 	  {
 	    struct access_recheck* paccess;
 	    //struct access_recheck = accessinst;
 
-	    paccess = &buf;
+	    paccess = (struct access_recheck*)buf;
 	    char* accessName = buf+sizeof(*paccess);
-	    printf("real mode %d\n",&paccess.mode);
+	    printf("mode %d\n",(*paccess).mode);
 	    printf("pathname %s\n", accessName);
+	    break;
+	  }
+	  //sys_open parse data
+	case 5:
+	  {
+	    struct open_recheck* popen;
+
+	    popen = &buf;
+	    char* fileName = buf+sizeof(*popen);
+	    printf("has ret vals %d\n",(*popen).has_retvals);
+	    //how to retrieve the actual return values from the retval struct?
+	    printf("retvals: dev %d ino %d mtime %d \n",((*popen).retvals).dev,((*popen).retvals).ino,((*popen).retvals).mtime); 
+	    printf("flags %d\n",(*popen).flags);
+	    printf("mode %d\n",(*popen).mode);
+	    printf("filename %s\n", fileName);
+	    break;
+	  }
+	  //sys_stat64 parse data
+	case 195:
+	  {
+	    struct stat64_recheck* pstat64;
+
+	    pstat64 = &buf;
+	    char* pathName = buf+sizeof(*pstat64);
+	    printf("has ret vals %d\n",(*pstat64).has_retvals);
+	    
+	    printf("struct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pstat64).retvals).st_dev,((*pstat64).retvals).st_ino,((*pstat64).retvals).st_mode,((*pstat64).retvals).st_nlink,((*pstat64).retvals).st_uid,((*pstat64).retvals).st_gid,((*pstat64).retvals).st_rdev,((*pstat64).retvals).st_size,((*pstat64).retvals).st_atime,((*pstat64).retvals).st_mtime,((*pstat64).retvals).st_ctime,((*pstat64).retvals).st_blksize,((*pstat64).retvals).st_blocks); 
+	    printf("buf %p\n",(*pstat64).buf);
+	    printf("pathname %s\n", pathName);
+	    break;
+	  }
+	  //sys_fstat64 parse data
+	case 197:
+	  {
+	    struct fstat64_recheck* pfstat64;
+
+	    pfstat64 = &buf;
+	    //char* pathName = buf+sizeof(*pfstat64);
+	    printf("has ret vals %d\n",(*pfstat64).has_retvals);
+	    //how to retrieve the actual return values from the retval struct?
+	    printf("fstruct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pfstat64).retvals).st_dev,((*pfstat64).retvals).st_ino,((*pfstat64).retvals).st_mode,((*pfstat64).retvals).st_nlink,((*pfstat64).retvals).st_uid,((*pfstat64).retvals).st_gid,((*pfstat64).retvals).st_rdev,((*pfstat64).retvals).st_size,((*pfstat64).retvals).st_atime,((*pfstat64).retvals).st_mtime,((*pfstat64).retvals).st_ctime,((*pfstat64).retvals).st_blksize,((*pfstat64).retvals).st_blocks); 
+	    printf("buf %p\n",(*pfstat64).buf);
+	    printf("fd %d\n",(*pfstat64).fd);
+	    //printf("pathname %s\n", pathName);
+	    break;
+	  } 
+	  //sys_read parse data
+	case 3:
+	  {
+	    struct read_recheck* pread;
+
+	    pread = &buf;
+	    char* readData = buf+sizeof(*pread);
+	    printf("has ret vals %d\n",(*pread).has_retvals);
+	    
+	    printf("fd %d\n",(*pread).fd);
+	    printf("buf %p\n",(*pread).buf);
+	    printf("count %d\n",(*pread).count);
+	    printf("readlen %d\n",(*pread).readlen);
+	    printf("vari length read data buffer %s\n", readData);
+	    break;
+	  }
+	  //sys_close parse data
+	case 6:
+	  {
+	    struct close_recheck* pclose;
+
+	    pclose = &buf;
+	    //char* pathName = buf+sizeof(*pclose);
+	    printf("fd %d\n",(*pclose).fd);
+	    
 	    break;
 	  }
 	}
