@@ -41,8 +41,8 @@ int main (int argc, char* argv[])
     int hermitfd;
     hermitfd = 1023;
 
-    rc = (syscall(SYS_fcntl, hermitfd, F_DUPFD,(1024)));
-     //dup2 to 1023 assert that hermitfd (which is 1023) is never used
+    rc = (syscall(SYS_fcntl, hermitfd, F_GETFD));
+    //dup2 to 1023 reval of sys_fcntl assert to make sure hermitfd (which is 1023) is not currently used
     assert(rc < 0);
    
 
