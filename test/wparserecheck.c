@@ -10,8 +10,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/syscall.h>
 
 #include "../dift/recheck_log.h"
+
+static inline void check_retval (const char* name, int expected, int actual) {
+  if (expected != actual) {
+    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+  }
+}
 
 int main (int argc, char* argv[])
 {
@@ -21,6 +28,7 @@ int main (int argc, char* argv[])
     struct access_recheck access1;
     //struct open_recheck open1;
     int count;
+    //long rc;
 
     fd = open (argv[1], O_RDONLY);
     if (fd < 0) {
@@ -59,6 +67,11 @@ int main (int argc, char* argv[])
 	    char* accessName = buf+sizeof(*paccess);
 	    printf("mode %d\n",(*paccess).mode);
 	    printf("pathname %s\n", accessName);
+
+	    rc = syscall(SYS_access, accessName, (*paccess).mode);
+	    //printf("return code %d\n", rc);
+	    check_retval ("access", entry.retval, rc);
+
 	    break;
 	  }
 	  //sys_open parse data
@@ -69,11 +82,15 @@ int main (int argc, char* argv[])
 	    popen = (struct open_recheck*)buf;
 	    char* fileName = buf+sizeof(*popen);
 	    printf("has ret vals %d\n",(*popen).has_retvals);
-	    //how to retrieve the actual return values from the retval struct?
 	    printf("retvals: dev %d ino %d mtime %d \n",((*popen).retvals).dev,((*popen).retvals).ino,((*popen).retvals).mtime); 
 	    printf("flags %d\n",(*popen).flags);
 	    printf("mode %d\n",(*popen).mode);
 	    printf("filename %s\n", fileName);
+
+	    rc = syscall(SYS_open, fileName, (*popen).flags, (*popen).mode);
+	    //printf("return code %d\n", rc);
+	    check_retval ("open", entry.retval, rc);
+
 	    break;
 	  }
 	  //sys_stat64 parse data
@@ -88,6 +105,11 @@ int main (int argc, char* argv[])
 	    printf("struct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pstat64).retvals).st_dev,((*pstat64).retvals).st_ino,((*pstat64).retvals).st_mode,((*pstat64).retvals).st_nlink,((*pstat64).retvals).st_uid,((*pstat64).retvals).st_gid,((*pstat64).retvals).st_rdev,((*pstat64).retvals).st_size,((*pstat64).retvals).st_atime,((*pstat64).retvals).st_mtime,((*pstat64).retvals).st_ctime,((*pstat64).retvals).st_blksize,((*pstat64).retvals).st_blocks); 
 	    printf("buf %p\n",(*pstat64).buf);
 	    printf("pathname %s\n", pathName);
+
+	    rc = syscall(SYS_stat64, pathName, (*pstat64).buf);
+	    //printf("return code %d\n", rc);
+	    check_retval ("stat64", entry.retval, rc);
+
 	    break;
 	  }
 	  //sys_fstat64 parse data
@@ -103,6 +125,11 @@ int main (int argc, char* argv[])
 	    printf("buf %p\n",(*pfstat64).buf);
 	    printf("fd %d\n",(*pfstat64).fd);
 	    //printf("pathname %s\n", pathName);
+
+	    rc = syscall(SYS_fstat64,(*pfstat64).fd, (*pfstat64).buf);
+	    //printf("return code %d\n", rc);
+	    check_retval ("fstat64", entry.retval, rc);
+
 	    break;
 	  } 
 	  //sys_read parse data
@@ -119,6 +146,11 @@ int main (int argc, char* argv[])
 	    printf("count %d\n",(*pread).count);
 	    printf("readlen %d\n",(*pread).readlen);
 	    printf("vari length read data buffer %s\n", readData);
+
+	    rc = syscall(SYS_read,(*pread).fd, (*pread).buf, (*pread).count);
+	    //printf("return code %d\n", rc);
+	    check_retval ("read", entry.retval, rc);
+
 	    break;
 	  }
 	  //sys_close parse data
@@ -129,6 +161,11 @@ int main (int argc, char* argv[])
 	    pclose = (struct close_recheck*)buf;
 	    //char* pathName = buf+sizeof(*pclose);
 	    printf("fd %d\n",(*pclose).fd);
+
+	    rc = syscall(SYS_close,(*pclose).fd);
+	    //printf("return code %d\n", rc);
+	    check_retval ("close", entry.retval, rc);
+
 	    
 	    break;
 	  }
