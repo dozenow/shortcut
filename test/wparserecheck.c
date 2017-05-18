@@ -16,7 +16,7 @@
 
 static inline void check_retval (const char* name, int expected, int actual) {
   if (expected != actual) {
-    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+    printf ("[MISMATCH] retval for %s expected %d ret %d\n\n", name, expected, actual);
   }
 }
 
@@ -168,6 +168,10 @@ int main (int argc, char* argv[])
 
 	    
 	    break;
+	  }
+	default: 
+	  {
+	    printf ("[BUG] unhandled recheck syscall %d\n", entry.sysnum);
 	  }
 	}
 	
