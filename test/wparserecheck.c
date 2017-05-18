@@ -15,7 +15,7 @@
 #include "../dift/recheck_log.h"
 
 static inline void check_retval (const char* name, int expected, int actual) {
-  if (actual > 0){
+  if (actual >= 0){
    if (expected != actual) {
     printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
    }
@@ -33,18 +33,25 @@ int main (int argc, char* argv[])
     struct recheck_entry entry;
     char buf[10000];
     struct access_recheck access1;
-    //struct open_recheck open1;
+   
     int count;
-    //long rc;
+   
+    //this fileDescriptor is all alone for the dup2 fd recheck bug fix
+    int hermitfd;
+    hermitfd = 1023;
 
     fd = open (argv[1], O_RDONLY);
     if (fd < 0) {
 	perror ("open");
 	return fd;
     }
-    
+
+    //dup2 to 1023 assert that 1023 is never used
+    rc = syscall(SYS_dup2, fd, hermitfd);
+    close (fd);
+
     do {
-	rc = read (fd, &entry, sizeof(entry));
+	rc = read (hermitfd, &entry, sizeof(entry));
 	if (rc != sizeof(entry)) {
 	    if (rc == 0) break;
 	    perror ("read");
@@ -57,7 +64,7 @@ int main (int argc, char* argv[])
 	    return -1;
 	}
 	
-	rc = read (fd, buf, entry.len);
+	rc = read (hermitfd, buf, entry.len);
 	if (rc != entry.len) {	
 	    perror ("read data");
 	    return rc;
@@ -127,7 +134,11 @@ int main (int argc, char* argv[])
 	    struct fstat64_recheck* pfstat64;
 
 	    pfstat64 = (struct fstat64_recheck*)buf;
-	    //char* pathName = buf+sizeof(*pfstat64);
+
+	    //?hack to fix fd dup2 fix side effects
+	    //(*pfstat64).fd = hermitfd;
+
+	
 	    printf("has ret vals %d\n",(*pfstat64).has_retvals);
 	    //how to retrieve the actual return values from the retval struct?
 	    printf("fstruct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pfstat64).retvals).st_dev,((*pfstat64).retvals).st_ino,((*pfstat64).retvals).st_mode,((*pfstat64).retvals).st_nlink,((*pfstat64).retvals).st_uid,((*pfstat64).retvals).st_gid,((*pfstat64).retvals).st_rdev,((*pfstat64).retvals).st_size,((*pfstat64).retvals).st_atime,((*pfstat64).retvals).st_mtime,((*pfstat64).retvals).st_ctime,((*pfstat64).retvals).st_blksize,((*pfstat64).retvals).st_blocks); 
@@ -136,7 +147,7 @@ int main (int argc, char* argv[])
 	    //printf("pathname %s\n", pathName);
 
 	    rc = syscall(SYS_fstat64,(*pfstat64).fd, (*pfstat64).buf);
-	    //printf("return code %d\n", rc);
+	    printf("return code %d errno %d\n", rc,errno);
 	    check_retval ("fstat64", entry.retval, rc);
 
 	    break;
@@ -192,7 +203,7 @@ int main (int argc, char* argv[])
 	
     } while (1);
     
-    close (fd);
+    close (hermitfd);
 
     return 0;
 }
