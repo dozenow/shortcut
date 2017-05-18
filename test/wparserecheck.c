@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
+#include <assert.h>
 
 #include "../dift/recheck_log.h"
 
@@ -40,13 +41,17 @@ int main (int argc, char* argv[])
     int hermitfd;
     hermitfd = 1023;
 
+    rc = (syscall(SYS_fcntl, hermitfd, F_DUPFD,(1024)));
+     //dup2 to 1023 assert that hermitfd (which is 1023) is never used
+    assert(rc < 0);
+   
+
     fd = open (argv[1], O_RDONLY);
     if (fd < 0) {
 	perror ("open");
 	return fd;
     }
 
-    //dup2 to 1023 assert that 1023 is never used
     rc = syscall(SYS_dup2, fd, hermitfd);
     close (fd);
 
@@ -147,7 +152,7 @@ int main (int argc, char* argv[])
 	    //printf("pathname %s\n", pathName);
 
 	    rc = syscall(SYS_fstat64,(*pfstat64).fd, (*pfstat64).buf);
-	    printf("return code %d errno %d\n", rc,errno);
+	    // printf("return code %d errno %d\n", rc,errno);
 	    check_retval ("fstat64", entry.retval, rc);
 
 	    break;
