@@ -401,8 +401,12 @@ do {                                                                            
     HASH_REPLACE(hh,head,strfield[0],(unsigned)uthash_strlen(add->strfield),add,replaced)
 #define HASH_FIND_INT(head,findint,out)                                          \
     HASH_FIND(hh,head,findint,sizeof(int),out)
+#define HASH_FIND_ULONG(head,findulong,out)                                          \
+    HASH_FIND(hh,head,findulong,sizeof(unsigned long),out)
 #define HASH_ADD_INT(head,intfield,add)                                          \
     HASH_ADD(hh,head,intfield,sizeof(int),add)
+#define HASH_ADD_ULONG(head,ulongfield,add)                                          \
+    HASH_ADD(hh,head,ulongfield,sizeof(unsigned long),add)
 #define HASH_REPLACE_INT(head,intfield,add,replaced)                             \
     HASH_REPLACE(hh,head,intfield,sizeof(int),add,replaced)
 #define HASH_FIND_PTR(head,findptr,out)                                          \

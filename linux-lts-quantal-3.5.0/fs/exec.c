@@ -1648,7 +1648,7 @@ int do_execve(const char *filename,
 				sprintf (uniquename, "%d", current->pid);
 				printk ("Found a command that can be speeded up.\n");
 
-				return replay_full_ckpt_wakeup (0, logdir, ckptname, linker, uniquename, -1, 0, 0, 0, 0, 0, NULL, 1); 
+				return replay_full_ckpt_wakeup (0, logdir, ckptname, linker, uniquename, -1, 0, 0, 0, 0, 0, NULL, 1, 0); 
 			} else { 
 				//write out to the todo list
 				//TODO: record the program in this case

@@ -3,7 +3,8 @@ import scala.collection.mutable.Queue
 
 //replace registers with meaning full name
 //replace memory address if necessary 
-object PreProcess {
+object preprocess_asm {
+	class AddrToRestore (val loc:String, val isImm:Int, val size:Int)
 	def cleanupSliceLine (s:String):String = {
 		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
@@ -14,13 +15,18 @@ object PreProcess {
 		case 1 => " byte ptr "
 		case 2 => " word ptr "
 		case 4 => " dword ptr "
-		case _ => throw new Exception ()
+		case 16 => " xmmword ptr "
+		case _ => {
+			println ("unrecognized mem size " + size)
+			throw new Exception ()
+		}
 	}
 	def rewriteInst (s:String):String = {
 		if (s == null) return null
 		if (s.contains ("#push") || s.contains ("#pop")) { 
 			val index = s.indexOf("_mem[")
 			val memParams = s.substring (index+5, s.indexOf("]", index)).split(":")
+			if (memParams.size != 3) println (s)
 			val addr = memParams(0)
 			val size = memParams(2)
 			var newInst:String = null
@@ -37,7 +43,7 @@ object PreProcess {
 			val spaceIndex = s.indexOf (" ", index)
 			val inst = s.substring (index +1, spaceIndex)
 			val address = s.substring (spaceIndex + 1, s.indexOf (" ", spaceIndex + 1))
-			assert (jumpMap.contains(inst))
+			//assert (jumpMap.contains(inst))
 			if (s.contains ("branch_taken 1")) //if the original branch is taken, then we jump to error if not taken as before
 				return s.replace (inst, jumpMap(inst)).replace(address, "0x0000004")
 			else if (s.contains ("branch_taken 0")) 
@@ -90,58 +96,86 @@ object PreProcess {
 		}
 		return s
 	}
+	def parseRestoreAddress (s:String):AddrToRestore = {
+		val index = s.indexOf(":")
+		val strs = s.substring(index + 2).split(", ")
+		new AddrToRestore (strs(0), strs(1).toInt, strs(2).toInt)
+	}
 
 
 	def main (args:Array[String]):Unit = {
 		var lastLine:String = null
 		val lines = Source.fromFile(args(0)).getLines().toList 
 		val buffer = new Queue[String]()
-		//first round: process all SLICE_EXTRA : TODO merge two rounds
+		val restoreAddress = new Queue[AddrToRestore]()
+		var totalRestoreSize = 0
+		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
+		//2. convert instructions if necessary
+		//3. get all mem addresses we need to restore
 		for (i <- 0 to lines.length - 1) {
 			val s = lines.apply (i)
-			val regStr = replaceReg (s)
-			//special case: to avoid affecting esp, we change pos/push to mov instructions
-			lastLine = rewriteInst(lastLine)
-
-			if (regStr != null)  {
-				//replace reg
-				buffer += regStr
+			if (s.startsWith ("[SLICE_RESTORE_ADDRESS]")) {
+				val tmp =  parseRestoreAddress(s)
+				restoreAddress += tmp
+				totalRestoreSize += tmp.size
 			} else {
-				//replace mem
-				val addrIndex = s.indexOf ("$addr(")
-				if (addrIndex > 0) { 
-					//println (lastLine)
-					if (s.contains ("immediate_address ")) {
-						//replace the mem operand in the SLICE instead of this line
-						val immAddress = s.substring(s.indexOf("$addr(") + 6, s.indexOf(")"))
-						var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
-						var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
-						lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
+				val regStr = replaceReg (s)
+				//special case: to avoid affecting esp, we change pos/push to mov instructions
+				lastLine = rewriteInst(lastLine)
 
-						buffer += s
-					} else {
-						//replace the mem operand in this line later
-						buffer += s
-					}
-				} else 
-					if(lastLine != null) {
+				if (regStr != null)  {
+					//replace reg
+					buffer += regStr
+				} else {
+					//replace mem
+					val addrIndex = s.indexOf ("$addr(")
+					if (addrIndex > 0) { 
 						//println (lastLine)
-						buffer += lastLine
-					}
+						if (s.contains ("immediate_address ")) {
+							//replace the mem operand in the SLICE instead of this line
+							val immAddressIndex = s.indexOf("$addr(")
+							if (immAddressIndex == -1 || s.indexOf (")") == -1) {
+								println (s)
+							}
+							val immAddress = s.substring(immAddressIndex + 6, s.indexOf(")"))
+							var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
+							var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
+							if (memPtrIndex == -1 || memPtrEnd == -1) {
+								println ("line " + i + ":" + lastLine)
+								assert (false)
+							}
+							lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
 
+							buffer += s
+						} else {
+							//replace the mem operand in this line later
+							buffer += s
+						}
+					} else 
+						if(lastLine != null) {
+							//println (lastLine)
+							buffer += lastLine
+						}
+
+				}
+				if(s.startsWith ("[SLICE]"))
+					lastLine = s
 			}
-			if(s.startsWith ("[SLICE]"))
-				lastLine = s
 		}
 		//println (lastLine)
 		buffer += lastLine
+		assert (totalRestoreSize < 4096) //currently we only allocated 4096 bytes for this restore stack
 		//second round
 		//write out headers
 		println	(".intel_syntax noprefix")
 		println (".section	.text")
    		println (".globl _start")
 		println ("_start:")
+		//write out all restore address
+		println ("/*first checkpoint necessary addresses*/")
+		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
 
+		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
 		//println ("**************************")
 		val extraLines = new Queue[String]()
@@ -167,11 +201,19 @@ object PreProcess {
 
 					println (cleanupAddressingLine(s))
 				}
-			} else {
+			} else if (s.startsWith("[SLICE_VERIFICATION]")) {
 				println ("/*" + s + "*/")
+			} else { 
+				println (s)
+				assert (false)
 			}
 		})
-		println ("ret")
+		println ("/* restoring address */")
+		restoreAddress.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		println ("/* slice finishes and return to kernel */")
+		println ("mov ebx, 1")
+		println ("mov eax, 350")
+		println ("int 0x80")
 	}
 
 	//register list from PIN
@@ -182,14 +224,29 @@ object PreProcess {
 		"(5,4)"-> "ebp",
 		"(6,4)" -> "esp",
 		"(7,4)" -> "ebx",
+		"(7,1)" -> "bl",
 		"(8,4)" -> "edx",
+		"(8,1)" -> "dl",
 		"(9,4)" -> "ecx",
-		"(10,4)" -> "eax"
+		"(9,1)" -> "cl",
+		"(10,4)" -> "eax",
+		"(10,1)" -> "al"
 	)
-	val jumpMap = Map (
+	/*val jumpMap = Map (
 		"jns" -> "js",
+		"js"  -> "jns",
 		"jnz" -> "jz",
-		"jz" -> "jnz"
-		)
+		"jz" -> "jnz",
+		"ja" -> "jna",
+		"jae" -> "jnae",
+		"jb" -> "jnb",
+		"jbe" -> "jnbe",
+		)*/
+       def jumpMap(ins:String):String = {
+	       if (ins.charAt(1) == 'n')
+		       "j" + ins.substring (2)
+	       else 
+			"jn" + ins.substring (1)
+       }
 	
 }

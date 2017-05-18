@@ -1781,7 +1781,7 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 
 		shadow_reg_table[ecx *REG_SIZE + i] = result;
 	}
-	fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
+	//fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
 }
 
 
@@ -1831,7 +1831,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			}
 		} else { 
 			//do nothing
-			fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
+			//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
 		}
 		offset += count;
 	}
@@ -1846,7 +1846,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			}
 		} else { 
 			//do nothing
-			fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
+			//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d, mem_taints is NULL!\n", mask, result, size);
 		}
 		offset += count;
 	}
@@ -1856,7 +1856,7 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = result;
 		}
 	}
-	fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d\n", mask, result, size);
+	//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d\n", mask, result, size);
 }
 
 TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size) {
@@ -2295,7 +2295,7 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc) { 
+TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc, uint32_t mem_size) { 
 	//first check if both registers are not tainted
 	int all_clean = 1;
 	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size)) 
@@ -2323,12 +2323,49 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			}
 		}
 	}
+	// let's check the memory address at the checkpoint clock
+	struct address_taint_set* addr_struct = NULL;
+	HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
+	if (addr_struct == NULL) {
+		addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
+		addr_struct->loc = mem_loc;
+		addr_struct->is_imm = all_clean;
+		addr_struct->size = mem_size;
+		HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
+	} else { 
+		//if already exits, do sanity check
+		//it's tricky if one tainted address is both directly addressable and indirectly addressable
+		if (addr_struct->is_imm != all_clean) { 
+			printf ("[BUG][SLICE] tricky: the memory address is not immediate (for checking taints on the final checkpoint, %x\n", ip);
+			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+		}
+		if (addr_struct->size != mem_size) { 
+			printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
+			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+		}
+	}
 }
 
-TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, 
-		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2) { 
-	fw_slice_addressing (ip, base_reg1, base_reg_size1, base_reg_value1, index_reg1, index_reg_size1, index_reg_value1, mem_loc1);
-	fw_slice_addressing (ip, base_reg2, base_reg_size2, base_reg_value2, index_reg2, index_reg_size2, index_reg_value2, mem_loc2);
+int fw_slice_check_final_mem_taint () { 
+	struct address_taint_set* addr_struct = NULL;
+	int has_mem = 0;
+	int mem_count = 0;
+	for (addr_struct = current_thread->address_taint_set; addr_struct != NULL; addr_struct = (struct address_taint_set*)addr_struct->hh.next) { 
+		//printf ("checking mem_loc,is_imm,size: %lx, %d, %u\n", addr_struct->loc, addr_struct->is_imm, addr_struct->size);
+		if (is_mem_tainted (addr_struct->loc, addr_struct->size) == 0) {
+			printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, %d, %u\n", addr_struct->loc, addr_struct->is_imm, addr_struct->size);
+			has_mem = 1;
+		}
+		++ mem_count;
+	}
+	printf ("fw_slice_check_final_mem_taint: %d mem addrs are checked.\n", mem_count);
+	return has_mem;
+}
+
+TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, uint32_t mem_size1,
+		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2, uint32_t mem_size2) { 
+	fw_slice_addressing (ip, base_reg1, base_reg_size1, base_reg_value1, index_reg1, index_reg_size1, index_reg_value1, mem_loc1, mem_size1);
+	fw_slice_addressing (ip, base_reg2, base_reg_size2, base_reg_value2, index_reg2, index_reg_size2, index_reg_value2, mem_loc2, mem_size2);
 }
 
 //#define PRINT(x) fprintf(stderr, x)

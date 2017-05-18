@@ -16,11 +16,12 @@ struct value_cache* value_cache_set[64];
 struct value_cache* value_cache_from_data(unsigned int opcode,
 		unsigned int e_opcode, unsigned int size, char* buffer) {
 	struct value_cache* cache = kmalloc(sizeof(struct value_cache), GFP_KERNEL);
+	char* buffer_ = NULL;
 	if (size <= 0) {
 		kfree(cache);
 		return NULL;
 	}
-	char* buffer_=kmalloc(size, GFP_KERNEL);
+	buffer_=kmalloc(size, GFP_KERNEL);
 	memcpy(buffer_, buffer, size);
 	cache-> opcode = opcode;
 	cache->extension_opcode = e_opcode;
@@ -36,7 +37,7 @@ struct value_cache* value_cache_read_from_file(int fd) {
 	int rc;
 
 	cache = kmalloc(sizeof(struct value_cache), GFP_KERNEL);
-	rc = sys_read(fd, cache, sizeof(struct value_cache));
+	rc = sys_read(fd, (char*)cache, sizeof(struct value_cache));
 	if (rc < sizeof(struct value_cache)) {
 		kfree(cache);
 		return NULL;
@@ -56,7 +57,7 @@ struct value_cache* value_cache_read_from_file(int fd) {
 
 int value_cache_write_to_file(int fd, struct value_cache* cache) {
 	int rc;
-	rc = sys_write(fd, cache, sizeof(struct value_cache));
+	rc = sys_write(fd, (char*)cache, sizeof(struct value_cache));
 	if (rc < sizeof(struct value_cache))
 		return -1;
 	rc = sys_write(fd, cache->buffer, cache->size);
@@ -75,7 +76,7 @@ void value_cache_set_read(int fd) {
 	int rc;
 	int i = 0;
 
-	rc = sys_read(fd, &value_cache_num, sizeof(unsigned int));
+	rc = sys_read(fd, (char*)&value_cache_num, sizeof(unsigned int));
 	if (rc < sizeof(unsigned int)) {
 		value_cache_num = 0;
 		printk("Error reading value-cache.\n");
@@ -90,7 +91,7 @@ void value_cache_set_write(int fd) {
 	int rc;
 	int i = 0;
 
-	rc = sys_write(fd, &value_cache_num, sizeof(unsigned int));
+	rc = sys_write(fd, (char*)&value_cache_num, sizeof(unsigned int));
 	if (rc < sizeof(unsigned int))
 		printk("Error writing value-cache.\n");
 	for (i = 0; i < value_cache_num; ++i) {
