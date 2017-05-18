@@ -108,6 +108,30 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     return 0;
 }
 
+//sys_write wiP
+int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count)
+{
+    struct write_recheck wrchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_write);
+
+    if (res->psr.flags & SR_HAS_RETPARAMS) {
+	wrchk.has_retvals = 1;
+	wrchk.writelen = res->retparams_size;
+    } else {
+	wrchk.has_retvals = 0;
+	wrchk.writelen = 0;
+    }
+    write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck) + wrchk.writelen);
+    wrchk.fd = fd;
+    wrchk.buf = buf;
+    wrchk.count = count;
+    write_data_into_recheck_log (handle->recheckfd, &wrchk, sizeof(wrchk));
+    if (wrchk.writelen) write_data_into_recheck_log (handle->recheckfd, res->retparams, wrchk.writelen);
+
+    return 0;
+}
+
+
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode)
 {
     struct open_recheck orchk;

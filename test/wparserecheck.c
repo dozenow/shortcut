@@ -169,6 +169,12 @@ int main (int argc, char* argv[])
 	    
 	    break;
 	  }
+	  //sys_write parse data
+	case 4:
+	  {
+	    //does sys_write need/possible to be rechecked?
+	    break;
+	  }
 	default: 
 	  {
 	    printf ("[BUG] unhandled recheck syscall %d\n", entry.sysnum);

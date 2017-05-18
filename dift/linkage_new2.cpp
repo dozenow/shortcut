@@ -935,6 +935,7 @@ static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf,
     wi->fd = fd;
     wi->buf = buf;
     tdata->save_syscall_info = (void *) wi;
+    if (tdata->recheck_handle) recheck_write (tdata->recheck_handle, fd, buf, size);
 }
 
 static inline void sys_write_stop(int rc)
