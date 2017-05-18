@@ -15,8 +15,15 @@
 #include "../dift/recheck_log.h"
 
 static inline void check_retval (const char* name, int expected, int actual) {
-  if (expected != actual) {
-    printf ("[MISMATCH] retval for %s expected %d ret %d\n\n", name, expected, actual);
+  if (actual > 0){
+   if (expected != actual) {
+    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+   }
+  }
+  else{
+    if (expected != -1*(errno)){
+      printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
+    }  
   }
 }
 
@@ -44,7 +51,7 @@ int main (int argc, char* argv[])
 	    return rc;
 	}
 	
-	printf ("sysnum %d retval %ld len %d\n", entry.sysnum, entry.retval, entry.len);
+	printf ("\nsysnum %d retval %ld len %d\n", entry.sysnum, entry.retval, entry.len);
 	if (entry.len > sizeof(buf)) {
 	    fprintf (stderr, "recheck entry is %d bytes - seems too large\n", entry.len);
 	    return -1;
@@ -69,8 +76,9 @@ int main (int argc, char* argv[])
 	    printf("pathname %s\n", accessName);
 
 	    rc = syscall(SYS_access, accessName, (*paccess).mode);
+	   
 	    //printf("return code %d\n", rc);
-	    check_retval ("access", entry.retval, rc);
+	    check_retval ("access", entry.retval,rc);
 
 	    break;
 	  }
@@ -87,6 +95,7 @@ int main (int argc, char* argv[])
 	    printf("mode %d\n",(*popen).mode);
 	    printf("filename %s\n", fileName);
 
+	    //because we have recheck log open the rc from this is higher than it should be by 1 
 	    rc = syscall(SYS_open, fileName, (*popen).flags, (*popen).mode);
 	    //printf("return code %d\n", rc);
 	    check_retval ("open", entry.retval, rc);
