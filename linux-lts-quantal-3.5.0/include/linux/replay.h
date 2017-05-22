@@ -211,6 +211,11 @@ struct fw_slice_info {
 	unsigned long extra_addr;
 	unsigned long extra_size;
 	struct pt_regs regs;
+	//fpu
+	char fpu_is_allocated;
+	unsigned int fpu_last_cpu;
+	unsigned int fpu_has_fpu;
+	union thread_xstate fpu_state;
 };
 
 #endif

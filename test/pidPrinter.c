@@ -10,6 +10,7 @@
 int main()
 {
 	pid_t processID, processParentID;
+	int i = 0, count = 0;
 
 	//fork();
 
@@ -19,6 +20,10 @@ int main()
 	else{
 		printf("The process id is %d addr is %p\n", processID, &processID);
 	}
+	while (i<processID%10) {
+		++count;
+	}
+	
 
 	/*
 	if ((processParentID = getppid()) < 0){

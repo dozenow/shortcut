@@ -1732,9 +1732,6 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + stack_size);
 
 		//second page: extra info for the slice (grows upwards)
-		if (fpu_allocated (&(current->thread.fpu))) {
-			printk ("[???] sys_execute_fw_slice: Not tested with fpu.\n");
-		}
 		slice_info = (struct fw_slice_info*) (extra_space_addr+stack_size);
 		slice_info->text_addr = addr;
 		slice_info->text_size = size;
@@ -1742,7 +1739,14 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		slice_info->extra_size = stack_size + SLICE_INFO_SIZE;
 		//checkpoint the current registers
 		memcpy (&slice_info->regs, regs, sizeof(struct pt_regs));
-		//change instruction pointer
+		slice_info->fpu_is_allocated = fpu_allocated (&(current->thread.fpu));
+		if (slice_info->fpu_is_allocated) { 
+			struct fpu* fpu = &(current->thread.fpu);
+			slice_info->fpu_last_cpu = fpu->last_cpu;
+			slice_info->fpu_has_fpu = fpu->has_fpu;
+			memcpy (&slice_info->fpu_state, fpu->state, sizeof(union thread_xstate));
+		}
+		//change instruction pointer to the start of slice
 		regs->ip = addr+entry;
 		//change stack pointer
 		regs->sp = extra_space_addr + stack_size;
@@ -1768,6 +1772,12 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		printk ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
 				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
+		if (slice_info->fpu_is_allocated) { 
+			struct fpu* fpu = &(current->thread.fpu);
+			fpu->last_cpu = slice_info->fpu_last_cpu;
+			fpu->has_fpu = slice_info->fpu_has_fpu;
+			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
+		}
 		printk ("sys_execute_fw_slice ends: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
 				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
 		set_thread_flag (TIF_IRET);
