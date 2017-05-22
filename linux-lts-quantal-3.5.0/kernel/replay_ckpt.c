@@ -1590,6 +1590,7 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						mm_segment_t old_fs = get_fs();
 						printk ("read: check hash for fd %d, buf %p, size %lu.\n", rp->fd, rp->buf, rp->size);
 						set_fs (USER_DS);
+						//wes wcoomber look at this wesley
 						rc = sys_read (rp->fd, rp->buf, rp->size);
 						check_retval ("read", entry->retval, rc);
 						set_fs (old_fs);
@@ -1627,8 +1628,9 @@ long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log) {
 						} while (0);
 
 					} else { 
-						//change the file posistion
-						rc = sys_lseek (rp->fd, entry->retval, SEEK_CUR);	
+				 						//change the file posistion
+					  //this is for the read only optimization to make sure your next read starts in the right place	
+					  rc = sys_lseek (rp->fd, entry->retval, SEEK_CUR);	
 						if (rc < 0) { 
 							printk ("[MISMATCH] read lseek return err %ld\n", rc);
 						}

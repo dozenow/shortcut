@@ -1,1 +1,1 @@
-make PIN_ROOT=/home/dozenow/pin -j4
+make PIN_ROOT=/home/wcoomber/pin -j4
