@@ -64,6 +64,9 @@ void output_buffer_result (void* buf, int size,
 			   struct taint_creation_info* tci,
 			   int outfd);
 void output_jump_result (u_long inst_addr, taint_t value, struct taint_creation_info* tci, int outfd);
+void write_output_header(int outfd, struct taint_creation_info* tci,
+                            void* buf, int buf_size);
+void write_output_taints (int outfd, void* buf, int size);
 
 void output_xcoords (int outfd, int syscall_cnt,
 		     int dest_x, int dest_y, u_long mem_loc);

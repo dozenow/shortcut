@@ -8,7 +8,7 @@ struct recheck_entry {
     int sysnum;
     int flag;
     long retval;
-    int len; /* Length of syscall specifc data to follow */
+    int len; /* Length of syscall specific data to follow */
 };
 
 /************************* Syscall-specific data ******************************/
@@ -64,6 +64,12 @@ struct write_recheck {
 /* Followed by variable length write data */
 
 
+struct brk_recheck {
+  void* addr;
+};
+
+
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -74,7 +80,7 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
 int recheck_close (struct recheck_handle* handle, int fd);
 int recheck_access (struct recheck_handle* handle, char* pathname, int mode);
 int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf);
-int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf);
+int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf); 
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count);
-
+int recheck_brk (struct recheck_handle* handle, void *addr);
 #endif

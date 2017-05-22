@@ -122,7 +122,8 @@ extern int outfd;
 static void taint_reg2reg (int dst_reg, int src_reg, uint32_t size);
 static void taint_reg2mem(u_long mem_loc, int reg, uint32_t size);
 static UINT32 get_mem_value (u_long mem_loc, uint32_t size);
-
+static inline int is_mem_tainted (u_long mem_loc, uint32_t size);
+static inline int is_reg_tainted (int reg, uint32_t size);
 
 #ifdef DEBUGTRACE
 
@@ -1266,7 +1267,7 @@ TAINTSIGN taint_mem2hwreg(u_long mem_loc, int reg)
 
 TAINTSIGN taint_mem2wreg(u_long mem_loc, int reg)
 {
-    TAINT_START("taint_mem2wreg");
+    TAINT_START("taint_mem2wreg"); 
     taint_mem2reg(mem_loc, reg, 4);
 }
 
@@ -1420,6 +1421,22 @@ static inline void taint_add_mem2reg (u_long mem_loc, int reg, uint32_t size)
     unsigned i = 0;
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
+    {
+	    //debug
+	    /*if (mem_loc == 0xbaea7c8) {
+		    struct taint_creation_info tci;
+		    tci.type = 100;
+		    tci.rg_id = current_thread->rg_id;
+		    tci.record_pid = current_thread->record_pid;
+		    tci.syscall_cnt = current_thread->syscall_cnt;
+		    tci.offset = 0;
+		    tci.fileno = 0xbaea7c8;
+		    write_output_header (outfd, &tci, (void*) mem_loc, 4);
+		    write_output_taints (outfd, (void*) mem_loc, 4);
+
+	 	    printf ("[Debugging] taint_add_mem2reg, tainted %u\n", is_mem_tainted(mem_loc, 4));
+	    }*/
+    }
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {
