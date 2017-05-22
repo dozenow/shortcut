@@ -1117,6 +1117,14 @@ int translate_reg(int reg)
         return 7;
     } else if (reg == 19 || reg == 20 || reg == 21) {
         return 10;
+    } else if (reg == 31) {
+	return LEVEL_BASE::REG_EBP;
+    } else if (reg == LEVEL_BASE::REG_SI)
+	    return LEVEL_BASE::REG_ESI;
+    //also make sure bp,si,di,sp,flags are converted
+    if (reg == LEVEL_BASE::REG_SI || reg == LEVEL_BASE::REG_DI || reg == LEVEL_BASE::REG_SP || reg == LEVEL_BASE::REG_FLAGS) { 
+	    fprintf (stderr, "reg %d is not handled.\n", reg);
+	    assert (0);
     }
     return reg;
 }
@@ -2090,7 +2098,7 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 			t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
 		} 
 	}
-	fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
+	//fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
 	//merge counter register; also taint the counter register
 	for (i = 0; i< REG_SIZE; ++i) { 
 		t = merge_taints (current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE + i], t);
@@ -2099,7 +2107,7 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
 	}
 
-	fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
+	TPRINT( "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -2417,6 +2425,7 @@ TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size,
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long dst_mem_loc, ADDRINT regvalue) {
 	int tainted = is_reg_tainted (reg, size);
 
+	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	if (tainted) {
 		PRINT("reg\n");
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
@@ -2431,6 +2440,7 @@ TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long
 
 //print out two reg values if both operands are registers
 TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, uint32_t dst_regsize, uint32_t src_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue) {
+	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	int tainted1 = is_reg_tainted (dst_reg, dst_regsize);
 	int tainted2 = is_reg_tainted (src_reg, src_regsize);
 
@@ -2448,6 +2458,7 @@ TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, u
 
 
 TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue, ADDRINT count_regvalue) { 
+	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	int tainted1 = is_reg_tainted (dst_reg, dst_regsize);
 	int tainted2 = is_reg_tainted (src_reg, src_regsize);
 	int tainted3 = is_reg_tainted (count_reg, count_regsize);
@@ -2482,6 +2493,7 @@ TAINTINT fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem
 }
 
 TAINTINT fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, uint32_t regvalue, u_long mem_loc, uint32_t mem_size) { 
+	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	int reg_tainted = is_reg_tainted (reg, reg_size);
 	int mem_tainted = is_mem_tainted (mem_loc, mem_size);
 	if (reg_tainted || mem_tainted) {
