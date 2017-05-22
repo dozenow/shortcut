@@ -691,6 +691,38 @@ static inline void sys_close_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+
+static inline void sys_brk_start(struct thread_data* tdata, void *addr)
+{
+    tdata->save_syscall_info = (void *) addr;
+    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, addr);
+}
+
+//wcoomber brk wiP 5-19
+static inline void sys_brk_stop(int rc)
+{
+    int fd = (int) current_thread->save_syscall_info;
+    // remove the fd from the list of open files
+    fprintf (stdout, "#PARAMS_LOG:close:%d:%lu\n", fd, *ppthread_log_clock-1);
+    if (!rc) {
+        if (monitor_has_fd(open_fds, fd)) {
+            struct open_info* oi = (struct open_info *) monitor_get_fd_data(open_fds, fd);
+	    free (oi);
+            monitor_remove_fd(open_fds, fd);
+	    SYSCALL_DEBUG (stderr, "close: remove fd %d\n", fd);
+        } 
+	if (monitor_has_fd(open_socks, fd)) {
+		monitor_remove_fd(open_socks, fd);
+		SYSCALL_DEBUG (stderr, "close: remove sock fd %d\n", fd);
+	}
+#ifdef LINKAGE_FDTRACK
+        remove_taint_fd(fd);
+#endif
+    }
+    current_thread->save_syscall_info = 0;
+}
+
+
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
     SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
@@ -929,7 +961,7 @@ static void sys_munmap_stop(int rc)
 
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-    SYSCALL_DEBUG(stderr, "sys_write_start: fd = %d\n", fd);
+  SYSCALL_DEBUG(stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->write_info_cache;
     wi->fd = fd;
     wi->buf = buf;
@@ -973,7 +1005,7 @@ static inline void sys_write_stop(int rc)
 	    if (produce_output) { 
 		output_buffer_result (wi->buf, rc, &tci, outfd);
 	    }
-	}
+}
     }
 }
 
@@ -1534,6 +1566,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_pread64:
             sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
+	    //case SYS_brk:
+	    //sys_brk_start(tdata, (void *addr) syscallarg0);
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
         case 142:
@@ -1608,14 +1642,23 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_fstat64:
 	    if (tdata->recheck_handle) recheck_fstat64 (tdata->recheck_handle, (int) syscallarg0, (void *) syscallarg1);
 	    break;
+	case SYS_brk:
+	    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, (void *) syscallarg0);
+	    #ifdef PARAMS_LOG
+	    write_into_params_log (tdata, 45, NULL, 0);
+	    #endif
+	    break;
+	 
 
 #ifdef PARAMS_LOG
 	case SYS_execve:
 	    write_into_params_log (tdata, 11, NULL, 0);
 	    break;
-	case SYS_brk:
+	    /*case SYS_brk:
 	    write_into_params_log (tdata, 45, NULL, 0);
+	    sys_brk_start(tdata, (void *addr) syscallarg0);
 	    break;
+	    */
 	case SYS_mprotect: 
 	    write_into_params_log (tdata, 125, NULL, 0);
 	    break;
@@ -1684,6 +1727,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         case SYS_pread64:
             sys_pread_stop(rc);
             break;
+    case SYS_brk:
+      sys_brk_stop(rc);
+      break;
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
         case 142:

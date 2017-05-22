@@ -118,7 +118,7 @@ int main (int argc, char* argv[])
 	    struct fstat64_recheck* pfstat64;
 
 	    pfstat64 = (struct fstat64_recheck*)buf;
-	    //char* pathName = buf+sizeof(*pfstat64);
+
 	    printf("has ret vals %d\n",(*pfstat64).has_retvals);
 	    //how to retrieve the actual return values from the retval struct?
 	    printf("fstruct64 retvals: st_dev %d st_ino %d st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %d st_size %d st_atime %d st_mtime %d st_ctime %d st_blksize %d st_blocks %d\n",((*pfstat64).retvals).st_dev,((*pfstat64).retvals).st_ino,((*pfstat64).retvals).st_mode,((*pfstat64).retvals).st_nlink,((*pfstat64).retvals).st_uid,((*pfstat64).retvals).st_gid,((*pfstat64).retvals).st_rdev,((*pfstat64).retvals).st_size,((*pfstat64).retvals).st_atime,((*pfstat64).retvals).st_mtime,((*pfstat64).retvals).st_ctime,((*pfstat64).retvals).st_blksize,((*pfstat64).retvals).st_blocks); 
@@ -169,6 +169,34 @@ int main (int argc, char* argv[])
 	    
 	    break;
 	  }
+
+	  //sys_write parse data
+	case 4:
+	  {
+	    //does sys_write need/possible to be rechecked?
+	    struct write_recheck* pwrite;
+
+	    pwrite = (struct write_recheck*)buf;
+	    char* writeData = buf+sizeof(*pwrite);
+	    printf("has ret vals %d\n", (*pwrite).has_retvals);
+
+	    printf("fd %d\n",(*pwrite).fd);
+	    printf("buf %p\n",(*pwrite).buf);
+	    printf("count %d\n",(*pwrite).count);
+	    printf("readlen %d\n",(*pwrite).writelen);
+	    printf("vari length read data buffer %s\n", writeData);
+
+	    rc = syscall(SYS_read,(*pwrite).fd, (*pwrite).buf, (*pwrite).count);
+	    //printf("return code %d\n", rc);
+	    check_retval ("write", entry.retval, rc);
+
+	    break;
+	  }
+	default: 
+	  {
+	    printf ("[BUG] unhandled recheck syscall %d\n", entry.sysnum);
+	  }
+
 	}
 	
     } while (1);
