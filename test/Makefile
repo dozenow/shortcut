@@ -10,7 +10,7 @@ KERN_CONFIG := replay_headers/include/linux/replay_configs.h
 DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt parserecheck wparserecheck \
-	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter
+	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter 
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -25,8 +25,8 @@ all: $(TARGETS)
 launcher: libutil.a
 launcher: CFLAGS += --static -I../../eglibc-2.15/prefix/include -L../../eglibc-2.15/prefix/lib 
 
-resume: resume.cpp libutil.a
-	c++ -std=c++0x resume.cpp libutil.a -o resume -pthread --static
+resume: resume.cpp recheck.cpp libutil.a
+	c++ -std=c++0x resume.cpp recheck.cpp libutil.a -o resume -pthread --static
 
 getstats: libutil.a
 

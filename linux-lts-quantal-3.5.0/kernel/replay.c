@@ -4659,14 +4659,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	atomic_set(&prept->ckpt_restore_done,1);
 
 	if (go_live) {
-		//allocate temporary resources
-#ifdef RECHECK
-		{
-			char recheck_log_name[256];
-			sprintf (recheck_log_name, "/startup_db/%llu/startup.%d.recheck", precg->rg_id, prect->rp_record_pid);
-			go_live_recheck (precg->rg_id, prect->rp_record_pid, recheck_log_name);
-		}
-#endif
 		//free up resources directly, otherwise a few thousand executions cause out-of-memory error
 		destroy_replay_group (current->replay_thrd->rp_group);
 		//TODO: what should we do for multi-threaded programs?
