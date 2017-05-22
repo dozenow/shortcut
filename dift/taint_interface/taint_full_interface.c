@@ -2243,10 +2243,15 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
-static inline int is_reg_tainted (int reg, uint32_t size) { 
+static inline int is_reg_tainted (int reg, uint32_t size, int is_upper8) { 
 	int tainted = 0;
 	uint32_t i = 0;
-	for (; i<size; ++i) { 
+	uint32_t end = size;
+	if (is_upper8) {
+		i = 8;
+		end = size + i;
+	}
+	for (; i<end; ++i) { 
 		if (current_thread->shadow_reg_table[reg*REG_SIZE + i] != 0) {
 			tainted = 1;
 			break;
@@ -2320,26 +2325,28 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc, uint32_t mem_size, uint32_t is_read) { 
+TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
+		u_long mem_loc, uint32_t mem_size, uint32_t is_read) { 
 	//first check if both registers are not tainted
 	int all_clean = 1;
-	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size)) 
+	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size, base_reg_u8)) 
 		all_clean = 0;
-	if (index_reg_size > 0 && is_reg_tainted(index_reg, index_reg_size))
+	if (index_reg_size > 0 && is_reg_tainted(index_reg, index_reg_size, index_reg_u8))
 		all_clean = 0;
 	if (all_clean) { 
 		//the address doesn't depend on base or index register, we can safely replace it with a constant
 		printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
 	} else {
 		if (base_reg_size > 0) { 
-			if (is_reg_tainted (base_reg, base_reg_size) == 0){
+			if (is_reg_tainted (base_reg, base_reg_size, base_reg_u8) == 0){
 				assert (base_reg != 6);//TODO: move value to esp is dangerous! this can probably mess up the whole stack, especially for call/ret
 				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
 			} else 
 				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", base_reg, base_reg_size, ip);
 		} 
 		if (index_reg_size > 0) { 
-			if (is_reg_tainted (index_reg, index_reg_size) == 0) {
+			if (is_reg_tainted (index_reg, index_reg_size, index_reg_u8) == 0) {
 				assert (index_reg != 6); //esp 
 				printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
 				fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
