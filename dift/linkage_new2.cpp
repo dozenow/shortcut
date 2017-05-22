@@ -695,6 +695,38 @@ static inline void sys_close_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+
+static inline void sys_brk_start(struct thread_data* tdata, void *addr)
+{
+    tdata->save_syscall_info = (void *) addr;
+    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, addr);
+}
+
+//wcoomber brk wiP 5-19
+static inline void sys_brk_stop(int rc)
+{
+    int fd = (int) current_thread->save_syscall_info;
+    // remove the fd from the list of open files
+    fprintf (stdout, "#PARAMS_LOG:close:%d:%lu\n", fd, *ppthread_log_clock-1);
+    if (!rc) {
+        if (monitor_has_fd(open_fds, fd)) {
+            struct open_info* oi = (struct open_info *) monitor_get_fd_data(open_fds, fd);
+	    free (oi);
+            monitor_remove_fd(open_fds, fd);
+	    SYSCALL_DEBUG (stderr, "close: remove fd %d\n", fd);
+        } 
+	if (monitor_has_fd(open_socks, fd)) {
+		monitor_remove_fd(open_socks, fd);
+		SYSCALL_DEBUG (stderr, "close: remove sock fd %d\n", fd);
+	}
+#ifdef LINKAGE_FDTRACK
+        remove_taint_fd(fd);
+#endif
+    }
+    current_thread->save_syscall_info = 0;
+}
+
+
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
     SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
@@ -934,7 +966,7 @@ static void sys_munmap_stop(int rc)
 
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-    SYSCALL_DEBUG(stderr, "sys_write_start: fd = %d\n", fd);
+  SYSCALL_DEBUG(stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->write_info_cache;
     wi->fd = fd;
     wi->buf = buf;
@@ -979,7 +1011,7 @@ static inline void sys_write_stop(int rc)
 	    if (produce_output) { 
 		output_buffer_result (wi->buf, rc, &tci, outfd);
 	    }
-	}
+}
     }
 }
 
@@ -1540,6 +1572,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_pread64:
             sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
+	    //case SYS_brk:
+	    //sys_brk_start(tdata, (void *addr) syscallarg0);
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
         case 142:
@@ -1614,14 +1648,23 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_fstat64:
 	    if (tdata->recheck_handle) recheck_fstat64 (tdata->recheck_handle, (int) syscallarg0, (void *) syscallarg1);
 	    break;
+	case SYS_brk:
+	    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, (void *) syscallarg0);
+	    #ifdef PARAMS_LOG
+	    write_into_params_log (tdata, 45, NULL, 0);
+	    #endif
+	    break;
+	 
 
 #ifdef PARAMS_LOG
 	case SYS_execve:
 	    write_into_params_log (tdata, 11, NULL, 0);
 	    break;
-	case SYS_brk:
+	    /*case SYS_brk:
 	    write_into_params_log (tdata, 45, NULL, 0);
+	    sys_brk_start(tdata, (void *addr) syscallarg0);
 	    break;
+	    */
 	case SYS_mprotect: 
 	    write_into_params_log (tdata, 125, NULL, 0);
 	    break;
@@ -1690,6 +1733,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         case SYS_pread64:
             sys_pread_stop(rc);
             break;
+    case SYS_brk:
+      sys_brk_stop(rc);
+      break;
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
         case 142:
@@ -2418,8 +2464,8 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, REG_is_Upper8(base_reg),
 							IARG_UINT32, translate_reg(index_reg),
 							IARG_UINT32, REG_Size(index_reg),
-							IARG_UINT32, REG_is_Upper8(index_reg),
 							IARG_REG_VALUE, index_reg,
+							IARG_UINT32, REG_is_Upper8(index_reg),
 							mem_ea,
 							IARG_UINT32, memsize, 
 							IARG_UINT32, INS_IsMemoryRead(ins),
@@ -2435,9 +2481,11 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, translate_reg (base_reg),
 							IARG_UINT32, REG_Size(base_reg),
 							IARG_REG_VALUE, base_reg,
+							IARG_UINT32, REG_is_Upper8(base_reg),
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
+							IARG_UINT32, 0,
 							mem_ea,
 							IARG_UINT32, memsize, 
 							IARG_UINT32, INS_IsMemoryRead(ins),
@@ -2453,6 +2501,8 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
+							IARG_UINT32, 0,
+							IARG_UINT32, 0,
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
@@ -2471,9 +2521,11 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
 							IARG_UINT32, 0, 
+							IARG_UINT32, 0, 
 							IARG_UINT32, translate_reg (index_reg),
 							IARG_UINT32, REG_Size(index_reg),
 							IARG_REG_VALUE, index_reg,
+							IARG_UINT32, REG_is_Upper8(index_reg),
 							mem_ea,
 							IARG_UINT32, memsize, 
 							IARG_UINT32, INS_IsMemoryRead(ins),
@@ -2551,18 +2603,22 @@ static inline void fw_slice_check_address (INS ins) {
 				IARG_UINT32, translate_reg(base_reg[0]),
 				IARG_UINT32, base_reg_size[0],
 				base_type[0], base_value[0],
+				IARG_UINT32, REG_is_Upper8(base_reg[0]),
 				IARG_UINT32, translate_reg(index_reg[0]),
 				IARG_UINT32, index_reg_size[0],
 				index_type[0], index_value[0],
+				IARG_UINT32, REG_is_Upper8(index_reg[0]),
 				mem_type[0],
 				IARG_UINT32, memsize[0],
 				IARG_UINT32, is_read[0],
 				IARG_UINT32, translate_reg(base_reg[1]),
 				IARG_UINT32, base_reg_size[1],
 				base_type[1], base_value[1],
+				IARG_UINT32, REG_is_Upper8(base_reg[1]),
 				IARG_UINT32, translate_reg(index_reg[1]),
 				IARG_UINT32, index_reg_size[1],
 				index_type[1], index_value[1],
+				IARG_UINT32, REG_is_Upper8(index_reg[1]),
 				mem_type[1],
 				IARG_UINT32, memsize[0],
 				IARG_UINT32, is_read[1],
@@ -2611,6 +2667,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 				IARG_UINT32, src_regsize,
 				IARG_ADDRINT, 0,
 				reg_value, srcreg,
+				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
 	} else { 
 		if (INS_IsMemoryRead(ins)) {
@@ -2631,6 +2688,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 					IARG_UINT32, src_regsize,
 					mem_ea,
 					reg_value, srcreg,
+					IARG_UINT32, REG_is_Upper8(srcreg),
 					IARG_END);
 
 			fw_slice_check_address (ins);
@@ -2646,6 +2704,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 					IARG_UINT32, src_regsize,
 					mem_ea,
 					reg_value, srcreg,
+					IARG_UINT32, REG_is_Upper8(srcreg),
 					IARG_END);
 
 	}
@@ -2726,6 +2785,8 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 				IARG_UINT32, src_regsize,
 				dst_reg_value, dstreg,
 				src_reg_value, srcreg,
+				IARG_UINT32, REG_is_Upper8(dstreg),
+				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
 		fw_slice_check_address (ins);
 	} else {
@@ -2742,6 +2803,8 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 				IARG_UINT32, src_regsize,
 				dst_reg_value, dstreg,
 				src_reg_value, srcreg,
+				IARG_UINT32, REG_is_Upper8(dstreg),
+				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
 	}
 	put_copy_of_disasm (str);
@@ -2781,6 +2844,7 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 			IARG_ADDRINT, translate_reg (reg), 
 			IARG_UINT32, reg_size,
 			reg_value, reg, 
+			IARG_UINT32, REG_is_Upper8(reg),
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
@@ -2847,6 +2911,9 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 				dst_regvalue, dstreg,
 				src_regvalue, srcreg,
 				count_regvalue, countreg,
+				IARG_UINT32, REG_is_Upper8(dstreg),
+				IARG_UINT32, REG_is_Upper8(srcreg),
+				IARG_UINT32, REG_is_Upper8(countreg),
 				IARG_END);
 		fw_slice_check_address (ins);
 	} else {
@@ -2866,6 +2933,9 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 				dst_regvalue, dstreg,
 				src_regvalue, srcreg,
 				count_regvalue, countreg,
+				IARG_UINT32, REG_is_Upper8(dstreg),
+				IARG_UINT32, REG_is_Upper8(srcreg),
+				IARG_UINT32, REG_is_Upper8(countreg),
 				IARG_END);
 	}
 	put_copy_of_disasm (str);
@@ -2884,9 +2954,11 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 			IARG_ADDRINT, translate_reg (reg1), 
 			IARG_UINT32, reg1_size,
 			IARG_REG_VALUE, reg1, 
+			IARG_UINT32, REG_is_Upper8(reg1),
 			IARG_ADDRINT, translate_reg (reg2), 
 			IARG_UINT32, reg2_size,
 			IARG_REG_VALUE, reg2, 
+			IARG_UINT32, REG_is_Upper8(reg2),
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
@@ -2909,6 +2981,7 @@ static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32
 				IARG_ADDRINT, translate_reg (reg), 
 				IARG_UINT32, reg_size,
 				IARG_REG_VALUE, reg,
+				IARG_UINT32, REG_is_Upper8(reg),
 				IARG_END);
 		fw_slice_check_address (ins);
 	} else 
@@ -2923,6 +2996,7 @@ static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32
 				IARG_ADDRINT, translate_reg (reg), 
 				IARG_UINT32, reg_size,
 				IARG_REG_VALUE, reg,
+				IARG_UINT32, REG_is_Upper8(reg),
 				IARG_END);
 	put_copy_of_disasm (str);
 }

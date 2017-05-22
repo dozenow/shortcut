@@ -216,3 +216,14 @@ int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
     return 0;
 }
 
+int recheck_brk (struct recheck_handle* handle, void *addr)
+{
+    struct brk_recheck brchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_close);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_close, res->retval, sizeof (struct brk_recheck));
+    brchk.addr = addr;
+    write_data_into_recheck_log (handle->recheckfd, &brchk, sizeof(brchk));
+
+    return 0;
+}
