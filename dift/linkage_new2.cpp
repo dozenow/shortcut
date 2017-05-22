@@ -2420,6 +2420,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_REG_VALUE, index_reg,
 							mem_ea,
 							IARG_UINT32, memsize, 
+							IARG_UINT32, INS_IsMemoryRead(ins),
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
@@ -2437,6 +2438,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0, 
 							mem_ea,
 							IARG_UINT32, memsize, 
+							IARG_UINT32, INS_IsMemoryRead(ins),
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
@@ -2454,6 +2456,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_UINT32, 0, 
 							mem_ea,
 							IARG_UINT32, memsize, 
+							IARG_UINT32, INS_IsMemoryRead(ins),
 							IARG_END);
 					has_mem_operand = 1;
 				} else if (!REG_valid (base_reg) && REG_valid (index_reg)) {
@@ -2471,6 +2474,7 @@ static inline void fw_slice_check_address (INS ins) {
 							IARG_REG_VALUE, index_reg,
 							mem_ea,
 							IARG_UINT32, memsize, 
+							IARG_UINT32, INS_IsMemoryRead(ins),
 							IARG_END);
 					has_mem_operand = 1;
 				} else {
@@ -2489,18 +2493,23 @@ static inline void fw_slice_check_address (INS ins) {
 		int base_value[2] = {0};
 		int index_value[2] = {0};
 		uint32_t index = 0;
+		uint32_t is_read[2] = {-1,-1};
 		IARG_TYPE mem_type[2];
 		UINT32 memsize[2];
 		if (INS_MemoryOperandIsWritten(ins, 0)) {
 			mem_type[0] = IARG_MEMORYWRITE_EA;
+			is_read[0] = 0;
 		} else if(INS_MemoryOperandIsRead(ins, 0)) {
 			mem_type[0] = IARG_MEMORYREAD_EA;
+			is_read[0] = 1;
 		} else 
 			assert (0);
 		if (INS_MemoryOperandIsWritten(ins, 1)) {
 			mem_type[1] = IARG_MEMORYWRITE_EA;
+			is_read[0] = 0;
 		} else if(INS_MemoryOperandIsRead(ins, 1)) {
 			mem_type[1] = IARG_MEMORYREAD_EA;
+			is_read[0] = 1;
 		} else 
 			assert (0);
 		memsize[0] = INS_MemoryOperandSize (ins, 0);
@@ -2545,6 +2554,7 @@ static inline void fw_slice_check_address (INS ins) {
 				index_type[0], index_value[0],
 				mem_type[0],
 				IARG_UINT32, memsize[0],
+				IARG_UINT32, is_read[0],
 				IARG_UINT32, translate_reg(base_reg[1]),
 				IARG_UINT32, base_reg_size[1],
 				base_type[1], base_value[1],
@@ -2553,6 +2563,7 @@ static inline void fw_slice_check_address (INS ins) {
 				index_type[1], index_value[1],
 				mem_type[1],
 				IARG_UINT32, memsize[0],
+				IARG_UINT32, is_read[1],
 				IARG_END);
 		has_mem_operand = 1;
 	} else 

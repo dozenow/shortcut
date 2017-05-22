@@ -2312,7 +2312,7 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc, uint32_t mem_size) { 
+TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc, uint32_t mem_size, uint32_t is_read) { 
 	//first check if both registers are not tainted
 	int all_clean = 1;
 	if (base_reg_size > 0 && is_reg_tainted(base_reg, base_reg_size)) 
@@ -2341,24 +2341,26 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 		}
 	}
 	// let's check the memory address at the checkpoint clock
-	struct address_taint_set* addr_struct = NULL;
-	HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
-	if (addr_struct == NULL) {
-		addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
-		addr_struct->loc = mem_loc;
-		addr_struct->is_imm = all_clean;
-		addr_struct->size = mem_size;
-		HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
-	} else { 
-		//if already exits, do sanity check
-		//it's tricky if one tainted address is both directly addressable and indirectly addressable
-		if (addr_struct->is_imm != all_clean) { 
-			printf ("[BUG][SLICE] tricky: the memory address is not immediate (for checking taints on the final checkpoint, %x\n", ip);
-			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
-		}
-		if (addr_struct->size != mem_size) { 
-			printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
-			printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+	if (is_read == 0) {//only check dst memory operand
+		struct address_taint_set* addr_struct = NULL;
+		HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
+		if (addr_struct == NULL) {
+			addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
+			addr_struct->loc = mem_loc;
+			addr_struct->is_imm = all_clean;
+			addr_struct->size = mem_size;
+			HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
+		} else { 
+			//if already exits, do sanity check
+			//it's tricky if one tainted address is both directly addressable and indirectly addressable
+			if (addr_struct->is_imm != all_clean) { 
+				printf ("[BUG][SLICE] tricky: the memory address is not immediate (for checking taints on the final checkpoint, %x\n", ip);
+				printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+			}
+			if (addr_struct->size != mem_size) { 
+				printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
+				printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+			}
 		}
 	}
 }
@@ -2379,10 +2381,10 @@ int fw_slice_check_final_mem_taint () {
 	return has_mem;
 }
 
-TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, uint32_t mem_size1,
-		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2, uint32_t mem_size2) { 
-	fw_slice_addressing (ip, base_reg1, base_reg_size1, base_reg_value1, index_reg1, index_reg_size1, index_reg_value1, mem_loc1, mem_size1);
-	fw_slice_addressing (ip, base_reg2, base_reg_size2, base_reg_value2, index_reg2, index_reg_size2, index_reg_value2, mem_loc2, mem_size2);
+TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1, uint32_t mem_size1, uint32_t is_read1,
+		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2, uint32_t mem_size2, uint32_t is_read2) { 
+	fw_slice_addressing (ip, base_reg1, base_reg_size1, base_reg_value1, index_reg1, index_reg_size1, index_reg_value1, mem_loc1, mem_size1, is_read1);
+	fw_slice_addressing (ip, base_reg2, base_reg_size2, base_reg_value2, index_reg2, index_reg_size2, index_reg_value2, mem_loc2, mem_size2, is_read2);
 }
 
 //#define PRINT(x) fprintf(stderr, x)
