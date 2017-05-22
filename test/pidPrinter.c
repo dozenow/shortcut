@@ -17,7 +17,7 @@ int main()
 		perror("something Went Wrong when trying to get the pID!");
 	}
 	else{
-		printf("The process id is %d \n", processID);
+		printf("The process id is %d addr is %p\n", processID, &processID);
 	}
 
 	/*
@@ -28,7 +28,7 @@ int main()
 		printf("The parent process id is %d \n", processParentID);
 	}
 	*/
-	{
+	/*{
 		void* addr = NULL;
 		int fd = 0;
 		char asm_str[256];
@@ -46,12 +46,12 @@ int main()
 		//asm ("mov dword ptr[0xbffff570], 13605");
 		//asm("call 0xb7fd9168");
 	        asm("call 0xb7e3b168");
-	}
-	int copyPID = processID;
+	}*/
+	/*int copyPID = processID;
 	printf ("addr of processId %x, copyid  %x\n", &processID, &copyPID);
 	printf("copyPID is: %d \n", copyPID);
 
-	printf("Aloha World\n");
+	printf("Aloha World\n");*/
 
 	return(0);
 }

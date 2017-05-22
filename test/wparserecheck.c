@@ -11,12 +11,20 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
+#include <assert.h>
 
 #include "../dift/recheck_log.h"
 
 static inline void check_retval (const char* name, int expected, int actual) {
-  if (expected != actual) {
+  if (actual >= 0){
+   if (expected != actual) {
     printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+   }
+  }
+  else{
+    if (expected != -1*(errno)){
+      printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
+    }  
   }
 }
 
@@ -26,31 +34,42 @@ int main (int argc, char* argv[])
     struct recheck_entry entry;
     char buf[10000];
     struct access_recheck access1;
-    //struct open_recheck open1;
+   
     int count;
-    //long rc;
+   
+    //this fileDescriptor is all alone for the dup2 fd recheck bug fix
+    int hermitfd;
+    hermitfd = 1023;
+
+    rc = (syscall(SYS_fcntl, hermitfd, F_GETFD));
+    //dup2 to 1023 reval of sys_fcntl assert to make sure hermitfd (which is 1023) is not currently used
+    assert(rc < 0);
+   
 
     fd = open (argv[1], O_RDONLY);
     if (fd < 0) {
 	perror ("open");
 	return fd;
     }
-    
+
+    rc = syscall(SYS_dup2, fd, hermitfd);
+    close (fd);
+
     do {
-	rc = read (fd, &entry, sizeof(entry));
+	rc = read (hermitfd, &entry, sizeof(entry));
 	if (rc != sizeof(entry)) {
 	    if (rc == 0) break;
 	    perror ("read");
 	    return rc;
 	}
 	
-	printf ("sysnum %d retval %ld len %d\n", entry.sysnum, entry.retval, entry.len);
+	printf ("\nsysnum %d retval %ld len %d\n", entry.sysnum, entry.retval, entry.len);
 	if (entry.len > sizeof(buf)) {
 	    fprintf (stderr, "recheck entry is %d bytes - seems too large\n", entry.len);
 	    return -1;
 	}
 	
-	rc = read (fd, buf, entry.len);
+	rc = read (hermitfd, buf, entry.len);
 	if (rc != entry.len) {	
 	    perror ("read data");
 	    return rc;
@@ -69,8 +88,9 @@ int main (int argc, char* argv[])
 	    printf("pathname %s\n", accessName);
 
 	    rc = syscall(SYS_access, accessName, (*paccess).mode);
+	   
 	    //printf("return code %d\n", rc);
-	    check_retval ("access", entry.retval, rc);
+	    check_retval ("access", entry.retval,rc);
 
 	    break;
 	  }
@@ -87,6 +107,7 @@ int main (int argc, char* argv[])
 	    printf("mode %d\n",(*popen).mode);
 	    printf("filename %s\n", fileName);
 
+	    //because we have recheck log open the rc from this is higher than it should be by 1 
 	    rc = syscall(SYS_open, fileName, (*popen).flags, (*popen).mode);
 	    //printf("return code %d\n", rc);
 	    check_retval ("open", entry.retval, rc);
@@ -127,7 +148,7 @@ int main (int argc, char* argv[])
 	    //printf("pathname %s\n", pathName);
 
 	    rc = syscall(SYS_fstat64,(*pfstat64).fd, (*pfstat64).buf);
-	    //printf("return code %d\n", rc);
+	    // printf("return code %d errno %d\n", rc,errno);
 	    check_retval ("fstat64", entry.retval, rc);
 
 	    break;
@@ -174,6 +195,7 @@ int main (int argc, char* argv[])
 	case 4:
 	  {
 	    //does sys_write need/possible to be rechecked?
+
 	    struct write_recheck* pwrite;
 
 	    pwrite = (struct write_recheck*)buf;
@@ -190,6 +212,7 @@ int main (int argc, char* argv[])
 	    //printf("return code %d\n", rc);
 	    check_retval ("write", entry.retval, rc);
 
+
 	    break;
 	  }
 	default: 
@@ -201,7 +224,7 @@ int main (int argc, char* argv[])
 	
     } while (1);
     
-    close (fd);
+    close (hermitfd);
 
     return 0;
 }

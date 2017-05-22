@@ -63,9 +63,12 @@ struct write_recheck {
 };
 /* Followed by variable length write data */
 
+
 struct brk_recheck {
   void* addr;
 };
+
+
 
 /* Prototypes */
 struct recheck_handle;

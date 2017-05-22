@@ -106,7 +106,7 @@ int resume (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap,
 
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename,char* uniqueid, loff_t attach_index, int attach_pid
-		       , u_long nfake_calls, u_long* fake_calls, int go_live)
+		       , u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename)
 {
     fprintf(stderr, "calling resume_after_ckpt\n");
     struct wakeup_ckpt_data data;
@@ -124,11 +124,12 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
     data.nfake_calls = nfake_calls;
     data.fake_calls = fake_calls;
     data.go_live = go_live;
+    data.slice_filename = slice_filename;
     return ioctl (fd_spec, SPECI_CKPT_RESUME, &data);    
 
 }
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live)
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename)
 {
     struct wakeup_ckpt_data data;
     data.logdir = logdir;
@@ -137,6 +138,7 @@ int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uni
     data.ckpt_pos = ckpt_pos;
     data.fd = fd_spec;
     data.go_live = go_live;
+    data.slice_filename = slice_filename;
     return ioctl (fd_spec, SPECI_CKPT_PROC_RESUME, &data);    
 }
 
