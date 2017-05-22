@@ -2637,18 +2637,7 @@ static inline void fw_slice_check_address (INS ins) {
 	}
 }
 
-/*#define fw_slice_check_reg(x,...) {}
-#ifdef NULL*/
-static inline void fw_slice_check_reg(INS ins, REG reg) { 
-	if (REG_is_Upper8(reg)) {
-		fprintf (stderr, "[BUG] fw_slice doesn't not handle upper 8 regs, %s\n", INS_Disassemble(ins).c_str());
-		//assert (0);
-	}
-}
-//#endif
-
 static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, int is_dst_mem) { 
-	fw_slice_check_reg(ins,srcreg);
 	IARG_TYPE reg_value = IARG_REG_VALUE;
 	if (src_regsize == 16)
 		reg_value = IARG_UINT32;
@@ -2767,8 +2756,6 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 		src_reg_value = IARG_UINT32;
 	}
 
-	fw_slice_check_reg(ins,srcreg);
-	fw_slice_check_reg(ins,dstreg);
 	//assert (INS_IsMemoryWrite(ins) == 0);
 	char* str = get_copy_of_disasm (ins);
 	if (INS_MemoryOperandCount (ins) > 0) {
@@ -2832,7 +2819,6 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 		reg_value = IARG_UINT32;	
 	} else 
 		reg_value = IARG_REG_VALUE;
-	fw_slice_check_reg(ins,reg);
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memreg),
@@ -2890,9 +2876,6 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 	if (src_regsize == 16) src_regvalue = IARG_UINT32;
 	if (count_regsize == 16) count_regvalue = IARG_UINT32;
 	char* str = get_copy_of_disasm (ins);
-	fw_slice_check_reg(ins,srcreg);
-	fw_slice_check_reg(ins,dstreg);
-	fw_slice_check_reg(ins,countreg);
 
 	if (INS_MemoryOperandCount(ins) > 0) { 
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -2942,8 +2925,6 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 }
 static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize) { 
 	char* str = get_copy_of_disasm (ins);
-	fw_slice_check_reg(ins,reg1);
-	fw_slice_check_reg(ins,reg2);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memregreg),
 #ifdef FAST_INLINE
@@ -2968,7 +2949,6 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 
 static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32_t reg_size) {
 	char* str = get_copy_of_disasm (ins);
-	fw_slice_check_reg(ins,reg);
 	if (INS_MemoryOperandCount (ins) > 0) {
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regflag),
