@@ -8,6 +8,7 @@
 #include <search.h>
 #include <pthread.h> 
 
+#include "recheck.h"
 #include "util.h"
 
 #include <assert.h>
@@ -20,8 +21,6 @@
 
 #define MAX_THREADS 128 //arbitrary... but works
 
-
-//#define USEMEM //use a ramfs? 
 
 void print_help(const char *program) {
 	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
@@ -214,6 +213,7 @@ int main (int argc, char* argv[])
 	char filename[4096], pathname[4096], uniqueid[4096];
 	int go_live = 0;
 	char* slice_filename = NULL;
+	char* recheck_filename = NULL;
 
 	u_long i = 0;
 	u_long nfake_calls = 0;
@@ -233,6 +233,7 @@ int main (int argc, char* argv[])
 		{"from_ckpt", required_argument, 0, 0},
 		{"fake_calls", required_argument, 0, 0},
 		{"slice", required_argument, 0, 0},
+		{"recheck", required_argument, 0, 0},
 		{0, 0, 0, 0}
 	};
 
@@ -297,6 +298,11 @@ int main (int argc, char* argv[])
 			case 6:
 			{
 				slice_filename = optarg;
+				break;
+			}
+			case 7:
+			{
+				recheck_filename = optarg;
 				break;
 			}
 			default:
@@ -364,6 +370,10 @@ int main (int argc, char* argv[])
 		libdir = ldpath;
 	}
 	
+	if (recheck_filename) {
+	    do_recheck(recheck_filename);
+	}
+
 	fd = open ("/dev/spec0", O_RDWR);
 	if (fd < 0) {
 		perror("open /dev/spec0");
@@ -371,22 +381,10 @@ int main (int argc, char* argv[])
 	}
 	pid = getpid();
 
-#if 0
-	printf("libdir: %s, ldpath: %s\n", libdir, ldpath);
-	printf("resume pid %d follow %d\n", pid, follow_splits);
-	printf("resume(%d, %d, %d, %d, %s, %s, %lld, %d)\n", fd, attach_pin,
-		follow_splits, save_mmap, argv[base], libdir, attach_index,
-		attach_pid);
-#endif
 	if (from_ckpt > 0) {
 	    
 		sprintf (filename, "ckpt.%d", from_ckpt);
-#ifdef USEMEM
-		sprintf (pathname, "%s/7/ckpt.%d", argv[base], from_ckpt);
-#else
 		sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
-#endif
-
 		printf ("restoring from %s\n", pathname);
 		cfd = open (pathname, O_RDONLY);
 		if (cfd < 0) {

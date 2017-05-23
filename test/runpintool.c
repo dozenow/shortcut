@@ -36,7 +36,7 @@ int main (int argc, char* argv[])
 
     cpid = fork ();
     if (cpid == 0) {
-	rc = execl("./resume", "resume", "-p", dirname, "--pthread", "$OMNIPLAY_DIR/eglibc-2.15/prefix/lib", NULL);
+	rc = execl("./resume", "resume", "-p", dirname, "--pthread", "../eglibc-2.15/prefix/lib", NULL);
 	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     } 
