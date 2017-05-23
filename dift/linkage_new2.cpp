@@ -6034,19 +6034,17 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
     UINT32 dst_regsize;
     UINT32 src_regsize;
 
-    if (dstreg == srcreg) {
-        return;
-    }
-
-    dst_treg = translate_reg((int)dstreg);
-    src_treg = translate_reg((int)srcreg);
-
     dst_regsize = REG_Size(dstreg);
     src_regsize = REG_Size(srcreg);
 
 #ifdef FW_SLICE
     if(fw_slice) fw_slice_src_regreg (ins, dstreg, dst_regsize, srcreg, src_regsize);
 #endif
+
+    if (dstreg == srcreg) return; /* Add to slice, but deps don't change */
+
+    dst_treg = translate_reg((int)dstreg);
+    src_treg = translate_reg((int)srcreg);
 
     if (dst_regsize == src_regsize) {
         switch(dst_regsize) {
@@ -14751,9 +14749,7 @@ void instrument_addorsub(INS ins)
             }
         } else {
             assert (REG_Size(dstreg) == REG_Size(reg));
-            if (dstreg != reg) {
-                instrument_taint_add_reg2reg(ins, dstreg, reg);
-            }
+	    instrument_taint_add_reg2reg(ins, dstreg, reg);
         }
     } else if(op1mem && op2imm) {
         /*imm does not change taint value of the destination*/
