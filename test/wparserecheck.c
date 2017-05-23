@@ -215,6 +215,22 @@ int main (int argc, char* argv[])
 
 	    break;
 	  }
+	  //sys_brk parse data
+	case 45:
+	  {
+	    struct brk_recheck* pbrk;
+
+	    pbrk = (struct brk_recheck*)buf;
+	    //char* pathName = buf+sizeof(*pbrk);
+	    printf("addr %d\n",(*pbrk).addr);
+
+	    rc = syscall(SYS_brk,(*pbrk).addr);
+	    //printf("return code %d\n", rc);
+	    check_retval ("brk", entry.retval, rc);
+
+	    
+	    break;
+	  }
 	default: 
 	  {
 	    printf ("[BUG] unhandled recheck syscall %d\n", entry.sysnum);
