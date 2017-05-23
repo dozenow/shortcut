@@ -3074,10 +3074,6 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
     UINT32 dst_regsize;
     UINT32 src_regsize;
 
-    if (dstreg == srcreg) {
-        return;
-    }
-
     dst_treg = translate_reg((int)dstreg);
     src_treg = translate_reg((int)srcreg);
     dst_regsize = REG_Size(dstreg);
@@ -3088,6 +3084,10 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
     if (fw_slice)
     	fw_slice_src_reg (ins, srcreg, src_regsize, 0);
 #endif
+
+    if (dstreg == srcreg) {
+        return;
+    }
 
     if (dst_regsize == src_regsize) {
         switch(dst_regsize) {
@@ -14181,9 +14181,6 @@ void instrument_lea(INS ins)
     REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
     REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
 
-    if (SPECIAL_REG(dstreg)) {
-	    return;
-    }
     if (REG_valid (index_reg) && !REG_valid(base_reg)) {
         // This is a nummeric calculation in disguise
 #ifdef FW_SLICE
@@ -14668,7 +14665,6 @@ void instrument_addorsub(INS ins)
 	if (addrsize != REG_Size(reg)) {
 	  fprintf (stderr, "addrsize is %u reg size is %u\n", addrsize, REG_Size(reg));
 	}
-	if (SPECIAL_REG(reg)) return;
         //assert (addrsize == REG_Size(reg));
         instrument_taint_add_mem2reg(ins, reg);
     } else if(op1reg && op2reg) {
@@ -14682,7 +14678,6 @@ void instrument_addorsub(INS ins)
         if(!REG_valid(dstreg) || !REG_valid(reg)) {
             return;
         } 
-	if (SPECIAL_REG(dstreg)) return;
         /*if((opcode == XED_ICLASS_XOR || opcode == XED_ICLASS_SUB || 
           opcode == XED_ICLASS_SBB || opcode == XED_ICLASS_PXOR ||
           opcode == XED_ICLASS_FSUB || opcode == XED_ICLASS_FSUBP ||
