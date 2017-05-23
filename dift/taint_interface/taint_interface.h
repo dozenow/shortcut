@@ -118,20 +118,33 @@ TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) ;
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
-TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, u_long mem_loc, uint32_t mem_size);
-TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, u_long mem_loc1,uint32_t mem_size1, 
-		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, u_long mem_loc2, uint32_t mem_size2);
+TAINTSIGN fw_slice_addressing (ADDRINT ip, 
+		int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
+		u_long mem_loc, uint32_t mem_size, uint32_t is_read);
+TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, 
+		int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, uint32_t base_reg1_u8, 
+		int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, uint32_t index_reg1_u8, 
+		u_long mem_loc1,uint32_t mem_size1, uint32_t is_read1, 
+		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, uint32_t base_reg2_u8, 
+		int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, uint32_t index_reg2_u8,
+		u_long mem_loc2, uint32_t mem_size2, uint32_t is_read2);
 int fw_slice_check_final_mem_taint ();
-TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue);
-TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, uint32_t dst_regsize, uint32_t src_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue);
+TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue, uint32_t reg_u8);
+TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, uint32_t dst_regsize, uint32_t src_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8);
 TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc);
 TAINTINT fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_read_size, uint32_t mem_write_size);
-TAINTINT fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, uint32_t regvalue, u_long mem_loc, uint32_t mem_size);
-TAINTINT fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, int reg2, uint32_t reg2_size, uint32_t reg2_value, u_long mem_loc, uint32_t mem_size);
+TAINTINT fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, uint32_t regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size);
+TAINTINT fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
+		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size);
 TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken);
-TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue, ADDRINT count_regvalue);
+TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, 
+		uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, 
+		ADDRINT dst_regvalue, ADDRINT src_regvalue, ADDRINT count_regvalue,
+		uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);
 TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t size);
-TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t src_reg, uint32_t size, ADDRINT regvalue);
+TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t src_reg, uint32_t size, ADDRINT regvalue, uint32_t reg_u8);
+
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
 // mem2reg extend
