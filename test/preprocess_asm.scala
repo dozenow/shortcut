@@ -205,11 +205,11 @@ object preprocess_asm {
 				println ("/*" + s + "*/")
 			} else { 
 				println (s)
-				assert (false)
+				//assert (false)
 			}
 		})
 		println ("/* restoring address */")
-		restoreAddress.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreAddress.reverse.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
 		println ("/* slice finishes and return to kernel */")
 		println ("mov ebx, 1")
 		println ("mov eax, 350")
