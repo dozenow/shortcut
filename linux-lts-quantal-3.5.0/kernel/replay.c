@@ -1486,6 +1486,7 @@ put_record_cache_files (struct record_cache_files* pfiles)
 		pfiles->count = 0;
 		while (pfiles->list) {
 			pchunk = pfiles->list;
+
 			pfiles->list = pchunk->next;
 			KFREE (pchunk->data);
 			KFREE (pchunk);
@@ -4600,7 +4601,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	 * If pin, set the process to sleep, so that we can manually attach pin
 	 * We would then have to wake up the process after pin has been attached.
 	 */
-	if (attach_device) {
+	if (attach_device && !go_live) {
 		printk("Debugging device will be attached: Device - %i, Pid - %i, Syscall Index - %lld\n",
 			attach_device, attach_pid, attach_index);
 
@@ -4673,6 +4674,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		if (execute_slice_name) { 
 			//run slice ;jumps back to the user space
 			sys_execute_fw_slice (0, execute_slice_name);	 
+		}
+
+		if (attach_device) {
+			/* Cannot support index with go-live since we do not intercept system calls */
+			printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule();
+			printk("Pid %d woken up\n", current->pid);
 		}
 	}
 

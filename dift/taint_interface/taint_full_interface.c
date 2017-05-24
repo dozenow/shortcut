@@ -2389,10 +2389,11 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 	}
 }
 
-int fw_slice_check_final_mem_taint () { 
+int fw_slice_check_final_mem_taint (taint_t* pregs) { 
 	struct address_taint_set* addr_struct = NULL;
 	int has_mem = 0;
 	int mem_count = 0;
+	int i;
 	for (addr_struct = current_thread->address_taint_set; addr_struct != NULL; addr_struct = (struct address_taint_set*)addr_struct->hh.next) { 
 		//printf ("checking mem_loc,is_imm,size: %lx, %d, %u\n", addr_struct->loc, addr_struct->is_imm, addr_struct->size);
 		if (is_mem_tainted (addr_struct->loc, addr_struct->size) == 0) {
@@ -2402,6 +2403,14 @@ int fw_slice_check_final_mem_taint () {
 		++ mem_count;
 	}
 	printf ("fw_slice_check_final_mem_taint: %d mem addrs are checked.\n", mem_count);
+
+	/* Assume 1 thread for now */
+	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
+	    if (pregs[i]) {
+		printf ("[RESTORE_REG] reg value %d/%d is tainted\n", i, i/REG_SIZE);
+	    }
+	}
+
 	return has_mem;
 }
 

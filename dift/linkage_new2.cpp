@@ -952,12 +952,12 @@ static void sys_munmap_stop(int rc)
 
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-  SYSCALL_DEBUG(stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
+    fprintf (stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->write_info_cache;
     wi->fd = fd;
     wi->buf = buf;
     tdata->save_syscall_info = (void *) wi;
-    if (tdata->recheck_handle) recheck_write (tdata->recheck_handle, fd, buf, size);
+    //if (tdata->recheck_handle) recheck_write (tdata->recheck_handle, fd, buf, size);
 }
 
 static inline void sys_write_stop(int rc)
@@ -1491,7 +1491,10 @@ static inline void sys_clock_gettime_stop (int rc) {
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
-	//do nothing
+#ifdef FW_SLICE
+	printf ("[SLICE] #0000000 #mov eax, 20 [SLICE_INFO]\n");
+	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+#endif
 }
 
 static inline void sys_getpid_stop (int rc) {
@@ -1550,7 +1553,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_write:
         case SYS_pwrite64:
-	  // sys_write_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
+	    sys_write_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
         case SYS_writev:
             sys_writev_start(tdata, (int) syscallarg0, (struct iovec *) syscallarg1, (int) syscallarg2);
@@ -1788,7 +1791,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	}
 	//let's scan over all memory address included in the slice
 	printf ("check mem taints in forward slice.\n");
-        if (fw_slice_check_final_mem_taint () == 0) { 
+        if (fw_slice_check_final_mem_taint (current_thread->shadow_reg_table) == 0) { 
 		printf ("all mem address in the slice are also tainted in the final checkpoint\n");
 	}
 	
