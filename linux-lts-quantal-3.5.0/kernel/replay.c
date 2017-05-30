@@ -4411,7 +4411,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	u_long consumed, num_procs;
 	loff_t pos;
 	int clock, i, is_thread = 1;
-	
+	u_long slice_addr = 0;
+	u_long slice_size;
+
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4528,7 +4530,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&prect->rp_read_ulog_pos,
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
-						       &pos);
+						       &pos, execute_slice_name, &slice_addr, &slice_size);
 	{
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4672,8 +4674,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		}
 
 		if (execute_slice_name) { 
-			//run slice ;jumps back to the user space
-			sys_execute_fw_slice (0, execute_slice_name);	 
+			if (slice_addr == 0) {
+				printk ("Cannot find forward slice library\n");
+				return -EEXIST;
+			}
+			//run slice jumps back to the user space
+			start_fw_slice (execute_slice_name, slice_addr, slice_size);	 
 		}
 
 		if (attach_device) {
@@ -4701,7 +4707,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	ds_list_iter_t* iter;
 	char ckpt[MAX_LOGDIR_STRLEN+20];
 	int found, is_thread = 1;
-	u_long cur_ckpts, consumed;
+	u_long cur_ckpts, consumed, slice_addr, slice_size;
 	u_char ch, ch2;
 
 	// Restore the checkpoint
@@ -4788,7 +4794,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 							(u_long*)&prept->rp_record_thread->rp_read_ulog_pos,
 							(u_long *)&current->clear_child_tid,
 							(u_long *)&prept->rp_replay_hook,
-							&pckpt_waiter->pos);
+							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size);
 	MPRINT ("Pid %d gets record_pid %ld consumed %ld exp clock %lu retval %ld\n", current->pid, record_pid, consumed, prept->rp_expected_clock, retval);
 
 

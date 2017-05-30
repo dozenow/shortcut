@@ -7,6 +7,8 @@
 #include <string.h>
 #include <search.h>
 #include <pthread.h> 
+#include <dirent.h>
+#include <dlfcn.h>
 
 #include "recheck.h"
 #include "util.h"
@@ -14,10 +16,16 @@
 #include <assert.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/queue.h>
+#include <sys/time.h>
+#include <sys/mman.h>
 
 #include <vector>
 #include <map>
+#include <list>
+
+using namespace std;
 
 #define MAX_THREADS 128 //arbitrary... but works
 
@@ -191,6 +199,193 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 	    exit(-1);		
 	}	
     }
+    return 0;
+}
+
+#define LPRINT
+
+int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib)
+{
+    char filename[256], mapname[256], procname[256], buf[256];
+
+#ifdef LTIMING
+    struct timeval tv1, tv2;
+    gettimeofday(&tv1, NULL);
+#endif
+
+    list<pair<u_long,u_long>> maps;
+    sprintf (procname, "/proc/%d/maps", getpid());
+    FILE* file = fopen(procname, "r");
+    while (!feof(file)) {
+	if (fgets (buf+2, sizeof(buf)-2, file)) {
+	    buf[0] = '0'; buf[1] = 'x'; buf[10] = '\0';
+	    u_long start = strtold(buf, NULL);
+	    buf[9] = '0'; buf[10] = 'x'; buf[19] = '\0';
+	    u_long end = strtold(buf+9, NULL);
+	    if (!maps.empty() && maps.back().second == start) {
+		maps.back().second = end;
+	    } else {
+		maps.push_back(make_pair(start,end));
+	    }
+	}
+    }
+    fclose(file);
+
+#ifdef LPRINT
+    for (auto t : maps) {
+	printf ("%lx %lx\n", t.first, t.second);
+    }
+    printf ("\n\n\n");
+#endif
+
+    sprintf (filename, "ckpt.%ld.ckpt_mmap.", from_ckpt);
+    u_long len = strlen(filename);
+    struct stat st;
+
+    DIR* dir = opendir(dirname);
+
+    if (dir == NULL) {
+	fprintf (stderr, "Cannot open directory %s\n", dirname);
+	return -1;
+    }
+    
+    struct dirent* pent = readdir(dir);
+    while (pent != NULL) {
+	if (!strncmp(pent->d_name, filename, strlen(filename))) {
+	    sprintf (mapname, "%s/%s", dirname, pent->d_name);
+	    int rc = stat(mapname, &st);
+	    if (rc < 0) {
+		fprintf (stderr, "Cannot stat %s\n", mapname);
+		return -1;
+	    }
+	    *(pent->d_name+len-2) = '0';
+	    *(pent->d_name+len-1) = 'x';
+	    u_long start = strtold(pent->d_name+len-2, NULL);
+	    if (st.st_size == 0) st.st_size = 4096;
+	    u_long end = start + st.st_size;
+#ifdef LPRINT
+	    printf ("%lx %lx\n", start, end);
+#endif
+	    for (auto m : maps) {
+again:
+#ifdef LPRINT
+		printf ("\tTrying map from %lx to %lx\n", m.first, m.second);
+#endif
+		if (m.second <= start) {
+		    /* Skip this region */
+		} else if (m.first >= end) {
+#ifdef LPRINT		    
+		    printf ("entirely in unallocated region\n");
+#endif
+		    void* p = mmap ((void *) start, st.st_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		    if ((u_long) p != start) {
+			fprintf (stderr, "Tried to map at %lx, got %p\n", start, p);
+			return -1;
+		    }
+		    break;
+		} else if (m.first <= start) {
+		    if (m.second >= end) {
+#ifdef LPRINT
+			printf ("entirely in allocated region - no work to do\n");
+#endif
+			break;
+		    } else {
+#ifdef LPRINT
+			printf ("starts with allocated region, start at %lx\n", m.second);
+
+#endif
+			start = m.second;
+		    }
+		} else {
+#ifdef LPRINT
+		    printf ("starts with unallocated region of size %lx\n", m.first-start);
+#endif
+		    if (end == 0xc0000000) {
+			printf ("Stack region should grow from %lx to %lx\n", start, m.first);
+			if (m.first - start == 0x1000) {
+			    printf ("Trying to do so\n");
+			    *((int *) start) = 0;
+			} else {
+			    printf ("[BUG] Fixme - need to handle stack region\n");
+			}
+		    } else {
+			void* p = mmap ((void *) start, m.first-start, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if ((u_long) p != start) {
+			    fprintf (stderr, "Tried to map at %lx, got %p\n", start, p);
+			    return -1;
+			}
+			start = m.first;
+			goto again;
+		    }
+		}
+	    }
+	}
+	pent = readdir(dir);
+    }
+	
+    closedir(dir);
+
+#ifdef LPRINT
+    printf ("Before libc\n");
+    file = fopen(procname, "r");
+    while (!feof(file)) {
+	if (fgets (buf, sizeof(buf), file)) {
+	    printf ("%s", buf);
+	}
+    }
+    fclose(file);
+    printf ("\n\n\n");
+#endif
+    // Let's load libc first
+    void* hndl = dlopen ("../eglibc-2.15/prefix/lib/libc-2.15.so", RTLD_NOW);
+    if (hndl == NULL) {
+	perror ("dlopen libc");
+	exit (0);
+    }
+
+#ifdef LPRINT
+    printf ("After libc\n");
+    file = fopen(procname, "r");
+    while (!feof(file)) {
+	if (fgets (buf, sizeof(buf), file)) {
+	    printf ("%s", buf);
+	}
+    }
+    fclose(file);
+    printf ("\n\n\n");
+#endif
+
+    // Now try and load the library and get the start fn address
+    hndl = dlopen (slicelib, RTLD_NOW);
+    if (hndl == NULL) {
+	fprintf (stderr, "dlopen failed: %s\n", dlerror());
+	exit (0);
+    }
+#ifdef LPRINT
+    printf ("hndl: %p\n", hndl);
+#endif
+
+    void* pfn = dlsym (hndl, "_start");
+    if (pfn == NULL) {
+	perror ("dlsym");
+    }
+
+#ifdef LPRINT
+    printf ("pfn: %p\n", pfn);
+    file = fopen(procname, "r");
+    while (!feof(file)) {
+	if (fgets (buf, sizeof(buf), file)) {
+	    printf ("%s", buf);
+	}
+    }
+    fclose(file);
+#endif
+
+#ifdef LTIMING
+    gettimeofday(&tv2, NULL);
+    printf ("load time: %ld\n", tv2.tv_usec-tv1.tv_usec+(tv2.tv_sec-tv1.tv_sec)*1000000);
+#endif
+
     return 0;
 }
 
@@ -370,10 +565,6 @@ int main (int argc, char* argv[])
 		libdir = ldpath;
 	}
 	
-	if (recheck_filename) {
-	    do_recheck(recheck_filename);
-	}
-
 	fd = open ("/dev/spec0", O_RDWR);
 	if (fd < 0) {
 		perror("open /dev/spec0");
@@ -405,6 +596,11 @@ int main (int argc, char* argv[])
 		first_proc = parse_process_map(hdr.proc_count, cfd);
 		
 		close(cfd);
+
+		if (slice_filename) {
+		    load_slice_lib (argv[base], from_ckpt, slice_filename);
+		}
+
 		cd.fd = fd;
 		cd.attach_pin = attach_pin;
 		cd.attach_gdb = attach_gdb;

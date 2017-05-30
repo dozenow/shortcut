@@ -447,6 +447,29 @@ void create_taints_from_buffer(void* buf, int size,
     write_tokens_info(outfd, start, tci, size);
 }
 
+void create_taints_from_buffer_unfiltered(void* buf, int size, 
+					  struct taint_creation_info* tci,
+					  int outfd)
+{
+
+    u_long buf_addr = (u_long) buf;
+    int i;
+    taint_t start;
+    if (size <= 0) return;
+    if (!buf) return;
+
+    if(outfd == -99999) { 
+	return;
+    }
+
+    start = taint_num;
+    fprintf (stderr, "create_taints_from_buffer_unfiltered: size %d buf %p, tci %p, outfd %d start_taint %u\n", size, buf, tci, outfd, taint_num);
+    for (i = 0; i < size; i++) {
+         create_and_taint_option(buf_addr + i);
+    }
+    write_tokens_info(outfd, start, tci, size);
+}
+
 void create_fd_taints(int nfds, fd_set* fds, struct taint_creation_info* tci,
         int outfd)
 {
@@ -484,6 +507,22 @@ void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, ch
 			return;
 		}
 	}
+
+	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
+	
+	for (; i < REG_SIZE; ++i) {
+		set_syscall_retval_reg_value (i, taint_num);
+		++ taint_num;
+	}
+	write_tokens_info (outfd, t, tci, REG_SIZE);
+}
+
+void create_syscall_retval_taint_unfiltered (struct taint_creation_info *tci, int outfd) 
+{
+	taint_t t =  taint_num;
+	int i = 0;
+
+	if (outfd == -99999) return;
 
 	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
 	

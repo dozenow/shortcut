@@ -19,20 +19,173 @@
 #include <map>
 using namespace std;
 
-//#define PRINT_VALUES /* Use this to print out values in recheck log */
+#define PRINT_VALUES /* Use this to print out values in recheck log */
 
 map<int,open_retvals> cache_files_opened;
 
-static inline void check_retval (const char* name, int expected, int actual) {
+static inline int check_retval (const char* name, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
 	    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+	    return -1;
 	}
     } else {
 	if (expected != -1*(errno)){
 	    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
+	    return -1;
 	}  
     }
+    return 0;
+}
+
+static int recheck_stat64 (struct recheck_entry* pentry, struct stat64_recheck* pstat64)
+{
+    struct stat64 st;
+    int rc;
+    char* pathName = (char *) pstat64 + sizeof(struct stat64_recheck);
+#ifdef PRINT_VALUES
+    printf("has ret vals %d\n", pstat64->has_retvals);
+    if (pstat64->has_retvals) {
+	//to verify just a memcpr from struct pointer to new struct pointer
+	printf("stat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
+	       "st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
+	       pstat64->retvals.st_dev, pstat64->retvals.st_ino, pstat64->retvals.st_mode, pstat64->retvals .st_nlink, pstat64->retvals.st_uid,pstat64->retvals .st_gid,
+	       pstat64->retvals.st_rdev, pstat64->retvals.st_size, pstat64->retvals .st_atime, pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
+	       pstat64->retvals.st_blocks); 
+    }
+    printf("buf %p\n", pstat64->buf);
+    printf("pathname %s\n", pathName);
+#endif
+    rc = syscall(SYS_stat64, pathName, &st);
+    if (check_retval ("stat64", pentry->retval, rc) < 0) return -1;
+    if (pstat64->has_retvals) {
+	if (st.st_dev != pstat64->retvals.st_dev) {
+	    printf ("[MISMATCH] stat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pstat64->retvals.st_dev);
+	    return -1;
+	}
+	if (st.st_ino != pstat64->retvals.st_ino) {
+	    printf ("[MISMATCH] stat64 ino does not match %llu vs. recorded %llu\n", st.st_ino, pstat64->retvals.st_ino);
+	    return -1;
+	}
+	if (st.st_mode != pstat64->retvals.st_mode) {
+	    printf ("[MISMATCH] stat64 mode does not match %d vs. recorded %d\n", st.st_mode, pstat64->retvals.st_mode);
+	    return -1;
+	}
+	if (st.st_nlink != pstat64->retvals.st_nlink) {
+	    printf ("[MISMATCH] stat64 nlink does not match %d vs. recorded %d\n", st.st_nlink, pstat64->retvals.st_nlink);
+	    return -1;
+	}
+	if (st.st_uid != pstat64->retvals.st_uid) {
+	    printf ("[MISMATCH] stat64 uid does not match %d vs. recorded %d\n", st.st_uid, pstat64->retvals.st_uid);
+	    return -1;
+	}
+	if (st.st_gid != pstat64->retvals.st_gid) {
+	    printf ("[MISMATCH] stat64 gid does not match %d vs. recorded %d\n", st.st_gid, pstat64->retvals.st_gid);
+	    return -1;
+	}
+	if (st.st_rdev != pstat64->retvals.st_rdev) {
+	    printf ("[MISMATCH] stat64 rdev does not match %llu vs. recorded %llu\n", st.st_rdev, pstat64->retvals.st_rdev);
+	    return -1;
+	}
+	if (st.st_size != pstat64->retvals.st_size) {
+	    printf ("[MISMATCH] stat64 size does not match %lld vs. recorded %lld\n", st.st_size, pstat64->retvals.st_size);
+	    return -1;
+	}
+	if (st.st_mtime != pstat64->retvals.st_mtime) {
+	    printf ("[MISMATCH] stat64 mtime does not match %s vs. recorded %s\n", ctime(&st.st_mtime), ctime(&pstat64->retvals.st_mtime));
+	    return -1;
+	}
+	if (st.st_ctime != pstat64->retvals.st_ctime) {
+	    printf ("[MISMATCH] stat64 ctime does not match %s vs. recorded %s\n", ctime(&st.st_ctime), ctime(&pstat64->retvals.st_ctime));
+	    return -1;
+	}
+	/* Assume atime will be handled by tainting since it changes often */
+	if (st.st_blksize != pstat64->retvals.st_blksize) {
+	    printf ("[MISMATCH] stat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pstat64->retvals.st_blksize);
+	    return -1;
+	}
+	if (st.st_blocks != pstat64->retvals.st_blocks) {
+	    printf ("[MISMATCH] stat64 blocks does not match %lld vs. recorded %lld\n", st.st_blocks, pstat64->retvals.st_blocks);
+	    return -1;
+	}
+    }
+    return 0;
+}
+
+static int recheck_fstat64 (struct recheck_entry* pentry, struct fstat64_recheck* pstat64)
+{
+    struct stat64 st;
+    int rc;
+    char* pathName = (char *) pstat64 + sizeof(struct fstat64_recheck);
+#ifdef PRINT_VALUES
+    printf("has ret vals %d\n", pstat64->has_retvals);
+    if (pstat64->has_retvals) {
+	//to verify just a memcpr from struct pointer to new struct pointer
+	printf("fstat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
+	       "st_size %lld st_atime %s st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
+	       pstat64->retvals.st_dev, pstat64->retvals.st_ino, pstat64->retvals.st_mode, pstat64->retvals .st_nlink, pstat64->retvals.st_uid,pstat64->retvals .st_gid,
+	       pstat64->retvals.st_rdev, pstat64->retvals.st_size, ctime(&pstat64->retvals.st_atime), pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
+	       pstat64->retvals.st_blocks); 
+    }
+    printf("buf %p\n", pstat64->buf);
+    printf("fd %d\n", pstat64->fd);
+#endif
+    rc = syscall(SYS_fstat64, pstat64->fd, &st);
+    if (check_retval ("fstat64", pentry->retval, rc) < 0) return -1;
+    if (pstat64->has_retvals) {
+	if (st.st_dev != pstat64->retvals.st_dev) {
+	    printf ("[MISMATCH] fstat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pstat64->retvals.st_dev);
+	    return -1;
+	}
+	if (st.st_ino != pstat64->retvals.st_ino) {
+	    printf ("[MISMATCH] fstat64 ino does not match %llu vs. recorded %llu\n", st.st_ino, pstat64->retvals.st_ino);
+	    return -1;
+	}
+	if (st.st_mode != pstat64->retvals.st_mode) {
+	    printf ("[MISMATCH] fstat64 mode does not match %d vs. recorded %d\n", st.st_mode, pstat64->retvals.st_mode);
+	    return -1;
+	}
+	if (st.st_nlink != pstat64->retvals.st_nlink) {
+	    printf ("[MISMATCH] fstat64 nlink does not match %d vs. recorded %d\n", st.st_nlink, pstat64->retvals.st_nlink);
+	    return -1;
+	}
+	if (st.st_uid != pstat64->retvals.st_uid) {
+	    printf ("[MISMATCH] fstat64 uid does not match %d vs. recorded %d\n", st.st_uid, pstat64->retvals.st_uid);
+	    return -1;
+	}
+	if (st.st_gid != pstat64->retvals.st_gid) {
+	    printf ("[MISMATCH] fstat64 gid does not match %d vs. recorded %d\n", st.st_gid, pstat64->retvals.st_gid);
+	    return -1;
+	}
+	if (st.st_rdev != pstat64->retvals.st_rdev) {
+	    printf ("[MISMATCH] fstat64 rdev does not match %llu vs. recorded %llu\n", st.st_rdev, pstat64->retvals.st_rdev);
+	    return -1;
+	}
+	if (st.st_size != pstat64->retvals.st_size) {
+	    printf ("[MISMATCH] fstat64 size does not match %lld vs. recorded %lld\n", st.st_size, pstat64->retvals.st_size);
+	    return -1;
+	}
+	if (memcmp(&st.st_mtime, &pstat64->retvals.st_mtime, sizeof(st.st_mtime))) {
+	    printf ("[MISMATCH] fstat64 mtime does not match %ld vs %ld\n", st.st_mtime, pstat64->retvals.st_mtime);
+	    printf ("%s", ctime(&st.st_mtime));
+	    printf ("%s", ctime(&pstat64->retvals.st_mtime));
+	    return -1;
+	}
+	if (st.st_ctime != pstat64->retvals.st_ctime) {
+	    printf ("[MISMATCH] fstat64 ctime does not match %s vs. recorded %s\n", ctime(&st.st_ctime), ctime(&pstat64->retvals.st_ctime));
+	    return -1;
+	}
+	/* Assume atime will be handled by tainting since it changes often */
+	if (st.st_blksize != pstat64->retvals.st_blksize) {
+	    printf ("[MISMATCH] fstat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pstat64->retvals.st_blksize);
+	    return -1;
+	}
+	if (st.st_blocks != pstat64->retvals.st_blocks) {
+	    printf ("[MISMATCH] fstat64 blocks does not match %lld vs. recorded %lld\n", st.st_blocks, pstat64->retvals.st_blocks);
+	    return -1;
+	}
+    }
+    return 0;
 }
 
 int do_recheck (char* recheck_filename)
@@ -122,44 +275,15 @@ int do_recheck (char* recheck_filename)
 	    break;
 	  }
 	case SYS_stat64: /* 195 */
-	  {
-	    struct stat64_recheck* pstat64;
-	    pstat64 = (struct stat64_recheck*)buf;
-	    char* pathName = buf+sizeof(*pstat64);
-#ifdef PRINT_VALUES
-	    printf("has ret vals %d\n",(*pstat64).has_retvals);
-	    //to verify just a memcpr from struct pointer to new struct pointer
-	    printf("stat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
-		   pstat64->retvals.st_dev, pstat64->retvals.st_ino, pstat64->retvals.st_mode, pstat64->retvals .st_nlink, pstat64->retvals.st_uid,pstat64->retvals .st_gid,
-		   pstat64->retvals.st_rdev, pstat64->retvals.st_size, pstat64->retvals .st_atime, pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
-		   pstat64->retvals.st_blocks); 
-	    printf("buf %p\n", pstat64->buf);
-	    printf("pathname %s\n", pathName);
-#endif
-	    rc = syscall(SYS_stat64, pathName, (*pstat64).buf);
-	    check_retval ("stat64", entry.retval, rc);
-
+	{
+	    rc = recheck_stat64 (&entry, (struct stat64_recheck *) buf);
 	    break;
-	  }
+	}
 	case SYS_fstat64: /* 197 */
-	  {
-	    struct fstat64_recheck* pfstat64;
-	    pfstat64 = (struct fstat64_recheck*)buf;
-#ifdef PRINT_VALUES 	
-	    printf("has ret vals %d\n",(*pfstat64).has_retvals);
-	    //how to retrieve the actual return values from the retval struct?
-	    printf("fstat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
-		   pfstat64->retvals.st_dev, pfstat64->retvals.st_ino, pfstat64->retvals.st_mode, pfstat64->retvals .st_nlink, pfstat64->retvals.st_uid,pfstat64->retvals .st_gid,
-		   pfstat64->retvals.st_rdev, pfstat64->retvals.st_size, pfstat64->retvals .st_atime, pfstat64->retvals.st_mtime, pfstat64->retvals.st_ctime, pfstat64->retvals.st_blksize,
-		   pfstat64->retvals.st_blocks); 
-	    printf("buf %p\n",(*pfstat64).buf);
-	    printf("fd %d\n",(*pfstat64).fd);
-#endif 
-	    rc = syscall(SYS_fstat64,(*pfstat64).fd, (*pfstat64).buf);
-	    check_retval ("fstat64", entry.retval, rc);
-
+	{
+	    rc = recheck_fstat64 (&entry, (struct fstat64_recheck *) buf);
 	    break;
-	  } 
+	} 
 	case SYS_read: /* 3 */
 	  {
 	    struct read_recheck* pread;

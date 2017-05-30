@@ -174,6 +174,7 @@ object preprocess_asm {
 		//write out all restore address
 		println ("/*first checkpoint necessary addresses*/")
 		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		println ("call recheck_start")
 
 		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
