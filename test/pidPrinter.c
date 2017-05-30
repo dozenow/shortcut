@@ -18,10 +18,8 @@ int main()
 		perror("something Went Wrong when trying to get the pID!");
 	}
 	else{
-		printf("The process id is %d addr is %p\n", processID, &processID);
-	}
-	while (i<processID%10) {
-		++count;
+		//printf("The process id is %d addr is %p\n", processID, &processID);
+		printf("The process id is %d \n", processID);
 	}
 	
 

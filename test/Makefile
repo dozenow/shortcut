@@ -11,7 +11,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt parserecheck wparserecheck \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm
+	recheck_support.o preprocess_asm.class
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -23,7 +23,7 @@ all: $(TARGETS)
 
 # Build dependencies + any extra flags
 
-preprocess_asm:
+preprocess_asm.class:
 	scalac preprocess_asm.scala
 
 launcher: libutil.a

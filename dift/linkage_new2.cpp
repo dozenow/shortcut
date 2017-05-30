@@ -631,6 +631,23 @@ char* get_file_ext(char* filename){
     return dot+1;
 }
 
+static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t size) { 
+	struct address_taint_set* addr_struct = NULL;
+	HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
+	if (addr_struct == NULL) {
+		addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
+		addr_struct->loc = mem_loc;
+		addr_struct->is_imm = 1;
+		addr_struct->size = size;
+		HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
+	} else { 
+		//TODO: we didn't check memory overlapping correctly
+		if (addr_struct->size != size) { 
+				printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
+		}
+	}
+}
+
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
     SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
@@ -1548,6 +1565,7 @@ static inline void sys_fstat64_stop (int rc) {
 		tci.type = TOK_STAT_ATIME;
 		printf ("atime buf is %p\n", &fsi->buf->st_atime);
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	}
 	/* Really should also clear taint here too for rc and buffer */
 	LOG_PRINT ("Done with fstat64.\n");
@@ -17449,7 +17467,6 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 	} else
 		fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
 	fprintf (stderr, "input size is %d\n", *(int*)addr);
-#ifdef NULL
 	//print slice
 	//untaint 
 	//malloc
@@ -17469,7 +17486,6 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		clear_mem_taints (addr, 4);
 		clear_mem_taints ((u_long) arg0 -0x4, 4);
 	}
-#endif
 }
 
 TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
@@ -17477,9 +17493,7 @@ TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
 	fprintf(stderr, "After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
 	//print slice
 	//untaint 
-#ifdef NULL
 	clear_reg (LEVEL_BASE::REG_EAX, 4);
-#endif
 }
 
 void routine (RTN rtn, VOID *v)
@@ -17766,7 +17780,9 @@ int main(int argc, char** argv)
 #endif
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
+#ifdef NULL
     RTN_AddInstrumentFunction (routine, 0);
+#endif
 #ifdef HEARTBLEED
     fprintf(stderr, "heartbleed defined\n");
 #endif

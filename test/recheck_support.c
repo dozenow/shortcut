@@ -33,7 +33,7 @@ void recheck_start()
 {
     int rc, i;
 
-    int fd = open("/tmp/recheck.10596", O_RDONLY);
+    int fd = open("/tmp/recheck.7577", O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;

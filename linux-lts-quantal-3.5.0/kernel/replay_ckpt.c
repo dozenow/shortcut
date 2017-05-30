@@ -1535,11 +1535,11 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size)
 	// Allocate space for the restore stack and also for storing some fw slice info
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if (IS_ERR((void *) extra_space_addr)) {
-		printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
+		printk ("[ERROR] start_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
-	if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
+	if (replay_debug) printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
 
 	//second page: extra info for the slice (grows upwards)
 	info.text_addr = slice_addr;
@@ -1560,13 +1560,13 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size)
 
 	//change instruction pointer to the start of slice
 	get_user (entry, (unsigned int __user *) (slice_addr + 0x18));
-	printk ("entry is %u\n", entry);
+	printk ("start_fw_slice: slice_addr is %lx, entry is %u\n", slice_addr, entry);
 	regs->ip = slice_addr + entry;
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 	regs->bp = extra_space_addr + STACK_SIZE;
-	printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
-	printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	printk ("start_fw_slice ip is %lx\n", regs->ip);
+	printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
 	dump_reg_struct (regs);
 	
 	set_thread_flag (TIF_IRET);
@@ -1685,6 +1685,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			printk ("sys_execute_fw_slice: cannot munmap");
 			return -1;
 		}
+		//TODO unmap the libc from resume
 		return 0;
 	}
 }
