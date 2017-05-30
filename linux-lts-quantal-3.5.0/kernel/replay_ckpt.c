@@ -103,6 +103,11 @@ struct recheck_entry {
 	int len;
 };
 
+void dump_reg_struct (struct pt_regs* r) {
+	printk ("eax, %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax, %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
+		r->ax, r->bx, r->cx, r->dx, r->si, r->di, r->bp, r->sp, r->ds, r->es, r->fs, r->gs, r->orig_ax, r->ip, r->cs, r->flags, r->ss);
+}
+
 static void
 print_vmas (struct task_struct* tsk)
 {
@@ -1559,8 +1564,10 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size)
 	regs->ip = slice_addr + entry;
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
+	regs->bp = extra_space_addr + STACK_SIZE;
 	printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
 	printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	dump_reg_struct (regs);
 	
 	set_thread_flag (TIF_IRET);
 	
@@ -1663,8 +1670,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			fpu->has_fpu = slice_info->fpu_has_fpu;
 			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
 		}
-		printk ("sys_execute_fw_slice ends: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
-				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
+		printk ("sys_execute_fw_slice ends: .\n");
+		dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
 
 		//unmap the slice

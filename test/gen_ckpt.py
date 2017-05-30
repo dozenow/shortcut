@@ -2,11 +2,16 @@
 
 import os
 from subprocess import Popen, PIPE
+import sys
 
 # Modify these config paraemters for new checkpoint
-rec_dir = 12334
-ckpt_at = 69
-taint_syscall = 9999
+rec_dir = 45060
+ckpt_at = 63
+taint_syscall = 30
+if (len(sys.argv) > 1):
+	rec_dir = sys.argv[1]
+	ckpt_at = sys.argv[2]
+	taint_syscall = sys.argv[3]
 
 #rec_dir = 8216
 #ckpt_at = 77
@@ -33,7 +38,10 @@ outfd.close()
 
 # Run scala tool
 outfd = open("/tmp/exslice.asm", "w")
-p = Popen (["scala", "-nc", "preprocess_asm.scala", "/tmp/slice"],stdout=outfd)
+p = Popen (["scala", "preprocess_asm", "/tmp/slice"],stdout=outfd)
+#Note: Try to avoid recompilation, but this requires you to run make if you change this file
+#If this hangs for a long time, it's probably because your environment configuration is wrong
+#Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
 p.wait()
 outfd.close()
 

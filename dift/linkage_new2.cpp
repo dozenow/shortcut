@@ -2680,6 +2680,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 
 	char* str = get_copy_of_disasm (ins);
 	IARG_TYPE mem_ea = IARG_INVALID;
+
 	if (is_dst_mem == 0) { 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_reg),
@@ -14816,6 +14817,7 @@ void instrument_addorsub(INS ins)
 #ifdef FW_SLICE
 	fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
 #endif
+        INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg (%d) and op2 is immediate\n", reg);
     } else {
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
