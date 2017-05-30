@@ -316,8 +316,12 @@ static void print_stat(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct stat64* pst = (struct stat64 *) res->retparams;
 
-		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld\n", 
-			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino);
+		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld\n"
+			     "                ctime %ld.%ld mtime %ld.%ld atime %ld.%ld\n",
+			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino,
+			pst->st_ctim.tv_sec, pst->st_ctim.tv_nsec,
+			pst->st_mtim.tv_sec, pst->st_mtim.tv_nsec,
+			pst->st_atim.tv_sec, pst->st_atim.tv_nsec);
 	}
 }
 

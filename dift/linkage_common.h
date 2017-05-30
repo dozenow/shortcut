@@ -137,6 +137,11 @@ struct clock_gettime_info {
 	struct timespec* tp;
 };
 
+struct fstat64_info {
+	int fd;
+	struct stat64* buf;
+};
+
 struct address_taint_set {
 	u_long loc;
 	int is_imm;
@@ -168,6 +173,7 @@ struct thread_data {
     struct syscall_ret_info syscall_ret_info_cache;
     struct getrusage_info getrusage_info_cache;
     struct clock_gettime_info clock_gettime_info_cache;
+    struct fstat64_info fstat64_info_cache;
 
     void* save_syscall_info;
     int socketcall;

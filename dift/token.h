@@ -35,6 +35,7 @@ extern "C" {
 #define TOK_CLOCK_GETTIME 13
 #define TOK_GETPID 14
 #define TOK_GETRUSAGE 15
+#define TOK_STAT_ATIME 16
 
 
 /* A token represents one or more contiguous inputs,

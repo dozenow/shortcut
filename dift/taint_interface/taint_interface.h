@@ -129,7 +129,7 @@ TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip,
 		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, uint32_t base_reg2_u8, 
 		int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, uint32_t index_reg2_u8,
 		u_long mem_loc2, uint32_t mem_size2, uint32_t is_read2);
-int fw_slice_check_final_mem_taint ();
+int fw_slice_check_final_mem_taint (taint_t* pregs);
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, ADDRINT regvalue, uint32_t reg_u8);
 TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, uint32_t dst_regsize, uint32_t src_regsize, ADDRINT dst_regvalue, ADDRINT src_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8);
 TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc);

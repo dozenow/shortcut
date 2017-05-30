@@ -1018,7 +1018,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					u_long* pconsumed, u_long* pexpclock, 
 					u_long* pthreadclock, u_long *ignore_flag, 
 					u_long *user_log_addr, ulong *user_log_pos,
-					u_long *child_tid,u_long *replay_hook, loff_t* ppos)
+					u_long *child_tid,u_long *replay_hook, loff_t* ppos, 
+					char* slicelib, u_long* slice_addr, u_long* slice_size)
 {
 	mm_segment_t old_fs = get_fs();
 	int rc = 0, fd, exe_fd, copied, i, map_count, key, shmflg=0, id, premapped = 0, new_file = 0;
@@ -1034,6 +1035,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	struct btree_head32 replay_mmap_btree;
 	struct fpu *fpu = NULL;
 	struct pt_regs* regs = NULL;
+	int was_libkeep = 0;
 
 	char fpu_is_allocated;
 	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
@@ -1132,10 +1134,44 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 
 		// Delete all the vm areas of current process 
+		// (except if there is a slice library specified - leave that)
 		down_write (&current->mm->mmap_sem);
 		vma = current->mm->mmap;
+		*slice_addr = 0;
 		while(vma) {
 			vma_next = vma->vm_next;
+			if (slicelib && vma->vm_file) {
+				char buf[256];
+				char* s = dentry_path (vma->vm_file->f_dentry, buf, sizeof(buf));
+				printk ("unmap path is: %s (from %lx to %lx)\n", s, vma->vm_start, vma->vm_end);
+				if (strlen(s) >= 12 && !strcmp(s+strlen(s)-12,"libc-2.15.so")) {
+					printk ("This is libc - do not unmap it\n");
+					vma = vma_next;
+					was_libkeep = 1;
+					continue;
+				}
+				if (!strcmp(s, slicelib)) {
+					printk ("This is the slice library do not unmap it\n");
+					if (*slice_addr == 0) {
+						char val, val2;
+						get_user(val, (char __user *) vma->vm_start+4);
+						get_user(val2, (char __user *) vma->vm_start+5);
+						printk ("val %d val2 %d\n", val, val2);
+						if (val == 1 && val2 == 1) {
+							*slice_addr = vma->vm_start;
+							*slice_size = vma->vm_end - vma->vm_start;
+						}					    
+					}
+					vma = vma_next;
+					was_libkeep = 1;
+					continue;
+				}
+			} else if (was_libkeep) {
+			    /* This I think is for globals for libc and exslice - hack, so may not work */
+			    was_libkeep = 0;
+			    vma = vma_next;
+			    continue;
+			}
 			do_munmap(current->mm, vma->vm_start, vma->vm_end - vma->vm_start);
 			vma = vma_next;
 		} 
@@ -1480,7 +1516,57 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	return (struct fw_slice_info*) regs->sp;
 }
 
-#define SLICE_INFO_SIZE 4096
+#define SLICE_INFO_SIZE  4096
+#define STACK_SIZE      65536
+
+long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size) 
+{ 
+	//start to execute the slice
+	long extra_space_addr = 0;
+	struct pt_regs* regs = get_pt_regs(current);
+	struct fw_slice_info info;
+	u_int entry;
+
+	// Allocate space for the restore stack and also for storing some fw slice info
+	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (IS_ERR((void *) extra_space_addr)) {
+		printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
+		return -ENOMEM;
+	}
+	//first page of this space: stack (grows downwards)
+	if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
+
+	//second page: extra info for the slice (grows upwards)
+	info.text_addr = slice_addr;
+	info.text_size = slice_size;
+	info.extra_addr = extra_space_addr;
+	info.extra_size = STACK_SIZE + SLICE_INFO_SIZE;
+
+	//checkpoint the current registers
+	memcpy (&info.regs, regs, sizeof(struct pt_regs));
+	info.fpu_is_allocated = fpu_allocated (&(current->thread.fpu));
+	if (info.fpu_is_allocated) { 
+		struct fpu* fpu = &(current->thread.fpu);
+		info.fpu_last_cpu = fpu->last_cpu;
+		info.fpu_has_fpu = fpu->has_fpu;
+		memcpy (&info.fpu_state, fpu->state, sizeof(union thread_xstate));
+	}
+	copy_to_user ((char __user *) extra_space_addr + STACK_SIZE, &info, sizeof(info));
+
+	//change instruction pointer to the start of slice
+	get_user (entry, (unsigned int __user *) (slice_addr + 0x18));
+	printk ("entry is %u\n", entry);
+	regs->ip = slice_addr + entry;
+	//change stack pointer
+	regs->sp = extra_space_addr + STACK_SIZE;
+	printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
+	printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	
+	set_thread_flag (TIF_IRET);
+	
+	return 0;
+}
+
 asmlinkage long sys_execute_fw_slice (int finish, char* filename) { 
 	int stack_size = 4096;
 	printk ("sys_execute_fw_slice: %d, %p\n", finish, filename);
@@ -1519,6 +1605,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		//read elf to get the slice entry point
 		BUG_ON (*(char*)(addr+0x4) != 0x1 || *(char*)(addr+0x5) != 0x1); //only works 32bit little endian systems
 		entry = *(unsigned int*) (addr + 0x18);	
+
 		//let's allocate space for the restore stack and also for storing some fw slice info
 		extra_space_addr = sys_mmap_pgoff (0, stack_size + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 		if (IS_ERR((void *) extra_space_addr)) {

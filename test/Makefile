@@ -10,7 +10,8 @@ KERN_CONFIG := replay_headers/include/linux/replay_configs.h
 DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt parserecheck wparserecheck \
-	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter 
+	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
+	recheck_support.o
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -25,8 +26,8 @@ all: $(TARGETS)
 launcher: libutil.a
 launcher: CFLAGS += --static -I../../eglibc-2.15/prefix/include -L../../eglibc-2.15/prefix/lib 
 
-resume: resume.cpp recheck.cpp libutil.a
-	c++ -std=c++0x resume.cpp recheck.cpp libutil.a -o resume -pthread --static
+resume: resume.cpp libutil.a
+	c++ -std=c++0x resume.cpp libutil.a -o resume -pthread --static -ldl
 
 getstats: libutil.a
 
@@ -95,6 +96,9 @@ mkpart_iter: mkpartition_utils.o libutil.a generate_splits.cpp mkpartition_iter.
 
 sync_files: sync_files.cpp streamserver.h parseklib.o streamnw.cpp streamnw.h
 	c++ -Wall -Werror -std=c++0x sync_files.cpp parseklib.o streamnw.cpp -o sync_files 
+
+recheck_support.o: recheck_support.c
+	gcc recheck_support.c -c -o recheck_support.o
 
 .PHONY: clean
 clean:

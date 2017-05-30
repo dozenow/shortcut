@@ -54,9 +54,13 @@ void create_taints_from_buffer(void* buf, int size,
 			       struct taint_creation_info*,
 			       int outfd,
 			       char* channel_name);
+void create_taints_from_buffer_unfiltered(void* buf, int size, 
+					  struct taint_creation_info*,
+					  int outfd);
 void create_fd_taints(int nfds, fd_set* fds,
 		      struct taint_creation_info*, int outfd);
 void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, char* channel_name);
+void create_syscall_retval_taint_unfiltered (struct taint_creation_info *tci, int outfd);
   
 /* Outputs the taints in a buffer that match the output
  * filters, if output filters are on. */
