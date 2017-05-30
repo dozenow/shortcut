@@ -2409,7 +2409,10 @@ int fw_slice_check_final_mem_taint (taint_t* pregs) {
 	/* Assume 1 thread for now */
 	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
 	    if (pregs[i]) {
-		printf ("[RESTORE_REG] reg value %d/%d is tainted\n", i, i/REG_SIZE);
+		printf ("[SLICE_RESTORE_REG] $reg(%d,4) is tainted\n", i/REG_SIZE);
+		//continue to the next reg
+		i = (i/REG_SIZE + 1)*REG_SIZE;
+		has_mem = 1;
 	    }
 	}
 

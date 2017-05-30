@@ -14692,7 +14692,6 @@ void instrument_addorsub(INS ins)
     op1reg = INS_OperandIsReg(ins, 0);
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
-    printf ("ins %x op1mem %d op2mem %d op1reg %d op2reg %d op2imm %d\n", INS_Address(ins), op1mem, op2mem, op1reg, op2reg, op2imm);
 
     /*if (op1reg) {
 	    if (SPECIAL_REG(INS_OperandReg (ins, 0)))
