@@ -2458,7 +2458,6 @@ TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size,
 //source operand is reg, dst_mem_loc is the dst memory location (could be null if two operands are both regs);
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long dst_mem_loc, ADDRINT regvalue, uint32_t reg_u8) {
 	int tainted = is_reg_tainted (reg, size, reg_u8);
-
 	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	if (tainted) {
 		PRINT("reg\n");

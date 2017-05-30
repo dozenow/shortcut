@@ -2680,6 +2680,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 
 	char* str = get_copy_of_disasm (ins);
 	IARG_TYPE mem_ea = IARG_INVALID;
+
 	if (is_dst_mem == 0) { 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_reg),
@@ -14689,7 +14690,6 @@ void instrument_addorsub(INS ins)
     op1reg = INS_OperandIsReg(ins, 0);
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
-    printf ("ins %x op1mem %d op2mem %d op1reg %d op2reg %d op2imm %d\n", INS_Address(ins), op1mem, op2mem, op1reg, op2reg, op2imm);
 
     if((op1mem && op2reg)) {
         REG reg = INS_OperandReg(ins, 1);
@@ -14852,43 +14852,9 @@ void instrument_addorsub(INS ins)
     } else if(op1reg && op2imm){
         REG reg = INS_OperandReg(ins, 0);
         INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg (%d) and op2 is immediate\n", reg);
-        if (!SPECIAL_REG(reg)) {
-            int treg = translate_reg(reg);
-            INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg and op2 is immediate\n");
-            switch(REG_Size(reg)) {
-                case 1:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2lbreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
-#endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                case 2:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
-#endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                case 4:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
-#endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                default:
-                    ERROR_PRINT (stderr, "instrument_addorsub - reg reset unhandled size %d\n", REG_Size(reg));
-                    assert(0);
-                    break;
-            }
-        }
+	/* If the register is tainted, it should retain its taint, and we must include
+	   this instruction in the slice */	
+	fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
     } else {
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
