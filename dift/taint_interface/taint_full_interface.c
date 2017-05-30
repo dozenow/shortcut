@@ -1121,8 +1121,10 @@ int translate_reg(int reg)
 	return LEVEL_BASE::REG_EBP;
     } else if (reg == LEVEL_BASE::REG_SI)
 	    return LEVEL_BASE::REG_ESI;
+    else if (reg == LEVEL_BASE::REG_DI)
+	    return LEVEL_BASE::REG_EDI;
     //also make sure bp,si,di,sp,flags are converted
-    if (reg == LEVEL_BASE::REG_SI || reg == LEVEL_BASE::REG_DI || reg == LEVEL_BASE::REG_SP || reg == LEVEL_BASE::REG_FLAGS) { 
+    if (reg == LEVEL_BASE::REG_SP || reg == LEVEL_BASE::REG_FLAGS) { 
 	    fprintf (stderr, "reg %d is not handled.\n", reg);
 	    assert (0);
     }

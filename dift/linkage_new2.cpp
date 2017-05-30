@@ -12682,10 +12682,10 @@ void taint_whole_wreg2mem(ADDRINT dst_mem_loc,
 }
 
 TAINTSIGN move_string_rep_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size, u_long dst_mem) {
-	taint_whole_mem2mem (src_mem_loc, dst_mem_loc, eflags, counts, op_size);
 #ifdef FW_SLICE
 	fw_slice_string_internal (ip, inst_str, src_mem_loc, eflags, counts, op_size, dst_mem);
 #endif
+	taint_whole_mem2mem (src_mem_loc, dst_mem_loc, eflags, counts, op_size);
 }
 
 void instrument_move_string(INS ins)
@@ -13985,14 +13985,14 @@ void instrument_cmov(INS ins, uint32_t mask)
 		assert (0);// shouldn't happen
         } else {
             //mov one reg val into another
-            assert(REG_Size(reg) == REG_Size(dstreg));
+            /*assert(REG_Size(reg) == REG_Size(dstreg));
             int dst_treg = translate_reg((int)dstreg);
             int src_treg = translate_reg((int)reg);
 	    if(SPECIAL_REG(dstreg))
 		    return;
 
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
-	    /*if (mask != 0) {
+	    if (mask != 0) {
 		    //control flow
 		    pred_instrument_taint_regflag2reg (ins, mask, dstreg, reg);
 #ifdef FW_SLICE
@@ -14001,7 +14001,7 @@ void instrument_cmov(INS ins, uint32_t mask)
 	    } else {
 #ifdef FW_SLICE
 		    assert (0); //must be enabled along with control flow 
-#endif*/
+#endif
             switch(REG_Size(reg)) {
                 case 1:
                     if (REG_is_Lower8(dstreg) && REG_is_Lower8(reg)) {
@@ -14085,7 +14085,7 @@ void instrument_cmov(INS ins, uint32_t mask)
                             IARG_END);
                     break;
             }
-	//}
+	}*/
         }
     }
 }
@@ -14177,6 +14177,9 @@ void instrument_lea(INS ins)
     REG dstreg = INS_OperandReg(ins, 0);
     REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
     REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+
+    /*if (SPECIAL_REG(dstreg))
+	    return;*/
 
     if (REG_valid (index_reg) && !REG_valid(base_reg)) {
         // This is a nummeric calculation in disguise
@@ -14642,6 +14645,11 @@ void instrument_addorsub(INS ins)
     op2reg = INS_OperandIsReg(ins, 1);
     op2imm = INS_OperandIsImmediate(ins, 1);
 
+    /*if (op1reg) {
+	    if (SPECIAL_REG(INS_OperandReg (ins, 0)))
+		    return;
+    }*/
+
     if((op1mem && op2reg)) {
         REG reg = INS_OperandReg(ins, 1);
         if(!REG_valid(reg)) {
@@ -14675,6 +14683,7 @@ void instrument_addorsub(INS ins)
         if(!REG_valid(dstreg) || !REG_valid(reg)) {
             return;
         } 
+
         /*if((opcode == XED_ICLASS_XOR || opcode == XED_ICLASS_SUB || 
           opcode == XED_ICLASS_SBB || opcode == XED_ICLASS_PXOR ||
           opcode == XED_ICLASS_FSUB || opcode == XED_ICLASS_FSUBP ||
@@ -14690,6 +14699,9 @@ void instrument_addorsub(INS ins)
                 && (dstreg == reg)) {
             int dst_treg = translate_reg(dstreg);
             INSTRUMENT_PRINT(log_f, "handling reg reset\n");
+#ifdef FW_SLICE
+	    fw_slice_src_regreg (ins, dstreg, REG_Size(dstreg), reg, REG_Size(reg));
+#endif
             switch(REG_Size(dstreg)) {
                 case 1:
                     INS_InsertCall (ins, IPOINT_BEFORE,
@@ -14746,100 +14758,16 @@ void instrument_addorsub(INS ins)
 	    instrument_taint_add_reg2reg(ins, dstreg, reg);
         }
     } else if(op1mem && op2imm) {
+#ifdef FW_SLICE
+	fw_slice_src_mem (ins, 1);
+#endif
         /*imm does not change taint value of the destination*/
         INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is mem and op2 is immediate\n");
-        addrsize = INS_MemoryWriteSize(ins);
-        switch (addrsize) {
-            case 1:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_immvalb2mem),
-#ifdef FAST_INLINE
-                                    IARG_FAST_ANALYSIS_CALL,
-#endif
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_END);
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_immvalhw2mem),
-#ifdef FAST_INLINE
-                                    IARG_FAST_ANALYSIS_CALL,
-#endif
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_immvalw2mem),
-#ifdef FAST_INLINE
-                                    IARG_FAST_ANALYSIS_CALL,
-#endif
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_END);
-                break;
-            case 8:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_immvaldw2mem),
-#ifdef FAST_INLINE
-                                    IARG_FAST_ANALYSIS_CALL,
-#endif
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_END);
-                break;
-            case 16:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_immvalqw2mem),
-#ifdef FAST_INLINE
-                                    IARG_FAST_ANALYSIS_CALL,
-#endif
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_END);
-                break;
-            default:
-                ERROR_PRINT (stderr, "instrument_addorsub: unhandled op size\n");
-                assert(0);
-                break;
-        }
     } else if(op1reg && op2imm){
         REG reg = INS_OperandReg(ins, 0);
-        INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg (%d) and op2 is immediate\n", reg);
-        if (!SPECIAL_REG(reg)) {
-            int treg = translate_reg(reg);
-            INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg and op2 is immediate\n");
-            switch(REG_Size(reg)) {
-                case 1:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2lbreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
+#ifdef FW_SLICE
+	fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
 #endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                case 2:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
-#endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                case 4:
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                                            AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
-                                            IARG_FAST_ANALYSIS_CALL,
-#endif
-                                            IARG_UINT32, treg,
-                                            IARG_END);
-                    break;
-                default:
-                    ERROR_PRINT (stderr, "instrument_addorsub - reg reset unhandled size %d\n", REG_Size(reg));
-                    assert(0);
-                    break;
-            }
-        }
     } else {
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
@@ -15723,6 +15651,9 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
    } else if(op1mem && op2imm) {
 	    addrsize = INS_MemoryReadSize(ins);
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
+#ifdef FW_SLICE
+	    fw_slice_src_mem(ins, 0);
+#endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_mem2flag),
 #ifdef FAST_INLINE
@@ -15732,14 +15663,14 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, addrsize,
 			    IARG_END);
-#ifdef FW_SLICE
-	    fw_slice_src_mem(ins, 0);
-#endif
-    }else if(op1reg && op2imm){
+   } else if(op1reg && op2imm){
 	    REG reg = INS_OperandReg (ins, 0);
 	    uint32_t regsize = REG_Size (reg);
 	    assert (REG_valid (reg));
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is reg and op2 is imm\n");
+#ifdef FW_SLICE
+	    fw_slice_src_reg(ins, reg, regsize, 0);
+#endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_reg2flag),
 #ifdef FAST_INLINE
@@ -15749,9 +15680,6 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, regsize,
 			    IARG_END);
-#ifdef FW_SLICE
-	    fw_slice_src_reg(ins, reg, regsize, 0);
-#endif
     }else{
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
@@ -16066,8 +15994,7 @@ void instruction_instrumentation(INS ins, void *v)
 
 #ifdef TAINT_STATS
     inst_instrumented++;
-    /*INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (count_inst_executed),
-		    IARG_END);*/
+    //INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (count_inst_executed), IARG_END);
 #endif
 #ifdef EXTRA_DEBUG
     //DEBUG: print out dynamic instructions and their mem read/write
@@ -17455,6 +17382,107 @@ int get_open_file_descriptors ()
     return 0;
 }
 
+//hack for malloc function
+//Here, we add an assertion to make sure the input to malloc will remain the same the next time we re-execute the slice
+//and untaint the input (size of memory region to be allocated)
+TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADDRINT esp_value)
+{
+	//the input is stored at esp-0x2c+0x30=esp+0x4, calculated from the malloc code
+	u_long addr = esp_value+0x4;
+	//victim = _int_malloc(ar_ptr, bytes); malloc.c :2938
+	if (strcmp ((char*)name, "linemap_add")) {
+		if (strcmp ((char*)name, "_cpp_lex_direct"))
+			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
+		else {
+			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), arg->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *((long*) arg0), esp_value, name);
+		}
+	} else
+		fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
+	fprintf (stderr, "input size is %d\n", *(int*)addr);
+#ifdef NULL
+	//print slice
+	//untaint 
+	//malloc
+	if (!strcmp((char*)name, "malloc")) {
+		clear_mem_taints (addr, 4);
+		clear_mem_taints (addr-0x4+0x2c, 4);
+		clear_reg (LEVEL_BASE::REG_EDI, 4);
+		clear_reg (LEVEL_BASE::REG_ESP, 4);
+	}
+	//for _int_malloc
+	//esp-0x4*4-0x8c=esp-0x9c
+	if (!strcmp((char*)name, "_int_malloc"))
+		clear_reg (LEVEL_BASE::REG_EAX, 4);
+		clear_mem_taints (addr-0x4-0x9c, 4);
+	//for free clear arg0-0x4
+	if (!strcmp((char*)name, "free")) {
+		clear_mem_taints (addr, 4);
+		clear_mem_taints ((u_long) arg0 -0x4, 4);
+	}
+#endif
+}
+
+TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
+{
+	fprintf(stderr, "After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
+	//print slice
+	//untaint 
+#ifdef NULL
+	clear_reg (LEVEL_BASE::REG_EAX, 4);
+#endif
+}
+
+void routine (RTN rtn, VOID *v)
+{
+    char *name;
+
+    const char* tmp = RTN_Name(rtn).c_str();
+    assert (tmp != NULL);
+    name = (char*) malloc (strlen (tmp) + 1);
+    strcpy (name, tmp);
+
+    if (strcmp (name, "malloc") && strcmp(name, "free") && strcmp(name, "_int_malloc") && strcmp(name, "calloc")
+		    && strcmp (name, "realloc") && strcmp (name, "memalign") && strcmp(name, "valloc") 
+		    && strcmp (name, "pvalloc") && strcmp(name, "linemap_add") && strcmp (name, "_cpp_lex_direct")) {
+	    return;
+    }
+
+    RTN_Open(rtn);
+
+    if (strcmp (name, "linemap_add")) {
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+    } else 
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+
+
+    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
+#ifdef FAST_INLINE
+		    IARG_FAST_ANALYSIS_CALL,
+#endif
+		    IARG_PTR, name, 
+		    IARG_ADDRINT, RTN_Address(rtn), 
+		    IARG_REG_VALUE, LEVEL_BASE::REG_EAX,
+		    IARG_END);
+
+    RTN_Close(rtn);
+}
+
 int main(int argc, char** argv) 
 {    
     int rc;
@@ -17688,6 +17716,7 @@ int main(int argc, char** argv)
 #endif
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
+    RTN_AddInstrumentFunction (routine, 0);
 #ifdef HEARTBLEED
     fprintf(stderr, "heartbleed defined\n");
 #endif
