@@ -29,11 +29,13 @@ struct cfopened {
 #define MAX_FDS 4096
 struct cfopened cache_files_opened[MAX_FDS];
 
-void recheck_start()
+void recheck_start(char* filename)
 {
-    int rc, i;
+    int rc, i, fd;
+    int index = -64;
 
-    int fd = open("/tmp/recheck.7577", O_RDONLY);
+    printf ("filename is %s, %p\n", filename, filename);
+    fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;

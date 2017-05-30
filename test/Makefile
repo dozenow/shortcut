@@ -23,7 +23,7 @@ all: $(TARGETS)
 
 # Build dependencies + any extra flags
 
-preprocess_asm.class:
+preprocess_asm.class: preprocess_asm.scala
 	scalac preprocess_asm.scala
 
 launcher: libutil.a

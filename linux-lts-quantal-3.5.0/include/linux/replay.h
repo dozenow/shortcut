@@ -200,7 +200,7 @@ struct startup_db_result {
 	unsigned long ckpt_clock;
 };
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size);
+long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid);
 
 void init_startup_db (void);
 void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned long ckpt_clock);

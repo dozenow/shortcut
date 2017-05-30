@@ -43,7 +43,7 @@ outfd.close()
 # Run scala tool
 outfd = open("/tmp/exslice.asm", "w")
 p = Popen (["scala", "preprocess_asm", "/tmp/slice"],stdout=outfd)
-#Note: Try to avoid recompilation, but this requires you to run make if you change this file
+#Note: Try to avoid recompilation, but this requires you to run make if you change preprocess_asm.scala file
 #If this hangs for a long time, it's probably because your environment configuration is wrong
 #Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
 p.wait()
@@ -54,10 +54,7 @@ infd = open("/tmp/exslice.asm", "r")
 outfd = open("/tmp/exslice.c", "w")
 outfd.write ("asm (\n")
 for line in infd:
-    if line[:13] == ".intel_syntax":
-        continue # Handled by -masm flag
-    else:
-        outfd.write ("\"" + line.strip() + "\\n\"\n")
+	outfd.write ("\"" + line.strip() + "\\n\"\n")
 outfd.write (");\n")
 
 infd.close();

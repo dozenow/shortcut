@@ -176,15 +176,21 @@ object preprocess_asm {
 		assert (totalRestoreSize < 65536) //currently we only allocated 65536 bytes for this restore stack
 		//second round
 		//write out headers
-		println	(".intel_syntax noprefix")
+		//println	(".intel_syntax noprefix")
 		println (".section	.text")
    		println (".globl _start")
 		println ("_start:")
+
+		//start
+		println ("push ebp") 
+		println ("call recheck_start")
+		println ("pop ebp")
+		println ("/*TODO: make sure we follow the calling conventions*/")
+
 		//write out all restore address
 		println ("/*first checkpoint necessary addresses and registers*/")
 		restoreReg.foreach (reg => println ("push " + reg))
 		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
-		println ("call recheck_start")
 
 		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly

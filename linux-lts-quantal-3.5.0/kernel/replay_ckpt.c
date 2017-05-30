@@ -1523,13 +1523,15 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 
 #define SLICE_INFO_SIZE  4096
 #define STACK_SIZE      65536
+#define RECHECK_FILE_NAME_LEN 64
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size) 
+long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
 	struct pt_regs* regs = get_pt_regs(current);
 	struct fw_slice_info info;
+	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
 
 	// Allocate space for the restore stack and also for storing some fw slice info
@@ -1564,10 +1566,15 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size)
 	regs->ip = slice_addr + entry;
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
-	regs->bp = extra_space_addr + STACK_SIZE;
 	printk ("start_fw_slice ip is %lx\n", regs->ip);
 	printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
 	dump_reg_struct (regs);
+	//now push parameters to the stack
+	snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
+	
+	regs->sp -= RECHECK_FILE_NAME_LEN;
+	regs->bp = regs->sp;
+	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);
 	
 	set_thread_flag (TIF_IRET);
 	
@@ -1658,8 +1665,14 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		long rc = 0;
 		//struct mm_info* pmminfo = &mm_info;
 		struct pt_regs* regs = get_pt_regs (current);
-		struct fw_slice_info* slice_info = get_fw_slice_info (regs);
-		struct pt_regs* regs_cache = &slice_info->regs;
+		struct fw_slice_info* slice_info = NULL;
+		struct pt_regs* regs_cache = NULL;
+		
+		//pop the filename from the stack
+		regs->sp += RECHECK_FILE_NAME_LEN;
+		regs->bp += RECHECK_FILE_NAME_LEN;
+		slice_info = get_fw_slice_info (regs);
+		regs_cache = &slice_info->regs;
 		//restore the registers
 		printk ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
 				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
