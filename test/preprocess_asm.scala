@@ -1,3 +1,7 @@
+/*#!/bin/sh
+exec scala "$0" "$@"
+!#*/
+
 import scala.io.Source
 import scala.collection.mutable.Queue
 
@@ -102,12 +106,12 @@ object preprocess_asm {
 		new AddrToRestore (strs(0), strs(1).toInt, strs(2).toInt)
 	}
 
-
 	def main (args:Array[String]):Unit = {
 		var lastLine:String = null
 		val lines = Source.fromFile(args(0)).getLines().toList 
 		val buffer = new Queue[String]()
 		val restoreAddress = new Queue[AddrToRestore]()
+		val restoreReg = new Queue[String]()
 		var totalRestoreSize = 0
 		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
 		//2. convert instructions if necessary
@@ -118,6 +122,11 @@ object preprocess_asm {
 				val tmp =  parseRestoreAddress(s)
 				restoreAddress += tmp
 				totalRestoreSize += tmp.size
+			} else if (s.startsWith("[SLICE_RESTORE_REG]")) {
+				val index = s.indexOf("$reg(")
+				assert (index > 0)
+				restoreReg += regMap(s.substring(index+4, s.indexOf (")", index+1)+1))
+				totalRestoreSize += 4
 			} else {
 				val regStr = replaceReg (s)
 				//special case: to avoid affecting esp, we change pos/push to mov instructions
@@ -164,17 +173,24 @@ object preprocess_asm {
 		}
 		//println (lastLine)
 		buffer += lastLine
-		assert (totalRestoreSize < 4096) //currently we only allocated 4096 bytes for this restore stack
+		assert (totalRestoreSize < 65536) //currently we only allocated 65536 bytes for this restore stack
 		//second round
 		//write out headers
-		println	(".intel_syntax noprefix")
+		//println	(".intel_syntax noprefix")
 		println (".section	.text")
    		println (".globl _start")
 		println ("_start:")
-		//write out all restore address
-		println ("/*first checkpoint necessary addresses*/")
-		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+
+		//start
+		println ("push ebp") 
 		println ("call recheck_start")
+		println ("pop ebp")
+		println ("/*TODO: make sure we follow the calling conventions*/")
+
+		//write out all restore address
+		println ("/*first checkpoint necessary addresses and registers*/")
+		restoreReg.foreach (reg => println ("push " + reg))
+		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
 
 		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
@@ -206,11 +222,12 @@ object preprocess_asm {
 				println ("/*" + s + "*/")
 			} else { 
 				println (s)
-				//assert (false)
+				assert (false)
 			}
 		})
-		println ("/* restoring address */")
+		println ("/* restoring address and registers */")
 		restoreAddress.reverse.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreReg.reverse.foreach (reg => println ("pop " + reg))
 		println ("/* slice finishes and return to kernel */")
 		println ("mov ebx, 1")
 		println ("mov eax, 350")

@@ -4679,7 +4679,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				return -EEXIST;
 			}
 			//run slice jumps back to the user space
-			start_fw_slice (execute_slice_name, slice_addr, slice_size);	 
+			start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid);	 
 		}
 
 		if (attach_device) {

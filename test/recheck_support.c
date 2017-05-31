@@ -29,11 +29,13 @@ struct cfopened {
 #define MAX_FDS 4096
 struct cfopened cache_files_opened[MAX_FDS];
 
-void recheck_start()
+void recheck_start(char* filename)
 {
-    int rc, i;
+    int rc, i, fd;
+    int index = -64;
 
-    int fd = open("/tmp/recheck.3208", O_RDONLY);
+    printf ("filename is %s, %p\n", filename, filename);
+    fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;
@@ -52,6 +54,7 @@ void recheck_start()
 
 void handle_mismatch()
 {
+    sleep (5); // Just so we notice it for now
 }
 
 static inline void check_retval (const char* name, int expected, int actual) {
@@ -384,6 +387,7 @@ void ugetrlimit_recheck ()
     check_retval ("ugetrlimit", pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
 	fprintf (stderr, "[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
+	handle_mismatch();
     }
 }
 

@@ -2,16 +2,17 @@
 
 import os
 from subprocess import Popen, PIPE
+import sys
 
 # Modify these config paraemters for new checkpoint
-#rec_dir = 12334
-#ckpt_at = 69
-#taint_syscall = 9999
-
-rec_dir = 8216
-ckpt_at = 1475
-taint_syscall = 999999
-
+if (len(sys.argv) > 1):
+	rec_dir = sys.argv[1]
+	ckpt_at = sys.argv[2]
+	taint_syscall = sys.argv[3]
+else: 
+	print "usage: gen_ckpt rec_group_id checkpoint_clock taint_syscall" 
+	sys.exit(-1)
+	
 # Run the pin tool to generate slice info and the recheck log
 outfd = open("/tmp/pinout", "w")
 if (taint_syscall > 0):
@@ -33,7 +34,10 @@ outfd.close()
 
 # Run scala tool
 outfd = open("/tmp/exslice.asm", "w")
-p = Popen (["scala", "-nc", "preprocess_asm.scala", "/tmp/slice"],stdout=outfd)
+p = Popen (["scala", "preprocess_asm", "/tmp/slice"],stdout=outfd)
+#Note: Try to avoid recompilation, but this requires you to run make if you change preprocess_asm.scala file
+#If this hangs for a long time, it's probably because your environment configuration is wrong
+#Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
 p.wait()
 outfd.close()
 
@@ -42,10 +46,7 @@ infd = open("/tmp/exslice.asm", "r")
 outfd = open("/tmp/exslice.c", "w")
 outfd.write ("asm (\n")
 for line in infd:
-    if line[:13] == ".intel_syntax":
-        continue # Handled by -masm flag
-    else:
-        outfd.write ("\"" + line.strip() + "\\n\"\n")
+	outfd.write ("\"" + line.strip() + "\\n\"\n")
 outfd.write (");\n")
 
 infd.close();

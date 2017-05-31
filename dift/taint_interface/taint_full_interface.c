@@ -1121,8 +1121,10 @@ int translate_reg(int reg)
 	return LEVEL_BASE::REG_EBP;
     } else if (reg == LEVEL_BASE::REG_SI)
 	    return LEVEL_BASE::REG_ESI;
+    else if (reg == LEVEL_BASE::REG_DI)
+	    return LEVEL_BASE::REG_EDI;
     //also make sure bp,si,di,sp,flags are converted
-    if (reg == LEVEL_BASE::REG_SI || reg == LEVEL_BASE::REG_DI || reg == LEVEL_BASE::REG_SP || reg == LEVEL_BASE::REG_FLAGS) { 
+    if (reg == LEVEL_BASE::REG_SP || reg == LEVEL_BASE::REG_FLAGS) { 
 	    fprintf (stderr, "reg %d is not handled.\n", reg);
 	    assert (0);
     }
@@ -2407,7 +2409,7 @@ int fw_slice_check_final_mem_taint (taint_t* pregs) {
 	/* Assume 1 thread for now */
 	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
 	    if (pregs[i]) {
-		printf ("[RESTORE_REG] reg value %d/%d is tainted\n", i, i/REG_SIZE);
+		printf ("[CHECK_REG] $reg(%d) is tainted, index %d\n", i/REG_SIZE, i);
 	    }
 	}
 
