@@ -33,7 +33,7 @@ void recheck_start()
 {
     int rc, i;
 
-    int fd = open("/tmp/recheck.10596", O_RDONLY);
+    int fd = open("/tmp/recheck.3208", O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;
@@ -360,6 +360,30 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 blocks does not match %lld vs. recorded %lld\n", st.st_blocks, pfstat64->retvals.st_blocks);
 	    handle_mismatch();
 	}
+    }
+}
+
+void ugetrlimit_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct ugetrlimit_recheck* pugetrlimit;
+    struct rlimit rlim;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pugetrlimit = (struct ugetrlimit_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("ugetrlimit: resource %d rlimit %ld %ld rc %ld\n", pugetrlimit->resource, pugetrlimit->rlim.rlim_cur,
+	   pugetrlimit->rlim.rlim_max, pentry->retval);
+#endif
+
+    rc = syscall(SYS_ugetrlimit, pugetrlimit->resource, &rlim);
+    check_retval ("ugetrlimit", pentry->retval, rc);
+    if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
+	fprintf (stderr, "[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
     }
 }
 

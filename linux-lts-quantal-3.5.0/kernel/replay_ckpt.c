@@ -1561,6 +1561,10 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size)
 	regs->sp = extra_space_addr + STACK_SIZE;
 	printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
 	printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	printk ("sys_execute_fw_slice gs is %lx\n", regs->gs);
+	if (regs->gs == 0) {
+		printk("[BUG] fw slice probably won't work because checkpoint has not set the gs register\n");
+	}
 	
 	set_thread_flag (TIF_IRET);
 	

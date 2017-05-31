@@ -709,7 +709,6 @@ static inline void sys_close_stop(int rc)
 static inline void sys_brk_start(struct thread_data* tdata, void *addr)
 {
     tdata->save_syscall_info = (void *) addr;
-    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, addr);
 }
 
 static inline void sys_brk_stop(int rc)
@@ -966,7 +965,6 @@ static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf,
     wi->fd = fd;
     wi->buf = buf;
     tdata->save_syscall_info = (void *) wi;
-    //if (tdata->recheck_handle) recheck_write (tdata->recheck_handle, fd, buf, size);
 }
 
 static inline void sys_write_stop(int rc)
@@ -1506,6 +1504,15 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 #endif
 }
 
+/* Returns pid so must taint always */
+static inline void sys_set_tid_address_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
+	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+#endif
+}
+
 static inline void sys_getpid_stop (int rc) {
 	struct taint_creation_info tci;
 	tci.rg_id = current_thread->rg_id;
@@ -1516,15 +1523,26 @@ static inline void sys_getpid_stop (int rc) {
 	tci.data = 0;
 	tci.type = TOK_GETPID;
 	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	LOG_PRINT ("Done with getpid.\n");
+	LOG_PRINT ("Done with getpid\n");
+}
+
+static inline void sys_set_tid_address_stop (int rc) {
+	struct taint_creation_info tci;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	tci.type = TOK_GETPID;
+	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	LOG_PRINT ("Done with set_tid_address\n");
 }
 
 static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct stat64* buf) {
 	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->fstat64_info_cache;
-	fprintf(stderr, "sys_fstat64_start, fd=%d, buf=%p\n", fd, buf);
 	fsi->fd = fd;
 	fsi->buf = buf;
-	printf ("fstat64 buf is %p\n", buf);
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
 	    printf ("[SLICE] #0000000 #call fstat64_recheck [SLICE_INFO]\n");
@@ -1533,8 +1551,8 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 	}
 }
 
-static inline void sys_fstat64_stop (int rc) {
-	fprintf(stderr, "sys_fstat64_stop, rc=%d\n", rc);
+static inline void sys_fstat64_stop (int rc) 
+{
 	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->fstat64_info_cache;
 	clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
 	if (rc == 0) {
@@ -1549,8 +1567,27 @@ static inline void sys_fstat64_stop (int rc) {
 		printf ("atime buf is %p\n", &fsi->buf->st_atime);
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
 	}
-	/* Really should also clear taint here too for rc and buffer */
 	LOG_PRINT ("Done with fstat64.\n");
+}
+
+static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
+{
+	struct ugetrlimit_info* ugri = (struct ugetrlimit_info*) &current_thread->ugetrlimit_info_cache;
+	ugri->resource = resource;
+	ugri->prlim = prlim;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #0000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim);
+	}
+}
+
+static inline void sys_ugetrlimit_stop (int rc) 
+{
+	struct ugetrlimit_info* ugri = (struct ugetrlimit_info*) &current_thread->ugetrlimit_info_cache;
+	clear_mem_taints ((u_long)ugri->prlim, sizeof(struct rlimit));
+	LOG_PRINT ("Done with ugetrlimit.\n");
 }
 
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
@@ -1663,6 +1700,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
+	    break;
+        case SYS_ugetrlimit:
+	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
+	    break;
+      	case SYS_set_tid_address:
+	    sys_set_tid_address_start (tdata);
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
@@ -1790,8 +1833,14 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_set_tid_address:
+	    sys_set_tid_address_stop(rc);
+	    break;
 	case SYS_fstat64:
 	    sys_fstat64_stop(rc);
+	    break;
+	case SYS_ugetrlimit:
+	    sys_ugetrlimit_stop(rc);
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_stop(rc);

@@ -54,20 +54,18 @@ struct fstat64_recheck {
 };
 
 struct write_recheck {
-  int has_retvals;
-  int fd;
-  void* buf;
-  size_t count;
-  size_t writelen;
-
+    int has_retvals;
+    int fd;
+    void* buf;
+    size_t count;
+    size_t writelen;
 };
 /* Followed by variable length write data */
 
-
-struct brk_recheck {
-  void* addr;
+struct ugetrlimit_recheck {
+    int resource;
+    struct rlimit rlim;
 };
-
 
 
 /* Prototypes */
@@ -82,5 +80,5 @@ int recheck_access (struct recheck_handle* handle, char* pathname, int mode);
 int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf);
 int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf); 
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count);
-int recheck_brk (struct recheck_handle* handle, void *addr);
+int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim);
 #endif

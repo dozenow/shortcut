@@ -9,7 +9,7 @@ KERN_CONFIG := replay_headers/include/linux/replay_configs.h
 
 DEPS_DIR := .deps
 
-TARGETS=parseklog parseulog parsemlog launcher resume parseckpt parserecheck wparserecheck \
+TARGETS=parseklog parseulog parsemlog launcher resume parseckpt parserecheck \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
 	recheck_support.o
 

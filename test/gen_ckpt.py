@@ -4,13 +4,13 @@ import os
 from subprocess import Popen, PIPE
 
 # Modify these config paraemters for new checkpoint
-rec_dir = 12334
-ckpt_at = 69
-taint_syscall = 9999
+#rec_dir = 12334
+#ckpt_at = 69
+#taint_syscall = 9999
 
-#rec_dir = 8216
-#ckpt_at = 77
-#taint_syscall = 0
+rec_dir = 8216
+ckpt_at = 1475
+taint_syscall = 999999
 
 # Run the pin tool to generate slice info and the recheck log
 outfd = open("/tmp/pinout", "w")

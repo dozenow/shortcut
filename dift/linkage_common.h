@@ -142,6 +142,11 @@ struct fstat64_info {
 	struct stat64* buf;
 };
 
+struct ugetrlimit_info {
+	int resource;
+	struct rlimit* prlim;
+};
+
 struct address_taint_set {
 	u_long loc;
 	int is_imm;
@@ -164,6 +169,7 @@ struct thread_data {
     
     // These caches are to avoid extra allocations 
     // and resulting memory fragmentation
+    // This should really be a union to save space... 
     struct read_info read_info_cache;
     struct write_info write_info_cache;
     struct writev_info writev_info_cache;
@@ -174,6 +180,7 @@ struct thread_data {
     struct getrusage_info getrusage_info_cache;
     struct clock_gettime_info clock_gettime_info_cache;
     struct fstat64_info fstat64_info_cache;
+    struct ugetrlimit_info ugetrlimit_info_cache;
 
     void* save_syscall_info;
     int socketcall;
