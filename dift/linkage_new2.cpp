@@ -17459,14 +17459,14 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 	u_long addr = esp_value+0x4;
 	//victim = _int_malloc(ar_ptr, bytes); malloc.c :2938
 	if (strcmp ((char*)name, "linemap_add")) {
-		if (strcmp ((char*)name, "_cpp_lex_direct"))
-			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
+		if (strcmp ((char*)name, "_cpp_lex_direct") && strcmp((char*)name, "_cpp_clean_line"))
+			printf("Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
 		else {
-			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), arg->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *((long*) arg0), esp_value, name);
+			printf("Before call to %s (%#x), arg %u(hex %x), arg->buf->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *(long*)(*((long*) arg0)), esp_value, name);
 		}
 	} else
-		fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
-	fprintf (stderr, "input size is %d\n", *(int*)addr);
+		printf("Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
+	printf ("input size is %d\n", *(int*)addr);
 	//print slice
 	//untaint 
 	//malloc
@@ -17486,14 +17486,23 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		clear_mem_taints (addr, 4);
 		clear_mem_taints ((u_long) arg0 -0x4, 4);
 	}
+	//output for token len
+	if (!strcmp ((char*) name, "cpp_token_len")) { 
+		unsigned int len = *(unsigned int*) (arg0+8);
+		printf ("cpp_token_len src_loc %u, %lx, %s, len %u\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8));
+
+		if (len > 10000)
+			printf ("cpp_token_len src_loc %u, %lx, %s, len %u, indent: %s, %lx\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8), (char*)(*(long*)(unsigned int*) (arg0+8)), *(long*)(*(long*) (arg0+8)));
+	}
 }
 
 TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
 {
-	fprintf(stderr, "After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
+	printf("After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
 	//print slice
 	//untaint 
-	clear_reg (LEVEL_BASE::REG_EAX, 4);
+	if (!strcmp ((char*) name, "malloc") || !strcmp((char*) name, "_int_malloc"))
+		clear_reg (LEVEL_BASE::REG_EAX, 4);
 }
 
 void routine (RTN rtn, VOID *v)
@@ -17505,11 +17514,11 @@ void routine (RTN rtn, VOID *v)
     name = (char*) malloc (strlen (tmp) + 1);
     strcpy (name, tmp);
 
-    if (strcmp (name, "malloc") && strcmp(name, "free") && strcmp(name, "_int_malloc") && strcmp(name, "calloc")
+    /*if (strcmp (name, "malloc") && strcmp(name, "free") && strcmp(name, "_int_malloc") && strcmp(name, "calloc")
 		    && strcmp (name, "realloc") && strcmp (name, "memalign") && strcmp(name, "valloc") 
-		    && strcmp (name, "pvalloc") && strcmp(name, "linemap_add") && strcmp (name, "_cpp_lex_direct")) {
+		    && strcmp (name, "pvalloc") && strcmp(name, "linemap_add") && strcmp (name, "_cpp_lex_direct") && strcmp (name, "_cpp_clean_line")) {
 	    return;
-    }
+    }*/
 
     RTN_Open(rtn);
 
@@ -17780,7 +17789,7 @@ int main(int argc, char** argv)
 #endif
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
-#ifdef NULL
+#if 0
     RTN_AddInstrumentFunction (routine, 0);
 #endif
 #ifdef HEARTBLEED

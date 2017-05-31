@@ -2250,7 +2250,7 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
 	uint32_t i = 0;
 	uint32_t end = size;
 	if (is_upper8) {
-		i = 8;
+		i = 1;
 		end = size + i;
 	}
 	for (; i<end; ++i) { 
@@ -2479,6 +2479,7 @@ TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, u
 	//Warning: The reg value for xmm register is the register index, instead of the actual content
 	int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
 	int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
+	//printf ("    [DEBUG] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %u, src_reg_value %u\n", dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, dst_regvalue, src_regvalue);
 
 	if (tainted1 || tainted2){
 		PRINT ("regreg\n");
@@ -2890,6 +2891,23 @@ static inline void taint_add_reg2mem (u_long mem_loc, int reg, uint32_t size)
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
 //    fprintf (stderr, "TODO: taint_add_reg2mem control flow not handled.\n");
+    /*{
+	    //debug
+	    if (mem_loc == 0xbae67b0) {
+		    struct taint_creation_info tci;
+		    tci.type = 100;
+		    tci.rg_id = current_thread->rg_id;
+		    tci.record_pid = current_thread->record_pid;
+		    tci.syscall_cnt = current_thread->syscall_cnt;
+		    tci.offset = 0;
+		    tci.fileno = 0xbaea7c8;
+		    write_output_header (outfd, &tci, (void*) mem_loc, 4);
+		    write_output_taints (outfd, (void*) mem_loc, 4);
+
+	 	    printf ("[Debugging] taint_add_mem2reg, tainted %u\n", is_mem_tainted(mem_loc, 4));
+	    }
+    }*/
+
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {
