@@ -23,6 +23,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/resource.h>
+#include <sys/utsname.h>
 
 #include <map>
 using namespace std;
@@ -726,7 +727,6 @@ static inline void sys_close_stop(int rc)
 static inline void sys_brk_start(struct thread_data* tdata, void *addr)
 {
     tdata->save_syscall_info = (void *) addr;
-    if (tdata->recheck_handle) recheck_brk (tdata->recheck_handle, addr);
 }
 
 static inline void sys_brk_stop(int rc)
@@ -737,7 +737,7 @@ static inline void sys_brk_stop(int rc)
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
     SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
-    struct read_info* ri = &tdata->read_info_cache;
+    struct read_info* ri = &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
@@ -752,7 +752,7 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
 static inline void sys_read_stop(int rc)
 {
     int read_fileno = -1;
-    struct read_info* ri = (struct read_info*) &current_thread->read_info_cache;
+    struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
     if (rc > 0) {
         struct taint_creation_info tci;
@@ -806,14 +806,14 @@ static inline void sys_read_stop(int rc)
 #endif
     }
 
-    memset(&current_thread->read_info_cache, 0, sizeof(struct read_info));
+    memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     current_thread->save_syscall_info = 0;
 }
 
 static inline void sys_pread_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
     SYSCALL_DEBUG(stderr, "pread fd = %d\n", fd);
-    struct read_info* ri = &tdata->read_info_cache;
+    struct read_info* ri = &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
@@ -827,7 +827,7 @@ static inline void sys_pread_start(struct thread_data* tdata, int fd, char* buf,
 static inline void sys_pread_stop(int rc)
 {
     int read_fileno = -1;
-    struct read_info* ri = (struct read_info*) &current_thread->read_info_cache;
+    struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
     // If global_syscall_cnt == 0, then handled in previous epoch
     if (rc > 0) {
@@ -856,7 +856,7 @@ static inline void sys_pread_stop(int rc)
         create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
     }
 
-    memset(&current_thread->read_info_cache, 0, sizeof(struct read_info));
+    memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     current_thread->save_syscall_info = 0;
 }
 
@@ -864,11 +864,11 @@ static inline void sys_pread_stop(int rc)
 static void sys_select_start(struct thread_data* tdata, int nfds, fd_set* readfds, fd_set* writefds, 
 			     fd_set* exceptfds, struct timeval* timeout)
 {
-    tdata->select_info_cache.nfds = nfds;
-    tdata->select_info_cache.readfds = readfds;
-    tdata->select_info_cache.writefds = writefds;
-    tdata->select_info_cache.exceptfds = exceptfds;
-    tdata->select_info_cache.timeout = timeout;
+    tdata->op.select_info_cache.nfds = nfds;
+    tdata->op.select_info_cache.readfds = readfds;
+    tdata->op.select_info_cache.writefds = writefds;
+    tdata->op.select_info_cache.exceptfds = exceptfds;
+    tdata->op.select_info_cache.timeout = timeout;
 }
 
 static void sys_select_stop(int rc)
@@ -885,8 +885,8 @@ static void sys_select_stop(int rc)
         tci.data = 0;
         tci.type = TOK_SELECT;
 
-        create_fd_taints(current_thread->select_info_cache.nfds,
-                current_thread->select_info_cache.readfds,
+        create_fd_taints(current_thread->op.select_info_cache.nfds,
+                current_thread->op.select_info_cache.readfds,
                 &tci, tokens_fd);
     }
 }
@@ -894,7 +894,7 @@ static void sys_select_stop(int rc)
 
 static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd)
 {
-    struct mmap_info* mmi = &tdata->mmap_info_cache;
+    struct mmap_info* mmi = &tdata->op.mmap_info_cache;
     mmi->addr = addr;
     mmi->length = len;
     mmi->prot = prot;
@@ -960,7 +960,7 @@ static void sys_mmap_stop(int rc)
 #if 0
 static void sys_munmap_start(struct thread_data* tdata, u_long addr, int len)
 {
-    struct mmap_info* mmi = &tdata->mmap_info_cache;
+    struct mmap_info* mmi = &tdata->op.mmap_info_cache;
     mmi->addr = addr;
     mmi->length = len;
     tdata->save_syscall_info = (void *) mmi;
@@ -979,16 +979,15 @@ static void sys_munmap_stop(int rc)
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
     fprintf (stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
-    struct write_info* wi = &tdata->write_info_cache;
+    struct write_info* wi = &tdata->op.write_info_cache;
     wi->fd = fd;
     wi->buf = buf;
     tdata->save_syscall_info = (void *) wi;
-    //if (tdata->recheck_handle) recheck_write (tdata->recheck_handle, fd, buf, size);
 }
 
 static inline void sys_write_stop(int rc)
 {
-    struct write_info* wi = (struct write_info *) &current_thread->write_info_cache;
+    struct write_info* wi = (struct write_info *) &current_thread->op.write_info_cache;
     int channel_fileno = -1;
     if (rc > 0) {
 	if (*ppthread_log_clock >= filter_outputs_before) {
@@ -1031,7 +1030,7 @@ static inline void sys_writev_start(struct thread_data* tdata, int fd, struct io
 {
     SYSCALL_DEBUG(stderr, "sys_writev_start: fd = %d\n", fd);
     struct writev_info* wvi;
-    wvi = (struct writev_info *) &tdata->writev_info_cache;
+    wvi = (struct writev_info *) &tdata->op.writev_info_cache;
     wvi->fd = fd;
     wvi->count = count;
     wvi->vi = iov;
@@ -1044,7 +1043,7 @@ static inline void sys_writev_stop(int rc)
     if (rc > 0) {
 	if (*ppthread_log_clock >= filter_outputs_before) {
 	    struct taint_creation_info tci;
-	    struct writev_info* wvi = (struct writev_info *) &current_thread->writev_info_cache;
+	    struct writev_info* wvi = (struct writev_info *) &current_thread->op.writev_info_cache;
 	    int channel_fileno = -1;
 	    if (monitor_has_fd(open_fds, wvi->fd)) {
 		struct open_info* oi;
@@ -1087,7 +1086,7 @@ static inline void sys_writev_stop(int rc)
 	    }
         }
     }
-    memset(&current_thread->writev_info_cache, 0, sizeof(struct writev_info));
+    memset(&current_thread->op.writev_info_cache, 0, sizeof(struct writev_info));
 }
 
 static void sys_socket_start (struct thread_data* tdata, int domain, int type, int protocol)
@@ -1221,7 +1220,7 @@ static void sys_connect_stop(int rc)
 static void sys_recv_start(thread_data* tdata, int fd, char* buf, int size) 
 {
     // recv and read are similar so they can share the same info struct
-    struct read_info* ri = (struct read_info*) &tdata->read_info_cache;
+    struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
@@ -1230,7 +1229,7 @@ static void sys_recv_start(thread_data* tdata, int fd, char* buf, int size)
 
 static void sys_recv_stop(int rc) 
 {
-    struct read_info* ri = (struct read_info *) &current_thread->read_info_cache;
+    struct read_info* ri = (struct read_info *) &current_thread->op.read_info_cache;
     LOG_PRINT ("Pid %d syscall recv returns %d\n", PIN_GetPid(), rc);
     SYSCALL_DEBUG (stderr, "Pid %d syscall recv returns %d\n", PIN_GetPid(), rc);
 
@@ -1282,7 +1281,7 @@ static void sys_recv_stop(int rc)
 #endif
 
     }
-    memset(&current_thread->read_info_cache, 0, sizeof(struct read_info));
+    memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     current_thread->save_syscall_info = 0;
 }
 
@@ -1459,14 +1458,14 @@ static void sys_send_stop(int rc)
 static inline void sys_gettimeofday_start (struct thread_data* tdata, struct timeval* tv, struct timezone *tz) {
 	SYSCALL_DEBUG(stderr, "sys_gettimeofday_start.\n");
 	LOG_PRINT ("start to handle gettimeofday, tv %p, tz %p\n", tv, tz);
-	struct gettimeofday_info* info = &tdata->gettimeofday_info_cache;
+	struct gettimeofday_info* info = &tdata->op.gettimeofday_info_cache;
 	info->tv = tv;
 	info->tz = tz;
 	tdata->save_syscall_info = (void*) info;
 }
 
 static inline void sys_gettimeofday_stop (int rc) {
-	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->gettimeofday_info_cache;
+	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
 	if (rc == 0) {
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "gettimeofday-tv";
@@ -1483,7 +1482,7 @@ static inline void sys_gettimeofday_stop (int rc) {
 			create_taints_from_buffer (ri->tz, sizeof(struct timezone), &tci, tokens_fd, channel_name);
 		}
 	}
-	memset (&current_thread->gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
+	memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
 	current_thread->save_syscall_info = 0;
 	LOG_PRINT ("Done with getpid.\n");
 }
@@ -1491,13 +1490,13 @@ static inline void sys_gettimeofday_stop (int rc) {
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
 	SYSCALL_DEBUG(stderr, "sys_clock_gettime_start %p.\n", tp);
 	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
-	struct clock_gettime_info* info = &tdata->clock_gettime_info_cache;
+	struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
 	info->tp = tp;
 	tdata->save_syscall_info = (void*) info;
 }
 
 static inline void sys_clock_gettime_stop (int rc) { 
-	struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->clock_gettime_info_cache;
+	struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
 	if (rc == 0) { 
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "clock_gettime";
@@ -1510,7 +1509,7 @@ static inline void sys_clock_gettime_stop (int rc) {
 		tci.data = 0;
 		create_taints_from_buffer(ri->tp, sizeof(struct timespec), &tci, tokens_fd, channel_name);
 	}
-	memset (&current_thread->clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+	memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
 	current_thread->save_syscall_info = 0;
 	LOG_PRINT ("Done with clock_gettime.\n");
 }
@@ -1519,6 +1518,15 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
 #ifdef FW_SLICE
 	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
+	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+#endif
+}
+
+/* Returns pid so must taint always */
+static inline void sys_set_tid_address_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
 	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
 #endif
 }
@@ -1533,15 +1541,26 @@ static inline void sys_getpid_stop (int rc) {
 	tci.data = 0;
 	tci.type = TOK_GETPID;
 	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	LOG_PRINT ("Done with getpid.\n");
+	LOG_PRINT ("Done with getpid\n");
+}
+
+static inline void sys_set_tid_address_stop (int rc) {
+	struct taint_creation_info tci;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	tci.type = TOK_GETPID;
+	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	LOG_PRINT ("Done with set_tid_address\n");
 }
 
 static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct stat64* buf) {
-	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->fstat64_info_cache;
-	fprintf(stderr, "sys_fstat64_start, fd=%d, buf=%p\n", fd, buf);
+	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
 	fsi->fd = fd;
 	fsi->buf = buf;
-	printf ("fstat64 buf is %p\n", buf);
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
 	    printf ("[SLICE] #0000000 #call fstat64_recheck [SLICE_INFO]\n");
@@ -1550,9 +1569,9 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 	}
 }
 
-static inline void sys_fstat64_stop (int rc) {
-	fprintf(stderr, "sys_fstat64_stop, rc=%d\n", rc);
-	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->fstat64_info_cache;
+static inline void sys_fstat64_stop (int rc) 
+{
+	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
 	clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
 	if (rc == 0) {
 		struct taint_creation_info tci;
@@ -1567,20 +1586,71 @@ static inline void sys_fstat64_stop (int rc) {
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
 		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	}
-	/* Really should also clear taint here too for rc and buffer */
 	LOG_PRINT ("Done with fstat64.\n");
+}
+
+static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
+{
+	struct ugetrlimit_info* ugri = (struct ugetrlimit_info*) &current_thread->op.ugetrlimit_info_cache;
+	ugri->resource = resource;
+	ugri->prlim = prlim;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #0000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim);
+	}
+}
+
+static inline void sys_ugetrlimit_stop (int rc) 
+{
+	struct ugetrlimit_info* ugri = (struct ugetrlimit_info*) &current_thread->op.ugetrlimit_info_cache;
+	clear_mem_taints ((u_long)ugri->prlim, sizeof(struct rlimit));
+	LOG_PRINT ("Done with ugetrlimit.\n");
+}
+
+static inline void sys_uname_start (struct thread_data* tdata, struct utsname* buf) 
+{
+	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
+	uni->buf = buf;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #0000000 #call uname_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_uname (tdata->recheck_handle, buf);
+	}
+}
+
+static inline void sys_uname_stop (int rc) 
+{
+	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
+	clear_mem_taints ((u_long)uni->buf, sizeof(struct utsname));
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = 0;
+		tci.data = 0;
+		tci.type = TOK_UNAME;
+		printf ("uname version buf is %p size %d\n", &uni->buf->version, sizeof(uni->buf->version));
+		create_taints_from_buffer_unfiltered (&uni->buf->version, sizeof(uni->buf->version), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&uni->buf->version, sizeof(uni->buf->version));
+	}
+	LOG_PRINT ("Done with uname.\n");
 }
 
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
 	SYSCALL_DEBUG (stderr, "sys_getrusage_start.\n");
 	LOG_PRINT ("start to handle getrusage, usage addr %p\n", usage);
-	struct getrusage_info* info = &tdata->getrusage_info_cache;
+	struct getrusage_info* info = &tdata->op.getrusage_info_cache;
 	info->usage = usage;
 	tdata->save_syscall_info = (void*) info;
 }
 
 static inline void sys_getrusage_stop (int rc) {
-	struct getrusage_info* ri = (struct getrusage_info*) &current_thread->getrusage_info_cache;
+	struct getrusage_info* ri = (struct getrusage_info*) &current_thread->op.getrusage_info_cache;
 	if (rc == 0) {
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "getrusage";
@@ -1593,7 +1663,7 @@ static inline void sys_getrusage_stop (int rc) {
 		tci.type = TOK_GETRUSAGE;
 		create_taints_from_buffer (ri->usage, sizeof(struct rusage), &tci, tokens_fd, channel_name);	
 	}
-	memset (&current_thread->getrusage_info_cache, 0, sizeof(struct rusage));
+	memset (&current_thread->op.getrusage_info_cache, 0, sizeof(struct rusage));
 	current_thread->save_syscall_info = 0;
 	LOG_PRINT ("Done with getrusage\n");
 }
@@ -1681,6 +1751,15 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
+	    break;
+        case SYS_ugetrlimit:
+	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
+	    break;
+        case SYS_uname:
+	    sys_uname_start (tdata, (struct utsname *) syscallarg0);
+	    break;
+      	case SYS_set_tid_address:
+	    sys_set_tid_address_start (tdata);
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
@@ -1808,8 +1887,17 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_set_tid_address:
+	    sys_set_tid_address_stop(rc);
+	    break;
 	case SYS_fstat64:
 	    sys_fstat64_stop(rc);
+	    break;
+	case SYS_ugetrlimit:
+	    sys_ugetrlimit_stop(rc);
+	    break;
+	case SYS_uname:
+	    sys_uname_stop(rc);
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_stop(rc);

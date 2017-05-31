@@ -1566,9 +1566,14 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 	regs->ip = slice_addr + entry;
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
+
 	printk ("start_fw_slice ip is %lx\n", regs->ip);
 	printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
-	dump_reg_struct (regs);
+	printk ("start_fw_slice gs is %lx\n", regs->gs);
+	if (regs->gs == 0) {
+		printk("[BUG] fw slice probably won't work because checkpoint has not set the gs register\n");
+	}
+
 	//now push parameters to the stack
 	snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
 	

@@ -4,6 +4,7 @@
 #include <syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 
 #include "recheck_log.h"
 
@@ -216,14 +217,28 @@ int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
     return 0;
 }
 
-int recheck_brk (struct recheck_handle* handle, void *addr)
+int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim)
 {
-    struct brk_recheck brchk;
-    struct klog_result *res = skip_to_syscall (handle, SYS_brk);
+    struct ugetrlimit_recheck ugchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_ugetrlimit);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_brk, res->retval, sizeof (struct brk_recheck));
-    brchk.addr = addr;
-    write_data_into_recheck_log (handle->recheckfd, &brchk, sizeof(brchk));
+    write_header_into_recheck_log (handle->recheckfd, SYS_ugetrlimit, res->retval, sizeof (struct ugetrlimit_recheck));
+    ugchk.resource = resource;
+    memcpy (&ugchk.rlim, res->retparams, sizeof(ugchk.rlim));
+    write_data_into_recheck_log (handle->recheckfd, &ugchk, sizeof(ugchk));
+
+    return 0;
+}
+
+int recheck_uname (struct recheck_handle* handle, struct utsname* buf)
+{
+    struct uname_recheck uchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_uname);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_uname, res->retval, sizeof (struct uname_recheck));
+    uchk.buf = buf;
+    memcpy (&uchk.utsname, res->retparams, sizeof(uchk.utsname));
+    write_data_into_recheck_log (handle->recheckfd, &uchk, sizeof(uchk));
 
     return 0;
 }

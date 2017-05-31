@@ -277,9 +277,9 @@ again:
 #ifdef LPRINT		    
 		    printf ("entirely in unallocated region\n");
 #endif
-		    void* p = mmap ((void *) start, st.st_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		    void* p = mmap ((void *) start, end-start, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		    if ((u_long) p != start) {
-			fprintf (stderr, "Tried to map at %lx, got %p\n", start, p);
+			fprintf (stderr, "Tried to map at %lx size %lx, got %p\n", end-start, st.st_size, p);
 			return -1;
 		    }
 		    break;
@@ -295,6 +295,7 @@ again:
 
 #endif
 			start = m.second;
+			goto again;
 		    }
 		} else {
 #ifdef LPRINT

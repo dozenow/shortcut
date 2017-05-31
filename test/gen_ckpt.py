@@ -5,9 +5,6 @@ from subprocess import Popen, PIPE
 import sys
 
 # Modify these config paraemters for new checkpoint
-rec_dir = 12334
-ckpt_at = 69
-taint_syscall = 9999
 if (len(sys.argv) > 1):
 	rec_dir = sys.argv[1]
 	ckpt_at = sys.argv[2]
@@ -16,11 +13,6 @@ else:
 	print "usage: gen_ckpt rec_group_id checkpoint_clock taint_syscall" 
 	sys.exit(-1)
 	
-
-#rec_dir = 8216
-#ckpt_at = 77
-#taint_syscall = 0
-
 # Run the pin tool to generate slice info and the recheck log
 outfd = open("/tmp/pinout", "w")
 if (taint_syscall > 0):
