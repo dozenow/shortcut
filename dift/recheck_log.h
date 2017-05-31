@@ -67,6 +67,11 @@ struct ugetrlimit_recheck {
     struct rlimit rlim;
 };
 
+struct uname_recheck {
+    struct utsname* buf;
+    struct utsname utsname;
+};
+
 
 /* Prototypes */
 struct recheck_handle;
@@ -81,4 +86,6 @@ int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf);
 int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf); 
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count);
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim);
+int recheck_uname (struct recheck_handle* handle, struct utsname* buf);
+
 #endif

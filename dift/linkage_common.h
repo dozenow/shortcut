@@ -147,6 +147,10 @@ struct ugetrlimit_info {
 	struct rlimit* prlim;
 };
 
+struct uname_info {
+	struct utsname* buf;
+};
+
 struct address_taint_set {
 	u_long loc;
 	int is_imm;
@@ -170,17 +174,20 @@ struct thread_data {
     // These caches are to avoid extra allocations 
     // and resulting memory fragmentation
     // This should really be a union to save space... 
-    struct read_info read_info_cache;
-    struct write_info write_info_cache;
-    struct writev_info writev_info_cache;
-    struct mmap_info mmap_info_cache;
-    struct select_info select_info_cache;
-    struct gettimeofday_info gettimeofday_info_cache;
-    struct syscall_ret_info syscall_ret_info_cache;
-    struct getrusage_info getrusage_info_cache;
-    struct clock_gettime_info clock_gettime_info_cache;
-    struct fstat64_info fstat64_info_cache;
-    struct ugetrlimit_info ugetrlimit_info_cache;
+    union {
+	struct read_info read_info_cache;
+	struct write_info write_info_cache;
+	struct writev_info writev_info_cache;
+	struct mmap_info mmap_info_cache;
+	struct select_info select_info_cache;
+	struct gettimeofday_info gettimeofday_info_cache;
+	struct syscall_ret_info syscall_ret_info_cache;
+	struct getrusage_info getrusage_info_cache;
+	struct clock_gettime_info clock_gettime_info_cache;
+	struct fstat64_info fstat64_info_cache;
+	struct ugetrlimit_info ugetrlimit_info_cache;
+	struct uname_info uname_info_cache;
+    } op;
 
     void* save_syscall_info;
     int socketcall;

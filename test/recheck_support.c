@@ -10,8 +10,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/syscall.h>
 #include <assert.h>
+#include <sys/syscall.h>
+#include <sys/utsname.h>
 
 #include "../dift/recheck_log.h"
 
@@ -387,6 +388,47 @@ void ugetrlimit_recheck ()
     check_retval ("ugetrlimit", pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
 	fprintf (stderr, "[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
+	handle_mismatch();
+    }
+}
+
+void uname_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct uname_recheck* puname;
+    struct utsname uname;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    puname = (struct uname_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("uname: sysname %s nodename %s release %s version %s machine %s rc %ld\n", 
+	   puname->utsname.sysname, puname->utsname.nodename, puname->utsname.release, puname->utsname.version, 
+	   puname->utsname.machine, pentry->retval);
+#endif
+
+    rc = syscall(SYS_uname, &uname);
+    check_retval ("uname", pentry->retval, rc);
+
+    if (memcmp(&uname.sysname, &puname->utsname.sysname, sizeof(uname.sysname))) {
+	fprintf (stderr, "[MISMATCH] uname sysname does not match: %s\n", uname.sysname);
+	handle_mismatch();
+    }
+    if (memcmp(&uname.nodename, &puname->utsname.nodename, sizeof(uname.nodename))) {
+	fprintf (stderr, "[MISMATCH] uname nodename does not match: %s\n", uname.nodename);
+	handle_mismatch();
+    }
+    if (memcmp(&uname.release, &puname->utsname.release, sizeof(uname.release))) {
+	fprintf (stderr, "[MISMATCH] uname release does not match: %s\n", uname.release);
+	handle_mismatch();
+    }
+    /* Assume version will be handled by tainting since it changes often */
+    memcpy (&((struct utsname *) puname->buf)->version, &puname->utsname.version, sizeof(puname->utsname.version));
+    if (memcmp(&uname.machine, &puname->utsname.machine, sizeof(uname.machine))) {
+	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
 	handle_mismatch();
     }
 }
