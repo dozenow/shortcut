@@ -8,7 +8,34 @@ import scala.collection.mutable.Queue
 //replace registers with meaning full name
 //replace memory address if necessary 
 object preprocess_asm {
-	class AddrToRestore (val loc:String, val isImm:Int, val size:Int)
+	class AddrToRestore (val loc:String, val isImm:Int, val size:Int) {
+		def printPush ():Unit = {
+			if (size == 2 || size == 4 || size == 16)
+		 		println ("push " + memSizeToPrefix(size) + "[0x" + loc + "]")
+			else {
+				//use movsb
+				println ("/*TODO: make sure we don't mess up with original ecs, edi and esi*/")
+				println ("sub esp, " + size)
+				println ("mov ecx, " + size)
+				println ("lea edi, [esp]")
+				println ("lea esi, [0x" + loc + "]")
+				println ("rep movsb")
+			}
+		}
+		def printPop ():Unit = {
+			if (size == 2 || size == 4 || size == 16)
+				println ("pop " + memSizeToPrefix(size) + "[0x" + loc + "]")
+			else {
+				//use movsb
+				println ("/*TODO: make sure we don't mess up with original ecs, edi and esi*/")
+				println ("mov ecx, " + size)
+				println ("lea edi, [0x" + loc + "]")
+				println ("lea esi, [esp]")
+				println ("rep movsb")
+				println ("add esp, " + size)
+			}
+		}
+	}
 	def cleanupSliceLine (s:String):String = {
 		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
@@ -185,12 +212,12 @@ object preprocess_asm {
 		println ("push ebp") 
 		println ("call recheck_start")
 		println ("pop ebp")
-		println ("/*TODO: make sure we follow the calling conventions*/")
+		println ("/*TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)*/")
 
 		//write out all restore address
 		println ("/*first checkpoint necessary addresses and registers*/")
 		restoreReg.foreach (reg => println ("push " + reg))
-		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreAddress.foreach (_.printPush)
 
 		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
@@ -226,7 +253,7 @@ object preprocess_asm {
 			}
 		})
 		println ("/* restoring address and registers */")
-		restoreAddress.reverse.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreAddress.reverse.foreach (_.printPop)
 		restoreReg.reverse.foreach (reg => println ("pop " + reg))
 		println ("/* slice finishes and return to kernel */")
 		println ("mov ebx, 1")
