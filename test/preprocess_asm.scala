@@ -10,6 +10,7 @@ import scala.collection.mutable.Queue
 object preprocess_asm {
 	class AddrToRestore (val loc:String, val isImm:Int, val size:Int)
 	def cleanupSliceLine (s:String):String = {
+	        println(s)
 		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
 	}
@@ -22,7 +23,6 @@ object preprocess_asm {
 		case 16 => " xmmword ptr "
 		case _ => {
 			println ("unrecognized mem size " + size)
-			throw new Exception ()
 		}
 	}
 	def rewriteInst (s:String):String = {

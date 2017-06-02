@@ -433,3 +433,32 @@ void uname_recheck ()
     }
 }
 
+void statfs64_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct statfs64_recheck* pstatfs64;
+    struct statfs st;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pstatfs64 = (struct statfs64_recheck *) bufptr;
+    char* path = buf+sizeof(struct statfs64_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("statfs64: path %s type %d bsize %d blocks %ld bree %ld bavail %ld files %ld ffree %ld fsid %d %d namelen %d frsize %d rc %ld\n", path, pstatfs64->statfs.f_type, 
+	   pstatfs64->statfs.f_bsize, pstatfs64->statfs.f_blocks, pstatfs64->statfs.f_bfree, pstatfs64->statfs.f_bavail, pstatfs64->statfs.f_files, 
+	   pstatfs64->statfs.f_ffree, pstatfs64->statfs.f_fsid.__val[0], pstatfs64->statfs.f_fsid.__val[1], pstatfs64->statfs.f_namelen, pstatfs64->statfs.f_frsize, pentry->retval);
+#endif
+
+    rc = syscall(SYS_statfs64, path, &st);
+    check_retval ("statfs64", pentry->retval, rc);
+    if (memcmp(&st, &pstatfs64->statfs, sizeof(st))) {
+	fprintf (stderr, "[MISMATCH] statfs64 does not match: returns type %d bsize %d blocks %ld bree %ld bavail %ld files %ld ffree %ld fsid %d %d namelen %d frsize %d\n", 
+		 pstatfs64->statfs.f_type, pstatfs64->statfs.f_bsize, pstatfs64->statfs.f_blocks, pstatfs64->statfs.f_bfree, pstatfs64->statfs.f_bavail, pstatfs64->statfs.f_files, 
+		 pstatfs64->statfs.f_ffree, pstatfs64->statfs.f_fsid.__val[0], pstatfs64->statfs.f_fsid.__val[1], pstatfs64->statfs.f_namelen, pstatfs64->statfs.f_frsize);
+	handle_mismatch();
+    }
+}
+

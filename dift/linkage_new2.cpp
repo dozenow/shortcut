@@ -24,6 +24,7 @@
 #include <arpa/inet.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
+#include <sys/vfs.h>
 
 #include <map>
 using namespace std;
@@ -100,7 +101,7 @@ int s = -1;
 #define LOGGING_ON
 #define LOG_F log_f
 #define ERROR_PRINT fprintf
-//#define EXTRA_DEBUG
+#define EXTRA_DEBUG
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
 #define LOG_PRINT(args...) \
@@ -1641,6 +1642,27 @@ static inline void sys_uname_stop (int rc)
 	LOG_PRINT ("Done with uname.\n");
 }
 
+static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, struct statfs* buf) 
+{
+	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
+	sfi->buf = buf;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #0000000 #call statfs64_recheck [SLICE_INFO]\n");
+#endif
+#if 0
+	    recheck_statfs64 (tdata->recheck_handle, path, buf);
+#endif
+	}
+}
+
+static inline void sys_statfs64_stop (int rc) 
+{
+	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
+	clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs));
+	LOG_PRINT ("Done with statfs64.\n");
+}
+
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
 	SYSCALL_DEBUG (stderr, "sys_getrusage_start.\n");
 	LOG_PRINT ("start to handle getrusage, usage addr %p\n", usage);
@@ -1757,6 +1779,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_uname:
 	    sys_uname_start (tdata, (struct utsname *) syscallarg0);
+	    break;
+        case SYS_statfs64:
+	    sys_statfs64_start (tdata, (const char *) syscallarg0, (struct statfs *) syscallarg1);
 	    break;
       	case SYS_set_tid_address:
 	    sys_set_tid_address_start (tdata);
@@ -1898,6 +1923,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	    break;
 	case SYS_uname:
 	    sys_uname_stop(rc);
+	    break;
+	case SYS_statfs64:
+	    sys_statfs64_stop(rc);
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_stop(rc);
@@ -16075,6 +16103,11 @@ void count_inst_executed (void) {
 void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2)
 {
 	printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
+	PIN_LockClient();
+	if (IMG_Valid(IMG_FindByAddress(ip))) {
+	  printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	}
+	PIN_UnlockClient();
 }
 
 void debug_print (INS ins) 

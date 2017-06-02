@@ -2307,7 +2307,7 @@ static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) {
 			}
 		default:
 			{
-				printf ("get_mem_value: size is %u. \n", size);
+				fprintf (stderr, "get_mem_value: size is %u. \n", size);
 				return 0;
 			}
 	}

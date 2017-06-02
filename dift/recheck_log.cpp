@@ -65,7 +65,7 @@ static int write_header_into_recheck_log (int recheckfd, int sysnum, long retval
     return 0;
 }
 
-static int write_data_into_recheck_log (int recheckfd, void* buf, int len)
+static int write_data_into_recheck_log (int recheckfd, const void* buf, int len)
 {
     int rc = write (recheckfd, buf, len);
     if (rc != len) { 
@@ -239,6 +239,19 @@ int recheck_uname (struct recheck_handle* handle, struct utsname* buf)
     uchk.buf = buf;
     memcpy (&uchk.utsname, res->retparams, sizeof(uchk.utsname));
     write_data_into_recheck_log (handle->recheckfd, &uchk, sizeof(uchk));
+
+    return 0;
+}
+
+int recheck_statfs64 (struct recheck_handle* handle, const char* path, struct statfs* buf)
+{
+    struct statfs64_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_statfs64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_statfs64, res->retval, sizeof (struct statfs64_recheck));
+    memcpy (&schk.statfs, res->retparams, sizeof(schk.statfs));
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+    write_data_into_recheck_log (handle->recheckfd, path, strlen(path)+1);
 
     return 0;
 }

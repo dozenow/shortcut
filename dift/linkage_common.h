@@ -151,6 +151,10 @@ struct uname_info {
 	struct utsname* buf;
 };
 
+struct statfs64_info {
+	struct statfs* buf;
+};
+
 struct address_taint_set {
 	u_long loc;
 	int is_imm;
@@ -187,6 +191,7 @@ struct thread_data {
 	struct fstat64_info fstat64_info_cache;
 	struct ugetrlimit_info ugetrlimit_info_cache;
 	struct uname_info uname_info_cache;
+	struct statfs64_info statfs64_info_cache;
     } op;
 
     void* save_syscall_info;
