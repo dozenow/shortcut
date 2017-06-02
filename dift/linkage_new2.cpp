@@ -17547,14 +17547,27 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 	u_long addr = esp_value+0x4;
 	//victim = _int_malloc(ar_ptr, bytes); malloc.c :2938
 	if (strcmp ((char*)name, "linemap_add")) {
-		if (strcmp ((char*)name, "_cpp_lex_direct") && strcmp((char*)name, "_cpp_clean_line"))
+		if (strcmp ((char*)name, "_cpp_lex_direct") && strcmp((char*)name, "_cpp_clean_line")) {
 			printf("Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
-		else {
+			/*if (*ppthread_log_clock >=170) { 
+				long* tmp = (long*) 0xb7e37020;
+				printf ("content b7e37020 is %ld\n", *tmp);
+			}*/
+		} 
+		if (*ppthread_log_clock >= 86*2 && arg0 == 0xbae4db8) {
+			long arg_buf = *((long*) arg0);
+			taint_t* t = NULL;
 			printf("Before call to %s (%#x), arg %u(hex %x), arg->buf->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *(long*)(*((long*) arg0)), esp_value, name);
+			t = get_mem_taints (arg_buf, 4);
+			if (t) {
+				if (t[0] || t[1] || t[2] || t[3]) {
+					printf ("argbuf is tainted: %d, %d, %d, %d\n", t[0], t[1], t[2], t[3]);
+				}
+			}
+
 		}
 	} else
 		printf("Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
-	printf ("input size is %d\n", *(int*)addr);
 	//print slice
 	//untaint 
 	//malloc
@@ -17563,12 +17576,15 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		clear_mem_taints (addr-0x4+0x2c, 4);
 		clear_reg (LEVEL_BASE::REG_EDI, 4);
 		clear_reg (LEVEL_BASE::REG_ESP, 4);
+		printf ("input size is %d\n", *(int*)addr);
 	}
 	//for _int_malloc
 	//esp-0x4*4-0x8c=esp-0x9c
-	if (!strcmp((char*)name, "_int_malloc"))
+	if (!strcmp((char*)name, "_int_malloc")) {
 		clear_reg (LEVEL_BASE::REG_EAX, 4);
 		clear_mem_taints (addr-0x4-0x9c, 4);
+		printf ("input size is %d\n", *(int*)addr);
+	}
 	//for free clear arg0-0x4
 	if (!strcmp((char*)name, "free")) {
 		clear_mem_taints (addr, 4);
@@ -17580,8 +17596,25 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		printf ("cpp_token_len src_loc %u, %lx, %s, len %u\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8));
 
 		if (len > 10000)
-			printf ("cpp_token_len src_loc %u, %lx, %s, len %u, indent: %s, %lx\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8), (char*)(*(long*)(unsigned int*) (arg0+8)), *(long*)(*(long*) (arg0+8)));
+			printf ("cpp_token_len src_loc %u, %lx, %s, len %u, ident: %s, %lx\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8), (char*)(*(long*)len), *(long*)(*(long*) (arg0+8)));
 	}
+
+	if (!strcmp ((char*) name, "__strlen_ia32")) {
+		printf ("strlen: %s\n", (char*) arg0);
+	}
+	if (!strcmp ((char*) name, "htab_hash_string")) { 
+		char* fname = (char*) arg0;
+		unsigned int i = 0;
+		int tainted = 0;
+		for (; i<strlen(fname); ++i) {
+			taint_t* t = get_mem_taints(arg0+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("htab_hash_string: %s, tainted %d\n", fname, tainted);
+	}
+
 }
 
 TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
@@ -17589,8 +17622,47 @@ TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
 	printf("After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
 	//print slice
 	//untaint 
-	if (!strcmp ((char*) name, "malloc") || !strcmp((char*) name, "_int_malloc"))
+	if (!strcmp ((char*) name, "malloc") || !strcmp((char*) name, "_int_malloc") || !strcmp ((char*) name, "_cpp_unaligned_alloc") || !strcmp ((char*)name, "_cpp_aligned_alloc"))
 		clear_reg (LEVEL_BASE::REG_EAX, 4);
+	if (eax_value == 0xbae67b0) { 
+		taint_t* t = get_mem_taints (0xbae67b0, 4);
+		if (t)
+			printf ("address bae67b0 is tainted: %d, %d, %d, %d\n", t[0], t[1], t[2], t[3]);
+		else 
+			printf ("address bae67b0 is not tainted: 0\n");
+	} else { 
+		taint_t* t = &(current_thread->shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE]);
+		printf ("eax tainted %d %d %d %d, %d \n", t[0], t[1], t[2], t[3], current_thread->shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE]);
+	}
+	if (!strcmp ((char*) name, "parse_include")) {
+		char* fname = (char*)eax_value;
+		unsigned int i = 0;
+		int tainted = 0;
+		for (; i<strlen(fname); ++i) {
+			taint_t* t = get_mem_taints(eax_value+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("parse_include: %s, tainted %d\n", fname, tainted);
+	}
+	/*if (!strcmp ((char*)name, "cpp_get_token") || !strcmp ((char*)name, "_cpp_lex_token")) {
+		unsigned int i = 0;
+		int tainted = 0;
+		unsigned int len = *(unsigned int*) (eax_value+8);
+		for (; i<16; ++i) {
+			taint_t* t = get_mem_taints(eax_value+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("cpp_get_token, _cpp_lex_token, tainted %d\n", tainted);
+		printf ("src_loc %u, %lx, %s, len %u\n", *((unsigned int*) eax_value), *(long*) (eax_value+12), (char*)(*(long*) (eax_value+12)), *(unsigned int*) (eax_value+8));
+
+		if (len > 10000)
+			printf ("src_loc %u, %lx, %s, len %u, ident: %s, %lx\n", *((unsigned int*) eax_value), *(long*) (eax_value+12), (char*)(*(long*) (eax_value+12)), *(unsigned int*) (eax_value+8), (char*)(*(long*)len), *(long*)(*(long*) (eax_value+8)));
+
+	}*/
 }
 
 void routine (RTN rtn, VOID *v)
@@ -17610,17 +17682,7 @@ void routine (RTN rtn, VOID *v)
 
     RTN_Open(rtn);
 
-    if (strcmp (name, "linemap_add")) {
-	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-#ifdef FAST_INLINE
-			    IARG_FAST_ANALYSIS_CALL,
-#endif
-			    IARG_PTR, name, 
-			    IARG_ADDRINT, RTN_Address(rtn), 
-			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
-			    IARG_END);
-    } else 
+    if (!strcmp (name, "linemap_add")) {
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
 #ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
@@ -17628,6 +17690,26 @@ void routine (RTN rtn, VOID *v)
 			    IARG_PTR, name, 
 			    IARG_ADDRINT, RTN_Address(rtn), 
 			    IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+    } else if (!strcmp(name, "__memcpy_ssse3_rep")) {
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+    } else
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
 			    IARG_END);
 

@@ -37,7 +37,9 @@ object preprocess_asm {
 		}
 	}
 	def cleanupSliceLine (s:String):String = {
-		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
+		val index = s.indexOf("[SLICE_INFO]")
+		if (index < 0) println (s)
+		val strs = s.substring(0, index).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
 	}
 	def cleanupExtraline (s:String):String = s.substring(s.indexOf("]") + 2, s.indexOf("//")) + " /* [SLICE_EXTRA]" + s.substring(s.indexOf("//")) + "*/"
@@ -79,8 +81,12 @@ object preprocess_asm {
 				return s.replace (inst, jumpMap(inst)).replace(address, "0x0000004")
 			else if (s.contains ("branch_taken 0")) 
 				return s.replace(address, "0x0000000")
-			else 
+			else if (inst == "jecxz") {
+				return s.replace(address, "not handled")
+			} else {
+				println ("jump instruction? " + s)
 				assert (false)
+			}
 		}
 		s
 	}
@@ -143,8 +149,10 @@ object preprocess_asm {
 		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
 		//2. convert instructions if necessary
 		//3. get all mem addresses we need to restore
-		for (i <- 0 to lines.length - 1) {
-			val s = lines.apply (i)
+		/*for (i <- 0 to lines.length - 1) {
+			if (i %1000 == 0) println ("line " + i)
+			val s = lines.apply (i)*/
+		 lines.foreach (s => {
 			if (s.startsWith ("[SLICE_RESTORE_ADDRESS]")) {
 				val tmp =  parseRestoreAddress(s)
 				restoreAddress += tmp
@@ -177,7 +185,7 @@ object preprocess_asm {
 							var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
 							var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
 							if (memPtrIndex == -1 || memPtrEnd == -1) {
-								println ("line " + i + ":" + lastLine)
+								println ("line " +  lastLine)
 								assert (false)
 							}
 							lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
@@ -197,7 +205,7 @@ object preprocess_asm {
 				if(s.startsWith ("[SLICE]"))
 					lastLine = s
 			}
-		}
+		})
 		//println (lastLine)
 		buffer += lastLine
 		assert (totalRestoreSize < 65536) //currently we only allocated 65536 bytes for this restore stack

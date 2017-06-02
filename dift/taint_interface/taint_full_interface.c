@@ -1805,7 +1805,6 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 	}
 	//output to ecx
 	for (i = 0; i< REG_SIZE; ++i) { 
-
 		shadow_reg_table[ecx *REG_SIZE + i] = result;
 	}
 	//fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
@@ -2351,7 +2350,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 				else 
 					printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
 			} else 
-				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", base_reg, base_reg_size, ip);
+				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards), address %lx\n", base_reg, base_reg_size, ip, mem_loc);
 		} 
 		if (index_reg_size > 0) { 
 			if (is_reg_tainted (index_reg, index_reg_size, index_reg_u8) == 0) {
@@ -2362,7 +2361,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 					printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
 				fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
 			} else { 
-				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards)\n", index_reg, index_reg_size, ip);
+				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards), address %lx\n", index_reg, index_reg_size, ip, mem_loc);
 			}
 		}
 	}
@@ -2384,8 +2383,8 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 				printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
 			}
 			if (addr_struct->size != mem_size) { 
-				printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
-				printf ("[SLICE_ADDRESSING_NOT_HANDLED] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
+				fprintf (stderr, "[INFO] the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
+				fprintf (stderr, "[INFO] $addr(0x%lx)  //come with %x (move upwards)\n", mem_loc, ip);
 			}
 		}
 	}
