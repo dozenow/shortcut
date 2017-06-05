@@ -55,7 +55,9 @@ void recheck_start(char* filename)
 
 void handle_mismatch()
 {
-    sleep (1); // Just so we notice it for now
+    static cnt = 0;
+    cnt++;
+    if (cnt < 3) sleep (5); // Just so we notice it for now
 }
 
 static inline void check_retval (const char* name, int expected, int actual) {
@@ -471,10 +473,74 @@ void uname_recheck ()
 	handle_mismatch();
     }
     /* Assume version will be handled by tainting since it changes often */
+    printf ("Buffer is %p\n", puname->buf);
+    printf ("Copy to version buffer at %p\n", &((struct utsname *) puname->buf)->version);
     memcpy (&((struct utsname *) puname->buf)->version, &puname->utsname.version, sizeof(puname->utsname.version));
     if (memcmp(&uname.machine, &puname->utsname.machine, sizeof(uname.machine))) {
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
 	handle_mismatch();
+    }
+}
+
+void statfs64_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct statfs64_recheck* pstatfs64;
+    struct statfs64 st;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pstatfs64 = (struct statfs64_recheck *) bufptr;
+    char* path = bufptr+sizeof(struct statfs64_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("statfs64: path %s size %u type %d bsize %d blocks %lld bfree %lld bavail %lld files %lld ffree %lld fsid %d %d namelen %d frsize %d rc %ld\n", path, pstatfs64->sz,
+	   pstatfs64->statfs.f_type, pstatfs64->statfs.f_bsize, pstatfs64->statfs.f_blocks, pstatfs64->statfs.f_bfree, pstatfs64->statfs.f_bavail, pstatfs64->statfs.f_files, 
+	   pstatfs64->statfs.f_ffree, pstatfs64->statfs.f_fsid.__val[0], pstatfs64->statfs.f_fsid.__val[1], pstatfs64->statfs.f_namelen, pstatfs64->statfs.f_frsize, pentry->retval);
+#endif
+
+    rc = syscall(SYS_statfs64, path, pstatfs64->sz, &st);
+    check_retval ("statfs64", pentry->retval, rc);
+    if (rc == 0) {
+	if (pstatfs64->statfs.f_type != st.f_type) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_type does not match: %d\n", st.f_type);
+	    handle_mismatch();
+	}
+	if (pstatfs64->statfs.f_bsize != st.f_bsize) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_bsize does not match: %d\n", st.f_bsize);
+	    handle_mismatch();
+	}
+	if (pstatfs64->statfs.f_blocks != st.f_blocks) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_blocks does not match: %lld\n", st.f_blocks);
+	    handle_mismatch();
+	}
+	/* Assume free and available blocks handled by tainting */
+	printf ("Buffer is %p\n", pstatfs64->buf);
+	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_bfree);
+	pstatfs64->buf->f_bfree = st.f_bfree;
+	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_bavail);
+	pstatfs64->buf->f_bavail = st.f_bavail;
+	if (pstatfs64->statfs.f_files != st.f_files) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_bavail does not match: %lld\n", st.f_files);
+	    handle_mismatch();
+	}
+	/* Assume free files handled by tainting */
+	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_ffree);
+	pstatfs64->buf->f_ffree = st.f_ffree;
+	if (pstatfs64->statfs.f_fsid.__val[0] != st.f_fsid.__val[0] || pstatfs64->statfs.f_fsid.__val[1] != st.f_fsid.__val[1]) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_fdid does not match: %d %d\n", st.f_fsid.__val[0],  st.f_fsid.__val[1]);
+	    handle_mismatch();
+	}
+	if (pstatfs64->statfs.f_namelen != st.f_namelen) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_namelen does not match: %d\n", st.f_namelen);
+	    handle_mismatch();
+	}
+	if (pstatfs64->statfs.f_frsize != st.f_frsize) {
+	    fprintf (stderr, "[MISMATCH] statfs64 f_frsize does not match: %d\n", st.f_frsize);
+	    handle_mismatch();
+	}
     }
 }
 

@@ -144,6 +144,7 @@ TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg
 		uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);
 TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t size);
 TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t src_reg, uint32_t size, ADDRINT regvalue, uint32_t reg_u8);
+TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
@@ -425,6 +426,10 @@ TAINTSIGN taint_add_immval2hwreg(int reg);
 TAINTSIGN taint_add_immval2wreg(int reg);
 TAINTSIGN taint_add_immval2dwreg(int reg);
 TAINTSIGN taint_add_immval2qwreg(int reg);
+
+// call
+TAINTSIGN taint_call_near (u_long esp);
+TAINTSIGN taint_call_far (u_long esp);
 
 // TODO need to do transfers to and from flags
 TAINTSIGN taint_immval2flag();

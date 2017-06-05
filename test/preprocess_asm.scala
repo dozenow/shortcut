@@ -51,7 +51,6 @@ object preprocess_asm {
 		case 16 => " xmmword ptr "
 		case _ => {
 			println ("unrecognized mem size " + size)
-			throw new Exception ()
 		}
 	}
 	def rewriteInst (s:String):String = {

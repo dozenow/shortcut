@@ -1810,7 +1810,6 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 	//fprintf (stderr, "taint_regmem2flag_pcmpxstri: taint value %u\n", result);
 }
 
-
 TAINTSIGN taint_mem2flag (u_long mem_loc, uint32_t mask, uint32_t size) {
 	uint32_t i = 0;
 	taint_t result = 0;
@@ -2306,7 +2305,7 @@ static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) {
 			}
 		default:
 			{
-				printf ("get_mem_value: size is %u. \n", size);
+				fprintf (stderr, "get_mem_value: size is %u. \n", size);
 				return 0;
 			}
 	}
@@ -2628,6 +2627,50 @@ TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memflag[%lx:%d:%u,%x:%d:4] #mem_value %u, flag_value TODO\n", mem_loc, mem_tainted, size, mask, flag_tainted, get_mem_value (mem_loc, size));
 		if (!mem_tainted) print_extra_move_mem (ip, mem_loc, size);
+		return 1;
+	}
+	return 0;
+}
+
+static const char* translate_mmx (uint32_t reg)
+{
+    switch (reg) {
+    case 54: return "xmm0";
+    case 55: return "xmm1";
+    case 56: return "xmm2";
+    case 57: return "xmm3";
+    case 58: return "xmm4";
+    case 59: return "xmm5";
+    case 60: return "xmm6";
+    case 61: return "xmm7";
+    default: return "unk";
+    }
+}
+
+TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val) 
+{
+	int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
+	int reg2_taint = is_reg_tainted (reg2, reg2_size, 0);
+	if (reg1_taint || reg2_taint) {
+		if (!reg1_taint) {
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) reg1_val), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+4)), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+8)), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+12)), ip);
+		    printf ("[SLICE] #00000000 #movdqu %s, xmmword ptr [esp] [SLICE_INFO] comes with %x\n", translate_mmx(reg1), ip);
+		    printf ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] comes with %x\n", ip);
+		}
+		if (!reg2_taint) {
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) reg2_val), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+4)), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+8)), ip);
+		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+12)), ip);
+		    printf ("[SLICE] #00000000 #movdqu %s, xmmword ptr [esp] [SLICE_INFO] comes with %x\n", translate_mmx(reg2), ip);
+		    printf ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] comes with %x\n", ip);
+		}
+		printf ("[SLICE] #%x #%s\t", ip, ins_str);
+		printf ("    [SLICE_INFO] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %.16s, src_reg_value %.16s\n", 
+			reg1, reg1_taint, reg1_size, reg2, reg2_taint, reg2_size, reg1_val, reg2_val);
 		return 1;
 	}
 	return 0;
@@ -3698,6 +3741,16 @@ TAINTSIGN taint_mem2mem_dw (u_long src_loc, u_long dst_loc)
 TAINTSIGN taint_mem2mem_qw (u_long src_loc, u_long dst_loc)
 {
     taint_mem2mem(src_loc, dst_loc, 16);
+}
+
+TAINTSIGN taint_call_near (u_long esp)
+{
+    clear_cmem_taints (esp-4, 4); /* IP written to stack */
+}
+
+TAINTSIGN taint_call_far (u_long esp)
+{
+    clear_cmem_taints (esp-8, 8); /* IP and CS written to stack */
 }
 
 static inline void taint_add_mem2mem (u_long src_loc, u_long dst_loc, uint32_t size)

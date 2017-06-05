@@ -158,7 +158,7 @@ string rewriteInst (string s) {
 	if (s.empty()) return string();
 	size_t push_pos = s.find ("#push");
 	size_t pop_pos = s.find ("#pop");
-	if (push_pos != string::npos || pop_pos != string::npos) { 
+	if ((push_pos != string::npos || pop_pos != string::npos) && s.find("#00000000") == string::npos) { 
 		size_t index = s.find("_mem[");
 		vector<string> memParams = split (s.substr(index+5, s.find("]", index) - index - 5), ':');
 		if (memParams.size() != 3) cout << s;

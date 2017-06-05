@@ -27,7 +27,7 @@ preprocess_asm.class: preprocess_asm.scala
 	scalac preprocess_asm.scala
 
 process_slice: process_slice.cpp
-	g++ -o process_slice process_slice.cpp -std=c++0x
+	g++ -g -o process_slice process_slice.cpp -std=c++0x
 
 launcher: libutil.a
 launcher: CFLAGS += --static -I../../eglibc-2.15/prefix/include -L../../eglibc-2.15/prefix/lib 
