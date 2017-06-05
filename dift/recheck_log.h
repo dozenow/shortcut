@@ -73,7 +73,9 @@ struct uname_recheck {
 };
 
 struct statfs64_recheck {
-    struct statfs statfs;
+    size_t sz;
+    struct statfs64* buf;
+    struct statfs64 statfs;
 };
 /* Followed by variable length write path */
 
@@ -92,6 +94,6 @@ int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf);
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count);
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim);
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf);
-int recheck_statfs64 (struct recheck_handle* handle, const char* path, struct statfs* buf);
+int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf);
 
 #endif

@@ -81,7 +81,6 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 
     do {
 	res = parseklog_get_next_psr(handle->log);
-	printf ("Index %lld syscall %d\n", res->index, res->psr.sysnum);
     } while (res->psr.sysnum != syscall);
 
     return res;
@@ -243,12 +242,14 @@ int recheck_uname (struct recheck_handle* handle, struct utsname* buf)
     return 0;
 }
 
-int recheck_statfs64 (struct recheck_handle* handle, const char* path, struct statfs* buf)
+int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf)
 {
     struct statfs64_recheck schk;
     struct klog_result *res = skip_to_syscall (handle, SYS_statfs64);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_statfs64, res->retval, sizeof (struct statfs64_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_statfs64, res->retval, sizeof (struct statfs64_recheck) + strlen(path) + 1);
+    schk.sz = sz;
+    schk.buf = buf;
     memcpy (&schk.statfs, res->retparams, sizeof(schk.statfs));
     write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
     write_data_into_recheck_log (handle->recheckfd, path, strlen(path)+1);

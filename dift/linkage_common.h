@@ -152,7 +152,7 @@ struct uname_info {
 };
 
 struct statfs64_info {
-	struct statfs* buf;
+	struct statfs64* buf;
 };
 
 struct address_taint_set {

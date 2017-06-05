@@ -101,7 +101,10 @@ int s = -1;
 #define LOGGING_ON
 #define LOG_F log_f
 #define ERROR_PRINT fprintf
-#define EXTRA_DEBUG
+
+/* Set this to clock value where extra logging should begin */
+//#define EXTRA_DEBUG 1477 
+
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
 #define LOG_PRINT(args...) \
@@ -582,8 +585,6 @@ static inline void increment_syscall_cnt (int syscall_num)
 #endif
 */
         }
-	fprintf (stderr, "pid %d syscall %d global syscall cnt %lu num %d clock %ld\n", current_thread->record_pid, 
-		 current_thread->syscall_cnt, global_syscall_cnt, syscall_num, *ppthread_log_clock);
 #if 0
 #ifdef TAINT_DEBUG
 	fprintf (debug_f, "pid %d syscall %d global syscall cnt %lu num %d clock %ld\n", current_thread->record_pid, 
@@ -686,7 +687,6 @@ static inline void sys_open_stop(int rc)
 	}
 #endif
     }
-    fprintf (stdout, "#PARAMS_LOG:open:%s:%d\n", ((struct open_info*) current_thread->save_syscall_info)->name, rc);
     current_thread->save_syscall_info = NULL;
 }
 
@@ -705,7 +705,6 @@ static inline void sys_close_stop(int rc)
 {
     int fd = (int) current_thread->save_syscall_info;
     // remove the fd from the list of open files
-    fprintf (stdout, "#PARAMS_LOG:close:%d:%lu\n", fd, *ppthread_log_clock-1);
     if (!rc) {
         if (monitor_has_fd(open_fds, fd)) {
             struct open_info* oi = (struct open_info *) monitor_get_fd_data(open_fds, fd);
@@ -901,10 +900,6 @@ static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int 
     mmi->prot = prot;
     mmi->fd = fd;
     tdata->save_syscall_info = (void *) mmi;
-#ifdef PARAMS_LOG
-    recheck_mmap ();
-    write_into_params_log (tdata, 192, NULL, 0);
-#endif
     tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
 }
 
@@ -1583,7 +1578,6 @@ static inline void sys_fstat64_stop (int rc)
 		tci.fileno = fsi->fd;
 		tci.data = 0;
 		tci.type = TOK_STAT_ATIME;
-		printf ("atime buf is %p\n", &fsi->buf->st_atime);
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
 		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	}
@@ -1635,14 +1629,13 @@ static inline void sys_uname_stop (int rc)
 		tci.fileno = 0;
 		tci.data = 0;
 		tci.type = TOK_UNAME;
-		printf ("uname version buf is %p size %d\n", &uni->buf->version, sizeof(uni->buf->version));
 		create_taints_from_buffer_unfiltered (&uni->buf->version, sizeof(uni->buf->version), &tci, tokens_fd);
 		add_tainted_mem_for_final_check ((u_long)&uni->buf->version, sizeof(uni->buf->version));
 	}
 	LOG_PRINT ("Done with uname.\n");
 }
 
-static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, struct statfs* buf) 
+static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, size_t sz, struct statfs64* buf) 
 {
 	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
 	sfi->buf = buf;
@@ -1650,16 +1643,33 @@ static inline void sys_statfs64_start (struct thread_data* tdata, const char* pa
 #ifdef FW_SLICE
 	    printf ("[SLICE] #0000000 #call statfs64_recheck [SLICE_INFO]\n");
 #endif
-#if 0
-	    recheck_statfs64 (tdata->recheck_handle, path, buf);
-#endif
+	    recheck_statfs64 (tdata->recheck_handle, path, sz, buf);
 	}
 }
 
 static inline void sys_statfs64_stop (int rc) 
 {
 	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
-	clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs));
+	clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs64));
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = 0;
+		tci.data = 0;
+		tci.type = TOK_STATFS64;
+		printf ("statfs64 f_bfree is %p size %d\n", &sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
+		create_taints_from_buffer_unfiltered (&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
+		printf ("statfs64 f_bavail is %p size %d\n", &sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
+		create_taints_from_buffer_unfiltered (&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
+		printf ("statfs64 f_ffree is %p size %d\n", &sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
+		create_taints_from_buffer_unfiltered (&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
+	}
 	LOG_PRINT ("Done with statfs64.\n");
 }
 
@@ -1693,7 +1703,6 @@ static inline void sys_getrusage_stop (int rc) {
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 { 
-    fprintf (stderr, "syscall start sysnum is %d %d\n", sysnum, SYS_fstat64);
     switch (sysnum) {
         case SYS_open:
             sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
@@ -1765,11 +1774,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
-#ifdef PARAMS_LOG
-	    // we need to track the data/ctrl flow for gettimeofday
-	    // so they're not getting reexecuted
-	    write_into_params_log (tdata, 78, NULL, 0);
-#endif
 	    break;
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
@@ -1781,7 +1785,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_uname_start (tdata, (struct utsname *) syscallarg0);
 	    break;
         case SYS_statfs64:
-	    sys_statfs64_start (tdata, (const char *) syscallarg0, (struct statfs *) syscallarg1);
+	    sys_statfs64_start (tdata, (const char *) syscallarg0, (size_t) syscallarg1, (struct statfs64 *) syscallarg2);
 	    break;
       	case SYS_set_tid_address:
 	    sys_set_tid_address_start (tdata);
@@ -1810,55 +1814,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_fstat64:
 	    sys_fstat64_start (tdata, (int)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
-
-#ifdef PARAMS_LOG
-	case SYS_execve:
-	    write_into_params_log (tdata, 11, NULL, 0);
-	    break;
-	    /*case SYS_brk:
-	    write_into_params_log (tdata, 45, NULL, 0);
-	    sys_brk_start(tdata, (void *addr) syscallarg0);
-	    break;
-	    */
-	case SYS_mprotect: 
-	    write_into_params_log (tdata, 125, NULL, 0);
-	    break;
-	case SYS_munmap:
-	    write_into_params_log (tdata, 91, NULL, 0);
-	    break;
-
-	case SYS_rt_sigaction:
-	    write_into_params_log (tdata, 174, NULL, 0);
-	    break;
-	case SYS_prlimit64:
-	    {
-		    //TODO: how to handle this properly??
-	    void* new_limit = (void*) syscallarg2;
-	    int pid = (int) syscallarg0;
-	    int resource = (int) syscallarg1;
-	    void* old_limit = (void*) syscallarg3;
-	    if (new_limit == NULL) {
-		    //if we don't modify the rlimit
-		    struct prlimit64_retval ret;
-		    ret.pid = pid;
-		    ret.resource = resource;
-		    memcpy (&ret.rlim, old_limit, sizeof(struct rlimit));
-		    write_into_params_log (tdata, 340, &ret, sizeof(ret));
-	    } else { 
-		    struct prlimit64_retval ret;
-		    ret.pid = pid;
-		    ret.resource = resource;
-		    memcpy (&ret.rlim, new_limit, sizeof(struct rlimit));
-		    write_into_params_log (tdata, 340, &ret, sizeof(ret));
-	    }
-	    break;
-	    }
-#endif
-#if 0
-        case SYS_munmap:
-	    sys_munmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1);
-	    break;
-#endif
     }
 }
 
@@ -13115,7 +13070,8 @@ TAINTSIGN pcmpistri_reg_mem (uint32_t reg1, PIN_REGISTER* reg1content, u_long me
 	//fprintf (stderr, "pcmpistri reg1 %s, mem2 %s, mem2_addr %lx, ip %x, size %u %u\n", str1, str2, mem_loc2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, mem_loc2, 0, size1, size2, 1);
 }
-TAINTSIGN pcmpistri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content, ADDRINT ip) {
+
+TAINTSIGN pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, PIN_REGISTER* reg1content, uint32_t reg2, PIN_REGISTER* reg2content) {
 	char str1[17] = {0};
 	char str2[17] = {0};
 	uint32_t size1;
@@ -13124,8 +13080,13 @@ TAINTSIGN pcmpistri_reg_reg (uint32_t reg1, PIN_REGISTER* reg1content, uint32_t 
 	if (reg2content) strncpy (str2, (char*) reg2content, 16);
 	size1 = strlen (str1);
 	size2 = strlen (str2);
+	if (size1 < 16) size1++; // Account for NULL terminal of string since this affects operation
+	if (size2 < 16) size2++;
 	//fprintf (stderr, "pcmpistri reg1 %s, reg2 %s, ip %x, size %u %u\n", str1, str2, ip, size1, size2);
 	taint_regmem2flag_pcmpxstri (reg1, 0, reg2, size1, size2, 1);
+#ifdef FW_SLICE
+	fw_slice_pcmpistri_reg_reg (ip, ins_str, reg1, reg2, size1, size2, (char *) reg1content, (char *) reg2content);
+#endif
 }
 
 //INPUT: EAX, EDX, two operands
@@ -13155,20 +13116,24 @@ void instrument_pcmpistri (INS ins) {
 				IARG_ADDRINT, INS_Address(ins),
 				IARG_END);
 	} else if (op1reg && op2reg) { 
-		reg1 = translate_reg (INS_OperandReg (ins, 0));
-		reg2 = translate_reg (INS_OperandReg (ins, 1));
+		REG r1 = INS_OperandReg(ins, 0);
+		REG r2 = INS_OperandReg(ins, 1);
+		reg1 = translate_reg (r1);
+		reg2 = translate_reg (r2);
+		char* str = get_copy_of_disasm (ins);
 		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(pcmpistri_reg_reg),
+			       AFUNPTR(pcmpistri_reg_reg),
 #ifdef FAST_INLINE
-				IARG_FAST_ANALYSIS_CALL,
+			       IARG_FAST_ANALYSIS_CALL,
 #endif
-				IARG_UINT32, reg1, 
-				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
-				IARG_UINT32, reg2, 
-				IARG_REG_REFERENCE, INS_OperandReg(ins, 1), 
-				IARG_ADDRINT, INS_Address(ins),
-				IARG_END);
-
+			       IARG_ADDRINT, INS_Address(ins),
+			       IARG_PTR, str,
+			       IARG_UINT32, reg1, 
+			       IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
+			       IARG_UINT32, reg2, 
+			       IARG_REG_REFERENCE, INS_OperandReg(ins, 1), 
+			       IARG_END);
+		put_copy_of_disasm (str);
 	} else { 
 		ERROR_PRINT (stderr, "[BUG] unrecognized instruction: pcmpistri\n");
 	}
@@ -13861,7 +13826,7 @@ void instrument_mov (INS ins)
             //move immediate to memory location
             instrument_taint_immval2mem(ins);
         }
-    } else if (!SPECIAL_REG(dstreg)) {
+    } else {
         if(immval) {
             treg = translate_reg((int)dstreg);
             //mov immediate value into register
@@ -15594,6 +15559,28 @@ void instrument_imul(INS ins)
     }
 }
 
+void instrument_call_near (INS ins)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_call_near),
+#ifdef FAST_INLINE
+		   IARG_FAST_ANALYSIS_CALL,
+#endif
+		   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 
+		   IARG_END);
+}
+
+void instrument_call_far (INS ins)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_call_far),
+#ifdef FAST_INLINE
+		   IARG_FAST_ANALYSIS_CALL,
+#endif
+		   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 
+		   IARG_END);
+}
+
 void instrument_palignr(INS ins)
 {
     UINT32 imm;
@@ -16102,12 +16089,15 @@ void count_inst_executed (void) {
 
 void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2)
 {
-	printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
-	PIN_LockClient();
-	if (IMG_Valid(IMG_FindByAddress(ip))) {
-	  printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-	}
-	PIN_UnlockClient();
+#ifdef EXTRA_DEBUG
+    if (*ppthread_log_clock < EXTRA_DEBUG) return;
+#endif
+    printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
+    PIN_LockClient();
+    if (IMG_Valid(IMG_FindByAddress(ip))) {
+	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+    }
+    PIN_UnlockClient();
 }
 
 void debug_print (INS ins) 
@@ -16484,7 +16474,13 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
                 */
             case XED_ICLASS_CALL_NEAR:
+		instrument_call_near(ins);
+		slice_handled = 1;
+		break;
             case XED_ICLASS_CALL_FAR:
+		instrument_call_far(ins);
+		slice_handled = 1;
+		break;
             case XED_ICLASS_RET_NEAR:
             case XED_ICLASS_RET_FAR:
 		slice_handled = 1;
@@ -17580,14 +17576,27 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 	u_long addr = esp_value+0x4;
 	//victim = _int_malloc(ar_ptr, bytes); malloc.c :2938
 	if (strcmp ((char*)name, "linemap_add")) {
-		if (strcmp ((char*)name, "_cpp_lex_direct"))
-			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
-		else {
-			fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x), arg->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *((long*) arg0), esp_value, name);
+		if (strcmp ((char*)name, "_cpp_lex_direct") && strcmp((char*)name, "_cpp_clean_line")) {
+			printf("Before call to %s (%#x), arg %u(hex %x), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, esp_value, name);
+			/*if (*ppthread_log_clock >=170) { 
+				long* tmp = (long*) 0xb7e37020;
+				printf ("content b7e37020 is %ld\n", *tmp);
+			}*/
+		} 
+		if (*ppthread_log_clock >= 86*2 && arg0 == 0xbae4db8) {
+			long arg_buf = *((long*) arg0);
+			taint_t* t = NULL;
+			printf("Before call to %s (%#x), arg %u(hex %x), arg->buf->buf (%lx), stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, *(long*)(*((long*) arg0)), esp_value, name);
+			t = get_mem_taints (arg_buf, 4);
+			if (t) {
+				if (t[0] || t[1] || t[2] || t[3]) {
+					printf ("argbuf is tainted: %d, %d, %d, %d\n", t[0], t[1], t[2], t[3]);
+				}
+			}
+
 		}
 	} else
-		fprintf(stderr, "Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
-	fprintf (stderr, "input size is %d\n", *(int*)addr);
+		printf("Before call to %s (%#x), arg %u(hex %x) %s, stack pointer %x, name pointer %x\n", (char *) name, rtn_addr, arg0, arg0, (char*) arg0, esp_value, name);
 	//print slice
 	//untaint 
 	//malloc
@@ -17596,25 +17605,93 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		clear_mem_taints (addr-0x4+0x2c, 4);
 		clear_reg (LEVEL_BASE::REG_EDI, 4);
 		clear_reg (LEVEL_BASE::REG_ESP, 4);
+		printf ("input size is %d\n", *(int*)addr);
 	}
 	//for _int_malloc
 	//esp-0x4*4-0x8c=esp-0x9c
-	if (!strcmp((char*)name, "_int_malloc"))
+	if (!strcmp((char*)name, "_int_malloc")) {
 		clear_reg (LEVEL_BASE::REG_EAX, 4);
 		clear_mem_taints (addr-0x4-0x9c, 4);
+		printf ("input size is %d\n", *(int*)addr);
+	}
 	//for free clear arg0-0x4
 	if (!strcmp((char*)name, "free")) {
 		clear_mem_taints (addr, 4);
 		clear_mem_taints ((u_long) arg0 -0x4, 4);
 	}
+	//output for token len
+	if (!strcmp ((char*) name, "cpp_token_len")) { 
+		unsigned int len = *(unsigned int*) (arg0+8);
+		printf ("cpp_token_len src_loc %u, %lx, %s, len %u\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8));
+
+		if (len > 10000)
+			printf ("cpp_token_len src_loc %u, %lx, %s, len %u, ident: %s, %lx\n", *((unsigned int*) arg0), *(long*) (arg0+12), (char*)(*(long*) (arg0+12)), *(unsigned int*) (arg0+8), (char*)(*(long*)len), *(long*)(*(long*) (arg0+8)));
+	}
+
+	if (!strcmp ((char*) name, "__strlen_ia32")) {
+		printf ("strlen: %s\n", (char*) arg0);
+	}
+	if (!strcmp ((char*) name, "htab_hash_string")) { 
+		char* fname = (char*) arg0;
+		unsigned int i = 0;
+		int tainted = 0;
+		for (; i<strlen(fname); ++i) {
+			taint_t* t = get_mem_taints(arg0+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("htab_hash_string: %s, tainted %d\n", fname, tainted);
+	}
+
 }
 
 TAINTSIGN after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT eax_value)
 {
-	fprintf(stderr, "After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
+	printf("After call to %s (%#x), eax value %x\n", (char *) name, rtn_addr, eax_value);
 	//print slice
 	//untaint 
-	clear_reg (LEVEL_BASE::REG_EAX, 4);
+	if (!strcmp ((char*) name, "malloc") || !strcmp((char*) name, "_int_malloc") || !strcmp ((char*) name, "_cpp_unaligned_alloc") || !strcmp ((char*)name, "_cpp_aligned_alloc"))
+		clear_reg (LEVEL_BASE::REG_EAX, 4);
+	if (eax_value == 0xbae67b0) { 
+		taint_t* t = get_mem_taints (0xbae67b0, 4);
+		if (t)
+			printf ("address bae67b0 is tainted: %d, %d, %d, %d\n", t[0], t[1], t[2], t[3]);
+		else 
+			printf ("address bae67b0 is not tainted: 0\n");
+	} else { 
+		taint_t* t = &(current_thread->shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE]);
+		printf ("eax tainted %d %d %d %d, %d \n", t[0], t[1], t[2], t[3], current_thread->shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE]);
+	}
+	if (!strcmp ((char*) name, "parse_include")) {
+		char* fname = (char*)eax_value;
+		unsigned int i = 0;
+		int tainted = 0;
+		for (; i<strlen(fname); ++i) {
+			taint_t* t = get_mem_taints(eax_value+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("parse_include: %s, tainted %d\n", fname, tainted);
+	}
+	/*if (!strcmp ((char*)name, "cpp_get_token") || !strcmp ((char*)name, "_cpp_lex_token")) {
+		unsigned int i = 0;
+		int tainted = 0;
+		unsigned int len = *(unsigned int*) (eax_value+8);
+		for (; i<16; ++i) {
+			taint_t* t = get_mem_taints(eax_value+i, 1);
+			if (t) {
+				if (*t) tainted = 1;
+			}
+		}
+		printf ("cpp_get_token, _cpp_lex_token, tainted %d\n", tainted);
+		printf ("src_loc %u, %lx, %s, len %u\n", *((unsigned int*) eax_value), *(long*) (eax_value+12), (char*)(*(long*) (eax_value+12)), *(unsigned int*) (eax_value+8));
+
+		if (len > 10000)
+			printf ("src_loc %u, %lx, %s, len %u, ident: %s, %lx\n", *((unsigned int*) eax_value), *(long*) (eax_value+12), (char*)(*(long*) (eax_value+12)), *(unsigned int*) (eax_value+8), (char*)(*(long*)len), *(long*)(*(long*) (eax_value+8)));
+
+	}*/
 }
 
 void routine (RTN rtn, VOID *v)
@@ -17626,25 +17703,15 @@ void routine (RTN rtn, VOID *v)
     name = (char*) malloc (strlen (tmp) + 1);
     strcpy (name, tmp);
 
-    if (strcmp (name, "malloc") && strcmp(name, "free") && strcmp(name, "_int_malloc") && strcmp(name, "calloc")
+    /*if (strcmp (name, "malloc") && strcmp(name, "free") && strcmp(name, "_int_malloc") && strcmp(name, "calloc")
 		    && strcmp (name, "realloc") && strcmp (name, "memalign") && strcmp(name, "valloc") 
-		    && strcmp (name, "pvalloc") && strcmp(name, "linemap_add") && strcmp (name, "_cpp_lex_direct")) {
+		    && strcmp (name, "pvalloc") && strcmp(name, "linemap_add") && strcmp (name, "_cpp_lex_direct") && strcmp (name, "_cpp_clean_line")) {
 	    return;
-    }
+    }*/
 
     RTN_Open(rtn);
 
-    if (strcmp (name, "linemap_add")) {
-	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-#ifdef FAST_INLINE
-			    IARG_FAST_ANALYSIS_CALL,
-#endif
-			    IARG_PTR, name, 
-			    IARG_ADDRINT, RTN_Address(rtn), 
-			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
-			    IARG_END);
-    } else 
+    if (!strcmp (name, "linemap_add")) {
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
 #ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
@@ -17652,6 +17719,26 @@ void routine (RTN rtn, VOID *v)
 			    IARG_PTR, name, 
 			    IARG_ADDRINT, RTN_Address(rtn), 
 			    IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+    } else if (!strcmp(name, "__memcpy_ssse3_rep")) {
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
+			    IARG_END);
+    } else
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+#ifdef FAST_INLINE
+			    IARG_FAST_ANALYSIS_CALL,
+#endif
+			    IARG_PTR, name, 
+			    IARG_ADDRINT, RTN_Address(rtn), 
+			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			    IARG_REG_VALUE, LEVEL_BASE::REG_ESP,
 			    IARG_END);
 
@@ -17901,7 +17988,7 @@ int main(int argc, char** argv)
 #endif
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
-#ifdef NULL
+#if 0
     RTN_AddInstrumentFunction (routine, 0);
 #endif
 #ifdef HEARTBLEED

@@ -1226,8 +1226,13 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
 				printk ("[CHECK] memory regions is shared and writable! %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
 				printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
-				shared_file = 1;
-				BUG();
+				if (pvmas->vmas_file[0] && 
+				    !strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
+					printk ("But its the clock mapping so maybe not\n");
+				} else {
+					shared_file = 1;
+					BUG();
+				}
 			}
 			
 			if (pvmas->vmas_file[0]) { 

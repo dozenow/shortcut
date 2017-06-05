@@ -8,10 +8,38 @@ import scala.collection.mutable.Queue
 //replace registers with meaning full name
 //replace memory address if necessary 
 object preprocess_asm {
-	class AddrToRestore (val loc:String, val isImm:Int, val size:Int)
+	class AddrToRestore (val loc:String, val isImm:Int, val size:Int) {
+		def printPush ():Unit = {
+			if (size == 2 || size == 4 || size == 16)
+		 		println ("push " + memSizeToPrefix(size) + "[0x" + loc + "]")
+			else {
+				//use movsb
+				println ("/*TODO: make sure we don't mess up with original ecs, edi and esi*/")
+				println ("sub esp, " + size)
+				println ("mov ecx, " + size)
+				println ("lea edi, [esp]")
+				println ("lea esi, [0x" + loc + "]")
+				println ("rep movsb")
+			}
+		}
+		def printPop ():Unit = {
+			if (size == 2 || size == 4 || size == 16)
+				println ("pop " + memSizeToPrefix(size) + "[0x" + loc + "]")
+			else {
+				//use movsb
+				println ("/*TODO: make sure we don't mess up with original ecs, edi and esi*/")
+				println ("mov ecx, " + size)
+				println ("lea edi, [0x" + loc + "]")
+				println ("lea esi, [esp]")
+				println ("rep movsb")
+				println ("add esp, " + size)
+			}
+		}
+	}
 	def cleanupSliceLine (s:String):String = {
-	        println(s)
-		val strs = s.substring(0, s.indexOf("[SLICE_INFO]")).split("#")
+		val index = s.indexOf("[SLICE_INFO]")
+		if (index < 0) println (s)
+		val strs = s.substring(0, index).split("#")
 		strs(2) + "   /* [ORIGINAL_SLICE] " +  strs(1)  + " " + s.substring(s.indexOf("[SLICE_INFO]")) + "*/"
 	}
 	def cleanupExtraline (s:String):String = s.substring(s.indexOf("]") + 2, s.indexOf("//")) + " /* [SLICE_EXTRA]" + s.substring(s.indexOf("//")) + "*/"
@@ -52,8 +80,12 @@ object preprocess_asm {
 				return s.replace (inst, jumpMap(inst)).replace(address, "0x0000004")
 			else if (s.contains ("branch_taken 0")) 
 				return s.replace(address, "0x0000000")
-			else 
+			else if (inst == "jecxz") {
+				return s.replace(address, "not handled")
+			} else {
+				println ("jump instruction? " + s)
 				assert (false)
+			}
 		}
 		s
 	}
@@ -116,8 +148,10 @@ object preprocess_asm {
 		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
 		//2. convert instructions if necessary
 		//3. get all mem addresses we need to restore
-		for (i <- 0 to lines.length - 1) {
-			val s = lines.apply (i)
+		/*for (i <- 0 to lines.length - 1) {
+			if (i %1000 == 0) println ("line " + i)
+			val s = lines.apply (i)*/
+		 lines.foreach (s => {
 			if (s.startsWith ("[SLICE_RESTORE_ADDRESS]")) {
 				val tmp =  parseRestoreAddress(s)
 				restoreAddress += tmp
@@ -150,7 +184,7 @@ object preprocess_asm {
 							var memPtrIndex = lastLine.indexOf (" ptr ", lastLine.indexOf (" ptr [0x"))
 							var memPtrEnd = lastLine.indexOf ("]", memPtrIndex)
 							if (memPtrIndex == -1 || memPtrEnd == -1) {
-								println ("line " + i + ":" + lastLine)
+								println ("line " +  lastLine)
 								assert (false)
 							}
 							lastLine = lastLine.substring(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substring(memPtrEnd)
@@ -170,7 +204,7 @@ object preprocess_asm {
 				if(s.startsWith ("[SLICE]"))
 					lastLine = s
 			}
-		}
+		})
 		//println (lastLine)
 		buffer += lastLine
 		assert (totalRestoreSize < 65536) //currently we only allocated 65536 bytes for this restore stack
@@ -185,12 +219,12 @@ object preprocess_asm {
 		println ("push ebp") 
 		println ("call recheck_start")
 		println ("pop ebp")
-		println ("/*TODO: make sure we follow the calling conventions*/")
+		println ("/*TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)*/")
 
 		//write out all restore address
 		println ("/*first checkpoint necessary addresses and registers*/")
 		restoreReg.foreach (reg => println ("push " + reg))
-		restoreAddress.foreach (addr => println ("push " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreAddress.foreach (_.printPush)
 
 		println ("/*slice begins*/")
 		//switch posistion and generate compilable assembly
@@ -226,7 +260,7 @@ object preprocess_asm {
 			}
 		})
 		println ("/* restoring address and registers */")
-		restoreAddress.reverse.foreach (addr => println ("pop " + memSizeToPrefix(addr.size) + "[0x" + addr.loc + "]"))
+		restoreAddress.reverse.foreach (_.printPop)
 		restoreReg.reverse.foreach (reg => println ("pop " + reg))
 		println ("/* slice finishes and return to kernel */")
 		println ("mov ebx, 1")
@@ -238,21 +272,37 @@ object preprocess_asm {
 	//Make it more complete as we need
 	val regMap = Map(
 		"(3,4)" -> "edi",
+		"(3,2)" -> "di",
 		"(4,4)" -> "esi",
+		"(4,2)" -> "si",
 		"(5,4)"-> "ebp",
+		"(5,2)"-> "bp",
 		"(6,4)" -> "esp",
+		"(6,2)" -> "sp",
 		"(7,4)" -> "ebx",
+		"(7,2)" -> "bx",
 		"(7,1)" -> "bl",
 		"(7,-1)" -> "bh",
 		"(8,4)" -> "edx",
+		"(8,2)" -> "dx",
 		"(8,1)" -> "dl",
 		"(8,-1)" -> "dh",
 		"(9,4)" -> "ecx",
+		"(9,2)" -> "cx",
 		"(9,1)" -> "cl",
 		"(9,-1)" -> "ch",
 		"(10,4)" -> "eax",
+		"(10,2)" -> "ax",
 		"(10,1)" -> "al",
-		"(10,-1)" -> "ah"
+		"(10,-1)" -> "ah",
+		"(54,16)" -> "xmm0",
+		"(55,16)" -> "xmm1",
+		"(56,16)" -> "xmm2",
+		"(57,16)" -> "xmm3",
+		"(58,16)" -> "xmm4",
+		"(59,16)" -> "xmm5",
+		"(60,16)" -> "xmm6",
+		"(61,16)" -> "xmm7"
 	)
 	/*val jumpMap = Map (
 		"jns" -> "js",

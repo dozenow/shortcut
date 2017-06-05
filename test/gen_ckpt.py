@@ -34,7 +34,7 @@ outfd.close()
 
 # Run scala tool
 outfd = open("/tmp/exslice.asm", "w")
-p = Popen (["scala", "preprocess_asm", "/tmp/slice"],stdout=outfd)
+p = Popen (["./process_slice", "/tmp/slice"],stdout=outfd)
 #Note: Try to avoid recompilation, but this requires you to run make if you change preprocess_asm.scala file
 #If this hangs for a long time, it's probably because your environment configuration is wrong
 #Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
