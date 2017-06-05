@@ -19,6 +19,9 @@ struct read_recheck {
     void* buf;
     size_t count;
     size_t readlen;
+    int partial_read; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_start;
+    size_t partial_read_end;
 };
 /* Followed by variable length read data */
 
@@ -78,7 +81,7 @@ struct recheck_handle;
 
 struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
-int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count);
+int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode);
 int recheck_close (struct recheck_handle* handle, int fd);
 int recheck_access (struct recheck_handle* handle, char* pathname, int mode);

@@ -740,19 +740,31 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
     struct read_info* ri = &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
+    ri->size = size;
+    ri->recheck_handle = tdata->recheck_handle;
     tdata->save_syscall_info = (void *) ri;
-    if (tdata->recheck_handle) {
-#ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call read_recheck [SLICE_INFO]\n");
-#endif
-	recheck_read (tdata->recheck_handle, fd, buf, size);
-    }
 }
 
 static inline void sys_read_stop(int rc)
 {
     int read_fileno = -1;
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
+
+    if (ri->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #0000000 #call read_recheck [SLICE_INFO]\n");
+#endif
+         if (filter_input()) {
+             size_t start = 0;
+             size_t end = 0;
+             if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+                 recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end);
+                 add_tainted_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+             } else
+                 recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+         } else 
+             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+    }
 
     if (rc > 0) {
         struct taint_creation_info tci;
@@ -777,15 +789,15 @@ static inline void sys_read_stop(int rc)
 		fprintf (stderr, "read from socket no si, rc=%d\n", rc);
 	    }
         } else if(ri->fd == fileno(stdin)) {
-            read_fileno = FILENO_STDIN;
-        }
+		read_fileno = FILENO_STDIN;
+	}
 
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = read_fileno;
-        tci.data = 0;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = read_fileno;
+	tci.data = 0;
 	tci.type = TOK_READ;
 
         LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
@@ -12737,7 +12749,7 @@ void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
     //Input to REP: ECX (count register) and ZF(for REPZ/REPNZ)
     //Output: count register
     //
-   INSTRUMENT_PRINT (stderr, "taint_whole_memmem2flag: size %d, ip %x, ea_mem %x %x, original %x %x, char %s\n", size, ip, ea_mem_loc1, ea_mem_loc2, mem_loc1, mem_loc2, (char*) mem_loc1);
+   //INSTRUMENT_PRINT (stderr, "taint_whole_memmem2flag: size %d, ip %x, ea_mem %x %x, original %x %x, char %s\n", size, ip, ea_mem_loc1, ea_mem_loc2, mem_loc1, mem_loc2, (char*) mem_loc1);
     //first taint the cmps, as it should be executed first before rep
     taint_memmem2flag(ea_mem_loc1, ea_mem_loc2, mask, size);
     //then taint count register (ecx) and ZF, and also output tokens for REP

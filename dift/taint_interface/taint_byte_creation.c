@@ -242,6 +242,19 @@ int filter_byte_range(int syscall, int byteoffset)
     return 0;
 }
 
+int get_partial_taint_byte_range (int syscall, size_t* start, size_t* end) {
+    struct filter_byterange* fbr;
+    list_for_each_entry(fbr, &filter_byte_ranges, list) {
+        if (fbr->syscall == syscall)
+        {
+			*start = fbr->start_offset;
+			*end = fbr->end_offset;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 #if defined(USE_SHMEM) || defined(USE_NW)
 #define TOKENBUFSIZE 0x2000
 static struct token* tokenbuf;

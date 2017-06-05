@@ -40,6 +40,8 @@ void add_input_filter(int type, void* filter);
 // output filters
 void add_output_filter(int type, void* filter);
 
+int get_partial_taint_byte_range (int syscall, size_t* start, size_t* end);
+
 int serialize_filters(int outfd);
 int deserialize_filters(int infd);
 

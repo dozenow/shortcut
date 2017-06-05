@@ -55,7 +55,7 @@ void recheck_start(char* filename)
 
 void handle_mismatch()
 {
-    sleep (5); // Just so we notice it for now
+    sleep (1); // Just so we notice it for now
 }
 
 static inline void check_retval (const char* name, int expected, int actual) {
@@ -72,6 +72,41 @@ static inline void check_retval (const char* name, int expected, int actual) {
     }
 }
 
+void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int is_cache_file, long total_size) { 
+    //only verify bytes not in this range
+    int pass = 1;
+    printf("partial read: %d %d\n", pread->partial_read_start, pread->partial_read_end);
+    if (pread->partial_read_start > 0) { 
+        if (memcmp (newdata, olddata, pread->partial_read_start)) {
+            printf ("[MISMATCH] read returns different values for partial read: before start\n");
+            handle_mismatch();
+	    pass = 0;
+        }
+    }
+    if(pread->partial_read_end > total_size) 
+	    printf ("[BUG] partial_read_end out of boundary.\n");
+    if (pread->partial_read_end < total_size) { 
+	    if (is_cache_file == 0) {
+		    if (memcmp (newdata+pread->partial_read_end, olddata+pread->partial_read_end, total_size-pread->partial_read_end)) {
+			    printf ("[MISMATCH] read returns different values for partial read: after end\n");
+			    handle_mismatch();
+			    pass = 0;
+		    }
+	    } else { 
+		    //for cached files, we only have the data that needs to be verified
+		    if (memcmp (newdata+pread->partial_read_end, olddata+pread->partial_read_start, total_size-pread->partial_read_end)) {
+			    printf ("[MISMATCH] read returns different values for partial read: after end\n");
+			    handle_mismatch();
+			    pass = 0;
+		    }
+	    }
+    }
+    //copy other bytes to the actual address
+    memcpy (pread->buf+pread->partial_read_start, newdata+pread->partial_read_start, pread->partial_read_end-pread->partial_read_start);
+    if (pass) printf ("partial_read: pass.\n");
+    else printf ("partial_read: verification fails.\n");
+}
+
 void read_recheck ()
 {
     struct recheck_entry* pentry;
@@ -82,11 +117,12 @@ void read_recheck ()
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     pread = (struct read_recheck *) bufptr;
-    char* readData = buf+sizeof(*pread);
+    char* readData = bufptr+sizeof(*pread);
     bufptr += pentry->len;
 
     if (pread->has_retvals) {
 	is_cache_file = *((u_int *)readData);
+	readData += sizeof(u_int);
     }
 #ifdef PRINT_VALUES
     printf("read: has ret vals %d\n", pread->has_retvals);
@@ -104,32 +140,41 @@ void read_recheck ()
 	    printf ("[BUG] cache file should be opened but it is not\n");
 	    handle_mismatch();
 	}
-	if (fstat64 (pread->fd, &st) < 0) {
-	    printf ("[MISMATCH] cannot fstat file\n");
-	    handle_mismatch ();
-	}
-	if (st.st_mtim.tv_sec == cache_files_opened[pread->fd].orv.mtime.tv_sec &&
-	    st.st_mtim.tv_nsec == cache_files_opened[pread->fd].orv.mtime.tv_nsec) {
-	    if (lseek(pread->fd, pentry->retval, SEEK_CUR) < 0) {
-		printf ("[MISMATCH] lseek after read failed\n");
-		handle_mismatch();
-	    }
-	} else {
-	    printf ("[BUG] - file times mismatch but counld check actual file content to see if it still matches\n");
-	    handle_mismatch();
-	}
-	
+        if (!pread->partial_read) {
+            if (fstat64 (pread->fd, &st) < 0) {
+                printf ("[MISMATCH] cannot fstat file\n");
+                handle_mismatch ();
+            }
+            if (st.st_mtim.tv_sec == cache_files_opened[pread->fd].orv.mtime.tv_sec &&
+                    st.st_mtim.tv_nsec == cache_files_opened[pread->fd].orv.mtime.tv_nsec) {
+                if (lseek(pread->fd, pentry->retval, SEEK_CUR) < 0) {
+                    printf ("[MISMATCH] lseek after read failed\n");
+                    handle_mismatch();
+                }
+            } else {
+                printf ("[BUG] - file times mismatch but counld check actual file content to see if it still matches\n");
+                handle_mismatch();
+            }
+        } else {
+            //read the new content that will be verified
+            rc = syscall(SYS_read, pread->fd, tmpbuf, pread->count);
+            assert (rc == pread->count);
+	    partial_read (pread, tmpbuf, (char*)pread+sizeof(*pread)+pread->readlen, 1, rc);
+        }
     } else {
 	assert (pentry->retval < sizeof(tmpbuf));
 	assert ((*pread).count < sizeof(tmpbuf));
 	rc = syscall(SYS_read,(*pread).fd, tmpbuf, (*pread).count);
 	check_retval ("read", pentry->retval, rc);
-	if (rc > 0) {
-	    if (memcmp (buf, readData, rc)) {
-		printf ("[MISMATCH] read returns different values\n");
-		handle_mismatch();
-	    }
-	}
+        if (!pread->partial_read) {
+            if (rc > 0) {
+                if (memcmp (tmpbuf, readData, rc)) {
+                    printf ("[MISMATCH] read returns different values\n");
+                    handle_mismatch();
+                }
+            }
+        } else
+            partial_read (pread, tmpbuf, readData, 0, rc);
     }
 }
 
