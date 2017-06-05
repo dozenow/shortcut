@@ -60,6 +60,13 @@ void handle_mismatch()
     if (cnt < 3) sleep (5); // Just so we notice it for now
 }
 
+void handle_jump_diverge()
+{
+    fprintf (stderr, "[MISMATCH] control flow diverges.\n");
+    //fail hardly
+    exit(-1);
+}
+
 static inline void check_retval (const char* name, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {

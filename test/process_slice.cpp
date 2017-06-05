@@ -184,9 +184,9 @@ string rewriteInst (string s) {
 			//if the original branch is taken, then we jump to error if not taken as before
 			string tmp = s.replace (index + 1, inst.length(), jumpMap(inst));
 			spaceIndex = s.find (" ", s.find("#j"));
-			return tmp.replace(spaceIndex + 1, address.length(), "0x0000004");
+			return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
 		} else if (s.find ("branch_taken 0") != string::npos) 
-			return s.replace(spaceIndex + 1, address.length(), "0x0000000");
+			return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
 		else if (inst.compare("jecxz") == 0) {
 			return s.replace(spaceIndex + 1, address.length(), "not handled");
 		} else {
@@ -410,6 +410,17 @@ int main (int argc, char* argv[]) {
 	println ("mov ebx, 1");
 	println ("mov eax, 350");
 	println ("int 0x80");
+
+	//control flow divergence
+	println ("/* function that handles jump divergence */");
+	println ("jump_diverge:");
+	println ("push eax");
+	println ("push ecx");
+	println ("push edx");
+	println ("call handle_jump_diverge");
+	println ("push edx");
+	println ("push ecx");
+	println ("push eax");
 
 	return 0;
 }
