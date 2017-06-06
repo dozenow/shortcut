@@ -81,6 +81,17 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 
     do {
 	res = parseklog_get_next_psr(handle->log);
+	if (res->psr.sysnum != syscall) {  //debugging: print out all skipped syscall
+		switch (res->psr.sysnum) {
+			case 45:  break;
+			case 91:  break;
+			case 125: break;
+			case 192: break;
+			case 174: break;
+			default:
+				fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped.\n", res->psr.sysnum , res->index); 
+		}
+	}
     } while (res->psr.sysnum != syscall);
 
     return res;

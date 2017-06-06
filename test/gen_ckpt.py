@@ -8,7 +8,8 @@ import sys
 taint_filter = False
 taint_syscall = ""
 taint_byterange = ""
-usage = "Usage: ./gen_ckpt.py rec_group_id checkpoint_clock [-taint_syscall SYSCALL_INDEX] [-taint_byterange RECORD_PID,SYSCALL_INDEX,START,END]" 
+taint_byrterange_file = ""
+usage = "Usage: ./gen_ckpt.py rec_group_id checkpoint_clock [-taint_syscall SYSCALL_INDEX] [-taint_byterange RECORD_PID,SYSCALL_INDEX,START,END] [-taint_byterange_file filename]" 
 if (len(sys.argv) == 3):
 	rec_dir = sys.argv[1]
 	ckpt_at = sys.argv[2]
@@ -21,6 +22,8 @@ elif (len(sys.argv) == 5):
 		taint_syscall = sys.argv[4]
 	elif (sys.argv[3] == "-taint_byterange"):
 		taint_byterange = sys.argv[4]
+	elif (sys.argv[3] == "-taint_byterange_file"):
+		taint_byterange_file = sys.argv[4]
 	else:
 		print usage
 else: 
@@ -37,6 +40,10 @@ if (taint_filter > 0):
 	elif (taint_byterange):
 		p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-b", 
 			taint_byterange, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at)],
+			stdout=outfd)
+	elif (taint_byterange_file):
+		p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-rf", 
+			taint_byterange_file, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at)],
 			stdout=outfd)
 else:
     p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", 

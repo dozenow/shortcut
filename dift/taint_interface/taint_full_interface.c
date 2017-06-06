@@ -2243,6 +2243,7 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
+//TODO: this is not correct: if al is tainted and ah is not, when reading from ax, we should init ah with SLICE_EXTRA
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) { 
 	int tainted = 0;
 	uint32_t i = 0;

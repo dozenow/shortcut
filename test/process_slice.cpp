@@ -316,6 +316,7 @@ int main (int argc, char* argv[]) {
 						string immAddress = s.substr(immAddressIndex + 6, s.find(")") - immAddressIndex - 6);
 						size_t memPtrIndex = lastLine.find (" ptr ");
 						size_t memPtrEnd = lastLine.find ("]", memPtrIndex);
+						assert (lastLine.find (" ptr ") == lastLine.rfind (" ptr "));
 						if (memPtrIndex == string::npos || memPtrEnd == string::npos) {
 							cout<< lastLine <<endl;
 							cout << s << endl;
@@ -378,7 +379,7 @@ int main (int argc, char* argv[]) {
 			while (!extraLines.empty()) {
 				//special case: if inst is mov, the src reg/mem operand must have been tainted; and there is no need to initialize the dst operand 
 				//therefore, SLICE_EXTRA is not necessary
-				if (s.find("#mov ") != string::npos|| s.find("#movzx ") != string::npos) {
+				if (s.find("#mov ") != string::npos|| s.find("#movzx ") != string::npos || s.find("#movsx") != string::npos) {
 					println ("/*Eliminated SLICE_EXTRA" + extraLines.front() + "*/");
 				} else 
 					println (cleanupExtraline(replaceMem(extraLines.front(), s)));
