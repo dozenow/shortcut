@@ -122,10 +122,15 @@ vector<string> split(string str, char delimiter) {
 string cleanupSliceLine (string s) { 
 	size_t index = s.find("[SLICE_INFO]");
 	if (index == string::npos) {
-		cout << s << endl;
+		cerr << s << endl;
 		assert (0);
 	}
 	vector<string> strs = split (s.substr(0, index), '#');
+	if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
+		strs[2] = strs[2].substr (0, strs[2].find("dword"));
+	} else if (strs[2].find("lea ") != string::npos) {
+		strs[2].erase (strs[2].find (" ptr "), 4);	
+	}
 	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
 }
 
@@ -213,7 +218,7 @@ string replaceReg (string s) {
 			assert (0);
 		}
 	} 
-	return string();
+	return s;
 }
 
 string replaceMem (string s, string instStr) {
@@ -257,6 +262,32 @@ void printerr (string s) {
 	cerr << s << endl;
 }
 
+#define SLICE 0
+#define SLICE_EXTRA 1
+#define SLICE_ADDRESSING 2
+#define SLICE_RESTORE_ADDRESS 3
+#define SLICE_RESTORE_REG 4
+#define SLICE_VERIFICATION 5
+
+inline int getLineType (string line) { 
+	if (line.compare (0, 7, "[SLICE]") == 0)
+		return SLICE;
+	else if (line.compare (0, 13, "[SLICE_EXTRA]") == 0)
+		return SLICE_EXTRA;
+	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
+		return SLICE_ADDRESSING;
+	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
+		return SLICE_VERIFICATION;
+	else if (line.compare (0, 23, "[SLICE_RESTORE_ADDRESS]") == 0) 
+		return SLICE_RESTORE_ADDRESS;
+	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
+		return SLICE_RESTORE_REG;
+	else { 
+		cerr << "Unrecognized line: " << line <<endl;
+		assert (0);
+	}
+}
+
 int main (int argc, char* argv[]) { 
 	if (argc != 2) { 
 		cout << "usage: process_slice FILENAME" << endl;
@@ -267,7 +298,7 @@ int main (int argc, char* argv[]) {
 	}
 
 	string lastLine;
-	queue<string> buffer;
+	queue<pair<int,string>> buffer; //type and the content of the string
 	list<AddrToRestore> restoreAddress;
 	list<string> restoreReg;
 	int totalRestoreSize = 0;
@@ -277,70 +308,40 @@ int main (int argc, char* argv[]) {
 		getline (in, s);
 		if (s.empty()) continue;
 
-		//first round: 1. process all SLICE_EXTRA : TODO merge two round maybe
-		//2. convert instructions if necessary
-		//3. get all mem addresses we need to restore
-		/*for (i <- 0 to lines.length - 1) {
-		  if (i %1000 == 0) println ("line " + i)
-		  val s = lines.apply (i)*/
-		//printerr ("getline: " + s);
-		if (s.find ("[SLICE_RESTORE_ADDRESS]") == 0) {
-			AddrToRestore tmp = parseRestoreAddress(s);
-			restoreAddress.push_back(tmp);
-			totalRestoreSize += tmp.getSize();
-		} else if (s.find("[SLICE_RESTORE_REG]") == 0) {
-			size_t index = s.find("$reg(");
-			assert (index != string::npos);
-			restoreReg.push_back(regMap[s.substr(index+4, s.find (")", index+1)+1 - index - 4)]);
-			totalRestoreSize += 4;
-		} else {
-			string regStr = replaceReg (s);
-			//special case: to avoid affecting esp, we change pos/push to mov instructions
-			lastLine = rewriteInst(lastLine);
-
-			if (!regStr.empty())  {
-				//replace reg
-				buffer.push(regStr);
-			} else {
-				//replace mem
-				size_t addrIndex = s.find("$addr(");
-				if (addrIndex != string::npos) { 
-					//printerr (lastLine);
-					if (s.find ("immediate_address ") != string::npos) {
-						//replace the mem operand in the SLICE instead of this line
-						size_t immAddressIndex = s.find("$addr(");
-						if (immAddressIndex == string::npos || s.find (")") == string::npos) {
-							cout << s << endl;
-							assert (0);
-						}
-						string immAddress = s.substr(immAddressIndex + 6, s.find(")") - immAddressIndex - 6);
-						size_t memPtrIndex = lastLine.find (" ptr ");
-						size_t memPtrEnd = lastLine.find ("]", memPtrIndex);
-						assert (lastLine.find (" ptr ") == lastLine.rfind (" ptr "));
-						if (memPtrIndex == string::npos || memPtrEnd == string::npos) {
-							cout<< lastLine <<endl;
-							cout << s << endl;
-							assert (0);
-						}
-						lastLine = lastLine.substr(0, memPtrIndex) + " ptr [" + immAddress + lastLine.substr(memPtrEnd);
-						buffer.push(s);
-					} else {
-						//replace the mem operand in this line later
-						buffer.push(s);
-					}
-				} else 
-					if(!lastLine.empty()) {
-						//printerr ("line:" + lastLine + ", s:" + s);
-						buffer.push(lastLine);
-					}
-
-			}
-			if(s.find ("[SLICE]") == 0)
+		//TODO merge two round maybe
+		//first round: figure out the type for each line
+		// get all mem addresses we need to restore
+		// and reorder a little bit
+		int type = getLineType (s);
+		switch (type) { 
+			case SLICE_RESTORE_ADDRESS:  
+				{
+					AddrToRestore tmp = parseRestoreAddress(s);
+					restoreAddress.push_back(tmp);
+					totalRestoreSize += tmp.getSize();
+					break; 
+				}
+			case SLICE_RESTORE_REG: 
+				{
+					size_t index = s.find("$reg(");
+					assert (index != string::npos);
+					restoreReg.push_back(regMap[s.substr(index+4, s.find (")", index+1)+1 - index - 4)]);
+					totalRestoreSize += 4;
+					break;
+				}
+			case SLICE:
+				//printerr (lastLine);
+				if (!lastLine.empty())
+					buffer.push (make_pair(SLICE, lastLine));
 				lastLine = s;
+				break;
+			default: 
+				//printerr (s);
+				buffer.push (make_pair(type, s));
 		}
 	}
 	//printerr (lastLine);
-	buffer.push(lastLine);
+	buffer.push(make_pair(SLICE, lastLine));
 	assert (totalRestoreSize < 65536); //currently we only allocated 65536 bytes for this restore stack
 
 
@@ -369,34 +370,91 @@ int main (int argc, char* argv[]) {
 	//switch posistion and generate compilable assembly
 	//println ("**************************")
 	queue<string> extraLines;
-	queue<string> immAddress; //here I can handle multiple address convertion
+	queue<string> address; //here I can handle multiple address convertion
 	while (!buffer.empty()) {
-		string s= buffer.front();
+		auto p = buffer.front();
+		string s= p.second;
 		//SLICE_ADDRESSING comes first, then SLICE_EXTRA then SLICE
-		if (s.find ("[SLICE_EXTRA]") == 0) {
-			extraLines.push(s);
-		} else if (s.find("[SLICE]") == 0) {
-			while (!extraLines.empty()) {
-				//special case: if inst is mov, the src reg/mem operand must have been tainted; and there is no need to initialize the dst operand 
-				//therefore, SLICE_EXTRA is not necessary
-				if (s.find("#mov ") != string::npos|| s.find("#movzx ") != string::npos || s.find("#movsx") != string::npos) {
-					println ("/*Eliminated SLICE_EXTRA" + extraLines.front() + "*/");
-				} else 
-					println (cleanupExtraline(replaceMem(extraLines.front(), s)));
-				extraLines.pop();
-			}
-			println (cleanupSliceLine(s));
-		} else if (s.find("[SLICE_ADDRESSING]") == 0) {
-			if (s.find("immediate_address") != string::npos) {
-				println ("/*Eliminated " + s + "*/");
-			} else {
-				println (cleanupAddressingLine(s));
-			}
-		} else if (s.find("[SLICE_VERIFICATION]") == 0) {
-			println ("/*" + s + "*/");
-		} else { 
-			println (s);
-			assert (0);
+		switch (p.first) { 
+			case SLICE_EXTRA:
+				extraLines.push(s);
+				break;
+			case SLICE_ADDRESSING:
+				address.push (s);
+				break;
+			case SLICE:
+				//here, we need to convert instruction, init addressing registers and init source operands if they're not tainted;
+				//immediate addresses are converted
+				//first step, convert instructions
+				 //special case: to avoid affecting esp, we change pos/push to mov instructions
+				 //special case: convert jumps
+				 s = rewriteInst (s);
+				//processs SLICE_ADDRESSING
+				while (!address.empty()) {
+					string line = address.front();
+					//replace reg
+					line = replaceReg (line);
+					//replace mem 
+					if (line.find("immediate_address") != string::npos) {
+						println ("/*Eliminated " + line + "*/");
+						//replace the mem operand in the SLICE instead of this line
+						size_t immAddressIndex = line.find("$addr(");
+						if (immAddressIndex == string::npos || line.find (")") == string::npos) {
+							cout << line << endl;
+							assert (0);
+						}
+						string immAddress = line.substr(immAddressIndex + 6, line.find(")") - immAddressIndex - 6);
+						if (s.find (" ptr ") == s.rfind (" ptr ")){ 
+							size_t memPtrIndex = s.find (" ptr ");
+							size_t memPtrEnd = s.find ("]", memPtrIndex);
+							if (memPtrIndex == string::npos || memPtrEnd == string::npos) {
+								cout<< line <<endl;
+								cout << s << endl;
+								//assert (0);
+							}
+							s = s.substr(0, memPtrIndex) + " ptr [" + immAddress + s.substr(memPtrEnd);
+						} else {
+							//special case: we need to replace two memory operands 
+							if (s.find("movsd ") != string::npos || s.find("movs ") != string::npos || s.find("movsq ") != string::npos
+									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos) {
+								println ("mov edi, " + immAddress + "   /*MOVSx converted: " + line + "*/");
+								address.pop();
+								line = address.front();
+								immAddressIndex = line.find("$addr(");
+								immAddress = line.substr(immAddressIndex + 6, line.find(")") - immAddressIndex - 6);
+								println ("mov esi, " + immAddress + "   /*MOVSx converted: " + line + "*/");
+							} else {
+								printerr ("unhandled two memory operands: " + s);
+								assert (0);
+							}
+						}
+					} else {
+						println (cleanupAddressingLine(line));
+					}
+					address.pop();
+				}
+
+				//process SLICE_EXTRA
+				while (!extraLines.empty()) {
+					//special case: if inst is mov, the src reg/mem operand must have been tainted; and there is no need to initialize the dst operand 
+					//therefore, SLICE_EXTRA is not necessary
+					if (s.find("#mov ") != string::npos|| s.find("#movzx ") != string::npos || s.find("#movsx") != string::npos) {
+						println ("/*Eliminated SLICE_EXTRA" + extraLines.front() + "*/");
+					} else {
+						//replace reg and mems 
+						println (cleanupExtraline(replaceReg(replaceMem(extraLines.front(), s))));
+
+					}
+					extraLines.pop();
+				}
+				println (cleanupSliceLine(s));
+				break;
+			case SLICE_VERIFICATION:
+				println ("/*" + s + "*/");
+				break;
+			default:
+				println ("unrecognized: " + s);
+				assert (0);
 		}
 		buffer.pop();
 	}
