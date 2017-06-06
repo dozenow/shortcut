@@ -3138,14 +3138,21 @@ static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_e
 
 static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_size);
 
-TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, ADDRINT counts, UINT32 op_size, u_long dst_mem, uint32_t first_iter, uint32_t check_zf) { 
+//it depends on not only the source string, but also ECX (count)
+//it also depends on esi and edi probably, but we didn't handle this for the index tool
+TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem, uint32_t first_iter, uint32_t check_zf) { 
     if (first_iter) {
         int size = (int) (counts*op_size);
         int tainted = 0;
         if (!size) return 0;
         ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
         //fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
-        tainted = fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
+	if (count_reg) {
+		assert (count_reg == 9); //should always be ecx
+		tainted = fw_slice_memreg (ip, inst_str, count_reg, 4, counts, 0, ea_src_mem_loc, size);
+	} else{ 
+		tainted = fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
+	}
         if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
         else taint_rep (DF_FLAG, ip);
         return tainted;
@@ -3168,6 +3175,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
                     IARG_REG_VALUE, REG_EFLAGS, 
+                    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
                     IARG_REG_VALUE, INS_RepCountRegister (ins),
                     IARG_UINT32, INS_MemoryOperandSize (ins,0),
                     IARG_MEMORYWRITE_EA,
@@ -3184,6 +3192,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
                     IARG_REG_VALUE, REG_EFLAGS, 
+                    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
                     IARG_REG_VALUE, INS_RepCountRegister (ins),
                     IARG_UINT32, INS_MemoryOperandSize (ins,0),
                     IARG_UINT32, 0, 
@@ -3201,6 +3210,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
                     IARG_REG_VALUE, REG_EFLAGS, 
+                    IARG_UINT32, 0,
                     IARG_UINT32, 1,
                     IARG_UINT32, INS_MemoryOperandSize (ins,0),
                     IARG_MEMORYWRITE_EA,
@@ -3218,6 +3228,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
                     IARG_REG_VALUE, REG_EFLAGS, 
+                    IARG_UINT32, 0,
                     IARG_UINT32, 1,
                     IARG_UINT32, INS_MemoryOperandSize (ins,0),
                     IARG_UINT32, 0, 
@@ -16317,7 +16328,6 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_STOSD:
             case XED_ICLASS_STOSQ:
                 instrument_store_string(ins);
-		slice_handled = 1;
                 break;
             case XED_ICLASS_LODSB:
             case XED_ICLASS_LODSW:
