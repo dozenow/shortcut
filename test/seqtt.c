@@ -39,11 +39,13 @@ int main (int argc, char* argv[])
     int instruction_only = 0;
     char* group_dir = NULL;
     int attach_gdb = 0;
+    int run_data_tool = 0;
     
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb] [-run_data_tool\n");
+	//byterange: buffer starts with 0, start: inclusive, end: exclusive
 	return -1;
     }
 
@@ -86,8 +88,11 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index], "-attach_gdb", BUFFER_SIZE)) { 
 		    attach_gdb = 1;
 		    index ++;
+	    } else if (!strncmp(argv[index], "-run_data_tool", BUFFER_SIZE)) {
+		    run_data_tool = 1;
+		    ++index;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock] [-attach_gdb] [-run_data_tool]\n");
 		return -1;
 	    }
 	}
@@ -139,9 +144,12 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "-t";
 	if (instruction_only) 
 		args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
-	else
-		args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
-		//args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+	else {
+		if (run_data_tool)//default is to run the index tool
+			args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+		else 
+			args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
+	}
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;

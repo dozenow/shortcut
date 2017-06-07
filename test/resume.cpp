@@ -204,7 +204,7 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 
 #define LPRINT
 
-int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib)
+int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthread_dir)
 {
     char filename[256], mapname[256], procname[256], buf[256];
 
@@ -338,7 +338,13 @@ again:
     printf ("\n\n\n");
 #endif
     // Let's load libc first
-    void* hndl = dlopen ("../eglibc-2.15/prefix/lib/libc-2.15.so", RTLD_NOW);
+    void* hndl = NULL;
+    if (pthread_dir) {
+	    char libc_filename[256];
+	    sprintf (libc_filename, "%s/libc-2.15.so", pthread_dir);
+	    hndl = dlopen (libc_filename, RTLD_NOW);
+    } else 
+    	hndl = dlopen ("../eglibc-2.15/prefix/lib/libc-2.15.so", RTLD_NOW);
     if (hndl == NULL) {
 	perror ("dlopen libc");
 	exit (0);
@@ -397,6 +403,7 @@ int main (int argc, char* argv[])
 	loff_t attach_index = -1;
 	int attach_pid = -1;
 	char* libdir = NULL;
+	char* pthread_dir = NULL;
 	pid_t pid;
 	char ldpath[4096];
 	int base;
@@ -450,6 +457,7 @@ int main (int argc, char* argv[])
 				/* --pthread */
 			case 0: 
 				libdir = optarg;
+				pthread_dir = optarg;
 				break;
 				/* --attach_offset or --attach_pin_later */
 			case 1: case 2:
@@ -599,7 +607,7 @@ int main (int argc, char* argv[])
 		close(cfd);
 
 		if (slice_filename) {
-		    load_slice_lib (argv[base], from_ckpt, slice_filename);
+		    load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
 		}
 
 		cd.fd = fd;

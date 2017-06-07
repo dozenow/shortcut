@@ -212,7 +212,7 @@ int main (int argc, char* argv[])
     if (sys_reads_analysis) { 
 	    char outputfilename[256];
 	    int fd = -1;
-	    printf ("##### sys_read/pread analysis####\n");
+	    printf ("##### sys_read/pread analysis#### (index starts with 1)\n");
 	    //sort
 	    HASH_SORT (sys_reads, sys_read_sort); 
 	    struct read_syscall * s;

@@ -51,6 +51,8 @@ struct read_info {
     int      fd;
     u_long  fd_ref;
     char*    buf;
+    int size;
+    struct recheck_handle* recheck_handle;
 };
 
 struct write_info {

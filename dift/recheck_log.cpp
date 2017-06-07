@@ -81,29 +81,71 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 
     do {
 	res = parseklog_get_next_psr(handle->log);
+	if (res->psr.sysnum != syscall) {  //debugging: print out all skipped syscall
+		switch (res->psr.sysnum) {
+			case 45:  break;
+			case 91:  break;
+			case 125: break;
+			case 192: break;
+			case 174: break;
+			default:
+				fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped.\n", res->psr.sysnum , res->index); 
+		}
+	}
     } while (res->psr.sysnum != syscall);
 
     return res;
 }
 
-int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count)
+long calculate_partial_read_size (int is_cache_file, int partial_read, size_t start, size_t end, long total_size) { 
+	if (partial_read == 0) return 0;
+	if (is_cache_file == 0) return 0;
+	else {
+		long result = 0;
+		if (start > 0) result += start;
+		if ((long)end > total_size) { 
+			fprintf (stderr, "[BUG] end size > total_size ???????\n");
+		}
+		if ((long)end < total_size) result += total_size-end;
+		fprintf (stderr, "calculate_partial_read_size: size is %ld\n", result);
+		return  result;
+	}
+}
+
+int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end)
 {
     struct read_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_read);
+    int is_cache_file = 0;
 
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	rrchk.has_retvals = 1;
 	rrchk.readlen = res->retparams_size;
+	is_cache_file = *(unsigned int*)res->retparams;
     } else {
 	rrchk.has_retvals = 0;
 	rrchk.readlen = 0;
     }
-    write_header_into_recheck_log (handle->recheckfd, SYS_read, res->retval, sizeof (struct read_recheck) + rrchk.readlen);
+    write_header_into_recheck_log (handle->recheckfd, SYS_read, res->retval, sizeof (struct read_recheck) + rrchk.readlen + calculate_partial_read_size(is_cache_file, partial_read, partial_read_start, partial_read_end, res->retval));
     rrchk.fd = fd;
     rrchk.buf = buf;
     rrchk.count = count;
+    if (partial_read) { 
+	    rrchk.partial_read = 1;
+	    rrchk.partial_read_start = partial_read_start;
+	    rrchk.partial_read_end = partial_read_end;
+    } else 
+	    rrchk.partial_read = 0;
+
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, res->retparams, rrchk.readlen);
+    //put the content that we need to verify into the recheck log, so that we don't have to deal with cached files in the recheck logic (which requires sprintf causing segfault)
+    if (partial_read && is_cache_file) { 
+	    if (partial_read_start > 0) 
+		    write_data_into_recheck_log (handle->recheckfd, (char*)buf, partial_read_start);
+	    if ((long)partial_read_end < res->retval) 
+		    write_data_into_recheck_log (handle->recheckfd, (char*)buf+partial_read_end, res->retval-partial_read_end);
+    }
 
     return 0;
 }
