@@ -231,7 +231,6 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     } else {
 	srchk.has_retvals = 0;
     }
-    //check here wesley5-10
     srchk.buf = buf;
     write_data_into_recheck_log (handle->recheckfd, &srchk, sizeof(srchk));
     write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname)+1);
@@ -307,6 +306,40 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     chk.tv_ptr = tv;
     chk.tz_ptr = tz;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit)
+{
+    struct prlimit64_recheck pchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_prlimit64);
+    write_header_into_recheck_log (handle->recheckfd, SYS_prlimit64, res->retval, sizeof (struct prlimit64_recheck));
+    pchk.pid = pid;
+    pchk.resource = resource;
+    pchk.new_limit = new_limit;
+    pchk.old_limit = old_limit;
+    if (res->psr.flags & SR_HAS_RETPARAMS) {
+	pchk.has_retvals = 1;
+	memcpy (&pchk.retparams, res->retparams, sizeof(pchk.retparams));
+    } else {
+	pchk.has_retvals = 0;
+    }
+    write_data_into_recheck_log (handle->recheckfd, &pchk, sizeof(pchk));
+
+    return 0;
+}
+
+int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted)
+{
+    struct setpgid_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_setpgid);
+    write_header_into_recheck_log (handle->recheckfd, SYS_setpgid, res->retval, sizeof (struct setpgid_recheck));
+    schk.pid = pid;
+    schk.pgid = pgid;
+    schk.is_pid_tainted = is_pid_tainted;
+    schk.is_pgid_tainted = is_pgid_tainted;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
 
     return 0;
 }

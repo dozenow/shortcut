@@ -103,7 +103,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1477 
+//#define EXTRA_DEBUG 1479
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -285,20 +285,6 @@ KNOB<string> KnobRetaintEpochs(KNOB_MODE_WRITEONCE,
 KNOB<bool> KnobRecordTraceInfo(KNOB_MODE_WRITEONCE,
     "pintool", "rectrace", "",
     "record trace information");
-#endif
-
-//FIXME: take into consideration offset of being attached later. Remember, this is to specify where to kill application.
-
-// Specific output functions
-// #define HEARTBLEED
-#ifdef HEARTBLEED
-int bad_memcpy_flag = 0;
-int heartbleed_fd = -1;
-
-void instrument_before_badmemcpy(void) {
-    fprintf(stderr, "instrument bad heartbeat!\n");
-    bad_memcpy_flag = 1;
-}
 #endif
 
 //ARQUINN: added helper methods for copying tokens from the file
@@ -570,20 +556,10 @@ static inline void increment_syscall_cnt (int syscall_num)
             if (!(*(int *)(current_thread->ignore_flag))) {
                 global_syscall_cnt++;
                 current_thread->syscall_cnt++;
-/*
-#ifdef RECORD_TRACE_INFO
-		if (record_trace_info) flush_trace_hash();
-#endif
-*/
             }
         } else {
             global_syscall_cnt++;
             current_thread->syscall_cnt++;
-/*
-#ifdef RECORD_TRACE_INFO
-	    if (record_trace_info) flush_trace_hash();
-#endif
-*/
         }
 #if 0
 #ifdef TAINT_DEBUG
@@ -646,7 +622,7 @@ static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t siz
 	} else { 
 		//TODO: we didn't check memory overlapping correctly
 		if (addr_struct->size != size) { 
-				printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
+		    printf ("[BUG] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
 		}
 	}
 }
@@ -662,7 +638,7 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     tdata->save_syscall_info = (void *) oi;
     if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call open_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call open_recheck [SLICE_INFO]\n");
 #endif
 	recheck_open (tdata->recheck_handle, filename, flags, mode);
     } 
@@ -694,10 +670,14 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
     tdata->save_syscall_info = (void *) fd;
     if (tdata->recheck_handle) {
+	if (!current_thread->ignore_flag || !(*(int *)(current_thread->ignore_flag))) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call close_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call close_recheck [SLICE_INFO]\n");
 #endif
-	recheck_close (tdata->recheck_handle, fd);
+	    recheck_close (tdata->recheck_handle, fd);
+	} else {
+	    printf ("close occurred during ignore region of the replay code\n");
+	}
     }
 }
 
@@ -752,18 +732,20 @@ static inline void sys_read_stop(int rc)
 
     if (ri->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call read_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call read_recheck [SLICE_INFO]\n");
 #endif
-         if (filter_input()) {
-             size_t start = 0;
-             size_t end = 0;
-             if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-                 recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end);
-                 add_tainted_mem_for_final_check ((u_long) (ri->buf+start), end-start);
-             } else
-                 recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
-         } else 
+	if (filter_input()) {
+	    size_t start = 0;
+	    size_t end = 0;
+	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end);
+		add_tainted_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+	    } else {
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+	    }
+	} else {
              recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+	}
     }
 
     if (rc > 0) {
@@ -781,7 +763,6 @@ static inline void sys_read_stop(int rc)
 	    if (si) {
 		if (si->domain == AF_INET || si->domain == AF_INET6) {
 		    channel_name = (char *) "inetsocket";
-		    //fprintf (stderr, "Read inet rc %d from fd %d at clock %lu\n", rc, ri->fd, *ppthread_log_clock);
 		} else {
 		    channel_name = (char *) "recvsocket";
 		}
@@ -1256,7 +1237,6 @@ static void sys_recv_stop(int rc)
             // FIXME
 	    if (si->domain == AF_INET || si->domain == AF_INET6) {
 		channel_name = (char *) "inetsocket";
-		//fprintf (stderr, "Recv inet rc %d from fd %d at clock %lu\n", rc, ri->fd, *ppthread_log_clock);
 	    } else {
 		channel_name = (char *) "recvsocket";
 	    }
@@ -1532,17 +1512,8 @@ static inline void sys_clock_gettime_stop (int rc) {
 static inline void sys_getpid_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
-	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
-#endif
-}
-
-/* Returns pid so must taint always */
-static inline void sys_set_tid_address_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
-#ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
-	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
 #endif
 }
 
@@ -1557,6 +1528,50 @@ static inline void sys_getpid_stop (int rc) {
 	tci.type = TOK_GETPID;
 	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
 	LOG_PRINT ("Done with getpid\n");
+}
+
+static inline void sys_getpgrp_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_getpgrp_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpgrp);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+#endif
+}
+
+static inline void sys_getpgrp_stop (int rc) {
+	struct taint_creation_info tci;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	tci.type = TOK_GETPID;
+	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	LOG_PRINT ("Done with getpgrp\n");
+}
+
+static inline void sys_setpgid_start (struct thread_data* tdata, pid_t pid, pid_t pgid) {
+    if (tdata->recheck_handle) {
+	int pid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0);
+	int pgid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #push ecx [SLICE_INFO] pgid argument to setpgid\n");
+	printf ("[SLICE] #00000000 #push ebx [SLICE_INFO] pid argument to setpgid\n");
+	printf ("[SLICE] #00000000 #call setpgid_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #pop ebx [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #pop ecx [SLICE_INFO]\n");
+#endif
+	recheck_setpgid (tdata->recheck_handle, pid, pgid, pid_tainted, pgid_tainted);
+    }
+}
+
+static inline void sys_set_tid_address_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+#endif
 }
 
 static inline void sys_set_tid_address_stop (int rc) {
@@ -1578,7 +1593,7 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 	fsi->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call fstat64_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call fstat64_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_fstat64 (tdata->recheck_handle, fd, buf);
 	}
@@ -1597,10 +1612,52 @@ static inline void sys_fstat64_stop (int rc)
 		tci.fileno = fsi->fd;
 		tci.data = 0;
 		tci.type = TOK_STAT_ATIME;
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_ino, sizeof(fsi->buf->st_ino), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
 		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with fstat64.\n");
+}
+
+static inline void sys_stat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	si->buf = buf;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call stat64_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_stat64 (tdata->recheck_handle, path, buf);
+	}
+}
+
+static inline void sys_stat64_stop (int rc) 
+{
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = 0;
+		tci.data = 0;
+		tci.type = TOK_STAT_ATIME;
+		create_taints_from_buffer_unfiltered (&si->buf->st_ino, sizeof(si->buf->st_ino), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ino, sizeof(si->buf->st_ino));
+		create_taints_from_buffer_unfiltered (&si->buf->st_atime, sizeof(si->buf->st_atime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_atime, sizeof(si->buf->st_atime));
+		create_taints_from_buffer_unfiltered (&si->buf->st_ctime, sizeof(si->buf->st_ctime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
+		create_taints_from_buffer_unfiltered (&si->buf->st_mtime, sizeof(si->buf->st_mtime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	}
+	LOG_PRINT ("Done with stat64.\n");
 }
 
 static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
@@ -1610,7 +1667,7 @@ static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource
 	ugri->prlim = prlim;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim);
 	}
@@ -1623,13 +1680,32 @@ static inline void sys_ugetrlimit_stop (int rc)
 	LOG_PRINT ("Done with ugetrlimit.\n");
 }
 
+static inline void sys_prlimit64_start (struct thread_data* tdata, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit) 
+{
+    struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
+    pri->old_limit = old_limit;
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call prlimit64_recheck [SLICE_INFO]\n");
+#endif
+	recheck_prlimit64 (tdata->recheck_handle, pid, resource, new_limit, old_limit);
+    }
+}
+
+static inline void sys_prlimit64_stop (int rc) 
+{
+    struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
+    if (pri->old_limit) clear_mem_taints ((u_long)pri->old_limit, sizeof(struct rlimit64));
+    LOG_PRINT ("Done with prlimit64.\n");
+}
+
 static inline void sys_uname_start (struct thread_data* tdata, struct utsname* buf) 
 {
 	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
 	uni->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call uname_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call uname_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_uname (tdata->recheck_handle, buf);
 	}
@@ -1660,7 +1736,7 @@ static inline void sys_statfs64_start (struct thread_data* tdata, const char* pa
 	sfi->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call statfs64_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call statfs64_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_statfs64 (tdata->recheck_handle, path, sz, buf);
 	}
@@ -1797,8 +1873,17 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
 	    break;
+	case SYS_getpgrp:
+	    sys_getpgrp_start (tdata);
+	    break;
+	case SYS_setpgid:
+	    sys_setpgid_start (tdata, (int) syscallarg0, (int) syscallarg1);
+	    break;
         case SYS_ugetrlimit:
 	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
+	    break;
+        case SYS_prlimit64:
+	    sys_prlimit64_start (tdata, (pid_t) syscallarg0, (int) syscallarg1, (struct rlimit64 *) syscallarg2, (struct rlimit64 *) syscallarg3);
 	    break;
         case SYS_uname:
 	    sys_uname_start (tdata, (struct utsname *) syscallarg0);
@@ -1816,20 +1901,13 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    if (tdata->recheck_handle) {
 		recheck_access (tdata->recheck_handle, (char *) syscallarg0, (int) syscallarg1);
 #ifdef FW_SLICE
-		printf ("[SLICE] #0000000 #call access_recheck [SLICE_INFO]\n");
+		printf ("[SLICE] #00000000 #call access_recheck [SLICE_INFO]\n");
 #endif
 	    }
 	    break;
-	  //open a file (used if you have a path to a file)
 	case SYS_stat64:
-	    if (tdata->recheck_handle) {
-#ifdef FW_SLICE
-		printf ("[SLICE] #0000000 #call stat64_recheck [SLICE_INFO]\n");
-#endif
-		recheck_stat64 (tdata->recheck_handle, (char *) syscallarg0, (void *) syscallarg1);
-	    }
+	    sys_stat64_start (tdata, (char *)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
-	    //open a file descriptor
 	case SYS_fstat64:
 	    sys_fstat64_start (tdata, (int)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
@@ -1886,14 +1964,23 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_getpgrp:
+	    sys_getpgrp_stop(rc);
+	    break;
 	case SYS_set_tid_address:
 	    sys_set_tid_address_stop(rc);
+	    break;
+	case SYS_stat64:
+	    sys_stat64_stop(rc);
 	    break;
 	case SYS_fstat64:
 	    sys_fstat64_stop(rc);
 	    break;
 	case SYS_ugetrlimit:
 	    sys_ugetrlimit_stop(rc);
+	    break;
+	case SYS_prlimit64:
+	    sys_prlimit64_stop(rc);
 	    break;
 	case SYS_uname:
 	    sys_uname_stop(rc);
@@ -1997,6 +2084,10 @@ void instrument_syscall(ADDRINT syscall_num,
 
     if (sysnum == 31) {
 	tdata->ignore_flag = (u_long) syscallarg1;
+    }
+    if (sysnum == 56) {
+	tdata->status_addr = (u_long) syscallarg0;
+	printf ("[SLICE] #00000000 #mov dword ptr [0x%lx], 3 [SLICE_INFO] reset the user-level record/replay flag", tdata->status_addr);
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
 	sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
@@ -2333,41 +2424,6 @@ void track_inst(INS ins, void* data)
     }
 }
 
-#ifdef HEARTBLEED
-void bad_memcpy(ADDRINT dst, ADDRINT src, ADDRINT len) {
-
-    if (bad_memcpy_flag) {
-        int rc;
-        struct memcpy_header header;
-
-        header.dst = dst;
-        header.src = src;
-        header.len = len;
-        rc = write(heartbleed_fd, &header, sizeof(header));
-        if (rc != sizeof(header)) {
-            assert(0);
-        }
-        for (int i = 0; i < (int)len; i++) {
-            taint_t* t;
-            t = get_mem_taints(src + i, 1);
-            if (t) {
-                rc = write(heartbleed_fd, t, sizeof(taint_t));
-                if (rc != sizeof(taint_t)) {
-                    assert(0);
-                }
-            } else {
-                taint_t value = 0;
-                rc = write(heartbleed_fd, &value, sizeof(taint_t));
-                if (rc != sizeof(taint_t)) {
-                    assert(0);
-                }
-            }
-        }
-        bad_memcpy_flag = 0;
-    }
-}
-#endif
-
 /* Interpose on top this X function and check the taints for certain coordinates */
 void trace_x_xputimage_start(ADDRINT dest_x, ADDRINT dest_y, ADDRINT w_ref, ADDRINT h_ref)
 {
@@ -2493,19 +2549,6 @@ void track_function(RTN rtn, void* v)
         }
     }
 
-#ifdef HEARTBLEED
-    if (strstr(name, "memcpy")) {
-        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)bad_memcpy,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
-                IARG_END);
-    }
-    if (strstr(name, "dtls1_process_heartbeat") || strstr(name, "tls1_process_heartbeat")) {
-        fprintf(stderr, "instrument process heartbeat\n");
-        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)instrument_before_badmemcpy, IARG_END);
-    }
-#endif
     RTN_Close(rtn);
 }
 
@@ -16228,15 +16271,6 @@ void instruction_instrumentation(INS ins, void *v)
 		   IARG_END);
 #endif
 
-#ifdef HEARTBLEED
-    /*
-    if (INS_Address(ins) == 0x811ac28 || INS_Address(ins) == 0x811ac2c) {
-        fprintf(stderr, "found bad instruction!");
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_before_badmemcpy, IARG_END);
-    }
-    */
-#endif
-
 #ifdef USE_CODEFLUSH_TRICK
     if (option_cnt != 0) {
 #endif
@@ -17450,21 +17484,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         }
 #endif
     }
-#ifdef HEARTBLEED
-    if (heartbleed_fd == -1) {
-        char heartbleed_filename[256];
-        snprintf(heartbleed_filename, 256, "%s/heartbleed.result", group_directory);
-        heartbleed_fd = open(heartbleed_filename,
-                                O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
-        if (heartbleed_fd < 0) {
-            fprintf(stderr, "could not open heartbleed file\n");
-            exit(-1);
-        }
-    }
-#endif
-//    fprintf(stderr, "%d done 1\n",PIN_GetTid());
     active_threads[ptdata->record_pid] = ptdata;
-//    fprintf(stderr, "%d done with thread_start\n",PIN_GetTid());
 }
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
@@ -18015,11 +18035,7 @@ int main(int argc, char** argv)
 #if 0
     RTN_AddInstrumentFunction (routine, 0);
 #endif
-#ifdef HEARTBLEED
-    fprintf(stderr, "heartbleed defined\n");
-#endif
     PIN_SetSyntaxIntel();
-
 
     PIN_StartProgram();
 

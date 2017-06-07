@@ -225,6 +225,7 @@ static void print_read(FILE *out, struct klog_result *res) {
 		char *buf = res->retparams;
 
 		int is_cache_read = *((int *)buf);
+		fprintf(out, "         is_cache_read: %x\n", is_cache_read);
 		buf += sizeof(int);
 
 		if (is_cache_read & READ_NEW_CACHE_FILE) {
