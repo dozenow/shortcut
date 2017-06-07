@@ -82,6 +82,11 @@ struct statfs64_recheck {
 };
 /* Followed by variable length write path */
 
+struct gettimeofday_recheck {
+    struct timeval* tv_ptr;
+    struct timezone* tz_ptr;
+};
+
 
 /* Prototypes */
 struct recheck_handle;
@@ -98,5 +103,6 @@ int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t coun
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim);
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf);
 int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf);
+int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz);
 
 #endif

@@ -551,3 +551,29 @@ void statfs64_recheck ()
     }
 }
 
+void gettimeofday_recheck () { 
+	struct recheck_entry* pentry;
+	struct gettimeofday_recheck *pget;
+	struct timeval tv;
+	struct timezone tz;
+	int rc;
+
+	pentry = (struct recheck_entry *) bufptr;
+	bufptr += sizeof(struct recheck_entry);
+	pget = (struct gettimeofday_recheck *) bufptr;
+	bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+	printf ("gettimeofday: pointer tv %lx tz %lx\n", (long) pget->tv_ptr, (long) pget->tz_ptr);
+#endif
+	rc = syscall (SYS_gettimeofday, &tv, &tz);
+	check_retval ("gettimeofday", pentry->retval, rc);
+
+	if (pget->tv_ptr) { 
+		memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
+		printf ("current tv %ld %ld\n", tv.tv_sec, tv.tv_usec);
+	}
+	if (pget->tz_ptr) { 
+		memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
+	}
+}

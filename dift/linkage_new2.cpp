@@ -1470,13 +1470,19 @@ static inline void sys_gettimeofday_start (struct thread_data* tdata, struct tim
 	info->tv = tv;
 	info->tz = tz;
 	tdata->save_syscall_info = (void*) info;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+		printf ("[SLICE] #0000000 #call gettimeofday_recheck [SLICE_INFO]\n");
+#endif
+		recheck_gettimeofday (tdata->recheck_handle, tv, tz);
+	}
 }
 
 static inline void sys_gettimeofday_stop (int rc) {
 	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
 	if (rc == 0) {
 		struct taint_creation_info tci;
-		char* channel_name = (char*) "gettimeofday-tv";
+		//char* channel_name = (char*) "gettimeofday-tv";
 		tci.type = TOK_GETTIMEOFDAY;
 		tci.rg_id = current_thread->rg_id;
 		tci.record_pid = current_thread->record_pid;
@@ -1484,15 +1490,16 @@ static inline void sys_gettimeofday_stop (int rc) {
 		tci.offset = 0;
 		tci.fileno = -1;
 		tci.data = 0;
-		create_taints_from_buffer (ri->tv, sizeof(struct timeval), &tci, tokens_fd, channel_name);
+		create_taints_from_buffer_unfiltered (ri->tv, sizeof(struct timeval), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)ri->tv, sizeof(struct timeval));
 		if (ri->tz != NULL) {
-			channel_name = (char*) "gettimeofday-tz";
-			create_taints_from_buffer (ri->tz, sizeof(struct timezone), &tci, tokens_fd, channel_name);
+			//channel_name = (char*) "gettimeofday-tz";
+			create_taints_from_buffer_unfiltered (ri->tz, sizeof(struct timezone), &tci, tokens_fd);
+			add_tainted_mem_for_final_check ((u_long)ri->tz, sizeof(struct timezone));
 		}
 	}
 	memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
 	current_thread->save_syscall_info = 0;
-	LOG_PRINT ("Done with getpid.\n");
 }
 
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 

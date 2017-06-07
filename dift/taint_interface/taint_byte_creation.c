@@ -154,8 +154,8 @@ void add_input_filter(int type, void* filter)
                     (char *) filter, rc);
             exit(-1);
         }
-        //fprintf(stderr, "Filtering pid %d syscall %d [%d, %d)\n",
-                //fbr->pid, fbr->syscall, fbr->start_offset, fbr->end_offset);
+        fprintf(stderr, "Filtering pid %d syscall %d [%d, %d)\n",
+                fbr->pid, fbr->syscall, fbr->start_offset, fbr->end_offset);
         list_add_tail(&fbr->list, &filter_byte_ranges);
         num_filter_byte_ranges++;
     } else if (type == FILTER_PARTFILENAME) {
@@ -1078,12 +1078,16 @@ void build_filters_from_file(const char* filter_filename) {
     //int pid, syscall, start_offset, end_offset;
     while ((read = getline(&line, &len, filter_f)) != -1) {
         //sscanf(line, "-%c %d,%d,%d,%d\n", &filter_type, &pid, &syscall, &start_offset, &end_offset);
+	if (line[0] == '#') continue;
         sscanf(line, "-%c %s\n", &filter_type, filter);
 
         switch (filter_type) {
             case 'b':
                 add_input_filter(FILTER_BYTERANGE, (void*) filter);
                 break;
+	    case 's':
+		add_input_filter(FILTER_SYSCALL, (void*) filter);
+		break;
             default:
                 break;
         }
