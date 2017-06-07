@@ -126,40 +126,44 @@ struct syscall_info {
 };
 
 struct syscall_ret_info {
-	int retval;
+    int retval;
 };
 
 struct getrusage_info {
-	struct rusage* usage;
+    struct rusage* usage;
 };
 
 struct clock_gettime_info {
-	struct timespec* tp;
+    struct timespec* tp;
 };
 
 struct fstat64_info {
-	int fd;
-	struct stat64* buf;
+    int fd;
+    struct stat64* buf;
 };
 
 struct ugetrlimit_info {
-	int resource;
-	struct rlimit* prlim;
+    int resource;
+    struct rlimit* prlim;
 };
 
 struct uname_info {
-	struct utsname* buf;
+    struct utsname* buf;
 };
 
 struct statfs64_info {
-	struct statfs64* buf;
+    struct statfs64* buf;
+};
+
+struct prlimit64_info {
+    struct rlimit64* old_limit;
 };
 
 struct address_taint_set {
-	u_long loc;
-	int is_imm;
-	uint32_t size;
-	UT_hash_handle hh;
+    u_long loc;
+    int is_imm;
+    uint32_t size;
+    UT_hash_handle hh;
 };
 
 // Per-thread data structure
@@ -168,6 +172,7 @@ struct thread_data {
     // This stuff only used for replay
     u_long                   app_syscall; // Per thread address for specifying pin vs. non-pin system calls
     u_long                   app_syscall_chk; // Per thread address for helping disambiguate pin vs. non-pin system calls with same app_sycall
+    u_long                   status_addr; // Records where record/replay status is kept
     int                      record_pid;  // Ask kernel for corresponding record pid and save it here
     uint64_t                 rg_id;       // record group id
     u_long                   ignore_flag; // location of the ignore flag
@@ -192,6 +197,7 @@ struct thread_data {
 	struct ugetrlimit_info ugetrlimit_info_cache;
 	struct uname_info uname_info_cache;
 	struct statfs64_info statfs64_info_cache;
+	struct prlimit64_info prlimit64_info_cache;
     } op;
 
     void* save_syscall_info;

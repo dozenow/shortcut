@@ -84,21 +84,18 @@ void read_recheck ()
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     pread = (struct read_recheck *) bufptr;
-    char* readData = buf+sizeof(*pread);
+    char* readData = bufptr+sizeof(*pread);
     bufptr += pentry->len;
 
     if (pread->has_retvals) {
 	is_cache_file = *((u_int *)readData);
     }
 #ifdef PRINT_VALUES
-    printf("read: has ret vals %d\n", pread->has_retvals);
+    printf("read: has ret vals %d ", pread->has_retvals);
     if (pread->has_retvals) {
-	printf ("is_cache_file: %x\n", is_cache_file);
+	printf ("is_cache_file: %x ", is_cache_file);
     }
-    printf("fd %d\n", pread->fd);
-    printf("buf %p\n", pread->buf);
-    printf("count %d\n", pread->count);
-    printf("readlen %d\n", pread->readlen);
+    printf("fd %d buf %lx count %d readlen %d returns %ld\n", pread->fd, (u_long) pread->buf, pread->count, pread->readlen, pentry->retval);
 #endif
     if (is_cache_file && pentry->retval >= 0) {
 	struct stat64 st;
@@ -127,8 +124,9 @@ void read_recheck ()
 	rc = syscall(SYS_read,(*pread).fd, tmpbuf, (*pread).count);
 	check_retval ("read", pentry->retval, rc);
 	if (rc > 0) {
-	    if (memcmp (buf, readData, rc)) {
+	    if (memcmp (tmpbuf, readData+sizeof(u_int), rc)) {
 		printf ("[MISMATCH] read returns different values\n");
+		printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData+sizeof(u_int));
 		handle_mismatch();
 	    }
 	}
@@ -229,7 +227,7 @@ void stat64_recheck ()
 	       pstat64->retvals.st_rdev, pstat64->retvals.st_size, pstat64->retvals .st_atime, pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
 	       pstat64->retvals.st_blocks); 
     }
-    printf("buf %p\n", pstat64->buf);
+    printf("buf %lx\n", (u_long) pstat64->buf);
     printf("pathname %s\n", pathName);
 #endif
 
@@ -309,7 +307,7 @@ void fstat64_recheck ()
 	       pfstat64->retvals.st_rdev, pfstat64->retvals.st_size, pfstat64->retvals .st_atime, pfstat64->retvals.st_mtime, pfstat64->retvals.st_ctime, pfstat64->retvals.st_blksize,
 	       pfstat64->retvals.st_blocks); 
     }
-    printf("buf %p\n", pfstat64->buf);
+    printf("buf %lx\n", (u_long) pfstat64->buf);
     printf("fd %d\n", pfstat64->fd);
 #endif
 
@@ -320,10 +318,12 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pfstat64->retvals.st_dev);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_ino != pfstat64->retvals.st_ino) {
 	    printf ("[MISMATCH] fstat64 ino does not match %llu vs. recorded %llu\n", st.st_ino, pfstat64->retvals.st_ino);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_mode != pfstat64->retvals.st_mode) {
 	    printf ("[MISMATCH] fstat64 mode does not match %d vs. recorded %d\n", st.st_mode, pfstat64->retvals.st_mode);
 	    handle_mismatch();
@@ -348,6 +348,7 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 size does not match %lld vs. recorded %lld\n", st.st_size, pfstat64->retvals.st_size);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_mtime != pfstat64->retvals.st_mtime) {
 	    printf ("[MISMATCH] fstat64 mtime does not match %ld vs. recorded %ld\n", st.st_mtime, pfstat64->retvals.st_mtime);
 	    handle_mismatch();
@@ -356,7 +357,11 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 ctime does not match %ld vs. recorded %ld\n", st.st_ctime, pfstat64->retvals.st_ctime);
 	    handle_mismatch();
 	}
-	/* Assume atime will be handled by tainting since it changes often */
+#endif
+	/* Assume inode, atime, mtime, ctime will be handled by tainting since it changes often */
+	((struct stat64 *) pfstat64->buf)->st_ino = st.st_ino;
+	((struct stat64 *) pfstat64->buf)->st_mtime = st.st_atime;
+	((struct stat64 *) pfstat64->buf)->st_ctime = st.st_atime;
 	((struct stat64 *) pfstat64->buf)->st_atime = st.st_atime;
 	if (st.st_blksize != pfstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] fstat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pfstat64->retvals.st_blksize);
@@ -428,8 +433,8 @@ void uname_recheck ()
 	handle_mismatch();
     }
     /* Assume version will be handled by tainting since it changes often */
-    printf ("Buffer is %p\n", puname->buf);
-    printf ("Copy to version buffer at %p\n", &((struct utsname *) puname->buf)->version);
+    printf ("Buffer is %lx\n", (u_long) puname->buf);
+    printf ("Copy to version buffer at %lx\n", (u_long) &((struct utsname *) puname->buf)->version);
     memcpy (&((struct utsname *) puname->buf)->version, &puname->utsname.version, sizeof(puname->utsname.version));
     if (memcmp(&uname.machine, &puname->utsname.machine, sizeof(uname.machine))) {
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
@@ -472,17 +477,17 @@ void statfs64_recheck ()
 	    handle_mismatch();
 	}
 	/* Assume free and available blocks handled by tainting */
-	printf ("Buffer is %p\n", pstatfs64->buf);
-	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_bfree);
+	printf ("Buffer is %lx\n", (u_long) pstatfs64->buf);
+	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bfree);
 	pstatfs64->buf->f_bfree = st.f_bfree;
-	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_bavail);
+	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bavail);
 	pstatfs64->buf->f_bavail = st.f_bavail;
 	if (pstatfs64->statfs.f_files != st.f_files) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_bavail does not match: %lld\n", st.f_files);
 	    handle_mismatch();
 	}
 	/* Assume free files handled by tainting */
-	printf ("Copy to version buffer at %p\n", &pstatfs64->buf->f_ffree);
+	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_ffree);
 	pstatfs64->buf->f_ffree = st.f_ffree;
 	if (pstatfs64->statfs.f_fsid.__val[0] != st.f_fsid.__val[0] || pstatfs64->statfs.f_fsid.__val[1] != st.f_fsid.__val[1]) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_fdid does not match: %d %d\n", st.f_fsid.__val[0],  st.f_fsid.__val[1]);
@@ -495,6 +500,44 @@ void statfs64_recheck ()
 	if (pstatfs64->statfs.f_frsize != st.f_frsize) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_frsize does not match: %d\n", st.f_frsize);
 	    handle_mismatch();
+	}
+    }
+}
+
+void prlimit64_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct prlimit64_recheck* prlimit;
+    struct rlimit64 rlim;
+    struct rlimit64* prlim;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    prlimit = (struct prlimit64_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("prlimit64: pid %d resource %d new limit %lx old limit %lx rc %ld\n", prlimit->pid, prlimit->resource, 
+	   (u_long) prlimit->new_limit, (u_long) prlimit->old_limit, pentry->retval);
+    if (prlimit->has_retvals) {
+	printf("old soft limit: %lld hard limit %lld\n", prlimit->retparams.rlim_cur, prlimit->retparams.rlim_max);
+    }
+#endif
+    if (prlimit->old_limit) {
+	prlim = &rlim;
+	rlim.rlim_cur = rlim.rlim_max = 0;
+    } else {
+	prlim = NULL;
+    }
+    rc = syscall(SYS_prlimit64, prlimit->pid, prlimit->resource, prlimit->new_limit, prlim);
+    check_retval ("prlimit64", pentry->retval, rc);
+    if (prlimit->has_retvals) {
+	if (prlimit->retparams.rlim_cur != rlim.rlim_cur) {
+	    printf ("[MISMATCH] prlimit64 soft limit does not match: %lld\n", rlim.rlim_cur);
+	}
+	if (prlimit->retparams.rlim_max != rlim.rlim_max) {
+	    printf ("[MISMATCH] prlimit64 hard limit does not match: %lld\n", rlim.rlim_max);
 	}
     }
 }

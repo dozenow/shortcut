@@ -103,7 +103,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1477 
+//#define EXTRA_DEBUG 1479
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -570,20 +570,10 @@ static inline void increment_syscall_cnt (int syscall_num)
             if (!(*(int *)(current_thread->ignore_flag))) {
                 global_syscall_cnt++;
                 current_thread->syscall_cnt++;
-/*
-#ifdef RECORD_TRACE_INFO
-		if (record_trace_info) flush_trace_hash();
-#endif
-*/
             }
         } else {
             global_syscall_cnt++;
             current_thread->syscall_cnt++;
-/*
-#ifdef RECORD_TRACE_INFO
-	    if (record_trace_info) flush_trace_hash();
-#endif
-*/
         }
 #if 0
 #ifdef TAINT_DEBUG
@@ -662,7 +652,7 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     tdata->save_syscall_info = (void *) oi;
     if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call open_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call open_recheck [SLICE_INFO]\n");
 #endif
 	recheck_open (tdata->recheck_handle, filename, flags, mode);
     } 
@@ -694,10 +684,14 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
     tdata->save_syscall_info = (void *) fd;
     if (tdata->recheck_handle) {
+	if (!current_thread->ignore_flag || !(*(int *)(current_thread->ignore_flag))) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call close_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call close_recheck [SLICE_INFO]\n");
 #endif
-	recheck_close (tdata->recheck_handle, fd);
+	    recheck_close (tdata->recheck_handle, fd);
+	} else {
+	    printf ("close occurred during ignore region of the replay code\n");
+	}
     }
 }
 
@@ -743,7 +737,7 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
     tdata->save_syscall_info = (void *) ri;
     if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #call read_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call read_recheck [SLICE_INFO]\n");
 #endif
 	recheck_read (tdata->recheck_handle, fd, buf, size);
     }
@@ -769,7 +763,6 @@ static inline void sys_read_stop(int rc)
 	    if (si) {
 		if (si->domain == AF_INET || si->domain == AF_INET6) {
 		    channel_name = (char *) "inetsocket";
-		    //fprintf (stderr, "Read inet rc %d from fd %d at clock %lu\n", rc, ri->fd, *ppthread_log_clock);
 		} else {
 		    channel_name = (char *) "recvsocket";
 		}
@@ -1244,7 +1237,6 @@ static void sys_recv_stop(int rc)
             // FIXME
 	    if (si->domain == AF_INET || si->domain == AF_INET6) {
 		channel_name = (char *) "inetsocket";
-		//fprintf (stderr, "Recv inet rc %d from fd %d at clock %lu\n", rc, ri->fd, *ppthread_log_clock);
 	    } else {
 		channel_name = (char *) "recvsocket";
 	    }
@@ -1513,8 +1505,8 @@ static inline void sys_clock_gettime_stop (int rc) {
 static inline void sys_getpid_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
-	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
 #endif
 }
 
@@ -1522,8 +1514,8 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 static inline void sys_set_tid_address_start (struct thread_data* tdata) {
 	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
 #ifdef FW_SLICE
-	printf ("[SLICE] #0000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
-	printf ("[SLICE] #0000000 #int 0x80 [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
 #endif
 }
 
@@ -1559,7 +1551,7 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 	fsi->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call fstat64_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call fstat64_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_fstat64 (tdata->recheck_handle, fd, buf);
 	}
@@ -1578,8 +1570,14 @@ static inline void sys_fstat64_stop (int rc)
 		tci.fileno = fsi->fd;
 		tci.data = 0;
 		tci.type = TOK_STAT_ATIME;
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_ino, sizeof(fsi->buf->st_ino), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
 		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
 		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
+		create_taints_from_buffer_unfiltered (&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with fstat64.\n");
 }
@@ -1591,7 +1589,7 @@ static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource
 	ugri->prlim = prlim;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call ugetrlimit_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim);
 	}
@@ -1604,13 +1602,32 @@ static inline void sys_ugetrlimit_stop (int rc)
 	LOG_PRINT ("Done with ugetrlimit.\n");
 }
 
+static inline void sys_prlimit64_start (struct thread_data* tdata, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit) 
+{
+    struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
+    pri->old_limit = old_limit;
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call prlimit64_recheck [SLICE_INFO]\n");
+#endif
+	recheck_prlimit64 (tdata->recheck_handle, pid, resource, new_limit, old_limit);
+    }
+}
+
+static inline void sys_prlimit64_stop (int rc) 
+{
+    struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
+    if (pri->old_limit) clear_mem_taints ((u_long)pri->old_limit, sizeof(struct rlimit64));
+    LOG_PRINT ("Done with prlimit64.\n");
+}
+
 static inline void sys_uname_start (struct thread_data* tdata, struct utsname* buf) 
 {
 	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
 	uni->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call uname_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call uname_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_uname (tdata->recheck_handle, buf);
 	}
@@ -1641,7 +1658,7 @@ static inline void sys_statfs64_start (struct thread_data* tdata, const char* pa
 	sfi->buf = buf;
 	if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	    printf ("[SLICE] #0000000 #call statfs64_recheck [SLICE_INFO]\n");
+	    printf ("[SLICE] #00000000 #call statfs64_recheck [SLICE_INFO]\n");
 #endif
 	    recheck_statfs64 (tdata->recheck_handle, path, sz, buf);
 	}
@@ -1781,6 +1798,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_ugetrlimit:
 	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
 	    break;
+        case SYS_prlimit64:
+	    sys_prlimit64_start (tdata, (pid_t) syscallarg0, (int) syscallarg1, (struct rlimit64 *) syscallarg2, (struct rlimit64 *) syscallarg3);
+	    break;
         case SYS_uname:
 	    sys_uname_start (tdata, (struct utsname *) syscallarg0);
 	    break;
@@ -1797,7 +1817,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    if (tdata->recheck_handle) {
 		recheck_access (tdata->recheck_handle, (char *) syscallarg0, (int) syscallarg1);
 #ifdef FW_SLICE
-		printf ("[SLICE] #0000000 #call access_recheck [SLICE_INFO]\n");
+		printf ("[SLICE] #00000000 #call access_recheck [SLICE_INFO]\n");
 #endif
 	    }
 	    break;
@@ -1805,7 +1825,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_stat64:
 	    if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-		printf ("[SLICE] #0000000 #call stat64_recheck [SLICE_INFO]\n");
+		printf ("[SLICE] #00000000 #call stat64_recheck [SLICE_INFO]\n");
 #endif
 		recheck_stat64 (tdata->recheck_handle, (char *) syscallarg0, (void *) syscallarg1);
 	    }
@@ -1875,6 +1895,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	    break;
 	case SYS_ugetrlimit:
 	    sys_ugetrlimit_stop(rc);
+	    break;
+	case SYS_prlimit64:
+	    sys_prlimit64_stop(rc);
 	    break;
 	case SYS_uname:
 	    sys_uname_stop(rc);
@@ -1978,6 +2001,10 @@ void instrument_syscall(ADDRINT syscall_num,
 
     if (sysnum == 31) {
 	tdata->ignore_flag = (u_long) syscallarg1;
+    }
+    if (sysnum == 56) {
+	tdata->status_addr = (u_long) syscallarg0;
+	printf ("[SLICE] #00000000 #mov dword ptr [0x%lx], 3 [SLICE_INFO] reset the user-level record/replay flag", tdata->status_addr);
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
 	sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
