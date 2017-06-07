@@ -291,10 +291,12 @@ void stat64_recheck ()
 	    printf ("[MISMATCH] stat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pstat64->retvals.st_dev);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_ino != pstat64->retvals.st_ino) {
 	    printf ("[MISMATCH] stat64 ino does not match %llu vs. recorded %llu\n", st.st_ino, pstat64->retvals.st_ino);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_mode != pstat64->retvals.st_mode) {
 	    printf ("[MISMATCH] stat64 mode does not match %d vs. recorded %d\n", st.st_mode, pstat64->retvals.st_mode);
 	    handle_mismatch();
@@ -319,6 +321,7 @@ void stat64_recheck ()
 	    printf ("[MISMATCH] stat64 size does not match %lld vs. recorded %lld\n", st.st_size, pstat64->retvals.st_size);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_mtime != pstat64->retvals.st_mtime) {
 	    printf ("[MISMATCH] stat64 mtime does not match %ld vs. recorded %ld\n", st.st_mtime, pstat64->retvals.st_mtime);
 	    handle_mismatch();
@@ -327,7 +330,12 @@ void stat64_recheck ()
 	    printf ("[MISMATCH] stat64 ctime does not match %ld vs. recorded %ld\n", st.st_ctime, pstat64->retvals.st_ctime);
 	    handle_mismatch();
 	}
+#endif
 	/* Assume atime will be handled by tainting since it changes often */
+	((struct stat64 *) pstat64->buf)->st_ino = st.st_ino;
+	((struct stat64 *) pstat64->buf)->st_mtime = st.st_atime;
+	((struct stat64 *) pstat64->buf)->st_ctime = st.st_atime;
+	((struct stat64 *) pstat64->buf)->st_atime = st.st_atime;
 	if (st.st_blksize != pstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] stat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pstat64->retvals.st_blksize);
 	    handle_mismatch();
@@ -595,3 +603,33 @@ void prlimit64_recheck ()
     }
 }
 
+void setpgid_recheck (int pid, int pgid)
+{
+    struct recheck_entry* pentry;
+    struct setpgid_recheck* psetpgid;
+    pid_t use_pid, use_pgid;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    psetpgid = (struct setpgid_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("setpgid: pid tainted? %d record pid %d passed pid %d pgid tainted? %d record pgid %d passed pgid %d\n", 
+	   psetpgid->is_pid_tainted, psetpgid->pid, pid, psetpgid->is_pgid_tainted, psetpgid->pgid, pgid);
+#endif 
+    if (psetpgid->is_pid_tainted) {
+	use_pid = pid; 
+    } else {
+	use_pid = psetpgid->pid;
+    }
+    if (psetpgid->is_pgid_tainted) {
+	use_pgid = pgid; 
+    } else {
+	use_pgid = psetpgid->pgid;
+    }
+
+    rc = syscall(SYS_setpgid, use_pid, use_pgid);
+    check_retval ("setpgid", pentry->retval, rc);
+}

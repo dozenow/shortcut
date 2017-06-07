@@ -144,6 +144,10 @@ struct fstat64_info {
     struct stat64* buf;
 };
 
+struct stat64_info {
+    struct stat64* buf;
+};
+
 struct ugetrlimit_info {
     int resource;
     struct rlimit* prlim;
@@ -196,6 +200,7 @@ struct thread_data {
 	struct getrusage_info getrusage_info_cache;
 	struct clock_gettime_info clock_gettime_info_cache;
 	struct fstat64_info fstat64_info_cache;
+	struct stat64_info stat64_info_cache;
 	struct ugetrlimit_info ugetrlimit_info_cache;
 	struct uname_info uname_info_cache;
 	struct statfs64_info statfs64_info_cache;

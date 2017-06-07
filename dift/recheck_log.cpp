@@ -231,7 +231,6 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     } else {
 	srchk.has_retvals = 0;
     }
-    //check here wesley5-10
     srchk.buf = buf;
     write_data_into_recheck_log (handle->recheckfd, &srchk, sizeof(srchk));
     write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname)+1);
@@ -315,6 +314,20 @@ int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, s
 	pchk.has_retvals = 0;
     }
     write_data_into_recheck_log (handle->recheckfd, &pchk, sizeof(pchk));
+
+    return 0;
+}
+
+int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted)
+{
+    struct setpgid_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_setpgid);
+    write_header_into_recheck_log (handle->recheckfd, SYS_setpgid, res->retval, sizeof (struct setpgid_recheck));
+    schk.pid = pid;
+    schk.pgid = pgid;
+    schk.is_pid_tainted = is_pid_tainted;
+    schk.is_pgid_tainted = is_pgid_tainted;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
 
     return 0;
 }

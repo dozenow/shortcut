@@ -287,20 +287,6 @@ KNOB<bool> KnobRecordTraceInfo(KNOB_MODE_WRITEONCE,
     "record trace information");
 #endif
 
-//FIXME: take into consideration offset of being attached later. Remember, this is to specify where to kill application.
-
-// Specific output functions
-// #define HEARTBLEED
-#ifdef HEARTBLEED
-int bad_memcpy_flag = 0;
-int heartbleed_fd = -1;
-
-void instrument_before_badmemcpy(void) {
-    fprintf(stderr, "instrument bad heartbeat!\n");
-    bad_memcpy_flag = 1;
-}
-#endif
-
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
 static void copy_file(int src, int dest) { 
@@ -636,7 +622,7 @@ static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t siz
 	} else { 
 		//TODO: we didn't check memory overlapping correctly
 		if (addr_struct->size != size) { 
-				printf ("[BUG][SLICE] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
+		    printf ("[BUG] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
 		}
 	}
 }
@@ -1524,15 +1510,6 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 #endif
 }
 
-/* Returns pid so must taint always */
-static inline void sys_set_tid_address_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
-#ifdef FW_SLICE
-	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
-	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
-#endif
-}
-
 static inline void sys_getpid_stop (int rc) {
 	struct taint_creation_info tci;
 	tci.rg_id = current_thread->rg_id;
@@ -1544,6 +1521,50 @@ static inline void sys_getpid_stop (int rc) {
 	tci.type = TOK_GETPID;
 	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
 	LOG_PRINT ("Done with getpid\n");
+}
+
+static inline void sys_getpgrp_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_getpgrp_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpgrp);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+#endif
+}
+
+static inline void sys_getpgrp_stop (int rc) {
+	struct taint_creation_info tci;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	tci.type = TOK_GETPID;
+	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	LOG_PRINT ("Done with getpgrp\n");
+}
+
+static inline void sys_setpgid_start (struct thread_data* tdata, pid_t pid, pid_t pgid) {
+    if (tdata->recheck_handle) {
+	int pid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0);
+	int pgid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #push ecx [SLICE_INFO] pgid argument to setpgid\n");
+	printf ("[SLICE] #00000000 #push ebx [SLICE_INFO] pid argument to setpgid\n");
+	printf ("[SLICE] #00000000 #call setpgid_recheck [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #pop ebx [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #pop ecx [SLICE_INFO]\n");
+#endif
+	recheck_setpgid (tdata->recheck_handle, pid, pgid, pid_tainted, pgid_tainted);
+    }
+}
+
+static inline void sys_set_tid_address_start (struct thread_data* tdata) {
+	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
+	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+#endif
 }
 
 static inline void sys_set_tid_address_stop (int rc) {
@@ -1594,6 +1615,42 @@ static inline void sys_fstat64_stop (int rc)
 		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with fstat64.\n");
+}
+
+static inline void sys_stat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	si->buf = buf;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call stat64_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_stat64 (tdata->recheck_handle, path, buf);
+	}
+}
+
+static inline void sys_stat64_stop (int rc) 
+{
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
+	if (rc == 0) {
+		struct taint_creation_info tci;
+		tci.rg_id = current_thread->rg_id;
+		tci.record_pid = current_thread->record_pid;
+		tci.syscall_cnt = current_thread->syscall_cnt;
+		tci.offset = 0;
+		tci.fileno = 0;
+		tci.data = 0;
+		tci.type = TOK_STAT_ATIME;
+		create_taints_from_buffer_unfiltered (&si->buf->st_ino, sizeof(si->buf->st_ino), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ino, sizeof(si->buf->st_ino));
+		create_taints_from_buffer_unfiltered (&si->buf->st_atime, sizeof(si->buf->st_atime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_atime, sizeof(si->buf->st_atime));
+		create_taints_from_buffer_unfiltered (&si->buf->st_ctime, sizeof(si->buf->st_ctime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
+		create_taints_from_buffer_unfiltered (&si->buf->st_mtime, sizeof(si->buf->st_mtime), &tci, tokens_fd);
+		add_tainted_mem_for_final_check ((u_long)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	}
+	LOG_PRINT ("Done with stat64.\n");
 }
 
 static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
@@ -1809,6 +1866,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
 	    break;
+	case SYS_getpgrp:
+	    sys_getpgrp_start (tdata);
+	    break;
+	case SYS_setpgid:
+	    sys_setpgid_start (tdata, (int) syscallarg0, (int) syscallarg1);
+	    break;
         case SYS_ugetrlimit:
 	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
 	    break;
@@ -1835,16 +1898,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 #endif
 	    }
 	    break;
-	  //open a file (used if you have a path to a file)
 	case SYS_stat64:
-	    if (tdata->recheck_handle) {
-#ifdef FW_SLICE
-		printf ("[SLICE] #00000000 #call stat64_recheck [SLICE_INFO]\n");
-#endif
-		recheck_stat64 (tdata->recheck_handle, (char *) syscallarg0, (void *) syscallarg1);
-	    }
+	    sys_stat64_start (tdata, (char *)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
-	    //open a file descriptor
 	case SYS_fstat64:
 	    sys_fstat64_start (tdata, (int)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
@@ -1901,8 +1957,14 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_getpgrp:
+	    sys_getpgrp_stop(rc);
+	    break;
 	case SYS_set_tid_address:
 	    sys_set_tid_address_stop(rc);
+	    break;
+	case SYS_stat64:
+	    sys_stat64_stop(rc);
 	    break;
 	case SYS_fstat64:
 	    sys_fstat64_stop(rc);
@@ -2355,41 +2417,6 @@ void track_inst(INS ins, void* data)
     }
 }
 
-#ifdef HEARTBLEED
-void bad_memcpy(ADDRINT dst, ADDRINT src, ADDRINT len) {
-
-    if (bad_memcpy_flag) {
-        int rc;
-        struct memcpy_header header;
-
-        header.dst = dst;
-        header.src = src;
-        header.len = len;
-        rc = write(heartbleed_fd, &header, sizeof(header));
-        if (rc != sizeof(header)) {
-            assert(0);
-        }
-        for (int i = 0; i < (int)len; i++) {
-            taint_t* t;
-            t = get_mem_taints(src + i, 1);
-            if (t) {
-                rc = write(heartbleed_fd, t, sizeof(taint_t));
-                if (rc != sizeof(taint_t)) {
-                    assert(0);
-                }
-            } else {
-                taint_t value = 0;
-                rc = write(heartbleed_fd, &value, sizeof(taint_t));
-                if (rc != sizeof(taint_t)) {
-                    assert(0);
-                }
-            }
-        }
-        bad_memcpy_flag = 0;
-    }
-}
-#endif
-
 /* Interpose on top this X function and check the taints for certain coordinates */
 void trace_x_xputimage_start(ADDRINT dest_x, ADDRINT dest_y, ADDRINT w_ref, ADDRINT h_ref)
 {
@@ -2515,19 +2542,6 @@ void track_function(RTN rtn, void* v)
         }
     }
 
-#ifdef HEARTBLEED
-    if (strstr(name, "memcpy")) {
-        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)bad_memcpy,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
-                IARG_END);
-    }
-    if (strstr(name, "dtls1_process_heartbeat") || strstr(name, "tls1_process_heartbeat")) {
-        fprintf(stderr, "instrument process heartbeat\n");
-        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)instrument_before_badmemcpy, IARG_END);
-    }
-#endif
     RTN_Close(rtn);
 }
 
@@ -16250,15 +16264,6 @@ void instruction_instrumentation(INS ins, void *v)
 		   IARG_END);
 #endif
 
-#ifdef HEARTBLEED
-    /*
-    if (INS_Address(ins) == 0x811ac28 || INS_Address(ins) == 0x811ac2c) {
-        fprintf(stderr, "found bad instruction!");
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)instrument_before_badmemcpy, IARG_END);
-    }
-    */
-#endif
-
 #ifdef USE_CODEFLUSH_TRICK
     if (option_cnt != 0) {
 #endif
@@ -17472,21 +17477,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         }
 #endif
     }
-#ifdef HEARTBLEED
-    if (heartbleed_fd == -1) {
-        char heartbleed_filename[256];
-        snprintf(heartbleed_filename, 256, "%s/heartbleed.result", group_directory);
-        heartbleed_fd = open(heartbleed_filename,
-                                O_CREAT | O_TRUNC | O_LARGEFILE | O_RDWR, 0644);
-        if (heartbleed_fd < 0) {
-            fprintf(stderr, "could not open heartbleed file\n");
-            exit(-1);
-        }
-    }
-#endif
-//    fprintf(stderr, "%d done 1\n",PIN_GetTid());
     active_threads[ptdata->record_pid] = ptdata;
-//    fprintf(stderr, "%d done with thread_start\n",PIN_GetTid());
 }
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
@@ -18037,11 +18028,7 @@ int main(int argc, char** argv)
 #if 0
     RTN_AddInstrumentFunction (routine, 0);
 #endif
-#ifdef HEARTBLEED
-    fprintf(stderr, "heartbleed defined\n");
-#endif
     PIN_SetSyntaxIntel();
-
 
     PIN_StartProgram();
 

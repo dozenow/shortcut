@@ -2261,6 +2261,12 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
 	return tainted;
 }
 
+/* For calling above from linkage_new.cpp (sigh) */
+int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8) 
+{
+    return is_reg_tainted (reg, size, is_upper8);
+}
+
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size) { 
 	uint32_t offset = 0;
 	u_long mem_offset = mem_loc;
