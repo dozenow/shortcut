@@ -3188,7 +3188,8 @@ static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_e
 
 static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_size);
 
-//it depends on not only the source string, but also ECX (count)
+//it depends on not only the source string, but also ECX (count); 
+//TODO: depends on DF_FLAG
 //it also depends on esi and edi probably, but we didn't handle this for the index tool
 TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem, uint32_t first_iter, uint32_t check_zf) { 
     if (first_iter) {
@@ -3197,17 +3198,21 @@ TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_l
         if (!size) return 0;
         ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
         //fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
-	if (count_reg) {
+	if (count_reg) { //count_reg is set only with REP prefix
 		assert (count_reg == 9); //should always be ecx
 		tainted = fw_slice_memreg (ip, inst_str, count_reg, 4, counts, 0, ea_src_mem_loc, size);
 	} else{ 
 		tainted = fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
 	}
-        if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
-        else taint_rep (DF_FLAG, ip);
+        if (check_zf) taint_rep (ZF_FLAG, ip);
+        else taint_rep (0, ip);
         return tainted;
     }
     return 0;
+}
+
+//TODO: depends on DF_FLAG
+TAINTINT fw_slice_stringstring_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem_loc, uint32_t first_iter, uint32_t check_zf) { 
 }
 
 static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) { 
@@ -12817,8 +12822,8 @@ void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
     //then taint count register (ecx) and ZF, and also output tokens for REP
     //In this case, this instruction are affected by DF and input String (for CMPS), ZF and ECX (for REPZ)
     //here we don't write output tokens for CMPS as it can be included with REPZ
-    if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
-    else taint_rep (DF_FLAG, ip);
+    if (check_zf) taint_rep (ZF_FLAG, ip);
+    else taint_rep (0, ip);
 }
 
 void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
@@ -12848,8 +12853,8 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
     //then taint count register (ecx) and ZF, and also output tokens for REP
     //In this case, this instruction are affected by DF and input String (for CMPS), ZF and ECX (for REPZ)
     //here we don't write output tokens for CMPS as it can be included with REPZ
-    if (check_zf) taint_rep (ZF_FLAG | DF_FLAG, ip);
-    else taint_rep (DF_FLAG, ip);
+    if (check_zf) taint_rep (ZF_FLAG, ip);
+    else taint_rep (0, ip);
 }
 
 
