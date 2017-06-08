@@ -33,6 +33,7 @@ int main (int argc, char* argv[])
     char* filter_partfile = NULL;
     char* filter_byterange = NULL;
     char* filter_syscall = NULL;
+    char* filter_file_input = NULL;
     int next_child = 0, i;
     size_t n = BUFFER_SIZE;
     FILE* fp; 
@@ -44,7 +45,7 @@ int main (int argc, char* argv[])
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb] [-run_data_tool\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb] [-run_data_tool] [-filter_file_input filename]\n");
 	//byterange: buffer starts with 0, start: inclusive, end: exclusive
 	return -1;
     }
@@ -91,8 +92,11 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index], "-run_data_tool", BUFFER_SIZE)) {
 		    run_data_tool = 1;
 		    ++index;
+	    } else if (!strncmp (argv[index], "-filter_file_input", BUFFER_SIZE)) {
+		    filter_file_input = argv[index + 1];
+		    index += 2;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock] [-attach_gdb] [-run_data_tool]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock] [-attach_gdb] [-run_data_tool] [-filter_file_input filename]\n");
 		return -1;
 	    }
 	}
@@ -166,10 +170,15 @@ int main (int argc, char* argv[])
 	    args[argcnt++] = "-i";
 	    args[argcnt++] = "-b";
 	    args[argcnt++] = filter_byterange;
-	} else if (filter_syscall) { 
-		args[argcnt++] = "-i";
-		args[argcnt++] = "-s";
-		args[argcnt++] = filter_syscall;
+        } else if (filter_syscall) { 
+            args[argcnt++] = "-i";
+            args[argcnt++] = "-s";
+            args[argcnt++] = filter_syscall;
+	} else if (filter_file_input) { 
+            args[argcnt++] = "-i";
+            args[argcnt++] = "-rf";
+            args[argcnt++] = filter_file_input;
+	    fprintf (stderr, "filter_file_input: %s\n", filter_file_input);
 	}
 	if (stop_at) {
 	    args[argcnt++] = "-l";

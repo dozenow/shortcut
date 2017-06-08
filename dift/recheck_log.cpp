@@ -298,6 +298,18 @@ int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz
     return 0;
 }
 
+int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz) {
+    struct gettimeofday_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_gettimeofday);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck));
+    chk.tv_ptr = tv;
+    chk.tz_ptr = tz;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
 int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit)
 {
     struct prlimit64_recheck pchk;
