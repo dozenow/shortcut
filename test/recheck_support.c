@@ -70,12 +70,12 @@ void handle_jump_diverge()
 static inline void check_retval (const char* name, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
-	    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
 	    handle_mismatch();
 	}
     } else {
 	if (expected != -1*(errno)){
-	    printf ("[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
+	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
 	    handle_mismatch();
 	}  
     }
@@ -84,7 +84,9 @@ static inline void check_retval (const char* name, int expected, int actual) {
 void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int is_cache_file, long total_size) { 
     //only verify bytes not in this range
     int pass = 1;
+#ifdef PRINT_VALUES
     printf("partial read: %d %d\n", pread->partial_read_start, pread->partial_read_end);
+#endif
     if (pread->partial_read_start > 0) { 
         if (memcmp (newdata, olddata, pread->partial_read_start)) {
             printf ("[MISMATCH] read returns different values for partial read: before start\n");
@@ -112,8 +114,10 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
     }
     //copy other bytes to the actual address
     memcpy (pread->buf+pread->partial_read_start, newdata+pread->partial_read_start, pread->partial_read_end-pread->partial_read_start);
+#ifdef PRINT_VALUES
     if (pass) printf ("partial_read: pass.\n");
     else printf ("partial_read: verification fails.\n");
+#endif
 }
 
 void read_recheck ()
@@ -494,8 +498,10 @@ void uname_recheck ()
 	handle_mismatch();
     }
     /* Assume version will be handled by tainting since it changes often */
+#ifdef PRINT_VALUES
     printf ("Buffer is %lx\n", (u_long) puname->buf);
     printf ("Copy to version buffer at %lx\n", (u_long) &((struct utsname *) puname->buf)->version);
+#endif
     memcpy (&((struct utsname *) puname->buf)->version, &puname->utsname.version, sizeof(puname->utsname.version));
     if (memcmp(&uname.machine, &puname->utsname.machine, sizeof(uname.machine))) {
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
@@ -538,17 +544,23 @@ void statfs64_recheck ()
 	    handle_mismatch();
 	}
 	/* Assume free and available blocks handled by tainting */
+#ifdef PRINT_VALUES
 	printf ("Buffer is %lx\n", (u_long) pstatfs64->buf);
 	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bfree);
+#endif
 	pstatfs64->buf->f_bfree = st.f_bfree;
+#ifdef PRINT_VALUES
 	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bavail);
+#endif
 	pstatfs64->buf->f_bavail = st.f_bavail;
 	if (pstatfs64->statfs.f_files != st.f_files) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_bavail does not match: %lld\n", st.f_files);
 	    handle_mismatch();
 	}
 	/* Assume free files handled by tainting */
+#ifdef PRINT_VALUES
 	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_ffree);
+#endif
 	pstatfs64->buf->f_ffree = st.f_ffree;
 	if (pstatfs64->statfs.f_fsid.__val[0] != st.f_fsid.__val[0] || pstatfs64->statfs.f_fsid.__val[1] != st.f_fsid.__val[1]) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_fdid does not match: %d %d\n", st.f_fsid.__val[0],  st.f_fsid.__val[1]);
@@ -585,7 +597,6 @@ void gettimeofday_recheck () {
 
 	if (pget->tv_ptr) { 
 		memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
-		printf ("current tv %ld %ld\n", tv.tv_sec, tv.tv_usec);
 	}
 	if (pget->tz_ptr) { 
 		memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
