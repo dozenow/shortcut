@@ -386,3 +386,11 @@ int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr*
     return 0;
 }
 
+int recheck_getuid32 (struct recheck_handle* handle)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_getuid32);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getuid32, res->retval, 0);
+
+    return 0;
+}
+

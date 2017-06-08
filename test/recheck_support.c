@@ -750,3 +750,18 @@ void connect_recheck ()
     check_retval ("connect", pentry->retval, rc);
 }
 
+void getuid32_recheck ()
+{
+    struct recheck_entry* pentry;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+
+#ifdef PRINT_VALUES
+    printf("getuid32: rc %ld\n", pentry->retval);
+#endif 
+    rc = syscall(SYS_getuid32);
+    check_retval ("getuid32", pentry->retval, rc);
+}
+

@@ -2933,30 +2933,11 @@ TAINTSIGN taintx_dwreg2qwmem (u_long mem_loc, int reg)
     clear_mem_taints(mem_loc + 8, 8);
 }
 
-// reg2mem add
-static inline void taint_add_reg2mem (u_long mem_loc, int reg, uint32_t size)
+TAINTSIGN taint_add_reg2mem (u_long mem_loc, int reg, uint32_t size)
 {
     unsigned i = 0;
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
-//    fprintf (stderr, "TODO: taint_add_reg2mem control flow not handled.\n");
-    /*{
-	    //debug
-	    if (mem_loc == 0xbae67b0) {
-		    struct taint_creation_info tci;
-		    tci.type = 100;
-		    tci.rg_id = current_thread->rg_id;
-		    tci.record_pid = current_thread->record_pid;
-		    tci.syscall_cnt = current_thread->syscall_cnt;
-		    tci.offset = 0;
-		    tci.fileno = 0xbaea7c8;
-		    write_output_header (outfd, &tci, (void*) mem_loc, 4);
-		    write_output_taints (outfd, (void*) mem_loc, 4);
-
-	 	    printf ("[Debugging] taint_add_mem2reg, tainted %u\n", is_mem_tainted(mem_loc, 4));
-	    }
-    }*/
-
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {
@@ -3003,30 +2984,6 @@ TAINTSIGN taint_add_ubreg2mem (u_long mem_loc, int reg)
             set_mem_taints(mem_loc, 1, &shadow_reg_table[reg * REG_SIZE + 1]);
         }
     }
-}
-
-TAINTSIGN taint_add_hwreg2mem (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_add_hwreg2mem");
-    taint_add_reg2mem(mem_loc, reg, 2);
-}
-
-TAINTSIGN taint_add_wreg2mem (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_add_wreg2mem");
-    taint_add_reg2mem(mem_loc, reg, 4);
-}
-
-TAINTSIGN taint_add_dwreg2mem (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_add_dwreg2mem");
-    taint_add_reg2mem(mem_loc, reg, 8);
-}
-
-TAINTSIGN taint_add_qwreg2mem (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_add_qwreg2mem");
-    taint_add_reg2mem(mem_loc, reg, 16);
 }
 
 TAINTSIGN taint_add_lbreg2hwmem (u_long mem_loc, int reg)
@@ -3080,37 +3037,37 @@ TAINTSIGN taint_add_ubreg2qwmem (u_long mem_loc, int reg)
 TAINTSIGN taint_add_hwreg2wmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_hwreg2wmem");
-    taint_add_hwreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 2);
 }
 
 TAINTSIGN taint_add_hwreg2dwmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_hwreg2dwmem");
-    taint_add_hwreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 2);
 }
 
 TAINTSIGN taint_add_hwreg2qwmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_hwreg2qwmem");
-    taint_add_hwreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 2);
 }
 
 TAINTSIGN taint_add_wreg2dwmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_wreg2dwmem");
-    taint_add_wreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 4);
 }
 
 TAINTSIGN taint_add_wreg2qwmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_wreg2qwmem");
-    taint_add_wreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 4);
 }
 
 TAINTSIGN taint_add_dwreg2qwmem (u_long mem_loc, int reg)
 {
     TAINT_START("taint_add_dwreg2qwmem");
-    taint_add_dwreg2mem(mem_loc, reg);
+    taint_add_reg2mem(mem_loc, reg, 8);
 }
 
 // reg2mem rep
@@ -3453,149 +3410,23 @@ TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg)
     zero_partial_reg(dst_reg, 8);
 }
 
-// reg2reg add
-static inline void taint_add_reg2reg (int dst_reg, int src_reg, uint32_t size)
+TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size)
+{
+    unsigned i;
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+    for (i = 0; i < size; i++) {
+        shadow_reg_table[dst_reg_off + i] = merge_taints(shadow_reg_table[dst_reg_off + i], shadow_reg_table[src_reg_off + i]);
+    } 
+}
+
+TAINTSIGN taint_add_reg2reg (int dst_reg, int src_reg, uint32_t size)
 {
     unsigned i = 0;
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     for (i = 0; i < size; i++) {
         shadow_reg_table[dst_reg * REG_SIZE + i] = merge_taints(shadow_reg_table[dst_reg * REG_SIZE + i], shadow_reg_table[src_reg * REG_SIZE + i]);
     } 
-}
-
-TAINTSIGN taint_add_lbreg2lbreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2lbreg");
-    taint_add_reg2reg(dst_reg, src_reg, 1);
-}
-
-TAINTSIGN taint_add_ubreg2lbreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2lbreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = merge_taints(shadow_reg_table[dst_reg * REG_SIZE], shadow_reg_table[src_reg * REG_SIZE + 1]);
-}
-
-TAINTSIGN taint_add_lbreg2ubreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = merge_taints(shadow_reg_table[dst_reg * REG_SIZE + 1], shadow_reg_table[src_reg * REG_SIZE]);
-}
-
-TAINTSIGN taint_add_ubreg2ubreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = merge_taints(shadow_reg_table[dst_reg * REG_SIZE + 1], shadow_reg_table[src_reg * REG_SIZE + 1]);
-}
-
-TAINTSIGN taint_add_wreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_wreg2wreg");
-    taint_add_reg2reg(dst_reg, src_reg, 4);
-}
-
-TAINTSIGN taint_add_hwreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_hwreg2hwreg");
-    taint_add_reg2reg(dst_reg, src_reg, 2);
-}
-
-TAINTSIGN taint_add_dwreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_dwreg2dwreg");
-    taint_add_reg2reg(dst_reg, src_reg, 8);
-}
-
-TAINTSIGN taint_add_qwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_qwreg2qwreg");
-    taint_add_reg2reg(dst_reg, src_reg, 16);
-}
-
-TAINTSIGN taint_add_lbreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2wreg");
-    taint_add_lbreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_lbreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2hwreg");
-    taint_add_lbreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_lbreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2dwreg");
-    taint_add_lbreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_lbreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_lbreg2qwreg");
-    taint_add_lbreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_ubreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2hwreg");
-    taint_add_ubreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_ubreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2wreg");
-    taint_add_ubreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_ubreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2dwreg");
-    taint_add_ubreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_ubreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_ubreg2qwreg");
-    taint_add_ubreg2lbreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_hwreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_hwreg2wreg");
-    taint_add_hwreg2hwreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_hwreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_hwreg2dwreg");
-    taint_add_hwreg2hwreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_hwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_hwreg2qwreg");
-    taint_add_hwreg2hwreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_wreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_wreg2dwreg");
-    taint_add_wreg2wreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_wreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_wreg2qwreg");
-    taint_add_wreg2wreg(dst_reg, src_reg);
-}
-
-TAINTSIGN taint_add_dwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_add_dwreg2qwreg");
-    taint_add_dwreg2qwreg(dst_reg, src_reg);
 }
 
 // reg2reg xchg
