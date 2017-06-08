@@ -18,15 +18,8 @@ typedef uint8_t taintvalue_t;
 #define MAX_NUM_OPTIONS 2147483648
 #define MAX_TAINT_VALUE 1
 
-#define FAST_INLINE
-#ifdef FAST_INLINE
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
 #define TAINTINT  int  PIN_FAST_ANALYSIS_CALL
-#else
-#define TAINTSIGN void
-#define TAINTINT  int 
-#endif
-
 
 /* Creates a new taint for a memory input */
 taint_t create_and_taint_option (u_long mem_addr);

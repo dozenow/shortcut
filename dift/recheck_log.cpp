@@ -343,3 +343,46 @@ int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int i
 
     return 0;
 }
+
+int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz)
+{
+    struct readlink_recheck rchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_readlink);
+    u_long size = sizeof(readlink_recheck) + strlen(path) + 1;
+    if (res->retval > 0) size += res->retval;
+    write_header_into_recheck_log (handle->recheckfd, SYS_readlink, res->retval, size);
+    rchk.buf = buf;
+    rchk.bufsiz = bufsiz;
+    write_data_into_recheck_log (handle->recheckfd, &rchk, sizeof(rchk));
+    if (res->retval > 0) write_data_into_recheck_log (handle->recheckfd, res->retparams, res->retval);
+    write_data_into_recheck_log (handle->recheckfd, path, strlen(path)+1);
+
+    return 0;
+}
+
+int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol)
+{
+    struct socket_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct socket_recheck));
+    schk.domain = domain;
+    schk.type = type;
+    schk.protocol = protocol;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+
+    return 0;
+}
+
+int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen)
+{
+    struct connect_recheck cchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct connect_recheck)+addrlen);
+    cchk.sockfd = sockfd;
+    cchk.addrlen = addrlen;
+    write_data_into_recheck_log (handle->recheckfd, &cchk, sizeof(cchk));
+    write_data_into_recheck_log (handle->recheckfd, addr, addrlen);
+
+    return 0;
+}
+

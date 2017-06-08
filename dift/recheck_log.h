@@ -103,6 +103,25 @@ struct setpgid_recheck {
     char is_pgid_tainted;
 };
 
+struct readlink_recheck {
+    char* buf;
+    size_t bufsiz;
+};
+/* Followed by readlink results (size given by rc) */
+/* Followed by variable length path */
+
+struct socket_recheck {
+    int domain;
+    int type; 
+    int protocol;
+};
+
+struct connect_recheck {
+    int sockfd;
+    socklen_t addrlen;
+};
+/* Followed by address of size addrlen */
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -121,5 +140,8 @@ int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz
 int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz);
 int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit);
 int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted);
+int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz);
+int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol);
+int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
 
 #endif

@@ -853,6 +853,16 @@ static inline void sys_pread_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+static inline void sys_readlink_start(struct thread_data* tdata, char* path, char* buf, size_t bufsiz)
+{
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call readlink_recheck [SLICE_INFO]\n");
+#endif
+	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz);
+    }
+}
+
 #ifdef LINKAGE_FDTRACK
 static void sys_select_start(struct thread_data* tdata, int nfds, fd_set* readfds, fd_set* writefds, 
 			     fd_set* exceptfds, struct timeval* timeout)
@@ -961,7 +971,6 @@ static void sys_munmap_stop(int rc)
     if (rc == 0) {
 	fprintf (stderr, "munmap at clock %ld addr %lx len %x\n", *ppthread_log_clock, mmi->addr, mmi->length);
     }
-    //unset_mem_taints (rc, mmi->length);
 }
 #endif
 
@@ -1011,7 +1020,7 @@ static inline void sys_write_stop(int rc)
 	    if (produce_output) { 
 		output_buffer_result (wi->buf, rc, &tci, outfd);
 	    }
-}
+	}
     }
 }
 
@@ -1080,6 +1089,13 @@ static inline void sys_writev_stop(int rc)
 
 static void sys_socket_start (struct thread_data* tdata, int domain, int type, int protocol)
 {
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call socket_recheck [SLICE_INFO]\n");
+#endif
+	recheck_socket (tdata->recheck_handle, domain, type, protocol);
+    
+}
     struct socket_info* si = (struct socket_info*) malloc(sizeof(struct socket_info));
     if (si == NULL) {
 	fprintf (stderr, "Unable to malloc socket info\n");
@@ -1106,6 +1122,12 @@ static void sys_socket_stop(int rc)
 
 static void sys_connect_start(thread_data* tdata, int sockfd, struct sockaddr* addr, socklen_t addrlen)
 {
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call connect_recheck [SLICE_INFO]\n");
+#endif
+	recheck_connect (tdata->recheck_handle, sockfd, addr, addrlen);
+    }
     if (monitor_has_fd(open_socks, sockfd)) {
         struct socket_info* si = (struct socket_info*) monitor_get_fd_data(open_socks, sockfd);
         struct connect_info* ci = (struct connect_info *) malloc(sizeof(struct connect_info));
@@ -1818,7 +1840,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_pread64:
             sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
-
+        case SYS_readlink:
+	    sys_readlink_start(tdata, (char *) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2);
+            break;
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
         case 142:
@@ -2641,9 +2665,7 @@ static inline void fw_slice_check_address (INS ins) {
 				if (REG_valid (base_reg) && REG_valid(index_reg)) {
 					INS_InsertThenCall(ins, IPOINT_BEFORE,
 							AFUNPTR(fw_slice_addressing),
-#ifdef FAST_INLINE
 							IARG_FAST_ANALYSIS_CALL,
-#endif
 							IARG_INST_PTR,
 							IARG_UINT32, translate_reg (base_reg),
 							IARG_UINT32, REG_Size(base_reg),
@@ -2661,9 +2683,7 @@ static inline void fw_slice_check_address (INS ins) {
 				} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
 					INS_InsertThenCall(ins, IPOINT_BEFORE,
 							AFUNPTR(fw_slice_addressing),
-#ifdef FAST_INLINE
 							IARG_FAST_ANALYSIS_CALL,
-#endif
 							IARG_INST_PTR,
 							IARG_UINT32, translate_reg (base_reg),
 							IARG_UINT32, REG_Size(base_reg),
@@ -2681,9 +2701,7 @@ static inline void fw_slice_check_address (INS ins) {
 				} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
 					INS_InsertThenCall(ins, IPOINT_BEFORE,
 							AFUNPTR(fw_slice_addressing),
-#ifdef FAST_INLINE
 							IARG_FAST_ANALYSIS_CALL,
-#endif
 							IARG_INST_PTR,
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
@@ -2701,9 +2719,7 @@ static inline void fw_slice_check_address (INS ins) {
 				} else if (!REG_valid (base_reg) && REG_valid (index_reg)) {
 					INS_InsertThenCall(ins, IPOINT_BEFORE,
 							AFUNPTR(fw_slice_addressing),
-#ifdef FAST_INLINE
 							IARG_FAST_ANALYSIS_CALL,
-#endif
 							IARG_INST_PTR,
 							IARG_UINT32, 0,
 							IARG_UINT32, 0, 
@@ -2783,9 +2799,7 @@ static inline void fw_slice_check_address (INS ins) {
 			}
 		}
 		INS_InsertThenCall(ins, IPOINT_BEFORE, AFUNPTR(fw_slice_addressing_check_two),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_UINT32, translate_reg(base_reg[0]),
 				IARG_UINT32, base_reg_size[0],
@@ -2817,9 +2831,7 @@ static inline void fw_slice_check_address (INS ins) {
 		fprintf (stderr, "[ERROR] unrecognized mem operands %s, operand count %d\n", INS_Disassemble(ins).c_str(), count);
 		INS_InsertThenCall (ins, IPOINT_BEFORE, 
 				AFUNPTR(do_nothing),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_END);
 	}
 }
@@ -2835,9 +2847,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 	if (is_dst_mem == 0) { 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_reg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, translate_reg (srcreg),
@@ -2856,9 +2866,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 		if (INS_MemoryOperandCount (ins) > 0) {
 			INS_InsertIfCall(ins, IPOINT_BEFORE,
 					AFUNPTR(fw_slice_reg),
-#ifdef FAST_INLINE
 					IARG_FAST_ANALYSIS_CALL,
-#endif
 					IARG_INST_PTR,
 					IARG_PTR, str,
 					IARG_UINT32, translate_reg (srcreg),
@@ -2872,9 +2880,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 		} else 
 			INS_InsertCall(ins, IPOINT_BEFORE,
 					AFUNPTR(fw_slice_reg),
-#ifdef FAST_INLINE
 					IARG_FAST_ANALYSIS_CALL,
-#endif
 					IARG_INST_PTR,
 					IARG_PTR, str,
 					IARG_UINT32, translate_reg (srcreg),
@@ -2892,9 +2898,7 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 	    if (is_dst_mem) { 
 		    INS_InsertIfCall(ins, IPOINT_BEFORE,
 				    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
 				    IARG_FAST_ANALYSIS_CALL,
-#endif
 				    IARG_INST_PTR,
 				    IARG_PTR, str,
 				    IARG_MEMORYREAD_EA,
@@ -2906,9 +2910,7 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 		 if (INS_MemoryOperandCount (ins) > 0) {
 			INS_InsertIfCall(ins, IPOINT_BEFORE,
 				    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
 				    IARG_FAST_ANALYSIS_CALL,
-#endif
 				    IARG_INST_PTR,
 				    IARG_PTR, str,
 				    IARG_MEMORYREAD_EA,
@@ -2919,9 +2921,7 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 		} else 
 		    INS_InsertCall(ins, IPOINT_BEFORE,
 				    AFUNPTR(fw_slice_mem),
-#ifdef FAST_INLINE
 				    IARG_FAST_ANALYSIS_CALL,
-#endif
 				    IARG_INST_PTR,
 				    IARG_PTR, str,
 				    IARG_MEMORYREAD_EA,
@@ -2949,9 +2949,7 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 	if (INS_MemoryOperandCount (ins) > 0) {
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regreg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, translate_reg (dstreg),
@@ -2967,9 +2965,7 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 	} else {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regreg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, translate_reg (dstreg),
@@ -2988,9 +2984,7 @@ static inline void fw_slice_src_memmem (INS ins, uint32_t memread_size, uint32_t
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memmem),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_INST_PTR,
 			IARG_PTR, str,
 			IARG_MEMORYREAD_EA,
@@ -3010,9 +3004,7 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memreg),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_INST_PTR,
 			IARG_PTR, str,
 			IARG_ADDRINT, translate_reg (reg), 
@@ -3031,9 +3023,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 	if (INS_MemoryOperandCount(ins) > 0) {
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_flag),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
@@ -3043,9 +3033,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 	} else {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_flag),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
@@ -3068,9 +3056,7 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 	if (INS_MemoryOperandCount(ins) > 0) { 
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regregreg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, translate_reg (dstreg),
@@ -3090,9 +3076,7 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 	} else {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regregreg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, translate_reg (dstreg),
@@ -3115,9 +3099,7 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memregreg),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_INST_PTR,
 			IARG_PTR, str,
 			IARG_ADDRINT, translate_reg (reg1), 
@@ -3140,9 +3122,7 @@ static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32
 	if (INS_MemoryOperandCount (ins) > 0) {
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regflag),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
@@ -3155,9 +3135,7 @@ static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32
 	} else 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_regflag),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_INST_PTR,
 				IARG_PTR, str,
 				IARG_UINT32, mask,
@@ -3173,9 +3151,7 @@ static inline void fw_slice_src_memflag (INS ins, uint32_t mask, IARG_TYPE mem_e
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memflag),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_INST_PTR,
 			IARG_PTR, str,
 			IARG_UINT32, mask,
@@ -3223,9 +3199,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
             //and also call taint_rep
             INS_InsertIfCall(ins, IPOINT_BEFORE,
                     AFUNPTR(fw_slice_string_internal),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_INST_PTR,
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
@@ -3240,9 +3214,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
         else 
             INS_InsertIfCall(ins, IPOINT_BEFORE,
                     AFUNPTR(fw_slice_string_internal),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_INST_PTR,
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
@@ -3258,9 +3230,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
         if (is_dst_mem)  
             INS_InsertIfCall(ins, IPOINT_BEFORE,
                     AFUNPTR(fw_slice_string_internal),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_INST_PTR,
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
@@ -3276,9 +3246,7 @@ static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) {
         else
             INS_InsertIfCall(ins, IPOINT_BEFORE,
                     AFUNPTR(fw_slice_string_internal),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_INST_PTR,
                     IARG_PTR, str,
                     IARG_MEMORYREAD_EA,
@@ -3340,9 +3308,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -3360,9 +3326,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -3380,9 +3344,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -3400,9 +3362,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -3422,9 +3382,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -3443,9 +3401,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -3475,9 +3431,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -3496,9 +3450,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -3527,9 +3479,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3548,9 +3498,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3569,9 +3517,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3590,9 +3536,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3617,9 +3561,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3638,9 +3580,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3659,9 +3599,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3680,9 +3618,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3711,9 +3647,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3732,9 +3666,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3753,9 +3685,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3781,9 +3711,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_wreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3802,9 +3730,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_wreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3841,9 +3767,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_dwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -3879,9 +3803,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3900,9 +3822,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3921,9 +3841,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3942,9 +3860,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3969,9 +3885,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -3990,9 +3904,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -4011,9 +3923,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -4032,9 +3942,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                                 INS_InsertCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -4063,9 +3971,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4084,9 +3990,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4105,9 +4009,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4133,9 +4035,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_wreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4154,9 +4054,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_wreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4182,9 +4080,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_dwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -4220,9 +4116,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_lbreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -4242,9 +4136,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -4264,9 +4156,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -4286,9 +4176,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -4308,9 +4196,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -4356,9 +4242,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -4387,9 +4271,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -4412,9 +4294,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -4444,9 +4324,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -4476,9 +4354,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -4509,9 +4385,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -4553,9 +4427,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4574,9 +4446,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_lbreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4595,9 +4465,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4616,9 +4484,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4644,9 +4510,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4665,9 +4529,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4686,9 +4548,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4707,9 +4567,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -4740,9 +4598,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4761,9 +4617,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4782,9 +4636,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4811,9 +4663,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_wreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4832,9 +4682,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4861,9 +4709,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4902,9 +4748,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2hwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4923,9 +4767,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4944,9 +4786,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4965,9 +4805,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -4993,9 +4831,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2hwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5014,9 +4850,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5035,9 +4869,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5056,9 +4888,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5089,9 +4919,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5110,9 +4938,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5131,9 +4957,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5160,9 +4984,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_wreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5181,9 +5003,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5210,9 +5030,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -5251,9 +5069,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_lbreg2mem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5283,9 +5099,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5304,9 +5118,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5336,9 +5148,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_dwreg2mem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5382,9 +5192,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -5413,9 +5221,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -5448,9 +5254,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5480,9 +5284,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5512,9 +5314,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5544,9 +5344,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -5586,9 +5384,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5607,9 +5403,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5639,9 +5433,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5660,9 +5452,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5688,9 +5478,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5709,9 +5497,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5730,9 +5516,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5758,9 +5542,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_wmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5779,9 +5561,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_wmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5807,9 +5587,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_dwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5844,9 +5622,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5865,9 +5641,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5886,9 +5660,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5907,9 +5679,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5935,9 +5705,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5956,9 +5724,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -5977,9 +5743,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -6005,9 +5769,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_wmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -6026,9 +5788,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_wmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -6054,9 +5814,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_dwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -6106,9 +5864,7 @@ void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
 #endif
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_b),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -6138,9 +5894,7 @@ void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
 #endif
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_hw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -6170,9 +5924,7 @@ void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
 #endif
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_w),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -6202,9 +5954,7 @@ void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
 #endif
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_dw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -6234,9 +5984,7 @@ void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
 #endif
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_qw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -6297,9 +6045,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -6328,9 +6074,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -6359,9 +6103,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -6390,9 +6132,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -6423,9 +6163,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6455,9 +6193,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6487,9 +6223,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6519,9 +6253,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6560,9 +6292,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6581,9 +6311,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 4:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6591,9 +6319,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 8:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6601,9 +6327,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 16:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6617,9 +6341,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 2:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6627,9 +6349,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 4:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6637,9 +6357,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 8:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6647,9 +6365,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                         case 16:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -6667,9 +6383,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 4:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6677,9 +6391,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6687,9 +6399,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6704,9 +6414,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6714,9 +6422,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6733,9 +6439,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_dwreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -6756,9 +6460,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
             case 1:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_lbreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6766,9 +6468,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
             case 2:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6776,9 +6476,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6786,9 +6484,7 @@ void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_
             case 8:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -6846,9 +6542,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             mem_ea,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -6877,9 +6571,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             mem_ea,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -6913,9 +6605,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -6945,9 +6635,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -6977,9 +6665,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7009,9 +6695,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7050,9 +6734,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7082,9 +6764,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7114,9 +6794,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7135,9 +6813,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
                         case 16:
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7173,9 +6849,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7205,9 +6879,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7237,9 +6909,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7269,9 +6939,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                             INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -7312,9 +6980,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7344,9 +7010,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7376,9 +7040,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7416,9 +7078,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7448,9 +7108,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7488,9 +7146,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7526,9 +7182,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
             case 1:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_lbreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7536,9 +7190,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
             case 2:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7546,9 +7198,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7556,9 +7206,7 @@ void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice)
             case 8:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7604,9 +7252,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_bmem2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -7624,9 +7270,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_bmem2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -7648,9 +7292,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwmem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7669,9 +7311,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wmem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7690,9 +7330,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwmem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7711,9 +7349,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwmem2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -7730,9 +7366,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 2:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7751,9 +7385,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7772,9 +7404,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7782,9 +7412,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7799,9 +7427,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 4:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7809,9 +7435,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7819,9 +7443,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7836,9 +7458,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_wmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7846,9 +7466,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_wmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7863,9 +7481,7 @@ void instrument_taint_add_mem2reg_slice(INS ins, REG dstreg, int fw_slice)
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_dwmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -7904,9 +7520,7 @@ void instrument_taint_add_mem2mem_slice(INS ins, int fw_slice)
         case 1:
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_b),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -7914,9 +7528,7 @@ void instrument_taint_add_mem2mem_slice(INS ins, int fw_slice)
         case 2:
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_hw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -7924,9 +7536,7 @@ void instrument_taint_add_mem2mem_slice(INS ins, int fw_slice)
        case 4:
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_w),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -7934,9 +7544,7 @@ void instrument_taint_add_mem2mem_slice(INS ins, int fw_slice)
        case 8:
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_dw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -7944,9 +7552,7 @@ void instrument_taint_add_mem2mem_slice(INS ins, int fw_slice)
        case 16:
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_qw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -7997,9 +7603,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -8017,9 +7621,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -8037,9 +7639,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -8057,9 +7657,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -8079,9 +7677,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8100,9 +7696,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8132,9 +7726,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8153,9 +7745,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8184,9 +7774,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8205,9 +7793,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8226,9 +7812,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8247,9 +7831,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_lbreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8274,9 +7856,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8295,9 +7875,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8316,9 +7894,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8337,9 +7913,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taintx_ubreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8368,9 +7942,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8389,9 +7961,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8410,9 +7980,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_hwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8438,9 +8006,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_wreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8459,9 +8025,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_wreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8498,9 +8062,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_dwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8536,9 +8098,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8557,9 +8117,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8578,9 +8136,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8599,9 +8155,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_lbreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8626,9 +8180,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2hwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8647,9 +8199,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2wreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8668,9 +8218,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2dwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8689,9 +8237,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                                 AFUNPTR(taint_ubreg2qwreg),
-#ifdef FAST_INLINE
                                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                                 IARG_UINT32, dst_treg,
                                                 IARG_UINT32, src_treg,
                                                 IARG_END);
@@ -8720,9 +8266,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8741,9 +8285,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8762,9 +8304,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_hwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8790,9 +8330,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_wreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8811,9 +8349,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_wreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8839,9 +8375,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_dwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -8877,9 +8411,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_lbreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8899,9 +8431,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8921,9 +8451,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8943,9 +8471,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -8965,9 +8491,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -9007,9 +8531,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_lbreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -9038,9 +8560,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_ubreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -9063,9 +8583,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9095,9 +8613,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9127,9 +8643,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9160,9 +8674,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_qwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9204,9 +8716,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9225,9 +8735,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_lbreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9246,9 +8754,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9267,9 +8773,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_lbreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9295,9 +8799,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9316,9 +8818,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9337,9 +8837,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9358,9 +8856,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taintx_ubreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9391,9 +8887,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9412,9 +8906,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9433,9 +8925,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9462,9 +8952,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_wreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9483,9 +8971,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9512,9 +8998,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taintx_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9553,9 +9037,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2hwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9574,9 +9056,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9595,9 +9075,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9616,9 +9094,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9644,9 +9120,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2hwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9665,9 +9139,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9686,9 +9158,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9707,9 +9177,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9740,9 +9208,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9761,9 +9227,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9782,9 +9246,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9811,9 +9273,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_wreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9832,9 +9292,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9861,9 +9319,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYWRITE_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -9902,9 +9358,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_lbreg2mem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -9934,9 +9388,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9955,9 +9407,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -9987,9 +9437,7 @@ void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_dwreg2mem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYWRITE_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10011,9 +9459,7 @@ void pred_instrument_taint_memflag2reg (INS ins, uint32_t mask, REG dstreg) {
 	
 	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
 			AFUNPTR(taint_memflag2reg),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_UINT32, mask,
 			IARG_UINT32, treg, 
 			IARG_MEMORYREAD_EA,
@@ -10029,9 +9475,7 @@ void pred_instrument_taint_regflag2reg (INS ins, uint32_t mask, REG dstreg, REG 
 
 	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
 			AFUNPTR(taint_regflag2reg),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_UINT32, mask,
 			IARG_UINT32, translate_reg(dstreg), 
 			IARG_UINT32, translate_reg(srcreg), 
@@ -10065,9 +9509,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -10096,9 +9538,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -10131,9 +9571,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -10163,9 +9601,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -10195,9 +9631,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -10227,9 +9661,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -10269,9 +9701,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10290,9 +9720,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10322,9 +9750,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10343,9 +9769,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_bmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10371,9 +9795,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10392,9 +9814,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10413,9 +9833,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_hwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10441,9 +9859,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_wmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10462,9 +9878,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_wmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10490,9 +9904,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taintx_dwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10527,9 +9939,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10548,9 +9958,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10569,9 +9977,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10590,9 +9996,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_bmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10618,9 +10022,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10639,9 +10041,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10660,9 +10060,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_hwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10688,9 +10086,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_wmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10709,9 +10105,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_wmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10737,9 +10131,7 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                     AFUNPTR(taint_dwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -10786,9 +10178,7 @@ void pred_instrument_taint_mem2mem(INS ins, int extend)
 #endif
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_b),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -10818,9 +10208,7 @@ void pred_instrument_taint_mem2mem(INS ins, int extend)
 #endif
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_hw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -10850,9 +10238,7 @@ void pred_instrument_taint_mem2mem(INS ins, int extend)
 #endif
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_w),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -10882,9 +10268,7 @@ void pred_instrument_taint_mem2mem(INS ins, int extend)
 #endif
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_dw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -10914,9 +10298,7 @@ void pred_instrument_taint_mem2mem(INS ins, int extend)
 #endif
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_mem2mem_qw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -10976,9 +10358,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -11007,9 +10387,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -11038,9 +10416,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -11069,9 +10445,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -11102,9 +10476,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11134,9 +10506,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11166,9 +10536,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11198,9 +10566,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwreg2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11239,9 +10605,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11260,9 +10624,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 4:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11270,9 +10632,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 8:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11280,9 +10640,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 16:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11296,9 +10654,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 2:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11306,9 +10662,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 4:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2wreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11316,9 +10670,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 8:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11326,9 +10678,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                         case 16:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -11346,9 +10696,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 4:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11356,9 +10704,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 8:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11366,9 +10712,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11383,9 +10727,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 8:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11393,9 +10735,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11412,9 +10752,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_dwreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -11435,9 +10773,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
             case 1:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_lbreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11445,9 +10781,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
             case 2:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11455,9 +10789,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
             case 4:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11465,9 +10797,7 @@ void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
             case 8:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dst_treg,
                         IARG_UINT32, src_treg,
                         IARG_END);
@@ -11521,9 +10851,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_lbreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             mem_ea,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -11552,9 +10880,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_ubreg2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             mem_ea,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -11588,9 +10914,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -11620,9 +10944,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -11652,9 +10974,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -11684,9 +11004,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -11725,9 +11043,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11757,9 +11073,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11789,9 +11103,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11810,9 +11122,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
                         case 16:
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_lbreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11848,9 +11158,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2hwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11880,9 +11188,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2wmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11912,9 +11218,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2dwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11944,9 +11248,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_ubreg2qwmem),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     mem_ea,
                                     IARG_UINT32, treg,
                                     IARG_END);
@@ -11987,9 +11289,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2wmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12019,9 +11319,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2dwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12051,9 +11349,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_hwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12097,9 +11393,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #ifdef TRACE_TAINT_OPS
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(trace_taint_op_exit),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, trace_taint_outfd,
                             IARG_THREAD_ID,
                             IARG_INST_PTR,
@@ -12123,9 +11417,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_wreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12163,9 +11455,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add_dwreg2qwmem),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 mem_ea,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12201,9 +11491,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
             case 1:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_lbreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12211,9 +11499,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
             case 2:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12221,9 +11507,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
             case 4:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12231,9 +11515,7 @@ void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
             case 8:
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         mem_ea,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12273,9 +11555,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_bmem2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -12293,9 +11573,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_add_bmem2ubreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -12317,9 +11595,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_hwmem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12338,9 +11614,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_wmem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12359,9 +11633,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_dwmem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12380,9 +11652,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                 INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_add_qwmem2qwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -12399,9 +11669,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 2:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12420,9 +11688,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
 #endif
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12441,9 +11707,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 8:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12451,9 +11715,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_bmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12468,9 +11730,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 4:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12478,9 +11738,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 8:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12488,9 +11746,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_hwmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12505,9 +11761,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 8:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_wmem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12515,9 +11769,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_wmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12532,9 +11784,7 @@ void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
                     case 16:
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE, 
                                 AFUNPTR(taint_add_dwmem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -12570,9 +11820,7 @@ void pred_instrument_taint_add_mem2mem(INS ins)
         case 1:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_b),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -12580,9 +11828,7 @@ void pred_instrument_taint_add_mem2mem(INS ins)
         case 2:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_hw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -12590,9 +11836,7 @@ void pred_instrument_taint_add_mem2mem(INS ins)
        case 4:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_w),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -12600,9 +11844,7 @@ void pred_instrument_taint_add_mem2mem(INS ins)
        case 8:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_dw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -12610,9 +11852,7 @@ void pred_instrument_taint_add_mem2mem(INS ins)
        case 16:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_add_mem2mem_qw),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYREAD_EA,
                     IARG_MEMORYWRITE_EA,
                     IARG_END);
@@ -12630,41 +11870,31 @@ void instrument_taint_immval2mem(INS ins)
                 case 1:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immvalb2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA, IARG_END);
                     break;
                case 2:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immvalhw2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA, IARG_END);
                     break;
                case 4:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immvalw2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA, IARG_END);
                     break;
                case 8:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immvaldw2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA, IARG_END);
                     break;
                case 16:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immvalqw2mem),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYWRITE_EA, IARG_END);
                     break;
                default:
@@ -12681,41 +11911,31 @@ void pred_instrument_taint_immval2mem(INS ins)
         case 1:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_immvalb2mem),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYWRITE_EA, IARG_END);
             break;
         case 2:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_immvalhw2mem),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYWRITE_EA, IARG_END);
             break;
         case 4:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_immvalw2mem),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYWRITE_EA, IARG_END);
             break;
         case 8:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_immvaldw2mem),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYWRITE_EA, IARG_END);
             break;
         case 16:
             INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_immvalqw2mem),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_MEMORYWRITE_EA, IARG_END);
             break;
         default:
@@ -12987,9 +12207,7 @@ void instrument_compare_string(INS ins, uint32_t mask)
 	} else {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(instrument_cmps_without_rep),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_MEMORYREAD_EA,
 				IARG_MEMORYREAD2_EA,
 				IARG_UINT32, mask, 
@@ -13042,9 +12260,7 @@ void instrument_scan_string(INS ins, uint32_t mask)
 	} else {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(instrument_scas_without_rep),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_MEMORYREAD_EA,
 				IARG_UINT32, mask, 
 				IARG_UINT32, size,
@@ -13096,9 +12312,7 @@ void instrument_pcmpestri (INS ins) {
 		reg1 = translate_reg (INS_OperandReg (ins, 0));
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(pcmpestri_reg_mem),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_UINT32, reg1, 
 				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
 				IARG_MEMORYREAD_EA,
@@ -13111,9 +12325,7 @@ void instrument_pcmpestri (INS ins) {
 		reg2 = translate_reg (INS_OperandReg (ins, 1));
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(pcmpestri_reg_reg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_UINT32, reg1, 
 				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
 				IARG_UINT32, reg2, 
@@ -13178,9 +12390,7 @@ void instrument_pcmpistri (INS ins) {
 		reg1 = translate_reg (INS_OperandReg (ins, 0));
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(pcmpistri_reg_mem),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_UINT32, reg1, 
 				IARG_REG_REFERENCE, INS_OperandReg(ins, 0), 
 				IARG_MEMORYREAD_EA,
@@ -13194,9 +12404,7 @@ void instrument_pcmpistri (INS ins) {
 		char* str = get_copy_of_disasm (ins);
 		INS_InsertCall(ins, IPOINT_BEFORE,
 			       AFUNPTR(pcmpistri_reg_reg),
-#ifdef FAST_INLINE
 			       IARG_FAST_ANALYSIS_CALL,
-#endif
 			       IARG_ADDRINT, INS_Address(ins),
 			       IARG_PTR, str,
 			       IARG_UINT32, reg1, 
@@ -13269,9 +12477,7 @@ void instrument_store_string(INS ins)
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_lbreg2mem,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13279,9 +12485,7 @@ void instrument_store_string(INS ins)
             case 2:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_hwreg2mem,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13289,9 +12493,7 @@ void instrument_store_string(INS ins)
             case 4:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_wreg2mem,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13333,9 +12535,7 @@ void instrument_load_string(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2lbreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13354,9 +12554,7 @@ void instrument_load_string(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2hwreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13375,9 +12573,7 @@ void instrument_load_string(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2wreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13405,9 +12601,7 @@ void instrument_load_string(INS ins)
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2lbreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13415,9 +12609,7 @@ void instrument_load_string(INS ins)
             case 2:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2hwreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13425,9 +12617,7 @@ void instrument_load_string(INS ins)
             case 4:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         (AFUNPTR)taint_mem2wreg,
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, LEVEL_BASE::REG_EAX,
                         IARG_END);
@@ -13470,36 +12660,28 @@ void instrument_xchg (INS ins)
                 if (REG_is_Lower8(reg1) && REG_is_Lower8(reg2)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_lbreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
                 } else if (REG_is_Lower8(reg1) && REG_is_Upper8(reg2)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_lbreg2ubreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
                 } else if (REG_is_Upper8(reg1) && REG_is_Lower8(reg2)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_ubreg2lbreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
                 } else if (REG_is_Upper8(reg1) && REG_is_Upper8(reg2)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_ubreg2ubreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
@@ -13510,9 +12692,7 @@ void instrument_xchg (INS ins)
             case 2:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_hwreg2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
@@ -13520,9 +12700,7 @@ void instrument_xchg (INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, treg1,
                         IARG_UINT32, treg2,
                         IARG_END);
@@ -13556,9 +12734,7 @@ void instrument_xchg (INS ins)
                 if (REG_is_Lower8(reg)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_xchg_bmem2lbreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -13566,9 +12742,7 @@ void instrument_xchg (INS ins)
                     assert(REG_is_Upper8(reg));
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_xchg_bmem2ubreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -13577,9 +12751,7 @@ void instrument_xchg (INS ins)
             case 2:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_hwmem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13587,9 +12759,7 @@ void instrument_xchg (INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_wmem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13597,9 +12767,7 @@ void instrument_xchg (INS ins)
             case 8:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_dwmem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13630,9 +12798,7 @@ void instrument_xchg (INS ins)
                 if (REG_is_Lower8(reg)) {
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_xchg_bmem2lbreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -13640,9 +12806,7 @@ void instrument_xchg (INS ins)
                     assert(REG_is_Upper8(reg));
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_xchg_bmem2ubreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, treg,
                                 IARG_END);
@@ -13651,9 +12815,7 @@ void instrument_xchg (INS ins)
             case 2:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_hwmem2hwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13661,9 +12823,7 @@ void instrument_xchg (INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_wmem2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13671,9 +12831,7 @@ void instrument_xchg (INS ins)
             case 8:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_xchg_dwmem2dwreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -13713,9 +12871,7 @@ void instrument_cmpxchg (INS ins)
 		fw_slice_src_regmem (ins, LEVEL_BASE::REG_EAX, size, IARG_MEMORYREAD_EA, size);
 #endif
 		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_mem),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_REG_VALUE, srcreg,
 				IARG_MEMORYREAD_EA,
 				IARG_UINT32, translate_reg(srcreg),
@@ -13727,9 +12883,7 @@ void instrument_cmpxchg (INS ins)
 		fw_slice_src_regreg (ins, dstreg, size, LEVEL_BASE::REG_EAX, size);
 #endif
 		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_reg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_REG_VALUE, dstreg,
 				IARG_UINT32, translate_reg(dstreg),
 				IARG_UINT32, translate_reg(srcreg),
@@ -13905,41 +13059,31 @@ void instrument_mov (INS ins)
                 case 1:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immval2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, treg, IARG_END);
                     break;
                case 2:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, treg, IARG_END);
                     break;
                case 4:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immval2wreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, treg, IARG_END);
                     break;
                case 8:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immval2dwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, treg, IARG_END);
                     break;
                case 16:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_immval2qwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, treg, IARG_END);
                     break;
                default:
@@ -14226,36 +13370,28 @@ void instrument_cmov(INS ins, uint32_t mask)
                     if (REG_is_Lower8(dstreg) && REG_is_Lower8(reg)) {
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2lbreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
                     } else if (REG_is_Lower8(dstreg) && REG_is_Upper8(reg)) {
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2ubreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
                     } else if (REG_is_Upper8(dstreg) && REG_is_Lower8(reg)) {
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2lbreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
                     } else if (REG_is_Upper8(dstreg) && REG_is_Upper8(reg)) {
                         INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_ubreg2ubreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -14266,9 +13402,7 @@ void instrument_cmov(INS ins, uint32_t mask)
                 case 2:
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -14276,9 +13410,7 @@ void instrument_cmov(INS ins, uint32_t mask)
                 case 4:
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -14286,9 +13418,7 @@ void instrument_cmov(INS ins, uint32_t mask)
                 case 8:
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -14296,9 +13426,7 @@ void instrument_cmov(INS ins, uint32_t mask)
                 case 16:
                     INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
                             AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_UINT32, dst_treg,
                             IARG_UINT32, src_treg,
                             IARG_END);
@@ -14334,9 +13462,7 @@ void instrument_rotate(INS ins)
 		}
 		INS_InsertCall (ins, IPOINT_BEFORE, 
 				AFUNPTR (taint_rotate_reg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_UINT32, translate_reg (reg),
 				IARG_UINT32, regsize,
 				IARG_UINT32, op2reg,
@@ -14349,9 +13475,7 @@ void instrument_rotate(INS ins)
 		if (size == 1) return;
 		INS_InsertCall (ins, IPOINT_BEFORE, 
 				AFUNPTR (taint_rotate_mem),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_MEMORYWRITE_EA,
 				IARG_UINT32, size,
 				IARG_UINT32, op2reg,
@@ -14413,9 +13537,7 @@ void instrument_lea(INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dstreg,
                         IARG_UINT32, index_reg,
                         IARG_END);
@@ -14432,9 +13554,7 @@ void instrument_lea(INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wregwreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, translate_reg(dstreg),
 			IARG_UINT32, translate_reg(base_reg),
 			IARG_UINT32, translate_reg(index_reg),
@@ -14458,9 +13578,7 @@ void instrument_lea(INS ins)
             case 4:
                 INS_InsertCall(ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_UINT32, dstreg,
                         IARG_UINT32, base_reg,
                         IARG_END);
@@ -14475,9 +13593,7 @@ void instrument_lea(INS ins)
 		    case 4:
 			    INS_InsertCall(ins, IPOINT_BEFORE,
 					    AFUNPTR(taint_immval2wreg),
-#ifdef FAST_INLINE
 					    IARG_FAST_ANALYSIS_CALL,
-#endif
 					    IARG_UINT32, dstreg,
 					    IARG_END);
 			    break;
@@ -14502,27 +13618,21 @@ void instrument_push(INS ins)
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                                         AFUNPTR(taint_immvalb2mem),
-#ifdef FAST_INLINE
                                         IARG_FAST_ANALYSIS_CALL,
-#endif
                                         IARG_MEMORYWRITE_EA,
                                         IARG_END);
                 break;
             case 2:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                                         AFUNPTR(taint_immvalhw2mem),
-#ifdef FAST_INLINE
                                         IARG_FAST_ANALYSIS_CALL,
-#endif
                                         IARG_MEMORYWRITE_EA,
                                         IARG_END);
                 break;
             case 4:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                                         AFUNPTR(taint_immvalw2mem),
-#ifdef FAST_INLINE
                                         IARG_FAST_ANALYSIS_CALL,
-#endif
                                         IARG_MEMORYWRITE_EA,
                                         IARG_END);
                 break;
@@ -14542,9 +13652,7 @@ void instrument_push(INS ins)
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_lbreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -14552,9 +13660,7 @@ void instrument_push(INS ins)
             case 2:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_hwreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -14562,9 +13668,7 @@ void instrument_push(INS ins)
             case 4:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_wreg2mem),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYWRITE_EA,
                         IARG_UINT32, treg,
                         IARG_END);
@@ -14583,9 +13687,7 @@ void instrument_push(INS ins)
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_b),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14593,9 +13695,7 @@ void instrument_push(INS ins)
             case 2:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_hw),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14603,9 +13703,7 @@ void instrument_push(INS ins)
             case 4:
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_w),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14641,9 +13739,7 @@ void instrument_pop(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_b),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14673,9 +13769,7 @@ void instrument_pop(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_hw),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14705,9 +13799,7 @@ void instrument_pop(INS ins)
 #endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_w),
-#ifdef FAST_INLINE
                         IARG_FAST_ANALYSIS_CALL,
-#endif
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
@@ -14751,9 +13843,7 @@ void instrument_pop(INS ins)
 #endif
                     INS_InsertCall (ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2lbreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -14783,9 +13873,7 @@ void instrument_pop(INS ins)
 #endif
                     INS_InsertCall (ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2hwreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -14815,9 +13903,7 @@ void instrument_pop(INS ins)
 #endif
                     INS_InsertCall (ins, IPOINT_BEFORE,
                             AFUNPTR(taint_mem2wreg),
-#ifdef FAST_INLINE
                             IARG_FAST_ANALYSIS_CALL,
-#endif
                             IARG_MEMORYREAD_EA,
                             IARG_UINT32, treg,
                             IARG_END);
@@ -14925,45 +14011,35 @@ void instrument_addorsub(INS ins)
                 case 1:
                     INS_InsertCall (ins, IPOINT_BEFORE,
                                             AFUNPTR(taint_immval2lbreg),
-#ifdef FAST_INLINE
                                             IARG_FAST_ANALYSIS_CALL,
-#endif
                                             IARG_UINT32, dst_treg,
                                             IARG_END);
                     break;
                 case 2:
                     INS_InsertCall (ins, IPOINT_BEFORE,
                                             AFUNPTR(taint_immval2hwreg),
-#ifdef FAST_INLINE
                                             IARG_FAST_ANALYSIS_CALL,
-#endif
                                             IARG_UINT32, dst_treg,
                                             IARG_END);
                     break;
                 case 4:
                     INS_InsertCall (ins, IPOINT_BEFORE,
                                             AFUNPTR(taint_immval2wreg),
-#ifdef FAST_INLINE
                                             IARG_FAST_ANALYSIS_CALL,
-#endif
                                             IARG_UINT32, dst_treg,
                                             IARG_END);
                     break;
                 case 8:
                     INS_InsertCall (ins, IPOINT_BEFORE,
                                             AFUNPTR(taint_immval2dwreg),
-#ifdef FAST_INLINE
                                             IARG_FAST_ANALYSIS_CALL,
-#endif
                                             IARG_UINT32, dst_treg,
                                             IARG_END);
                     break;
                 case 16:
                     INS_InsertCall (ins, IPOINT_BEFORE,
                                             AFUNPTR(taint_immval2qwreg),
-#ifdef FAST_INLINE
                                             IARG_FAST_ANALYSIS_CALL,
-#endif
                                             IARG_UINT32, dst_treg,
                                             IARG_END);
                     break;
@@ -15022,9 +14098,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add2_hwmemhwreg_2breg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, lsb_treg,
                                     IARG_UINT32, dst1_treg,
@@ -15043,9 +14117,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add2_wmemwreg_2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, lsb_treg,
                                     IARG_UINT32, dst1_treg,
@@ -15064,9 +14136,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add3_dwmem2wreg_2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, msb_treg,
                                 IARG_UINT32, lsb_treg,
@@ -15102,9 +14172,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add2_hwregbreg_2breg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, lsb_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_UINT32, dst1_treg,
@@ -15124,9 +14192,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add3_2hwreg_2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, msb_treg,
                                 IARG_UINT32, lsb_treg,
                                 IARG_UINT32, src_treg,
@@ -15146,9 +14212,7 @@ void instrument_div(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add3_2wreg_2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, msb_treg,
                                 IARG_UINT32, lsb_treg,
                                 IARG_UINT32, src_treg,
@@ -15183,9 +14247,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_bmemlbreg_hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15200,9 +14262,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_hwmemhwreg_2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15218,9 +14278,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_wmemwreg_2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15251,9 +14309,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_lbreglbreg_hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, src2_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15269,9 +14325,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_hwreghwreg_2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, src2_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15288,9 +14342,7 @@ void instrument_mul(INS ins)
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_add2_wregwreg_2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, src_treg,
                                 IARG_UINT32, src2_treg,
                                 IARG_UINT32, lsb_dst_treg,
@@ -15337,9 +14389,7 @@ void instrument_imul(INS ins)
                 case 2:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_hwmem2hwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, dst_treg,
                                     IARG_END);
@@ -15347,9 +14397,7 @@ void instrument_imul(INS ins)
                 case 4:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                    AFUNPTR(taint_add_wmem2wreg),
-#ifdef FAST_INLINE
                                    IARG_FAST_ANALYSIS_CALL,
-#endif
                                    IARG_MEMORYREAD_EA,
                                    IARG_UINT32, dst_treg,
                                    IARG_END);
@@ -15357,9 +14405,7 @@ void instrument_imul(INS ins)
                 case 8:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_dwmem2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, dst_treg,
                                     IARG_END);
@@ -15367,9 +14413,7 @@ void instrument_imul(INS ins)
                 case 16:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_qwmem2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_MEMORYREAD_EA,
                                     IARG_UINT32, dst_treg,
                                     IARG_END);
@@ -15395,9 +14439,7 @@ void instrument_imul(INS ins)
                 case 4:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                    AFUNPTR(taint_add_wreg2wreg),
-#ifdef FAST_INLINE
                                    IARG_FAST_ANALYSIS_CALL,
-#endif
                                    IARG_UINT32, dst_treg,
                                    IARG_UINT32, src_treg,
                                    IARG_END);
@@ -15405,9 +14447,7 @@ void instrument_imul(INS ins)
                 case 8:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_dwreg2dwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -15415,9 +14455,7 @@ void instrument_imul(INS ins)
                 case 16:
                     INS_InsertCall(ins, IPOINT_BEFORE,
                                     AFUNPTR(taint_add_qwreg2qwreg),
-#ifdef FAST_INLINE
                                     IARG_FAST_ANALYSIS_CALL,
-#endif
                                     IARG_UINT32, dst_treg,
                                     IARG_UINT32, src_treg,
                                     IARG_END);
@@ -15451,9 +14489,7 @@ void instrument_imul(INS ins)
                     case 4:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_mem2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, dst_treg,
                                 IARG_END);
@@ -15461,9 +14497,7 @@ void instrument_imul(INS ins)
                     case 8:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_mem2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, dst_treg,
                                 IARG_END);
@@ -15471,9 +14505,7 @@ void instrument_imul(INS ins)
                     case 16:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_mem2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_MEMORYREAD_EA,
                                 IARG_UINT32, dst_treg,
                                 IARG_END);
@@ -15499,9 +14531,7 @@ void instrument_imul(INS ins)
 		    case 1:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_lbreg2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -15510,9 +14540,7 @@ void instrument_imul(INS ins)
                     case 2:
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_hwreg2hwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -15531,9 +14559,7 @@ void instrument_imul(INS ins)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_wreg2wreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -15563,9 +14589,7 @@ void instrument_imul(INS ins)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_dwreg2dwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -15595,9 +14619,7 @@ void instrument_imul(INS ins)
 #endif
                         INS_InsertCall(ins, IPOINT_BEFORE,
                                 AFUNPTR(taint_qwreg2qwreg),
-#ifdef FAST_INLINE
                                 IARG_FAST_ANALYSIS_CALL,
-#endif
                                 IARG_UINT32, dst_treg,
                                 IARG_UINT32, src_treg,
                                 IARG_END);
@@ -15634,9 +14656,7 @@ void instrument_call_near (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_call_near),
-#ifdef FAST_INLINE
 		   IARG_FAST_ANALYSIS_CALL,
-#endif
 		   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 
 		   IARG_END);
 }
@@ -15645,9 +14665,7 @@ void instrument_call_far (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_call_far),
-#ifdef FAST_INLINE
 		   IARG_FAST_ANALYSIS_CALL,
-#endif
 		   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 
 		   IARG_END);
 }
@@ -15674,9 +14692,7 @@ void instrument_palignr(INS ins)
         if (addrsize == 8) {
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_palignr_mem2dwreg),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_UINT32, treg,
                     IARG_MEMORYREAD_EA,
                     IARG_UINT32, imm,
@@ -15684,9 +14700,7 @@ void instrument_palignr(INS ins)
         } else if (addrsize == 16) {
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_palignr_mem2qwreg),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_UINT32, treg,
                     IARG_MEMORYREAD_EA,
                     IARG_UINT32, imm,
@@ -15704,9 +14718,7 @@ void instrument_palignr(INS ins)
         if (REG_Size(reg2) == 8) {
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_palignr_dwreg2dwreg),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_UINT32, treg,
                     IARG_UINT32, treg2,
                     IARG_UINT32, imm,
@@ -15714,9 +14726,7 @@ void instrument_palignr(INS ins)
         } else if (REG_Size(reg2) == 16) {
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_palignr_qwreg2qwreg),
-#ifdef FAST_INLINE
                     IARG_FAST_ANALYSIS_CALL,
-#endif
                     IARG_UINT32, treg,
                     IARG_UINT32, treg2,
                     IARG_UINT32, imm,
@@ -15768,9 +14778,7 @@ void instrument_pmovmskb(INS ins)
 
     INS_InsertCall(ins, IPOINT_BEFORE,
             AFUNPTR(taint_mask_reg2reg),
-#ifdef FAST_INLINE
             IARG_FAST_ANALYSIS_CALL,
-#endif
             IARG_UINT32, dst_treg,
             IARG_UINT32, src_treg,
             IARG_END);
@@ -15817,9 +14825,7 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 
 	INSTRUMENT_PRINT (log_f, "instrument_taint_regmem2flag: flags %u, reg %u size %u, memsize %u\n", flags, reg, regsize, memsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			mem_ea,
 			IARG_UINT32, treg,
 			IARG_UINT32, flags, 
@@ -15845,9 +14851,7 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 
 	//INSTRUMENT_PRINT (log_f, "instrument_taint_regreg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_UINT32, dst_treg,
 			IARG_UINT32, src_treg,
 			IARG_UINT32, flags, 
@@ -15898,9 +14902,7 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 #endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_mem2flag),
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_MEMORYREAD_EA,
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, addrsize,
@@ -15915,9 +14917,7 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 #endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_reg2flag),
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_UINT32, reg, 
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, regsize,
@@ -15940,9 +14940,7 @@ void instrument_jump (INS ins, uint32_t flags) {
 	fw_slice_src_flag (ins, flags);
 #endif
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_REG_VALUE, REG_EFLAGS,
 			IARG_UINT32, flags, 
 			IARG_ADDRINT, INS_Address(ins),
@@ -15955,9 +14953,7 @@ void instrument_jump_ecx (INS ins, uint32_t size) {
 	fw_slice_src_reg (ins, LEVEL_BASE::REG_ECX, size, 0);
 #endif
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump_ecx),
-#ifdef FAST_INLINE
 			IARG_FAST_ANALYSIS_CALL,
-#endif
 			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
 			IARG_UINT32, size,
 			IARG_INST_PTR,
@@ -16088,9 +15084,7 @@ void instrument_set (INS ins, uint32_t mask) {
 	if (INS_IsMemoryWrite(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(taint_flag2mem),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_MEMORYWRITE_EA,
 				IARG_UINT32,mask, 
 				IARG_UINT32, 1,
@@ -16098,9 +15092,7 @@ void instrument_set (INS ins, uint32_t mask) {
 	} else { 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(taint_flag2reg),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_UINT32, translate_reg(INS_OperandReg(ins, 0)),
 				IARG_UINT32, mask, 
 				IARG_UINT32, 1,
@@ -16127,9 +15119,7 @@ void instrument_bt (INS ins) {
 #endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_reg2flag),
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_UINT32, reg, 
 			    IARG_UINT32, CF_FLAG, 
 			    IARG_UINT32, regsize,
@@ -16141,9 +15131,7 @@ void instrument_bt (INS ins) {
 #endif
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_mem2flag),
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_MEMORYREAD_EA,
 			    IARG_UINT32, CF_FLAG, 
 			    IARG_UINT32, addrsize,
@@ -16825,9 +15813,7 @@ void instruction_instrumentation(INS ins, void *v)
                 ERROR_PRINT(stderr, "[NOOP] ERROR: instruction %s is not instrumented, address: %#x\n",
                         INS_Disassemble(ins).c_str(), (unsigned)INS_Address(ins));
 		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(instrument_unhandled_inst),
-#ifdef FAST_INLINE
 				IARG_FAST_ANALYSIS_CALL,
-#endif
 				IARG_ADDRINT, INS_Address(ins),
 			IARG_END);
                 // XXX This printing may cause a deadlock in Pin!
@@ -17762,9 +16748,7 @@ void routine (RTN rtn, VOID *v)
 
     if (!strcmp (name, "linemap_add")) {
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_PTR, name, 
 			    IARG_ADDRINT, RTN_Address(rtn), 
 			    IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
@@ -17772,9 +16756,7 @@ void routine (RTN rtn, VOID *v)
 			    IARG_END);
     } else if (!strcmp(name, "__memcpy_ssse3_rep")) {
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_PTR, name, 
 			    IARG_ADDRINT, RTN_Address(rtn), 
 			    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
@@ -17782,9 +16764,7 @@ void routine (RTN rtn, VOID *v)
 			    IARG_END);
     } else
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
-#ifdef FAST_INLINE
 			    IARG_FAST_ANALYSIS_CALL,
-#endif
 			    IARG_PTR, name, 
 			    IARG_ADDRINT, RTN_Address(rtn), 
 			    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -17793,9 +16773,7 @@ void routine (RTN rtn, VOID *v)
 
 
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
-#ifdef FAST_INLINE
 		    IARG_FAST_ANALYSIS_CALL,
-#endif
 		    IARG_PTR, name, 
 		    IARG_ADDRINT, RTN_Address(rtn), 
 		    IARG_REG_VALUE, LEVEL_BASE::REG_EAX,

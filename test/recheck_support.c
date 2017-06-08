@@ -660,3 +660,93 @@ void setpgid_recheck (int pid, int pgid)
     rc = syscall(SYS_setpgid, use_pid, use_pgid);
     check_retval ("setpgid", pentry->retval, rc);
 }
+
+void readlink_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct readlink_recheck* preadlink;
+    char* linkdata;
+    char* path;
+    int rc, i;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    preadlink = (struct readlink_recheck *) bufptr;
+    if (pentry->retval > 0) {
+	linkdata = bufptr+sizeof(struct readlink_recheck);
+	path = linkdata + pentry->retval;
+    } else {
+	linkdata = NULL;
+	path = bufptr+sizeof(struct readlink_recheck);
+    }
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("readlink: buf %p size %d ", preadlink->buf, preadlink->bufsiz);
+    if (pentry->retval) {
+	printf ("linkdata ");
+	for (i = 0; i < pentry->retval; i++) {
+	    printf ("%c", linkdata[i]);
+	}
+	printf (" ");
+    }
+    printf ("path %s rc %ld\n", path, pentry->retval);
+#endif 
+    rc = syscall(SYS_readlink, path, tmpbuf, preadlink->bufsiz);
+    check_retval ("readlink", pentry->retval, rc);
+    if (rc > 0) {
+	if (memcmp(tmpbuf, linkdata, pentry->retval)) {
+	    printf ("[MISMATCH] readdata returns link data %s\n", linkdata);
+	    handle_mismatch();
+	}
+    }
+}
+
+void socket_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct socket_recheck* psocket;
+    u_long block[6];
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    psocket = (struct socket_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("socket: domain %d type %d protocol %d rc %ld\n", psocket->domain, 
+	   psocket->type, psocket->protocol, pentry->retval);
+#endif 
+
+    block[0] = psocket->domain;
+    block[1] = psocket->type;
+    block[2] = psocket->protocol;
+    rc = syscall(SYS_socketcall, SYS_SOCKET, &block);
+    check_retval ("socket", pentry->retval, rc);
+}
+
+void connect_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct connect_recheck* pconnect;
+    u_long block[6];
+    char* addr;
+    int rc, i;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pconnect = (struct connect_recheck *) bufptr;
+    addr = bufptr+sizeof(struct connect_recheck);
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("connect: sockfd %d addlen %d rc %ld\n", pconnect->sockfd, pconnect->addrlen, pentry->retval);
+#endif 
+    block[0] = pconnect->sockfd;
+    block[1] = (u_long) addr;
+    block[2] = pconnect->addrlen;
+    rc = syscall(SYS_socketcall, SYS_CONNECT, &block);
+    check_retval ("connect", pentry->retval, rc);
+}
+
