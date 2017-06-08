@@ -143,5 +143,6 @@ int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int i
 int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz);
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol);
 int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
+int recheck_getuid32 (struct recheck_handle* handle);
 
 #endif
