@@ -417,6 +417,7 @@ int main (int argc, char* argv[])
 	int go_live = 0;
 	char* slice_filename = NULL;
 	char* recheck_filename = NULL;
+	struct timeval tv;
 
 	u_long i = 0;
 	u_long nfake_calls = 0;
@@ -425,6 +426,8 @@ int main (int argc, char* argv[])
 	struct ckpt_hdr hdr;
 	struct ckpt_data cd; 
 	pthread_t thread[MAX_THREADS];
+
+	fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 
 	sprintf(uniqueid,"%d",getpid()); //use the parent's pid as the uniqueid
 

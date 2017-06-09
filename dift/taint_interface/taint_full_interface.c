@@ -1809,6 +1809,27 @@ TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, 
 		shadow_reg_table[dst_reg*REG_SIZE + i] = merge_taints (t, shadow_reg_table[src_reg*REG_SIZE+i]);
 	}
 }
+
+//size of the mem and reg should be the same
+TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size) { 
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	taint_t t = 0;
+	uint32_t i = 0;
+
+	for (i = 0; i<NUM_FLAGS; ++i) { 
+		if (mask & (1 << i)) {
+			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
+		}
+	}
+
+	//merge	flag and src reg
+	//TODO: could make this more efficient
+	for (; i<size; ++i) { 
+		taint_t tmp = merge_taints (t, shadow_reg_table[src_reg*REG_SIZE+i]);
+		set_cmem_taints (mem_loc + i, 1, &tmp);
+	}
+}
+
 //size of the src mem and dst reg should be the same
 TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size) { 
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
@@ -2206,6 +2227,10 @@ static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t me
 	printf ("[SLICE_EXTRA] mov $addr(%lx,%u), %u  //comes with %x\n", mem_loc, mem_size, get_mem_value(mem_loc, mem_size), ip);
 }
 
+static inline void print_extra_move_flag (ADDRINT ip, char* str, uint32_t flag) { 
+	fprintf (stderr, "[BUG] flag is not tainted, but we should initialize it %x, %s\n", ip, str);
+}
+
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str) { 
 	fprintf (stderr, "[DEBUG] ip %x, ", ip);
 	fprintf (stderr, "%s\n",str);
@@ -2449,6 +2474,37 @@ TAINTINT fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_
 	return 0;
 }
 
+//only for cmov
+TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
+		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag) { 
+	int tainted1 = (reg1_size>0)?is_reg_tainted (reg1, reg1_size, reg1_u8):0;
+	int tainted2 = is_mem_tainted (mem_loc, mem_size);
+	int tainted3 = (reg2_size>0)?is_reg_tainted (reg2, reg2_size, reg2_u8):0;
+	int tainted4 = 0;
+        int i = 0;
+	for (; i<NUM_FLAGS; ++i) {
+		if (flag & (1<<i)) {
+			if (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i] != 0) {
+				tainted4 = 1;
+				break;
+			}
+		}
+	}
+
+	if (tainted1 || tainted2 || tainted3 || tainted4) {
+		PRINT ("memregregflag\n");
+		printf ("[SLICE] #%x #%s\t", ip, ins_str);
+		printf ("    [SLICE_INFO] #src_regmemreg_cmov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d\n", 
+				reg1, tainted1, reg1_size, mem_loc, tainted2, mem_size, reg2, tainted3, reg2_size, reg1_value, get_mem_value (mem_loc, mem_size), reg2_value, flag, tainted4);
+		if (!tainted1 && reg1_size > 0) print_extra_move_reg (ip, reg1, reg1_size, reg1_value, reg1_u8);
+		if (!tainted2 && mem_size > 0) print_extra_move_reg (ip, reg2, reg2_size, reg2_value, reg2_u8);
+		if (!tainted3 && reg2_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
+		if (!tainted4) print_extra_move_flag (ip, ins_str, flag);
+		return 1;
+	}
+	return 0;
+}
+
 TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) {
 	uint32_t i = 0;
 	int tainted = 0;
@@ -2488,6 +2544,7 @@ TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t sr
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_regflag[%d:%d:%u,%x:%d:4] #reg_value %u, flag_value TODO\n", src_reg, reg_tainted, size, mask, flag_tainted, regvalue);
 		if (!reg_tainted) print_extra_move_reg (ip, src_reg, size, regvalue, reg_u8);
+		if (!flag_tainted) print_extra_move_flag (ip, ins_str, mask);
 		return 1;
 	}
 	return 0;
@@ -2510,6 +2567,7 @@ TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memflag[%lx:%d:%u,%x:%d:4] #mem_value %u, flag_value TODO\n", mem_loc, mem_tainted, size, mask, flag_tainted, get_mem_value (mem_loc, size));
 		if (!mem_tainted) print_extra_move_mem (ip, mem_loc, size);
+		if (!flag_tainted) print_extra_move_flag (ip, ins_str, mask);
 		return 1;
 	}
 	return 0;

@@ -103,7 +103,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 2228
+//#define EXTRA_DEBUG 2228
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -2615,17 +2615,9 @@ void instrument_taint_add_mem2mem(INS ins);
 
 // predicated instrumentation
 void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend);
-void pred_instrument_taint_reg2mem(INS ins, REG srcreg, int extend);
 void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend);
-void pred_instrument_taint_mem2mem(INS ins, int extend);
-
-void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg);
-void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg);
-void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg);
-void pred_instrument_taint_add_mem2mem(INS ins);
 
 void instrument_taint_immval2mem(INS ins);
-void pred_instrument_taint_immval2mem(INS ins);
 
 void instrument_clear_dst(INS ins);
 void instrument_clear_reg(INS ins, REG reg);
@@ -3108,6 +3100,7 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 	}
 	put_copy_of_disasm (str);
 }
+
 static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize) { 
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -3126,6 +3119,86 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 			mem_ea, 
 			IARG_UINT32, memsize,
 			IARG_END);
+	fw_slice_check_address (ins);
+	put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_regregmemflag (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
+	char* str = get_copy_of_disasm (ins);
+        if (REG_valid(reg1) && REG_valid(reg2))
+	        INS_InsertIfCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_memregregflag),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR,
+			IARG_PTR, str,
+			IARG_ADDRINT, translate_reg (reg1), 
+			IARG_UINT32, reg1_size,
+			IARG_REG_VALUE, reg1, 
+			IARG_UINT32, REG_is_Upper8(reg1),
+			IARG_ADDRINT, translate_reg (reg2), 
+			IARG_UINT32, reg2_size,
+			IARG_REG_VALUE, reg2, 
+			IARG_UINT32, REG_is_Upper8(reg2),
+			mem_ea, 
+			IARG_UINT32, memsize,
+                        IARG_UINT32, flag,
+			IARG_END);
+        else if (REG_valid(reg1) && !REG_valid(reg2))
+	        INS_InsertIfCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_memregregflag),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR,
+			IARG_PTR, str,
+			IARG_ADDRINT, translate_reg (reg1), 
+			IARG_UINT32, reg1_size,
+			IARG_REG_VALUE, reg1, 
+			IARG_UINT32, REG_is_Upper8(reg1),
+			IARG_UINT32, 0,
+			IARG_UINT32, 0,
+			IARG_UINT32, 0,
+			IARG_UINT32, 0,
+			mem_ea, 
+			IARG_UINT32, memsize,
+                        IARG_UINT32, flag,
+			IARG_END);
+        else if (!REG_valid(reg1) && REG_valid(reg2))
+	        INS_InsertIfCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_memregregflag),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR,
+			IARG_PTR, str,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+			IARG_ADDRINT, translate_reg (reg2), 
+			IARG_UINT32, reg2_size,
+			IARG_REG_VALUE, reg2, 
+			IARG_UINT32, REG_is_Upper8(reg2),
+			mem_ea, 
+			IARG_UINT32, memsize,
+                        IARG_UINT32, flag,
+			IARG_END);
+        if (!REG_valid(reg1) && !REG_valid(reg2))
+	        INS_InsertIfCall(ins, IPOINT_BEFORE,
+			AFUNPTR(fw_slice_memregregflag),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR,
+			IARG_PTR, str,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+                        IARG_UINT32, 0,
+			mem_ea, 
+			IARG_UINT32, memsize,
+                        IARG_UINT32, flag,
+			IARG_END);
+
+
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
@@ -3202,6 +3275,7 @@ TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_l
 
 //TODO: depends on DF_FLAG
 TAINTINT fw_slice_stringstring_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem_loc, uint32_t first_iter, uint32_t check_zf) { 
+	return 0;
 }
 
 static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) { 
@@ -6182,7 +6256,7 @@ inline void instrument_taint_add_mem2mem(INS ins) {
 	return instrument_taint_add_mem2mem_slice (ins, 1);
 }
 
-void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
+void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend, int fw_slice)
 {
     int dst_treg;
     int src_treg;
@@ -6195,7 +6269,7 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
     src_regsize = REG_Size(srcreg);
 
 #ifdef FW_SLICE
-    fw_slice_src_reg (ins, srcreg, src_regsize, 0);
+    if (fw_slice) fw_slice_src_reg (ins, srcreg, src_regsize, 0);
 #endif
 
     if (dstreg == srcreg) {
@@ -7121,984 +7195,6 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
     }
 }
 
-void pred_instrument_taint_reg2mem(INS ins, REG reg, int extend)
-{
-    int treg = translate_reg((int)reg);
-    UINT32 regsize = REG_Size(reg);
-    UINT32 memsize = INS_MemoryWriteSize(ins);
-
-#ifdef FW_SLICE
-    fw_slice_src_reg (ins, reg, regsize, 1);
-#endif
-    if (regsize == memsize) {
-        switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_enter),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_LBREG2MEM,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#endif
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_lbreg2mem),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_exit),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_LBREG2MEM,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#endif
-                } else if (REG_is_Upper8(reg)) {
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_UBREG2MEM,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#endif
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_ubreg2mem),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_HWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_hwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_HWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            case 4:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_WREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_wreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_WREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            case 8:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_DWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_dwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_DWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            case 16:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        //IARG_UINT32, find_static_address(INS_Address(ins)),
-                        IARG_UINT32, TAINT_QWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_qwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        //IARG_UINT32, find_static_address(INS_Address(ins)),
-                        IARG_UINT32, TAINT_QWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-        }
-    } else if (regsize < memsize) {
-        if (extend) {
-            switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    switch(memsize) {
-                        case 2:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_LBREG2HWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2hwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 4:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_LBREG2WMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_lbreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_LBREG2DWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2dwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 16:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_LBREG2QWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2qwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else if (REG_is_Upper8(reg)) {
-                    switch(memsize) {
-                        case 2:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_UBREG2HWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2hwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 4:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_UBREG2WMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2wmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 8:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_UBREG2DWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2dwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 16:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(trace_taint_op),
-                                    IARG_UINT32, trace_taint_outfd,
-                                    IARG_THREAD_ID,
-                                    IARG_INST_PTR,
-                                    IARG_UINT32, TAINTX_UBREG2QWMEM,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2qwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-                switch(memsize) {
-                    case 4:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_HWREG2WMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 8:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_HWREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_HWREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 4:
-                switch(memsize) {
-                    case 8:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_WREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_wreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_WREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_wreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 8:
-                switch(memsize) {
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINTX_DWREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_dwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 16:
-                fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                assert(0);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-            }
-        } else {
-            switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    switch(memsize) {
-                        case 2:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_LBREG2HWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2hwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 4:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_LBREG2WMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_LBREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 16:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_LBREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else if (REG_is_Upper8(reg)) {
-                    switch(memsize) {
-                        case 2:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_UBREG2HWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2hwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 4:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_UBREG2WMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_UBREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 16:
-#ifdef TRACE_TAINT_OPS
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_UBREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-                switch(memsize) {
-                    case 4:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_HWREG2WMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 8:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_HWREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_HWREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 4:
-                switch(memsize) {
-                    case 8:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_WREG2DWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_wreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_WREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_wreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 8:
-                switch(memsize) {
-                    case 16:
-#ifdef TRACE_TAINT_OPS
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(trace_taint_op),
-                                IARG_UINT32, trace_taint_outfd,
-                                IARG_THREAD_ID,
-                                IARG_INST_PTR,
-                                IARG_UINT32, TAINT_DWREG2QWMEM,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-#endif
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_dwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 16:
-                fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                assert(0);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-            }
-        } 
-    } else {
-        // regsize if greater than mem, just move the lower memsize bits
-        // of the register to memory
-        switch(memsize) {
-            case 1:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_LBREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_lbreg2mem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_LBREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            case 2:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_HWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_hwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_enter),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_WREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_wreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op_exit),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_WREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                break;
-            case 8:
-#ifdef TRACE_TAINT_OPS
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(trace_taint_op),
-                        IARG_UINT32, trace_taint_outfd,
-                        IARG_THREAD_ID,
-                        IARG_INST_PTR,
-                        IARG_UINT32, TAINT_DWREG2MEM,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-#endif
-                INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_dwreg2mem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                break;
-            default:
-                INSTRUMENT_PRINT (log_f, "Instruction: %s\n", INS_Disassemble(ins).c_str());
-                INSTRUMENT_PRINT (log_f, "memsize %d, regsize %d\n", memsize, regsize);
-                assert(0);
-                break;
-        }
-    }
-}
-
-void pred_instrument_taint_memflag2reg (INS ins, uint32_t mask, REG dstreg) { 
-	int treg = translate_reg (dstreg);
-	UINT32 regsize = REG_Size (dstreg);
-	UINT32 memsize = INS_MemoryReadSize (ins);
-	assert (regsize == memsize);
-	
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
-			AFUNPTR(taint_memflag2reg),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_UINT32, mask,
-			IARG_UINT32, treg, 
-			IARG_MEMORYREAD_EA,
-			IARG_UINT32, regsize,
-			IARG_END);
-}
-
-
-void pred_instrument_taint_regflag2reg (INS ins, uint32_t mask, REG dstreg, REG srcreg) {
-	UINT32 dst_regsize = REG_Size (dstreg);
-	UINT32 src_regsize = REG_Size (srcreg);
-	assert (dst_regsize == src_regsize);
-
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE,
-			AFUNPTR(taint_regflag2reg),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_UINT32, mask,
-			IARG_UINT32, translate_reg(dstreg), 
-			IARG_UINT32, translate_reg(srcreg), 
-			IARG_UINT32, dst_regsize,
-			IARG_END);
-}
-
 void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
 {
     int treg = translate_reg((int)dstreg);
@@ -8769,316 +7865,6 @@ void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend)
     }
 }
 
-void pred_instrument_taint_mem2mem(INS ins, int extend)
-{
-    UINT32 dst_memsize = INS_MemoryWriteSize(ins);
-    UINT32 src_memsize = INS_MemoryReadSize(ins);
-
-    assert(dst_memsize == src_memsize);
-#ifdef FW_SLICE
-    fw_slice_src_mem (ins, 1);
-#endif
-
-    switch (dst_memsize) {
-        case 1:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_mem2mem_b),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            break;
-        case 2:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_mem2mem_hw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            break;
-       case 4:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_W,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_mem2mem_w),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_W,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            break;
-       case 8:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_DW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_mem2mem_dw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_DW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            break;
-       case 16:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_QW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_mem2mem_qw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_QW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            break;
-       default:
-            assert(0);
-            break;
-    }
-}
-
-void pred_instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg)
-{
-    UINT32 dst_regsize = REG_Size(dstreg);
-    UINT32 src_regsize = REG_Size(srcreg);
-
-#ifdef FW_SLICE
-    fw_slice_src_regreg (ins, dstreg, dst_regsize, srcreg, src_regsize);
-#endif
-
-    if (dstreg == srcreg) return;
-
-
-    UINT32 dst_treg = translate_reg((int)dstreg);
-    UINT32 src_treg = translate_reg((int)srcreg);
-    UINT32 dst_reg_offset = dst_treg * REG_SIZE;
-    UINT32 src_reg_offset = src_treg * REG_SIZE;
-    if (REG_is_Upper8(dstreg)) dst_reg_offset += 1;
-    if (REG_is_Upper8(srcreg)) src_reg_offset += 1;
-    UINT32 size = (dst_regsize < src_regsize) ? dst_regsize : src_regsize;
-
-    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-			     AFUNPTR(taint_add_reg2reg_offset),
-			     IARG_FAST_ANALYSIS_CALL,
-			     IARG_UINT32, dst_reg_offset,
-			     IARG_UINT32, src_reg_offset,
-			     IARG_UINT32, size,
-			     IARG_END);
-}
-
-void pred_instrument_taint_add_reg2mem(INS ins, REG srcreg)
-{
-    UINT32 regsize = REG_Size(srcreg);
-    UINT32 memsize;
-    IARG_TYPE mem_ea;
-
-    if (INS_IsMemoryRead(ins)) {
-        mem_ea = IARG_MEMORYREAD_EA;
-        memsize = INS_MemoryReadSize(ins);
-    } else if (INS_IsMemoryWrite(ins)) {
-        mem_ea = IARG_MEMORYWRITE_EA;
-        memsize = INS_MemoryWriteSize(ins);
-    } else {
-        assert(0);
-    }
-#ifdef FW_SLICE
-    fw_slice_src_regmem(ins, srcreg, regsize, mem_ea, memsize);
-#endif
-
-    UINT32 treg = translate_reg((int)srcreg);
-    UINT32 reg_off = treg * REG_SIZE;
-    if (REG_is_Upper8(srcreg)) reg_off += 1;
-    UINT32 size = (regsize < memsize) ? regsize : memsize;
-
-    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-			     AFUNPTR(taint_add_reg2mem_offset),
-			     IARG_FAST_ANALYSIS_CALL,
-			     mem_ea,
-			     IARG_UINT32, reg_off,
-			     IARG_UINT32, size,		   
-			     IARG_END);
-}
-
-void pred_instrument_taint_add_mem2reg(INS ins, REG dstreg)
-{
-    UINT32 regsize = REG_Size(dstreg);
-    UINT32 memsize = INS_MemoryWriteSize(ins);//TODO?? why not ReadSize
-    assert (memsize > 0);
-
-#ifdef FW_SLICE
-    fw_slice_src_regmem (ins, dstreg, regsize, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-#endif
-
-    UINT32 treg = translate_reg((int)dstreg);
-    UINT32 reg_off = treg * REG_SIZE;
-    if (REG_is_Upper8(dstreg)) reg_off += 1;
-    UINT32 size = (regsize < memsize) ? regsize : memsize;
-
-    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-			     AFUNPTR(taint_add_mem2reg_offset),
-			     IARG_FAST_ANALYSIS_CALL,
-			     IARG_MEMORYREAD_EA,
-			     IARG_UINT32, reg_off,
-			     IARG_UINT32, size,
-			     IARG_END);
-}
-
-void pred_instrument_taint_add_mem2mem(INS ins)
-{
-    UINT32 dst_memsize = INS_MemoryWriteSize(ins);
-    UINT32 src_memsize = INS_MemoryReadSize(ins);
-
-    assert(dst_memsize == src_memsize);
-#ifdef FW_SLICE
-    fw_slice_src_memmem (ins, src_memsize, dst_memsize);
-#endif
-
-    switch (dst_memsize) {
-        case 1:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_add_mem2mem_b),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-            break;
-        case 2:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_add_mem2mem_hw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-            break;
-       case 4:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_add_mem2mem_w),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-            break;
-       case 8:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_add_mem2mem_dw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-            break;
-       case 16:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_add_mem2mem_qw),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYREAD_EA,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_END);
-            break;
-       default:
-            assert(0);
-            break;
-    }
-}
-
 void instrument_taint_immval2mem(INS ins)
 {
     UINT32 addrsize = INS_MemoryWriteSize(ins);
@@ -9118,46 +7904,6 @@ void instrument_taint_immval2mem(INS ins)
                     break;
             }
 
-}
-
-void pred_instrument_taint_immval2mem(INS ins)
-{
-    UINT32 addrsize = INS_MemoryWriteSize(ins);
-    switch(addrsize) {
-        case 1:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_immvalb2mem),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYWRITE_EA, IARG_END);
-            break;
-        case 2:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_immvalhw2mem),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYWRITE_EA, IARG_END);
-            break;
-        case 4:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_immvalw2mem),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYWRITE_EA, IARG_END);
-            break;
-        case 8:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_immvaldw2mem),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYWRITE_EA, IARG_END);
-            break;
-        case 16:
-            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_immvalqw2mem),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_MEMORYWRITE_EA, IARG_END);
-            break;
-        default:
-            assert(0);
-            break;
-    }
 }
 
 void instrument_clear_dst(INS ins)
@@ -10453,6 +9199,49 @@ void instrument_movx (INS ins)
     }
 } 
 
+//doesn't handle upper 8
+TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size, BOOL executed) { 
+    if (executed) {
+        taint_regflag2reg (mask, dst_reg, src_reg, size);
+    } else { 
+        taint_regflag2reg (mask, dst_reg, dst_reg, size);
+    }
+}
+
+TAINTSIGN taint_cmov_mem2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed) {
+    if (executed) { 
+        taint_memflag2reg (mask, dst_reg, mem_loc, size);
+    } else { 
+        taint_regflag2reg (mask, dst_reg, dst_reg, size);
+    }
+}
+
+TAINTSIGN taint_cmov_memregreg2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed, uint32_t base_reg, uint32_t base_reg_size, uint32_t index_reg, uint32_t index_reg_size) { 
+    if (executed) { 
+        taint_memflag2reg (mask, dst_reg, mem_loc, size);
+        //also merge the addressing registers if there is any
+        if(base_reg_size>0) {
+            assert (base_reg_size == size);
+            taint_add_reg2reg_offset (dst_reg*REG_SIZE, base_reg*REG_SIZE, base_reg_size);
+        }
+        if (index_reg_size > 0) { 
+            assert (index_reg_size == size);
+            taint_add_reg2reg_offset (dst_reg*REG_SIZE, index_reg*REG_SIZE, index_reg_size);
+        }
+    } else { 
+        taint_regflag2reg (mask, dst_reg, dst_reg, size);
+    }
+}
+
+    //    if flag tainted: if flag set => dst = flag + source
+    //    		       not set => dst = flag + dst
+    //    if flag not tainted: if flag set => dst = source
+    //    			  not set  => dst = dst (unchanged)
+    //    In summary, this is equivalent to :
+    //          if flag is set, dst => merge flag and source
+    //    			not set, dst => merge dst and flag
+    //    TODO: I think we should include cmov as an output for the byte range analysis tool
+
 void instrument_cmov(INS ins, uint32_t mask)
 {
     int ismemread = 0, ismemwrite = 0;
@@ -10507,53 +9296,45 @@ void instrument_cmov(INS ins, uint32_t mask)
 	    assert (0); //not handled with COPY_ONLY
 #endif
 #else
- #ifndef LINKAGE_DATA_OFFSET
-		    pred_instrument_taint_mem2reg(ins, reg, 0);
-	    /*if (mask != 0) {
-		    //dst reg size is also equal to the memory read size
-		    //control flow
-		    pred_instrument_taint_memflag2reg (ins, mask, reg);
-#ifdef FW_SLICE
-		    fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
-#endif
-	    } else {
-		    pred_instrument_taint_mem2reg(ins, reg, 0);
-	    }*/
+ #ifndef LINKAGE_DATA_OFFSET //data flow tool
+    #ifdef FW_SLICE
+            fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
+    #endif
+            INS_InsertCall (ins, IPOINT_BEFORE,
+                    AFUNPTR(taint_cmov_mem2reg),
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_UINT32, mask, 
+                    IARG_UINT32, translate_reg (reg),
+                    IARG_MEMORYREAD_EA,
+                    IARG_UINT32, REG_Size(reg),
+                    IARG_EXECUTING,
+                    IARG_END);
  #else //LINKAGE_DATA_OFFSET
-      #if defined(CTRL_FLOW) || defined(FW_SLICE)
-	    printf ("[ERROR] index tool is not verified for cmov\n");
-      #endif
-		    pred_instrument_taint_mem2reg(ins, reg, 0);
-		    //Do NOT merge the taints from flag !!
-	    //the right way to handle the cmov with index tool is commented out, this is the way data tool handles cmov
-	    //for now, let's ignore cmov with index tool as I have trouble enabling it with the byte range analysis tool
-	    /*if (mask != 0) {
-		    //dst reg size is also equal to the memory read size
-		    //control flow
-#ifdef FW_SLICE
-		    fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
-#endif
-		    pred_instrument_taint_memflag2reg (ins, mask, reg);
-	    } else {
-		    pred_instrument_taint_mem2reg(ins, reg, 0);
-	    }*/
-
-            /*REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+            REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-
-            if (REG_valid(base_reg) && REG_valid(index_reg)) {
-                pred_instrument_taint_reg2reg(ins, reg, index_reg, 0);
-                pred_instrument_taint_add_reg2reg(ins, reg, base_reg);
-                pred_instrument_taint_add_mem2reg(ins, reg);
-            } else if (REG_valid(base_reg)) {
-                pred_instrument_taint_reg2reg(ins, reg, base_reg, 0);
-                pred_instrument_taint_add_mem2reg(ins, reg);
-            } else if (REG_valid(index_reg)) {
-                pred_instrument_taint_reg2reg(ins, reg, index_reg, 0);
-                pred_instrument_taint_add_mem2reg(ins, reg);
-            } else {
-                pred_instrument_taint_mem2reg(ins, reg, 0);
-            }*/
+            uint32_t base_reg_size = 0;
+            uint32_t index_reg_size = 0;
+            if (REG_valid(base_reg)) base_reg_size = REG_Size (base_reg);
+            if (REG_valid(index_reg)) index_reg_size = REG_Size (index_reg);
+            assert (!REG_is_Upper8(base_reg));
+            assert (!REG_is_Upper8(index_reg));
+            assert (!REG_is_Upper8(reg));
+        #ifdef FW_SLICE                                
+            fw_slice_src_regregmemflag (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
+        #endif
+            INS_InsertCall (ins, IPOINT_BEFORE,
+                    AFUNPTR(taint_cmov_memregreg2reg),
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_UINT32, mask, 
+                    IARG_UINT32, translate_reg (reg),
+                    IARG_MEMORYREAD_EA,
+                    IARG_UINT32, REG_Size(reg),
+                    IARG_EXECUTING,
+                    IARG_UINT32, translate_reg(base_reg),
+                    IARG_UINT32, base_reg_size,
+                    IARG_UINT32, translate_reg(index_reg),
+                    IARG_UINT32, index_reg_size,
+                    IARG_END);
  #endif // LINKAGE_DATA_OFFSET
 #endif // COPY_ONLY
         }
@@ -10563,92 +9344,33 @@ void instrument_cmov(INS ins, uint32_t mask)
         if(immval) {
 		assert (0);// shouldn't happen
         } else {
-            //mov one reg val into another
-            /*assert(REG_Size(reg) == REG_Size(dstreg));
+            //reg to reg
+            assert(REG_Size(reg) == REG_Size(dstreg));
             int dst_treg = translate_reg((int)dstreg);
             int src_treg = translate_reg((int)reg);
-	    if(SPECIAL_REG(dstreg))
-		    return;
+            assert (!REG_is_Upper8(reg));
+            assert (!REG_is_Upper8(dstreg));
 
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
-	    if (mask != 0) {
-		    //control flow
-		    pred_instrument_taint_regflag2reg (ins, mask, dstreg, reg);
+#ifdef COPY_ONLY
+            pred_instrument_taint_reg2reg (ins, dstreg, reg, 0);
 #ifdef FW_SLICE
-		    fw_slice_src_regflag (ins, mask, reg, REG_Size(reg));
+            assert (0);
 #endif
-	    } else {
+#else
 #ifdef FW_SLICE
-		    assert (0); //must be enabled along with control flow 
+            fw_slice_src_regflag (ins, mask, reg, REG_Size(reg));
 #endif
-            switch(REG_Size(reg)) {
-                case 1:
-                    if (REG_is_Lower8(dstreg) && REG_is_Lower8(reg)) {
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2lbreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_UINT32, dst_treg,
-                                IARG_UINT32, src_treg,
-                                IARG_END);
-                    } else if (REG_is_Lower8(dstreg) && REG_is_Upper8(reg)) {
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2ubreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_UINT32, dst_treg,
-                                IARG_UINT32, src_treg,
-                                IARG_END);
-                    } else if (REG_is_Upper8(dstreg) && REG_is_Lower8(reg)) {
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2lbreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_UINT32, dst_treg,
-                                IARG_UINT32, src_treg,
-                                IARG_END);
-                    } else if (REG_is_Upper8(dstreg) && REG_is_Upper8(reg)) {
-                        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2ubreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_UINT32, dst_treg,
-                                IARG_UINT32, src_treg,
-                                IARG_END);
-                    } else {
-                        ERROR_PRINT (stderr, "[ERROR] instrument_mov, unknown combo of 1 byte regs\n");
-                    }
-                    break;
-                case 2:
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_hwreg2hwreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_UINT32, dst_treg,
-                            IARG_UINT32, src_treg,
-                            IARG_END);
-                    break;
-                case 4:
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_wreg2wreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_UINT32, dst_treg,
-                            IARG_UINT32, src_treg,
-                            IARG_END);
-                    break;
-                case 8:
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_dwreg2dwreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_UINT32, dst_treg,
-                            IARG_UINT32, src_treg,
-                            IARG_END);
-                    break;
-                case 16:
-                    INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_qwreg2qwreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_UINT32, dst_treg,
-                            IARG_UINT32, src_treg,
-                            IARG_END);
-                    break;
-            }
-	}*/
+            INS_InsertCall (ins, IPOINT_BEFORE,
+                    AFUNPTR(taint_cmov_reg2reg),
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_UINT32, mask, 
+                    IARG_UINT32, dst_treg, 
+                    IARG_UINT32, src_treg, 
+                    IARG_UINT32, REG_Size(reg),
+                    IARG_EXECUTING,
+                    IARG_END);
+#endif
         }
     }
 }
@@ -11601,6 +10323,7 @@ void instrument_imul(INS ins)
 			   IARG_FAST_ANALYSIS_CALL,
 			   IARG_MEMORYREAD_EA,
 			   IARG_UINT32, dst_treg*REG_SIZE, // Appears from Mike's code this can not be U8 reg
+                           IARG_UINT32, REG_Size(dst_reg),
 			   IARG_END);
         } else {
             REG src_reg;
@@ -12427,7 +11150,6 @@ void instruction_instrumentation(INS ins, void *v)
     } else if (category == XED_CATEGORY_CMOV) {
         // We separate out the tainting of the movement of data with
         //  cf, since we can do so much faster if we don't care about cf
-#ifdef CTRL_FLOW
 	switch (opcode) {
 		case XED_ICLASS_CMOVBE:
 		case XED_ICLASS_CMOVNBE:
@@ -12445,13 +11167,10 @@ void instruction_instrumentation(INS ins, void *v)
 			instrument_cmov (ins, SF_FLAG);
 			break;
 		default:
-			fprintf (stderr, "cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
+			fprintf (stderr, "[UNHANDLED] cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
 			break;
 	}
 	slice_handled = 1;
-#else
-        instrument_cmov(ins, 0);
-#endif
     } else if (category == XED_CATEGORY_SHIFT) {
 #ifdef COPY_ONLY
         instrument_clear_dst(ins);

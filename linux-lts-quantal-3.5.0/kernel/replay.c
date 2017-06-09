@@ -4393,6 +4393,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
+#define PRINT_TIME 0
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
@@ -4414,7 +4415,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	u_long slice_addr = 0;
 	u_long slice_size;
 
-	{
+	if(PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("starting replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
@@ -4425,7 +4426,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		return -EINVAL;
 	}
 
-	printk("%d in replay_full_ckpt_wakeup, debug %d\n",current->pid, replay_min_debug || replay_debug);
 	// First create a record group and thread for this replay
 	precg = new_record_group (logdir);
 	if (precg == NULL) return -ENOMEM;
@@ -4515,7 +4515,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	{
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("replay_full_ckpt_wakeup from_disk starts %ld.%ld\n", tv.tv_sec, tv.tv_usec);
@@ -4531,7 +4531,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
 						       &pos, execute_slice_name, &slice_addr, &slice_size);
-	{
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
@@ -4547,17 +4547,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 	// Read in the log records 
 	prect->rp_record_pid = record_pid;
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_ckpt_wakeup skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
 	rc = skip_and_read_log_data (prect);
-	{
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("replay_full_ckpt_wakeup endend  skipping %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	}
 	if (rc < 0) {
 		if (num_procs > 1) pckpt_waiter->prepg = NULL;
 		return rc;
@@ -4658,7 +4648,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		if (rc < 0) printk ("replay_full_ckpt_wakeup: unable to close fd %d, rc=%ld\n", fd, rc);
 	}
 
-	printk ("replay_full_ckpt_wakeup returning retval %ld, task size %d\n", retval, sizeof(struct task_struct));
 	atomic_set(&prept->ckpt_restore_done,1);
 
 	if (go_live) {

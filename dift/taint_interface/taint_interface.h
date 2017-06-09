@@ -101,6 +101,8 @@ TAINTSIGN taint_flag2mem (u_long mem_loc, uint32_t mask, uint32_t size);
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size);
 TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size);
+ 
+TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip);
 TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip);
@@ -138,6 +140,8 @@ TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg
 TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t size);
 TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t src_reg, uint32_t size, ADDRINT regvalue, uint32_t reg_u8);
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
+TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
+		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag);
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
