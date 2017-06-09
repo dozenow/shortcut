@@ -157,26 +157,7 @@ TAINTSIGN taintx_wmem2qwreg (u_long mem_loc, int reg);
 TAINTSIGN taintx_dwmem2qwreg (u_long mem_loc, int reg);
 
 // mem2reg add
-TAINTSIGN taint_add_bmem2lbreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_bmem2ubreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_hwmem2hwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_wmem2wreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_dwmem2dwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_qwmem2qwreg (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_bmem2hwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_bmem2wreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_bmem2dwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_bmem2qwreg (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_hwmem2wreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_hwmem2dwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_hwmem2qwreg (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_wmem2dwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_add_wmem2qwreg (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_dwmem2qwreg (u_long mem_loc, int reg);
+TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size);
 
 // mem2reg xchg
 TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg);
@@ -234,28 +215,7 @@ TAINTSIGN taintx_wreg2qwmem (u_long mem_loc, int reg);
 TAINTSIGN taintx_dwreg2qwmem (u_long mem_loc, int reg);
 
 // reg2mem add
-TAINTSIGN taint_add_reg2mem (u_long mem_loc, int reg, uint32_t size);
-TAINTSIGN taint_add_lbreg2mem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_ubreg2mem (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_lbreg2hwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_lbreg2wmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_lbreg2dwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_lbreg2qwmem (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_ubreg2hwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_ubreg2wmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_ubreg2dwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_ubreg2qwmem (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_hwreg2wmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_hwreg2dwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_hwreg2qwmem (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_wreg2dwmem (u_long mem_loc, int reg);
-TAINTSIGN taint_add_wreg2qwmem (u_long mem_loc, int reg);
-
-TAINTSIGN taint_add_dwreg2qwmem (u_long mem_loc, int reg);
+TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags);
 
 // reg2mem rep
 TAINTSIGN taint_rep_lbreg2mem (u_long mem_loc, int reg, int count);
@@ -307,7 +267,6 @@ TAINTSIGN taintx_wreg2qwreg (int dst_reg, int src_reg);
 TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg);
 
 // reg2reg add
-TAINTSIGN taint_add_reg2reg (int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size);
 
 // reg2reg xchg
