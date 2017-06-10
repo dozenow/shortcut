@@ -25,6 +25,7 @@
 #define SF_FLAG 0x10
 #define OF_FLAG 0x20
 #define DF_FLAG 0x40
+#define ALL_FLAGS 0x7f
 
 #define DF_INDEX 6
 
