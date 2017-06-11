@@ -122,6 +122,23 @@ struct connect_recheck {
 };
 /* Followed by address of size addrlen */
 
+struct llseek_recheck {
+    u_int fd;
+    u_long offset_high;
+    u_long offset_low;
+    loff_t result;
+    u_int whence;
+};
+
+struct ioctl_recheck {
+    u_int fd;
+    u_int cmd;
+    u_int dir;
+    u_int size;
+    char* arg;
+    u_long arglen;
+};
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -144,5 +161,7 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol);
 int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
 int recheck_getuid32 (struct recheck_handle* handle);
+int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence);
+int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg);
 
 #endif

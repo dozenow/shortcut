@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <sys/ioctl.h>
 
 #include "../dift/recheck_log.h"
 
@@ -199,14 +200,12 @@ void open_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("open: has ret vals %d\n", popen->has_retvals);
-    printf("flags %x\n", popen->flags);
-    printf("mode %d\n", popen->mode);
-    printf("filename %s\n", fileName);
+    printf("open: filename %s flags %x mode %d", fileName, popen->flags, popen->mode);
     if (popen->has_retvals) {
-	printf("retvals: dev %ld ino %ld mtime %ld.%ld \n", popen->retvals.dev, popen->retvals.ino, 
+	printf(" dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
     }
+    printf (" rc %ld\n", pentry->retval);
 #endif
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
     check_retval ("open", pentry->retval, rc);
@@ -360,16 +359,16 @@ void fstat64_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fstat64: has ret vals %d\n", pfstat64->has_retvals);
+    printf("fstat64: rc %ld fd %d buf %lx ", pentry->retval, pfstat64->fd, (u_long) pfstat64->buf);
     if (pfstat64->has_retvals) {
-	printf("fstat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
+	printf("st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
 	       "st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
 	       pfstat64->retvals.st_dev, pfstat64->retvals.st_ino, pfstat64->retvals.st_mode, pfstat64->retvals .st_nlink, pfstat64->retvals.st_uid,pfstat64->retvals .st_gid,
 	       pfstat64->retvals.st_rdev, pfstat64->retvals.st_size, pfstat64->retvals .st_atime, pfstat64->retvals.st_mtime, pfstat64->retvals.st_ctime, pfstat64->retvals.st_blksize,
 	       pfstat64->retvals.st_blocks); 
+    } else {
+	printf ("no return values\n");
     }
-    printf("buf %lx\n", (u_long) pfstat64->buf);
-    printf("fd %d\n", pfstat64->fd);
 #endif
 
     rc = syscall(SYS_fstat64, pfstat64->fd, &st);
@@ -763,5 +762,73 @@ void getuid32_recheck ()
 #endif 
     rc = syscall(SYS_getuid32);
     check_retval ("getuid32", pentry->retval, rc);
+}
+
+void llseek_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct llseek_recheck* pllseek;
+    loff_t off;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pllseek = (struct llseek_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("llseek: fd %u high offset %lx low offset %lx whence %u rc %ld ", pllseek->fd,
+	   pllseek->offset_high, pllseek->offset_low, pllseek->whence, pentry->retval);
+    if (pentry->retval >= 0) {
+	printf ("off %llu\n", pllseek->result);
+    } else {
+	printf ("\n");
+    }
+#endif 
+
+    rc = syscall(SYS__llseek, pllseek->fd, pllseek->offset_high, pllseek->offset_low, &off, pllseek->whence);
+    check_retval ("llseek", pentry->retval, rc);
+    if (rc >= 0 && off != pllseek->result) {
+	printf ("[MISMATCH] llseek returns offset %llu\n", off);
+	handle_mismatch();
+    }
+}
+
+void ioctl_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct ioctl_recheck* pioctl;
+    char* addr;
+    int rc, i;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pioctl = (struct ioctl_recheck *) bufptr;
+    addr = bufptr+sizeof(struct ioctl_recheck);
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("ioctl: fd %u cmd %x dir %x size %x rc %ld\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, pentry->retval);
+#endif 
+
+    if (pioctl->dir == _IOC_WRITE) {
+	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
+	check_retval ("ioctl", pentry->retval, rc);
+	// Right now we are tainting buffer
+	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
+    } else {
+	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE for now\n");
+    }
+#if 0
+	if (pioctl->arglen > 0) {
+	    if (memcmp(addr, tmpbuf, pioctl->arglen)) {
+		printf ("[MISMATCH] ioctl returns buffer with different contents arglen %ld size %d\n", pioctl->arglen, pioctl->size);
+		for (i = 0; i < pioctl->arglen; i++) {
+		    printf ("byte %3d: ioctl returns %02x recorded %02x (%d)\n", i, tmpbuf[i], addr[i], tmpbuf[i] == addr[i]);
+		}
+		handle_mismatch();
+	    }
+	}
+#endif
 }
 

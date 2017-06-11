@@ -173,6 +173,12 @@ struct address_taint_set {
     UT_hash_handle hh;
 };
 
+struct ioctl_info {
+    u_int fd;
+    char* buf;
+    u_long retval_size;
+};
+
 // Per-thread data structure
 struct thread_data {
     int                      threadid;
@@ -206,6 +212,7 @@ struct thread_data {
 	struct uname_info uname_info_cache;
 	struct statfs64_info statfs64_info_cache;
 	struct prlimit64_info prlimit64_info_cache;
+	struct ioctl_info ioctl_info_cache;
     } op;
 
     void* save_syscall_info;

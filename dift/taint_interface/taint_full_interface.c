@@ -377,7 +377,6 @@ static inline void init_taint_index(char* group_dir)
 
 static inline taint_t merge_taints(taint_t dst, taint_t src)
 {
-    if (dst != 0 || src != 0) TPRINT ("merge_taints %x %x\n", dst, src);
     if (dst == 0) {
         return src;
     }
@@ -401,7 +400,6 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges_saved++;
 #endif       
-	TPRINT  ("merge_taints ret %x\n", bucket.n);
 	return bucket.n;
     } else {
 	taint_t n = add_merge_number (dst, src);
@@ -411,8 +409,6 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges++;
 #endif
-
-	TPRINT  ("merge_taints ret %x\n", n);
 	return n;
     }
 #else
@@ -535,7 +531,6 @@ static inline void clear_reg_internal (int reg, int size)
 
     for (i = 0; i < size; i++) {
         reg_table[reg * REG_SIZE + i] = 0;
-	TPRINT ("clear reg %x\n", reg * REG_SIZE + i);
     }
 }
 
@@ -1056,7 +1051,6 @@ TAINTSIGN taint_clear_reg_offset (int offset, int size, int set_flags, int clear
 {
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memset(&shadow_reg_table[offset], 0, size * sizeof(taint_t));
-
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], 0, set_flags, clear_flags);
 }
 
@@ -1674,7 +1668,6 @@ TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, 
 	int i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 	uint32_t index =0;
-	//TPRINT ("start to taint_regreg2flag(address %x), dst_reg %u, src_reg %u\n", ip, dst_reg, src_reg);
 	taint_t result = 0;
 
 	//merge taints from two registers
@@ -1688,7 +1681,6 @@ TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, 
 			//merge taints into flag register
 			//TODO: should we only calculate this once for all flags??? Will the merge log preserve the merges?
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = result;
-			TPRINT ("taint_regreg2flag tainted flag index %d, value %x\n", i, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
 		} 
 	}
 }
@@ -1705,18 +1697,6 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 			t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
 		} 
 	}
-	//if (ip == 0x87d0cec)
-		//fprintf (stderr, "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
-	//TPRINT( "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
-	/*for (i = 0; i<NUM_FLAGS; ++i) {
-		if (flags & (1 << i)) {
-			TPRINT ("taint_jump flag index %d, taint value %x, flag value %d\n", i, current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], GET_FLAG_VALUE (eflag, i));
-			if (flag_value == 0) 
-				flag_value = GET_FLAG_VALUE(eflag, i);
-			else {
-			}
-		}
-	}*/
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -1756,9 +1736,6 @@ TAINTSIGN taint_cmps (ADDRINT ip) {
 	//DF_FLAG
 	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
 
-	TPRINT ("taint_cmps: ip %#x tainted  %x\n", ip, t);
-
-
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
 	tci.rg_id = current_thread->rg_id;
@@ -1778,9 +1755,6 @@ TAINTSIGN taint_scas (ADDRINT ip) {
 
 	//DF_FLAG
 	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
-
-	TPRINT ("taint_scas: ip %#x tainted  %x\n", ip, t);
-
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -1817,8 +1791,6 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 	for (i = 0; i<REG_SIZE; ++i) { //this is because old ecx value can affect the final state of ecx
 		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
 	}
-
-	TPRINT( "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -2755,7 +2727,6 @@ TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t s
 // reg2reg
 static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
 {
-    //TPRINT ("taint_reg2reg dest %d src %d\n", dst_reg, src_reg);
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
             &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
@@ -3262,73 +3233,31 @@ TAINTSIGN taint_add2_hwmemhwreg_2breg (u_long mem_loc,
     shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
 }
 
-TAINTSIGN taint_add2_wmemwreg_2hwreg (u_long mem_loc, int src_reg,
-                                    int dst_reg1, int dst_reg2)
+TAINTSIGN taint_add3_mem2reg_2reg (u_long mem_loc, int src_reg1, int src_reg2, int dst_reg1, int dst_reg2, int size)
 {
     int i = 0;
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     taint_t* mem_taints;
-    taint_t merged_taints[4];
+    taint_t merged_taints[4]; // JNF: Correct for div - should rewrite this to just merge into common taint
     taint_t final_merged_taint;
 
-    for (i = 0; i < 4; i++) {
-        mem_taints = get_mem_taints_internal(mem_loc + i, 1);
-        if (mem_taints) {
-            merged_taints[i] = merge_taints(mem_taints[0], shadow_reg_table[src_reg * REG_SIZE + i]);
-        } else {
-            merged_taints[i] = shadow_reg_table[src_reg * REG_SIZE + i];
-        }
-    }
-    final_merged_taint = merged_taints[0];
-    for (i = 1; i < 4; i++) {
-        final_merged_taint = merge_taints(final_merged_taint, merged_taints[i]);
-    }
-    shadow_reg_table[dst_reg1 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 1] = final_merged_taint;
-}
-
-TAINTSIGN taint_add3_dwmem2wreg_2wreg (u_long mem_loc,
-                                    int src_reg1, int src_reg2,
-                                    int dst_reg1, int dst_reg2)
-{
-    int i = 0;
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    taint_t* mem_taints;
-    taint_t merged_taints[8];
-    taint_t final_merged_taint;
-
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < size; i++) {
         mem_taints = get_mem_taints_internal(mem_loc + i, 1);
         if (mem_taints) {
             merged_taints[i] = merge_taints(mem_taints[0], shadow_reg_table[src_reg1 * REG_SIZE + i]);
+	    merged_taints[i] = merge_taints(merged_taints[i], shadow_reg_table[src_reg2 * REG_SIZE + i]);
         } else {
-            merged_taints[i] = shadow_reg_table[src_reg1 * REG_SIZE + i];
+	    merged_taints[i] = merge_taints(shadow_reg_table[src_reg1 * REG_SIZE + i], shadow_reg_table[src_reg2 * REG_SIZE + i]);
         }
     }
-    for (i = 0; i < 4; i++) {
-        mem_taints = get_mem_taints_internal(mem_loc + 4 + i, 1);
-        if (mem_taints) {
-            merged_taints[i + 4] = merge_taints(mem_taints[0], shadow_reg_table[src_reg2 * REG_SIZE + i]);
-        } else {
-            merged_taints[i + 4] = shadow_reg_table[src_reg2 * REG_SIZE + i];
-        }
-    }
-
     final_merged_taint = merged_taints[0];
-    for (i = 1; i < 8; i++) {
+    for (i = 1; i < size; i++) {
         final_merged_taint = merge_taints(final_merged_taint, merged_taints[i]);
     }
-    shadow_reg_table[dst_reg1 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 2] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 3] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 2] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 3] = final_merged_taint;
-
+    for (i = 0; i < size; i++) {
+	shadow_reg_table[dst_reg1 * REG_SIZE + i] = final_merged_taint;
+	shadow_reg_table[dst_reg2 * REG_SIZE + i] = final_merged_taint;
+    }
 }
 
 TAINTSIGN taint_add2_hwregbreg_2breg (int src_reg1, int src_reg2,
@@ -3708,11 +3637,5 @@ taint_t create_and_taint_option (u_long mem_addr)
 {
     taint_t t = taint_num++;
     taint_mem_internal(mem_addr, t);
-    TPRINT ("taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);
-#ifdef TAINT_DEBUG
-    if (TAINT_DEBUG(t)) {
-	fprintf (debug_f, "taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);
-    }
-#endif
     return t;
 }

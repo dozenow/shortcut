@@ -103,7 +103,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 2253
+//#define EXTRA_DEBUG 13793
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -699,6 +699,15 @@ static inline void sys_close_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+static inline void sys_llseek_start(struct thread_data* tdata, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence)
+{
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call llseek_recheck [SLICE_INFO]\n");
+#endif
+	recheck_llseek (tdata->recheck_handle, fd, offset_high, offset_low, result, whence);
+    }
+}
 
 static inline void sys_brk_start(struct thread_data* tdata, void *addr)
 {
@@ -856,6 +865,38 @@ static inline void sys_readlink_start(struct thread_data* tdata, char* path, cha
 	printf ("[SLICE] #00000000 #call readlink_recheck [SLICE_INFO]\n");
 #endif
 	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz);
+    }
+}
+
+static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* arg)
+{
+    struct ioctl_info* ii = &tdata->op.ioctl_info_cache;
+    ii->fd = fd;
+    ii->buf = arg;
+    ii->retval_size = 0;
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call ioctl_recheck [SLICE_INFO]\n");
+#endif
+	ii->retval_size = recheck_ioctl (tdata->recheck_handle, fd, cmd, arg);
+    }
+}
+
+static void sys_ioctl_stop (int rc) 
+{
+    struct ioctl_info* ii = &current_thread->op.ioctl_info_cache;
+    if (rc >= 0 && ii->retval_size > 0) {
+        struct taint_creation_info tci;
+	tci.type = TOK_IOCTL;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = ii->fd;
+	tci.data = 0;
+	printf ("ioctl: tainting %ld bytes in buffer %p\n", ii->retval_size, ii->buf);
+	create_taints_from_buffer_unfiltered (ii->buf, ii->retval_size, &tci, tokens_fd);
+	add_tainted_mem_for_final_check ((u_long) ii->buf, ii->retval_size);
     }
 }
 
@@ -1832,8 +1873,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_close:
             sys_close_start(tdata, (int) syscallarg0); 
-            break;
-        case SYS_read:
+            break; 
+       case SYS_read:
 	    sys_read_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
         case SYS_write:
@@ -1846,8 +1887,15 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_pread64:
             sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
             break;
+        case SYS__llseek:
+            sys_llseek_start(tdata, (u_int) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2,
+			     (loff_t *) syscallarg3, (u_int) syscallarg4); 
+            break;
         case SYS_readlink:
 	    sys_readlink_start(tdata, (char *) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2);
+            break;
+        case SYS_ioctl:
+	    sys_ioctl_start(tdata, (u_int) syscallarg0, (u_int) syscallarg1, (char *) syscallarg2);
             break;
 #ifdef LINKAGE_FDTRACK
         case SYS_select:
@@ -1993,6 +2041,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 #endif
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);
+	    break;
+        case SYS_ioctl:
+	    sys_ioctl_stop(rc);
 	    break;
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
@@ -7900,8 +7951,8 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
         } 
 
         if((opcode == XED_ICLASS_SUB || opcode == XED_ICLASS_XOR ||
-                    opcode == XED_ICLASS_PXOR || opcode == XED_ICLASS_XORPS)  
-                && (dstreg == reg)) {
+	    opcode == XED_ICLASS_PXOR || opcode == XED_ICLASS_XORPS)  
+	   && (dstreg == reg)) {
             int dst_treg = translate_reg(dstreg);
             INSTRUMENT_PRINT(log_f, "handling reg reset\n");
 #ifdef FW_SLICE
@@ -7984,13 +8035,15 @@ void instrument_div(INS ins)
 		fw_slice_src_regregmem (ins, LEVEL_BASE::REG_DX, 2, LEVEL_BASE::REG_AX, 2, IARG_MEMORYREAD_EA, 2);
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_add2_wmemwreg_2hwreg),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYREAD_EA,
-                                    IARG_UINT32, lsb_treg,
-                                    IARG_UINT32, dst1_treg,
-                                    IARG_UINT32, dst2_treg,
-                                    IARG_END);
+			       AFUNPTR(taint_add3_mem2reg_2reg),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_MEMORYREAD_EA,
+			       IARG_UINT32, msb_treg,
+			       IARG_UINT32, lsb_treg,
+			       IARG_UINT32, dst1_treg,
+			       IARG_UINT32, dst2_treg,
+			       IARG_UINT32, addrsize,
+			       IARG_END);
                 break;
             case 4:
                 // Dividend is msb_treg:lsb_treg
@@ -8003,14 +8056,15 @@ void instrument_div(INS ins)
 		fw_slice_src_regregmem (ins, LEVEL_BASE::REG_EDX, 4, LEVEL_BASE::REG_EAX, 4, IARG_MEMORYREAD_EA, 4);
 #endif
                 INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_add3_dwmem2wreg_2wreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYREAD_EA,
-                                IARG_UINT32, msb_treg,
-                                IARG_UINT32, lsb_treg,
-                                IARG_UINT32, dst1_treg,
-                                IARG_UINT32, dst2_treg,
-                                IARG_END);
+			       AFUNPTR(taint_add3_mem2reg_2reg),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_MEMORYREAD_EA,
+			       IARG_UINT32, msb_treg,
+			       IARG_UINT32, lsb_treg,
+			       IARG_UINT32, dst1_treg,
+			       IARG_UINT32, dst2_treg,
+			       IARG_UINT32, addrsize,
+			       IARG_END);
                 break;
             default:
                 ERROR_PRINT(stderr, "[ERROR] Unsupported div sizes\n");
@@ -8824,6 +8878,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
+    printf ("edx tainted? %d eax tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0));
     fflush (stdout);
 }
 
@@ -9062,39 +9117,28 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_XADD:
                 instrument_xchg(ins);
-                instrument_addorsub(ins, -1, -1);
+                instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
 		slice_handled = 1;
                 break;
             case XED_ICLASS_AND:
+            case XED_ICLASS_OR:
+            case XED_ICLASS_XOR:
 #ifdef COPY_ONLY
                 instrument_clear_dst(ins);
 #else
                 instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG);
 		slice_handled = 1;
 #endif
+		break;
             case XED_ICLASS_ADD:
             case XED_ICLASS_SUB:
             case XED_ICLASS_SBB:
-            case XED_ICLASS_OR:
-            case XED_ICLASS_XOR:
-#ifdef COPY_ONLY
-                instrument_clear_dst(ins);
-#else
-                instrument_addorsub(ins, -1, -1);
-		slice_handled = 1;
-#endif
-                break;
             case XED_ICLASS_ADC:
 #ifdef COPY_ONLY
                 instrument_clear_dst(ins);
 #else
-                instrument_addorsub(ins, -1, -1);
+                instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
 		slice_handled = 1;
-#ifdef CTRL_FLOW
-                // extra taint movement for flags
-		// TODO: definitely tainted too much for flags with the following function
-		//instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
-#endif
 #endif
                 break;
             case XED_ICLASS_DIV:

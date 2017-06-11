@@ -257,11 +257,8 @@ TAINTSIGN taint_add2_wregwreg_2wreg (int src_reg1, int src_reg2,
 
 TAINTSIGN taint_add2_hwmemhwreg_2breg (u_long mem_loc,
                                     int src_reg, int dst_reg1, int dst_reg2);
-TAINTSIGN taint_add2_wmemwreg_2hwreg (u_long mem_loc, int src_reg,
-                                    int dst_reg1, int dst_reg2);
-TAINTSIGN taint_add3_dwmem2wreg_2wreg (u_long mem_loc,
-                                    int src_reg1, int src_reg2,
-                                    int dst_reg1, int dst_reg2);
+TAINTSIGN taint_add3_mem2reg_2reg (u_long mem_loc, int src_reg1, int src_reg2, int dst_reg1, int dst_reg2, int size);
+
 TAINTSIGN taint_add2_hwregbreg_2breg (int src_reg1, int src_reg2,
 				      int dst_reg1, int dst_reg2);
 TAINTSIGN taint_add2_2hwreg_2breg (int src_reg1, int src_reg2,
