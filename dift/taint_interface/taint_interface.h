@@ -106,8 +106,7 @@ TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, ui
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip);
 TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip);
-TAINTSIGN taint_cmps (ADDRINT ip);
-TAINTSIGN taint_scas (ADDRINT ip);
+TAINTSIGN taint_string_operation (ADDRINT ip);
 TAINTSIGN taint_rotate_mem (u_long mem_loc, uint32_t size, int is_count_reg);
 TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
@@ -142,6 +141,11 @@ TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t sr
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
 TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag);
+TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
+		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8,
+		int reg3, uint32_t reg3_size, uint32_t reg3_value, uint32_t reg3_u8, u_long mem_loc, uint32_t mem_size);
+TAINTINT fw_slice_memmemreg (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_readsize, uint32_t mem_writesize, 
+		int reg, uint32_t reg_size, uint32_t regvalue, uint32_t reg_u8);
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
@@ -162,6 +166,7 @@ TAINTSIGN taintx_dwmem2qwreg (u_long mem_loc, int reg);
 
 // mem2reg add
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size);
+TAINTSIGN taint_add_reg2flag_offset (int reg_off, uint32_t size, uint32_t flag);
 
 // mem2reg xchg
 TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg);
@@ -390,6 +395,7 @@ void taint_add_fd2mem(u_long mem_loc, uint32_t size, int fd);
 
 /* So that we can check if syscall args are tainted */
 int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8);
+int is_flag_tainted (uint32_t flag);
 
 #ifdef __cplusplus
 }
