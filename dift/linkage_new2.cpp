@@ -8060,6 +8060,17 @@ void instrument_clear_reg(INS ins, REG reg)
             IARG_END);
 }
 
+void instrument_clear_flag (INS ins, uint32_t mask) { 
+#ifdef FW_SLICE
+	fw_slice_src_flag (ins, mask);
+#endif
+	INS_InsertCall (ins, IPOINT_BEFORE,
+			AFUNPTR(clear_flag_taint),
+			IARG_FAST_ANALYSIS_CALL, 
+			IARG_UINT32, mask,
+			IARG_END);
+}
+
 void instrument_clear_mem_src (INS ins) {
 	uint32_t addrsize = INS_MemoryReadSize(ins);
         INS_InsertCall(ins, IPOINT_BEFORE,
@@ -9702,97 +9713,14 @@ void instrument_pop(INS ins)
 #ifdef FW_SLICE
     	fw_slice_src_mem (ins, 1);
 #endif
-
         switch(addrsize) {
             case 1:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_mem2mem_b),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_END);
-                break;
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_B,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-            case 2:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_HW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_mem2mem_hw),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_HW,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
-                break;
-            case 4:
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_enter),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_W,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
                 INS_InsertCall (ins, IPOINT_BEFORE,
                         AFUNPTR(taint_mem2mem_w),
                         IARG_FAST_ANALYSIS_CALL,
                         IARG_MEMORYREAD_EA,
                         IARG_MEMORYWRITE_EA,
                         IARG_END);
-#ifdef TRACE_TAINT_OPS
-            INS_InsertCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(trace_taint_op_exit),
-                    IARG_UINT32, trace_taint_outfd,
-                    IARG_THREAD_ID,
-                    IARG_INST_PTR,
-                    IARG_UINT32, TAINT_MEM2MEM_W,
-                    IARG_MEMORYWRITE_EA,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-#endif
                 break;
             default:
                 ERROR_PRINT(stderr, "[ERROR] unsupported pop mem size\n");
@@ -9803,109 +9731,53 @@ void instrument_pop(INS ins)
         REG reg = INS_OperandReg(ins, 0);
         int treg = translate_reg(reg);
 #ifdef FW_SLICE
-    	fw_slice_src_mem (ins, 0);
+	fw_slice_src_mem (ins, 0);
 #endif
-
-        //if (!SPECIAL_REG(reg)) {
-            switch(addrsize) {
-                case 1:
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_enter),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2LBREG,
-                            IARG_UINT32, treg,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_mem2lbreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYREAD_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_exit),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2LBREG,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    break;
-                case 2:
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_enter),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2HWREG,
-                            IARG_UINT32, treg,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_mem2hwreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYREAD_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_exit),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2HWREG,
-                            IARG_UINT32, treg,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    break;
-                case 4:
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_enter),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2WREG,
-                            IARG_UINT32, treg,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    INS_InsertCall (ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_mem2wreg),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYREAD_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-#ifdef TRACE_TAINT_OPS
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(trace_taint_op_exit),
-                            IARG_UINT32, trace_taint_outfd,
-                            IARG_THREAD_ID,
-                            IARG_INST_PTR,
-                            IARG_UINT32, TAINT_MEM2WREG,
-                            IARG_UINT32, treg,
-                            IARG_MEMORYREAD_EA,
-                            IARG_END);
-#endif
-                    break;
-                default:
-                    ERROR_PRINT(stderr, "[ERROR] unsupported pop reg size\n");
-                    break;
-            }
-        //}
+        switch(addrsize) {
+            case 1:
+                INS_InsertCall (ins, IPOINT_BEFORE,
+                        AFUNPTR(taint_mem2lbreg),
+                        IARG_FAST_ANALYSIS_CALL,
+                        IARG_MEMORYREAD_EA,
+                        IARG_UINT32, treg,
+                        IARG_END);
+                break;
+            case 2:
+                INS_InsertCall (ins, IPOINT_BEFORE,
+                        AFUNPTR(taint_mem2hwreg),
+                        IARG_FAST_ANALYSIS_CALL,
+                        IARG_MEMORYREAD_EA,
+                        IARG_UINT32, treg,
+                        IARG_END);
+                break;
+            case 4:
+                INS_InsertCall (ins, IPOINT_BEFORE,
+                        AFUNPTR(taint_mem2wreg),
+                        IARG_FAST_ANALYSIS_CALL,
+                        IARG_MEMORYREAD_EA,
+                        IARG_UINT32, treg,
+                        IARG_END);
+                break;
+            default:
+                ERROR_PRINT(stderr, "[ERROR] unsupported pop reg size\n");
+                break;
+        }
     }
-    //I think we should clear the source mem for POP, since that memory address is not freed
+    //I think we should clear the source mem for POP, since that memory address is now freed
     instrument_clear_mem_src (ins);
+}
+
+void instrument_leave (INS ins) { 
+    USIZE addrsize = INS_MemoryReadSize (ins);
+    assert (addrsize == 4); //only care about 32bit for now
+#ifdef FW_SLICE
+    fw_slice_src_regmem (ins, LEVEL_BASE::REG_EBP, 4, IARG_MEMORYREAD_EA, 4);
+    instrument_taint_reg2reg_slice (ins, LEVEL_BASE::REG_ESP, LEVEL_BASE::REG_EBP, 0, 0);
+    instrument_taint_mem2reg_slice (ins, LEVEL_BASE::REG_EBP, 0, 0);
+#else
+    instrument_taint_reg2reg (ins, LEVEL_BASE::REG_ESP, LEVEL_BASE::REG_EBP, 0);
+    instrument_taint_mem2reg (ins, LEVEL_BASE::REG_EBP, 0);
+#endif
 }
 
 void instrument_addorsub(INS ins, int set_flags, int clear_flags)
@@ -10605,6 +10477,9 @@ void instrument_palignr(INS ins)
         addrsize = INS_MemoryReadSize(ins);
         assert(addrsize == REG_Size(reg));
         assert(addrsize == 8 || addrsize == 16);
+#ifdef FW_SLICE
+	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYREAD_EA, addrsize);
+#endif
 
         if (addrsize == 8) {
             INS_InsertCall(ins, IPOINT_BEFORE,
@@ -10632,6 +10507,9 @@ void instrument_palignr(INS ins)
 
         assert(REG_Size(reg) == REG_Size(reg2));
 
+#ifdef FW_SLICE
+	fw_slice_src_regreg (ins, reg, REG_Size(reg), reg2, REG_Size(reg2));
+#endif
         if (REG_Size(reg2) == 8) {
             INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(taint_palignr_dwreg2dwreg),
@@ -11059,6 +10937,9 @@ void instrument_bt (INS ins) {
 
 }
 
+void instrument_fst (INS ins) { 
+}
+
 void count_inst_executed (void) { 
 	++num_of_inst_executed;
 }
@@ -11261,6 +11142,7 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_PALIGNR:
                 instrument_palignr(ins);
+		slice_handled = 1;
                 break;
             case XED_ICLASS_MOVSB:
             case XED_ICLASS_MOVSW:
@@ -11455,6 +11337,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_RET_NEAR:
             case XED_ICLASS_RET_FAR:
 		slice_handled = 1;
+		rep_handled = 1;
                 break;
 #ifdef CTRL_FLOW_OLD
             // TODO
@@ -11686,10 +11569,11 @@ void instruction_instrumentation(INS ins, void *v)
 #endif
                 break;
             case XED_ICLASS_LEAVE:
-		slice_handled = 1;
+                instrument_leave (ins);
+                slice_handled = 1;
                 break;
-		//TODO : xdou:should clear flag taint
             case XED_ICLASS_CLD:
+		instrument_clear_flag (ins, DF_FLAG);
 		slice_handled = 1;
                 break;
             case XED_ICLASS_BT:
@@ -11705,6 +11589,30 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FILD:
 		//instrument_taint_mem2reg (ins, INS_OperandReg (ins, 0), 0);
 		break;
+            case XED_ICLASS_PUSHFD:
+#ifdef FW_SLICE
+                fw_slice_src_flag (ins, uint32_t(-1));
+#endif
+                INS_InsertCall (ins, IPOINT_BEFORE, 
+                        AFUNPTR(taint_pushfd), 
+                        IARG_FAST_ANALYSIS_CALL, 
+                        IARG_MEMORYWRITE_EA, 
+                        IARG_UINT32, INS_MemoryWriteSize(ins),
+                        IARG_END);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_POPFD:
+#ifdef FW_SLICE
+                fw_slice_src_mem (ins, 0);
+#endif
+                INS_InsertCall (ins, IPOINT_BEFORE, 
+                        AFUNPTR(taint_popfd), 
+                        IARG_FAST_ANALYSIS_CALL, 
+                        IARG_MEMORYREAD_EA, 
+                        IARG_UINT32, INS_MemoryReadSize(ins),
+                        IARG_END);
+                slice_handled = 1;
+                break;
             default:
                 if (INS_IsNop(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument noop %s\n",

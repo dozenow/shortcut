@@ -62,6 +62,7 @@ void taint_mem (u_long mem_loc, taint_t t);
 taint_t* get_mem_taints(u_long mem_loc, uint32_t size);
 uint32_t get_cmem_taints(u_long mem_loc, uint32_t size, taint_t**);
 void clear_mem_taints(u_long mem_loc, uint32_t size);
+TAINTSIGN clear_flag_taint (uint32_t mask);
 
 /* shift the taints of the bytes of a reg by shift num of bytes */
 void shift_reg_taint_right(int reg, int shift);
@@ -370,6 +371,8 @@ TAINTSIGN taint_palignr_mem2qwreg(int reg, u_long mem_loc, int imm);
 TAINTSIGN taint_palignr_dwreg2dwreg(int dst_reg, int src_reg, int imm);
 TAINTSIGN taint_palignr_qwreg2qwreg(int dst_reg, int src_reg, int imm);
 
+TAINTSIGN taint_popfd (u_long mem_loc, uint32_t size);
+TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size);
 
 // File descriptor taint-tracking
 int add_taint_fd(int fd, int cloexec);

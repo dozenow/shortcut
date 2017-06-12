@@ -564,6 +564,15 @@ void clear_reg (int reg, int size)
     clear_reg_internal (reg, size);
 }
 
+TAINTSIGN clear_flag_taint (uint32_t mask) { 
+    int i = 0;
+    for (i = 0; i<NUM_FLAGS; ++i) {
+        if (mask & ( 1 << i)) {
+            current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = 0;
+	}
+    }
+}
+
 static inline void taint_mem_internal(u_long mem_loc, taint_t t)
 {
     taint_t* leaf_t;
@@ -1626,12 +1635,23 @@ inline taint_t merge_mem_taints (u_long mem_loc, uint32_t size) {
 }
 
 inline taint_t merge_reg_taints (uint32_t reg, uint32_t size) { 
-	uint32_t i = 0;
-	taint_t result = 0;
-	for (; i<size; ++i) {
-		result = merge_taints (current_thread->shadow_reg_table[reg*REG_SIZE + i], result);
-	}
-	return result;
+    uint32_t i = 0;
+    taint_t result = 0;
+    for (; i<size; ++i) {
+        result = merge_taints (current_thread->shadow_reg_table[reg*REG_SIZE + i], result);
+    }
+    return result;
+}
+
+static inline taint_t merge_flag_taints (uint32_t mask) { 
+    uint32_t i = 0;
+    taint_t t = 0;
+    for (i = 0; i<NUM_FLAGS; ++i) { 
+        if (mask & (1 << i)) {
+            t = merge_taints (t, current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
+        }
+    }
+    return t;
 }
 
 TAINTSIGN taint_regmem2flag_with_different_size (u_long mem_loc, uint32_t reg, uint32_t mask, uint32_t size_mem, uint32_t size_reg) {
@@ -1715,19 +1735,10 @@ TAINTSIGN taint_mem2flag (u_long mem_loc, uint32_t mask, uint32_t size) {
 }
 
 TAINTSIGN taint_flag2mem (u_long mem_loc, uint32_t mask, uint32_t size) { 
-	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-	uint32_t i = 0;
 	taint_t t = 0;
-
-	for (i = 0; i<NUM_FLAGS; ++i) { 
-		if (mask & (1 << i)) {
-			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-		}
-	}
-
+        t = merge_flag_taints (mask);
 	set_cmem_taints_one (mem_loc, size, t);
 }
-
 
 TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, uint32_t size) {
 	uint32_t i = 0;
@@ -1795,11 +1806,7 @@ TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size) {
 	uint32_t i = 0;
 	taint_t t = 0;
 
-	for (i = 0; i<NUM_FLAGS; ++i) { 
-		if (mask & (1 << i)) {
-			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-		}
-	}
+        t = merge_flag_taints (mask);
 	for (i = 0; i<size; ++i ) {
 		shadow_reg_table[reg*REG_SIZE +i] = t;
 	}
@@ -1811,11 +1818,7 @@ TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, 
 	taint_t t = 0;
 	uint32_t i = 0;
 
-	for (i = 0; i<NUM_FLAGS; ++i) { 
-		if (mask & (1 << i)) {
-			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-		}
-	}
+        t = merge_flag_taints (mask);
 
 	//merge	flag and src reg 
 	for (; i<size; ++i) { 
@@ -1829,12 +1832,7 @@ TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, ui
 	taint_t t = 0;
 	uint32_t i = 0;
 
-	for (i = 0; i<NUM_FLAGS; ++i) { 
-		if (mask & (1 << i)) {
-			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-		}
-	}
-
+        t = merge_flag_taints (mask);
 	//merge	flag and src reg
 	//TODO: could make this more efficient
 	for (; i<size; ++i) { 
@@ -1850,12 +1848,7 @@ TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, ui
 	uint32_t i = 0;
 	uint32_t offset = 0;
 
-	for (i = 0; i<NUM_FLAGS; ++i) { 
-		if (mask & (1 << i)) {
-			t = merge_taints (t, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
-		}
-	}
-
+        t = merge_flag_taints (mask);
 	//merge	flag and src 
 	while (offset < size) { 
 		taint_t* mem_taints = NULL;
@@ -1893,17 +1886,11 @@ TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, 
 }
 
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
-	int i = 0;
 	taint_t t = 0;
 	struct taint_creation_info tci;
 	//int flag_value = 0;
 
-	for (; i < NUM_FLAGS; ++i) {
-		if (flags & (1 << i)) {
-			//preserve the taint value and merge together
-			t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
-		} 
-	}
+        t = merge_flag_taints (flags);
 	//if (ip == 0x87d0cec)
 		//fprintf (stderr, "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
 	//TPRINT( "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
@@ -1979,12 +1966,7 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 
 	//merge taints from all flags we care
 	//REPZ only cares about ZF, but REPZ CMPS cares about ZF and DF, so it's specific to instructions
-	for (; i < NUM_FLAGS; ++i) {
-		if (flags & (1 << i)) {
-			//preserve the taint value and merge together
-			t = merge_taints (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], t);
-		} 
-	}
+        t = merge_flag_taints (flags);
 	//fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
 	//merge counter register; also taint the counter register
 	for (i = 0; i<4; ++i) { 
@@ -3877,6 +3859,28 @@ TAINTSIGN taint_add_immval2qwreg(int reg)
     return;
 }
 
+TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size) { 
+    taint_t* t = &current_thread->shadow_reg_table[LEVEL_BASE::REG_EFLAGS*REG_SIZE];
+    //currently, we only handle 7 flags, and these occupy only 2 actual bytes in the EFLAG register
+    taint_t first_byte = merge_flag_taints (CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG);
+    taint_t second_byte = merge_flag_taints (OF_FLAG|DF_FLAG);
+
+    //save taints
+    memcpy (current_thread->saved_flag_taints, t, REG_SIZE);
+
+    set_cmem_taints_one (mem_loc, 1, first_byte);
+    set_cmem_taints_one (mem_loc + 1, 1, second_byte);
+    clear_cmem_taints (mem_loc + 2, size - 2);
+}
+
+TAINTSIGN taint_popfd (u_long mem_loc, uint32_t size) { 
+    taint_t* t = &current_thread->shadow_reg_table[LEVEL_BASE::REG_EFLAGS*REG_SIZE];
+    //recover taints
+    memcpy (t, current_thread->saved_flag_taints, REG_SIZE);
+    //clear the memory address
+    clear_cmem_taints (mem_loc, size);
+}
+
 TAINTSIGN taint_palignr_mem2dwreg(int reg, u_long mem_loc, int imm)
 {
     int i = 0;
@@ -4117,3 +4121,4 @@ taint_t create_and_taint_option (u_long mem_addr)
 #endif
     return t;
 }
+
