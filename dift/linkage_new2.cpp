@@ -8081,7 +8081,7 @@ static inline ADDRINT computeEA(ADDRINT firstEA, UINT eflags,
 
 //TODO: the index tool doesn't merge taints from esi and edi
 void taint_whole_mem2mem(ADDRINT ip, ADDRINT src_mem_loc, ADDRINT dst_mem_loc,
-                         ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size)
+                         ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, uint32_t check_zf)
 {
     int size = (int)(counts * op_size);
     if (!size) return;
@@ -8103,6 +8103,7 @@ void taint_whole_mem2mem(ADDRINT ip, ADDRINT src_mem_loc, ADDRINT dst_mem_loc,
 	    fprintf (stderr, "[NOT handled] index tool for move_string\n");
 #endif
     taint_string_operation (ip);
+    if (check_zf) taint_rep (ZF_FLAG, ip);
 }
 
 void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
@@ -8128,6 +8129,7 @@ void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
 	    fprintf (stderr, "[NOT handled] index tool for compare_string\n");
 #endif
     taint_string_operation (ip);
+    if (check_zf) taint_rep (ZF_FLAG, ip);
 }
 
 void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
@@ -8135,7 +8137,8 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
 {
     int size = (int)(counts * op_size);
     if (size <= 0) { 
-	    //fprintf (stderr, "taint_whole_regmem2flag : size < 0, size %d, counts %d, op_size %u\n", size, (int) counts, op_size);
+	    if (size < 0)
+	    	fprintf (stderr, "taint_whole_regmem2flag : size < 0, size %d, counts %d, op_size %u\n", size, (int) counts, op_size);
 	    return;
     }
     ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
@@ -8148,67 +8151,38 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
     }
 #ifdef LINKAGE_DATA_OFFSET
     //not handled
-    //we may need to taint esi and edi probably in this case
-    if (is_reg_arg_tainted (LEVEL_BASE::REG_ESI, 4, 0) || is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
+    //we may need to taint edi probably in this case
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
 	    fprintf (stderr, "[NOT handled] index tool for scan_string\n");
 #endif
     taint_string_operation (ip);
+    if (check_zf) taint_rep(ZF_FLAG, ip);
 }
 
-void taint_whole_lbreg2mem(ADDRINT dst_mem_loc,
-			   REG reg,
+void taint_whole_reg2mem(ADDRINT ip, ADDRINT dst_mem_loc,
+			   uint32_t reg,
+			   uint32_t reg_size,
 			   ADDRINT eflags,
+			   uint32_t count_reg,
 			   ADDRINT counts,
-			   UINT32 op_size)
-{
-    // int size = (int)(counts * op_size);
-    ADDRINT effective_addr = computeEA(dst_mem_loc, eflags, counts, op_size);
-#ifdef TRACE_TAINT_OPS
-    trace_taint_op(trace_taint_outfd,
-		   PIN_ThreadId(),
-		   0, // TODO fill ip in later
-		   TAINT_REP_LBREG2MEM,
-		   effective_addr,
-		   (u_long) reg); 
-#endif
-    taint_rep_lbreg2mem(effective_addr, reg, counts);
-}
-
-void taint_whole_hwreg2mem(ADDRINT dst_mem_loc,
-			   REG reg,
-			   ADDRINT eflags,
-			   ADDRINT counts,
-			   UINT32 op_size)
-{
-    // int size = (int)(counts * op_size);
-    ADDRINT effective_addr = computeEA(dst_mem_loc, eflags, counts, op_size);
-#ifdef TRACE_TAINT_OPS
-    trace_taint_op(trace_taint_outfd,
-		   PIN_ThreadId(),
-		   0, // TODO fill ip in later
-		   TAINT_REP_HWREG2MEM,
-		   effective_addr,
-		   (u_long) reg); 
-#endif
-    taint_rep_hwreg2mem(effective_addr, reg, counts);
-}
-
-void taint_whole_wreg2mem(ADDRINT dst_mem_loc,
-			  REG reg,
-			  ADDRINT eflags,
-			  ADDRINT counts,
-			  UINT32 op_size)
+			   UINT32 op_size, uint32_t check_zf)
 {
     ADDRINT effective_addr = computeEA(dst_mem_loc, eflags, counts, op_size);
-#ifdef TRACE_TAINT_OPS
-    trace_taint_op(trace_taint_outfd,
-		   PIN_ThreadId(),
-		   0, // TODO fill ip in later
-		   TAINT_REP_WREG2MEM,
-		   effective_addr,
-		   (u_long) reg); 
+    int size = (int) (counts*op_size);
+    if (size <= 0) { 
+	    if (size < 0) 
+	    	fprintf (stderr, "taint_whole_reg2mem : size < 0, size %d, counts %d, op_size %u\n", size, (int) counts, op_size);
+	    return;
+    }
+    taint_rep_reg2mem (effective_addr, reg, reg_size, size);
+#ifdef LINKAGE_DATA_OFFSET
+    //not handled
+    //we may need to taint edi probably in this case
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
+	    fprintf (stderr, "[NOT handled] index tool for store_string\n");
 #endif
-    taint_rep_wreg2mem(effective_addr, reg, counts);
+    taint_string_operation (ip);
+    if (check_zf) taint_rep(ZF_FLAG, ip);
 }
 
 void instrument_move_string(INS ins)
@@ -8231,6 +8205,7 @@ void instrument_move_string(INS ins)
 			IARG_UINT32, INS_RepCountRegister(ins),
 			IARG_REG_VALUE, INS_RepCountRegister(ins),
 			IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+			IARG_UINT32, INS_RepnePrefix(ins),
 			IARG_END);
     } else {
         assert(size == INS_MemoryOperandSize(ins, 0));
@@ -8246,6 +8221,7 @@ void instrument_move_string(INS ins)
 			    IARG_UINT32, 0,
 			    IARG_UINT32, 1,
 			    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+			    IARG_UINT32, INS_RepnePrefix(ins),
 			    IARG_END);
 	}
     }
@@ -8500,78 +8476,37 @@ void instrument_store_string(INS ins)
 
     // fprintf(stderr, "store string size %d\n", size);
     if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
-        INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
-                IARG_FIRST_REP_ITERATION,
-                IARG_END);
-        switch(INS_MemoryOperandSize(ins, 0)) {
-            case 1:
-                INS_InsertThenCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_whole_lbreg2mem,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_REG_VALUE, REG_EFLAGS,
-                        IARG_REG_VALUE, INS_RepCountRegister(ins),
-                        IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                        IARG_END);
-                break;
-            case 2:
-                INS_InsertThenCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_whole_hwreg2mem,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_REG_VALUE, REG_EFLAGS,
-                        IARG_REG_VALUE, INS_RepCountRegister(ins),
-                        IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertThenCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_whole_wreg2mem,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_REG_VALUE, REG_EFLAGS,
-                        IARG_REG_VALUE, INS_RepCountRegister(ins),
-                        IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                        IARG_END);
-                break;
-            default:
-                fprintf(stderr, "[ERROR]instrument_store_string unk op size %d\n",
-                        INS_MemoryOperandSize(ins, 0));
-                assert(0);
-                break;
-        }
+	    INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
+			    IARG_FIRST_REP_ITERATION,
+			    IARG_END);
+	    INS_InsertThenCall (ins, IPOINT_BEFORE,
+			    (AFUNPTR)taint_whole_reg2mem,
+			    IARG_ADDRINT, INS_Address(ins),
+			    IARG_MEMORYWRITE_EA,
+			    IARG_UINT32, LEVEL_BASE::REG_EAX,
+			    IARG_UINT32, size, 
+			    IARG_REG_VALUE, REG_EFLAGS,
+			    IARG_UINT32, translate_reg(INS_RepCountRegister(ins)),
+			    IARG_REG_VALUE, INS_RepCountRegister(ins),
+			    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+			    IARG_UINT32, INS_RepnePrefix(ins),
+			    IARG_END);
     } else {
-        switch(INS_MemoryOperandSize(ins, 0)) {
-            case 1:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_lbreg2mem,
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_END);
-                break;
-            case 2:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_hwreg2mem,
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        (AFUNPTR)taint_wreg2mem,
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, LEVEL_BASE::REG_EAX,
-                        IARG_END);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] store string, unknown size %d\n",
-                        INS_MemoryOperandSize(ins, 0));
-                assert(0);
-                break;
-        }
+	    INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
+			    IARG_FIRST_REP_ITERATION,
+			    IARG_END);
+	    INS_InsertThenCall (ins, IPOINT_BEFORE,
+			    (AFUNPTR)taint_whole_reg2mem,
+			    IARG_ADDRINT, INS_Address(ins),
+			    IARG_MEMORYWRITE_EA,
+			    IARG_UINT32, LEVEL_BASE::REG_EAX,
+			    IARG_UINT32, size, 
+			    IARG_REG_VALUE, REG_EFLAGS,
+			    IARG_UINT32, 0,
+			    IARG_UINT32, 1,
+			    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
+			    IARG_UINT32, INS_RepnePrefix(ins),
+			    IARG_END);
     }
 }
 

@@ -1949,7 +1949,7 @@ TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip) {
 }
 
 //these instructinos depends on DF_FLAG to eihter incrment or decrement esi and edi
-//we regard these to be output
+//we regard these to be output for now (something probably hard to handle
 TAINTSIGN taint_string_operation (ADDRINT ip) {
 	taint_t t = 0;
 	struct taint_creation_info tci;
@@ -1972,10 +1972,10 @@ TAINTSIGN taint_string_operation (ADDRINT ip) {
 	}
 }
 
+//repz will taint ecx
 TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 	int i = 0;
 	taint_t t = 0;
-	struct taint_creation_info tci;
 
 	//merge taints from all flags we care
 	//REPZ only cares about ZF, but REPZ CMPS cares about ZF and DF, so it's specific to instructions
@@ -1987,26 +1987,15 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 	}
 	//fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
 	//merge counter register; also taint the counter register
-	for (i = 0; i< REG_SIZE; ++i) { 
+	for (i = 0; i<4; ++i) { 
 		t = merge_taints (current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE + i], t);
 	}
-	for (i = 0; i<REG_SIZE; ++i) { //this is because old ecx value can affect the final state of ecx
+	t = merge_reg_taints (LEVEL_BASE::REG_ECX, 4);
+	for (i = 0; i<4; ++i) { //this is because old ecx value can affect the final state of ecx
 		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
 	}
 
 	TPRINT( "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
-
-	tci.type = TAINT_DATA_INST;
-	tci.record_pid = current_thread->record_pid;
-	tci.rg_id = current_thread->rg_id;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = 0;
-	tci.data = ip;
-
-	if (t != 0) {
-		output_jump_result (ip, t, &tci, outfd);
-	}
 }
 
 
@@ -2128,6 +2117,13 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
             mem_offset += count;
         }
     }
+}
+
+void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t total_size) {
+	uint32_t i = 0;
+	for (; i<total_size; i+=reg_size) { 
+		taint_reg2mem (mem_loc+i*reg_size, reg, reg_size);
+	}
 }
 
 //TODO: this is not correct: if al is tainted and ah is not, when reading from ax, we should init ah with SLICE_EXTRA
@@ -2950,70 +2946,6 @@ TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, 
     }
 }
 #endif
-
-// reg2mem rep
-TAINTSIGN taint_rep_lbreg2mem (u_long mem_loc, int reg, int count)
-{
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    taint_t t = shadow_reg_table[reg * REG_SIZE];
-    uint32_t size = count;
-    if (t) {
-        unsigned i = 0; 
-        while (i < size) {
-            // FIXME: size is wrong on each iter
-            i += set_cmem_taints_one(mem_loc + i, size, t);
-        }
-    } else {
-        clear_mem_taints(mem_loc, size);
-    }
-}
-
-TAINTSIGN taint_rep_ubreg2mem (u_long mem_loc, int reg, int count)
-{
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    taint_t t = shadow_reg_table[reg * REG_SIZE + 1];
-    uint32_t size = count;
-    if (t) {
-        unsigned i = 0; 
-        while (i < size) {
-            // FIXME: size is wrong on each iter
-            i += set_cmem_taints_one(mem_loc + i, size, t);
-        }
-    } else {
-        clear_mem_taints(mem_loc, size);
-    }
-}
-
-TAINTSIGN taint_rep_hwreg2mem (u_long mem_loc, int reg, int count) {
-    int i = 0;
-    for (i = 0; i < count; i++) {
-        taint_hwreg2mem(mem_loc + (i * 2), reg);
-    }
-}
-
-TAINTSIGN taint_rep_wreg2mem (u_long mem_loc, int reg, int count)
-{
-    int i = 0;
-    for (i = 0; i < count; i++) {
-        taint_wreg2mem(mem_loc + (i * 4), reg);
-    }
-}
-
-TAINTSIGN taint_rep_dwreg2mem (u_long mem_loc, int reg, int count)
-{
-    int i = 0;
-    for (i = 0; i < count; i++) {
-        taint_dwreg2mem(mem_loc + (i * 8), reg);
-    }
-}
-
-TAINTSIGN taint_rep_qwreg2mem (u_long mem_loc, int reg, int count)
-{
-    int i = 0;
-    for (i = 0; i < count; i++) {
-        taint_qwreg2mem(mem_loc + (i * 16), reg);
-    }
-}
 
 // reg2reg
 static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
