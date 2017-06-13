@@ -44,9 +44,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-//#define TPRINT(...)
-#define TPRINT printk
-
+#define PRINT_TIME 1
 
 /* Prototypes not in header files */
 void set_tls_desc(struct task_struct *p, int idx, const struct user_desc *info, int n); /* In tls.c */
@@ -1044,10 +1042,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 	char fpu_is_allocated;
 	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
-	{
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		TPRINT ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("replay_full_resume_proc_from_disk time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	set_fs(KERNEL_DS);
@@ -1148,20 +1146,20 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (slicelib && vma->vm_file) {
 				char buf[256];
 				char* s = dentry_path (vma->vm_file->f_dentry, buf, sizeof(buf));
-				printk ("unmap path is: %s (from %lx to %lx)\n", s, vma->vm_start, vma->vm_end);
+				DPRINT ("unmap path is: %s (from %lx to %lx)\n", s, vma->vm_start, vma->vm_end);
 				if (strlen(s) >= 12 && !strcmp(s+strlen(s)-12,"libc-2.15.so")) {
-					printk ("This is libc - do not unmap it\n");
+					DPRINT ("This is libc - do not unmap it\n");
 					vma = vma_next;
 					was_libkeep = 1;
 					continue;
 				}
 				if (!strcmp(s, slicelib)) {
-					printk ("This is the slice library do not unmap it\n");
+					DPRINT ("This is the slice library do not unmap it\n");
 					if (*slice_addr == 0) {
 						char val, val2;
 						get_user(val, (char __user *) vma->vm_start+4);
 						get_user(val2, (char __user *) vma->vm_start+5);
-						printk ("val %d val2 %d\n", val, val2);
+						DPRINT ("val %d val2 %d\n", val, val2);
 						if (val == 1 && val2 == 1) {
 							*slice_addr = vma->vm_start;
 							*slice_size = vma->vm_end - vma->vm_start;
@@ -1197,10 +1195,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			rc = -ENOMEM;
 			goto exit;
 		}
-		{
+		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			TPRINT ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 			printk ("VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
 		}
 
@@ -1352,7 +1350,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			}
 
 			if (!premapped) { 
-				printk ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
+				DPRINT ("About to do mmap: map_file %p start %lx len %lx flags %x writable? %d shar %x pgoff %lx, vmas_flag %x\n", 
 					map_file, pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, 
 					(pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
 					(pvmas->vmas_flags & VM_WRITE),
@@ -1423,10 +1421,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			DPRINT ("replay_full_resume_proc_from_disk mmap file %d, start %ld.%06ld, end %ld.%06ld, interval %ld\n", i, tv_start.tv_sec, tv_start.tv_usec, tv_end.tv_sec, tv_end.tv_usec, (tv_end.tv_usec-tv_start.tv_usec));
 		}
 
-		{
+		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			TPRINT ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("replay_full_resume_proc_from_disk after mmap time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
 		btree_destroy32(&replay_mmap_btree);
 		// Process-specific info in the mm struct
@@ -1496,10 +1494,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	}
 	
 	MPRINT ("replay_full_resume_proc_from_disk done\n");
-	{
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		TPRINT ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (replay_debug) print_vmas(current);
@@ -1546,7 +1544,7 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
-	if (replay_debug) printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
+	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
 
 	//second page: extra info for the slice (grows upwards)
 	info.text_addr = slice_addr;
@@ -1567,16 +1565,16 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 
 	//change instruction pointer to the start of slice
 	get_user (entry, (unsigned int __user *) (slice_addr + 0x18));
-	printk ("start_fw_slice: slice_addr is %lx, entry is %u\n", slice_addr, entry);
 	regs->ip = slice_addr + entry;
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	printk ("start_fw_slice ip is %lx\n", regs->ip);
-	printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
-	printk ("start_fw_slice gs is %lx\n", regs->gs);
+	printk ("start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", slice_addr, entry, regs->ip);
+	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
+
 	if (regs->gs == 0) {
-		printk("[BUG] fw slice probably won't work because checkpoint has not set the gs register\n");
+		printk ("[BUG] fw slice probably won't work because checkpoint has not set the gs register\n");
 	}
 
 	//now push parameters to the stack
@@ -1659,8 +1657,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		regs->ip = addr+entry;
 		//change stack pointer
 		regs->sp = extra_space_addr + stack_size;
-		if (replay_debug) printk ("sys_execute_fw_slice ip is %lx\n", regs->ip);
-		if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+		DPRINT ("sys_execute_fw_slice ip is %lx\n", regs->ip);
+		DPRINT ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
 
 		set_thread_flag (TIF_IRET);
 
@@ -1677,6 +1675,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		struct pt_regs* regs = get_pt_regs (current);
 		struct fw_slice_info* slice_info = NULL;
 		struct pt_regs* regs_cache = NULL;
+		struct timeval tv;
 		
 		//pop the filename from the stack
 		regs->sp += RECHECK_FILE_NAME_LEN;
@@ -1684,7 +1683,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		//restore the registers
-		printk ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
+		DPRINT ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
 				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
 		if (slice_info->fpu_is_allocated) { 
@@ -1693,8 +1692,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			fpu->has_fpu = slice_info->fpu_has_fpu;
 			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
 		}
-		printk ("sys_execute_fw_slice ends: .\n");
-		dump_reg_struct (regs);
+		DPRINT ("sys_execute_fw_slice ends: .\n");
+		if (replay_debug) dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
 
 		//unmap the slice
@@ -1709,6 +1708,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			return -1;
 		}
 		//TODO unmap the libc from resume
+		do_gettimeofday (&tv);
+		printk ("end execute_slice %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 		return 0;
 	}
 }

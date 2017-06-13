@@ -128,6 +128,9 @@ string cleanupSliceLine (string s) {
 	vector<string> strs = split (s.substr(0, index), '#');
 	if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
 		strs[2] = strs[2].substr (0, strs[2].find("dword"));
+	} else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
+		int index = strs[2].find("scas");
+		strs[2] = strs[2].substr (0, strs[2].find(" ", index));
 	} else if (strs[2].find("lea ") != string::npos) {
 		strs[2].erase (strs[2].find (" ptr "), 4);	
 	}
@@ -412,17 +415,22 @@ int main (int argc, char* argv[]) {
 								cout << s << endl;
 								//assert (0);
 							}
-							s = s.substr(0, memPtrIndex) + " ptr [" + immAddress + s.substr(memPtrEnd);
+							//special case: we need to replace string instructions
+							if (s.find ("scas") != string::npos || s.find("stos") != string::npos) {
+								println ("mov edi, " + immAddress + "   /*string inst converted:" + line + "*/");
+							} else 
+								s = s.substr(0, memPtrIndex) + " ptr [" + immAddress + s.substr(memPtrEnd);
 						} else {
 							//special case: we need to replace two memory operands 
+							//TODO: change this to regex for stos, cmps..
 							if (s.find("movsd ") != string::npos || s.find("movs ") != string::npos || s.find("movsq ") != string::npos
 									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos) {
-								println ("mov edi, " + immAddress + "   /*MOVSx converted: " + line + "*/");
+								println ("mov edi, " + immAddress + "   /*string inst converted: " + line + "*/");
 								address.pop();
 								line = address.front();
 								immAddressIndex = line.find("$addr(");
 								immAddress = line.substr(immAddressIndex + 6, line.find(")") - immAddressIndex - 6);
-								println ("mov esi, " + immAddress + "   /*MOVSx converted: " + line + "*/");
+								println ("mov esi, " + immAddress + "   /*string inst converted: " + line + "*/");
 							} else {
 								printerr ("unhandled two memory operands: " + s);
 								assert (0);
