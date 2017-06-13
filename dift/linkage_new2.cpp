@@ -8204,6 +8204,7 @@ void instrument_imul(INS ins)
 			       IARG_FAST_ANALYSIS_CALL,
 			       IARG_UINT32, get_reg_off(dst_reg),
 			       IARG_UINT32, get_reg_off(src_reg),
+                               IARG_UINT32, REG_Size(src_reg),
 			       IARG_END);
             }
         } else {
