@@ -39,9 +39,6 @@ int translate_reg(int reg);
  * Call this first before calling any taint function
  * */
 void init_taint_structures(char* group_dir);
-void* get_non_zero_taints(taint_t t);
-void print_options(FILE* fp, taint_t t);
-
 
 /* Any sort of cleanup goes here */
 void taint_fini(void);

@@ -8554,8 +8554,8 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 			IARG_END);
 }
 
-inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) {
-	//TODO add TRACE_TAINT_OPS
+inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) 
+{
 	int dst_treg;
 	int src_treg;
 	UINT32 dst_regsize;
@@ -8570,7 +8570,6 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 	fw_slice_src_regreg (ins, dst_reg, dst_regsize, src_reg, src_regsize);
 #endif
 
-	//INSTRUMENT_PRINT (log_f, "instrument_taint_regreg2flag: flags %u, dst %u src %u, dst_t %d, src_t %d, size %u %u\n", flags, dst_reg, src_reg, dst_treg, src_treg, dst_regsize, src_regsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_UINT32, dst_treg,
@@ -8612,8 +8611,6 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
             	return;
         } 
 	assert (REG_Size(reg) == REG_Size(dstreg));
-	//instrument_taint_reg2reg (ins, dstreg, reg, 1);
-	//taint flag register
 	instrument_taint_regreg2flag (ins, dstreg, reg, mask);
    } else if(op1mem && op2imm) {
 	    addrsize = INS_MemoryReadSize(ins);
