@@ -422,7 +422,7 @@ int main (int argc, char* argv[]) {
 								s = s.substr(0, memPtrIndex) + " ptr [" + immAddress + s.substr(memPtrEnd);
 						} else {
 							//special case: we need to replace two memory operands 
-							//TODO: change this to regex for stos, cmps..
+							//TODO: change this to regex for cmps and so on
 							if (s.find("movsd ") != string::npos || s.find("movs ") != string::npos || s.find("movsq ") != string::npos
 									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos) {
 								println ("mov edi, " + immAddress + "   /*string inst converted: " + line + "*/");

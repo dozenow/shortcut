@@ -3305,6 +3305,7 @@ static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_s
 //it depends on not only the source string, but also ECX (count); 
 //it also depends on esi and edi probably for the index tool
 //TODO: it should also depend on DF_FLAG
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem, uint32_t first_iter) { 
 	//only check on the first iteration
     if (first_iter) {
@@ -3327,6 +3328,7 @@ TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_l
 }
 
 //TODO: depends on DF_FLAG
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 TAINTINT fw_slice_stringstring_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem_loc, uint32_t first_iter) { 
 	//only check on the first iteration
     if (first_iter) {
@@ -3352,15 +3354,17 @@ TAINTINT fw_slice_stringreg_internal (ADDRINT ip, char* inst_str,
         ADDRINT src_mem_loc, ADDRINT eflags, 
         uint32_t count_reg, ADDRINT counts, UINT32 op_size, 
         uint32_t reg, uint32_t reg_size, uint32_t is_upper8, uint32_t reg_value, 
-        uint32_t first_iter, uint32_t executing, uint32_t is_rep, uint32_t is_repz) { 
+        uint32_t first_iter, uint32_t is_rep, uint32_t is_repz) { 
     //for rep, only check on the first iteration
     //but for repz, check on the final iternation, when we know the exact number of iterations
-    if ((is_rep && first_iter) ||  (is_repz && !executing)) {
+    if ((is_rep && first_iter) ||  (is_repz && (eflags & ZF_MASK))) {
         //for repz, we cannot infer the actual number of executions from the count register
         if (is_repz) { 
             src_mem_loc = current_thread->repz_src_mem_loc;
             counts = current_thread->repz_counts;
+            counts ++; //IMPORTANT: this function get called before repz_execute_count, we add 1 here
         }
+        //fprintf (stderr, "fw_slice_stringrep_internal %s, is_rep %u repz %u, counts %u, zf_flag %u\n", inst_str, is_rep, is_repz, counts, eflags & ZF_MASK);
         int size = (int) (counts*op_size);
         int tainted = 0;
         if (!size) return 0;
@@ -3487,7 +3491,7 @@ static inline void fw_slice_src_stringstring (INS ins, int rep) {
 
 static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) { 
     char* str = get_copy_of_disasm (ins);
-    if (rep || repz) {
+    if (rep) {
 	    //we only print the slice once on the first iteration of rep
 	    //and also call taint_rep
 	    INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -3505,7 +3509,27 @@ static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) {
 			    IARG_UINT32, 0, //can't be ah
 			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 			    IARG_FIRST_REP_ITERATION,
-                            IARG_EXECUTING,
+                            IARG_UINT32, rep,
+                            IARG_UINT32, repz,
+			    IARG_END);
+    } else if (repz) {
+	    //we only print the slice once on the first iteration of rep
+	    //and also call taint_rep
+	    INS_InsertIfCall(ins, IPOINT_AFTER,
+			    AFUNPTR(fw_slice_stringreg_internal),
+			    IARG_FAST_ANALYSIS_CALL,
+			    IARG_INST_PTR,
+			    IARG_PTR, str,
+                            IARG_ADDRINT, 0,
+			    IARG_REG_VALUE, REG_EFLAGS, 
+			    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
+			    IARG_REG_VALUE, INS_RepCountRegister (ins),
+			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
+			    IARG_UINT32, LEVEL_BASE::REG_EAX, 
+			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
+			    IARG_UINT32, 0, //can't be ah
+			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+			    IARG_FIRST_REP_ITERATION,
                             IARG_UINT32, rep,
                             IARG_UINT32, repz,
 			    IARG_END);
@@ -3524,7 +3548,6 @@ static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) {
 			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
 			    IARG_UINT32, 0, //can't be ah
 			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
-			    IARG_UINT32, 0,
 			    IARG_UINT32, 0,
 			    IARG_UINT32, 0,
 			    IARG_UINT32, 0,
@@ -6230,6 +6253,7 @@ void taint_whole_reg2mem(ADDRINT ip, ADDRINT dst_mem_loc,
     if (check_zf) taint_rep(ZF_FLAG, ip);
 }
 
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_move_string(INS ins)
 {
     UINT32 opw = INS_OperandWidth(ins, 0);
@@ -6272,6 +6296,7 @@ void instrument_move_string(INS ins)
     }
 }
 
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_compare_string(INS ins, uint32_t mask)
 {
 	UINT32 opw = INS_OperandWidth(ins, 0);
@@ -6317,17 +6342,21 @@ void instrument_compare_string(INS ins, uint32_t mask)
 	}
 }
 
+//we need this function mainly because we cannot get the memory location with IPONT_AFTER insertion
+TAINTSIGN repz_execute_init (u_long dst_mem_loc, u_long src_mem_loc) { 
+    current_thread->repz_counts = 0;
+    current_thread->repz_src_mem_loc = src_mem_loc;
+    current_thread->repz_dst_mem_loc = dst_mem_loc;
+    //fprintf (stderr, "repz_execute_init %lx %lx\n", dst_mem_loc, src_mem_loc);
+}
+
 //return true when this is the last execution
-TAINTINT repz_execute_count (BOOL firstIter, uint32_t flags, u_long dst_mem_loc, u_long src_mem_loc) { 
+TAINTINT repz_execute_count (uint32_t flags) { 
     int zf_set = flags & ZF_MASK;
-    fprintf (stderr, "repz_execute_count: %u %u\n", firstIter, zf_set);
-    if (firstIter) {
-        current_thread->repz_counts = 0;
-        current_thread->repz_src_mem_loc = src_mem_loc;
-        current_thread->repz_dst_mem_loc = dst_mem_loc;
-    }
-    if (zf_set) current_thread->repz_counts ++;
-    else return 1;
+    current_thread->repz_counts ++;
+    //fprintf (stderr, "repz_execute_count: %u %u\n", current_thread->repz_counts, zf_set);
+    if (zf_set) 
+        return 1;
     return 0;
 }
 
@@ -6337,7 +6366,6 @@ void instrument_scan_string(INS ins, uint32_t mask)
 	UINT32 size = opw / 8;
 
 	assert(size == INS_MemoryOperandSize(ins, 0));
-	INSTRUMENT_PRINT (stderr, "instrument_scas: size %u\n", size);
 
 	if (INS_RepPrefix(ins)) {
             // The number of iterations is determined solely by the count register value,
@@ -6374,16 +6402,23 @@ void instrument_scan_string(INS ins, uint32_t mask)
 #ifdef FW_SLICE
             fw_slice_src_stringreg (ins, 0, 1);
 #endif
-            INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)repz_execute_count,
-                    IARG_FAST_ANALYSIS_CALL,
+            //first iteration
+            INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
                     IARG_FIRST_REP_ITERATION,
-                    IARG_REG_VALUE, REG_EFLAGS,
+                    IARG_END);
+            INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR) repz_execute_init,
+                    IARG_FAST_ANALYSIS_CALL,
                     IARG_ADDRINT, 0,
                     IARG_MEMORYREAD_EA,
                     IARG_END);
-            INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_regmem2flag,
+            //all iterations, including first one
+            INS_InsertIfCall (ins, IPOINT_AFTER, (AFUNPTR)repz_execute_count,
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_REG_VALUE, REG_EFLAGS,
+                    IARG_END);
+            INS_InsertThenCall (ins, IPOINT_AFTER, (AFUNPTR)taint_whole_regmem2flag,
                     IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
-                    IARG_MEMORYREAD_EA,
+                    IARG_ADDRINT, 0,
                     IARG_REG_VALUE, REG_EFLAGS, 
                     IARG_UINT32, INS_RepCountRegister(ins),
                     IARG_UINT32, 0, 
@@ -6557,6 +6592,7 @@ void instrument_pcmpistri (INS ins) {
 }
 
 
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_store_string(INS ins)
 {
     UINT32 opw = INS_OperandWidth(ins, 0);
@@ -6604,6 +6640,7 @@ void instrument_store_string(INS ins)
     }
 }
 
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_load_string(INS ins)
 {
     assert(INS_OperandIsReg(ins, 0));
@@ -10248,6 +10285,7 @@ TAINTSIGN before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0, ADD
 		printf ("strlen: %s\n", (char*) arg0);
 	}
 	if (!strcmp ((char*) name, "htab_hash_string")) { 
+//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 		char* fname = (char*) arg0;
 		unsigned int i = 0;
 		int tainted = 0;
