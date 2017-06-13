@@ -2,9 +2,13 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <syscall.h>
+#include <termios.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
+#include <sys/ioctl.h>
+
 
 #include "recheck_log.h"
 
@@ -394,3 +398,194 @@ int recheck_getuid32 (struct recheck_handle* handle)
     return 0;
 }
 
+int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence)
+{
+    struct llseek_recheck rchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS__llseek);
+    write_header_into_recheck_log (handle->recheckfd, SYS__llseek, res->retval, sizeof(rchk));
+    rchk.fd = fd;
+    rchk.offset_high = offset_high;
+    rchk.offset_low = offset_low;
+    if (res->retval >= 0) rchk.result = *((loff_t *) res->retparams);
+    rchk.whence = whence;
+    write_data_into_recheck_log (handle->recheckfd, &rchk, sizeof(rchk));
+
+    return 0;
+}
+
+static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
+{
+    /* Some ioctls don't follow convention, so we need to hard-code them.
+       I stole this from replay.c and it should be kept up to date with kernel. */
+    int dir, size;
+
+    switch (cmd) {
+    case TCSBRK:
+    case TCSBRKP:
+    case TIOCSBRK:
+    case TIOCCBRK:
+    case TCFLSH:
+    case TIOCEXCL:
+    case TIOCNXCL:
+    case TIOCSCTTY:
+    case FIOCLEX:
+    case FIONCLEX:
+    case TIOCCONS:
+    case TIOCNOTTY:
+    case TIOCVHANGUP:
+    case TIOCSERCONFIG:
+    case TIOCSERGWILD:
+    case TIOCSERSWILD:
+    case TIOCMIWAIT:
+		dir = _IOC_NONE;
+		size = 0;
+ 		break;
+    case TIOCSTI:
+	dir = _IOC_READ;
+	size = sizeof(char);
+	break;
+    case TIOCLINUX:
+	dir = _IOC_READ | _IOC_WRITE;
+	size = sizeof(char);
+	break;
+    case FIONBIO:
+    case FIOASYNC:
+	/*case FIBMAP:*/
+    case TCXONC:
+    case TIOCMBIS:
+    case TIOCMBIC:
+    case TIOCMSET:
+    case TIOCSSOFTCAR:
+    case TIOCPKT:
+    case TIOCSETD:
+	dir = _IOC_READ;
+	size = sizeof(int);
+	break;
+    case TIOCOUTQ:
+	/*case FIGETBSZ:*/
+    case FIONREAD:
+    case TIOCMGET:
+    case TIOCGSOFTCAR:
+    case TIOCGETD:
+    case TIOCSERGETLSR:
+	dir = _IOC_WRITE;
+	size = sizeof(int);
+	break;
+    case FIOQSIZE:
+	dir = _IOC_WRITE;
+	size = sizeof(loff_t);
+	break;
+    case TCGETA:
+    case TCGETS:
+	dir = _IOC_WRITE;
+	size = sizeof(struct termios);
+	break;
+    case TCSETA:
+    case TCSETS:
+    case TCSETAW:
+    case TCSETAF:
+    case TCSETSW:
+    case TCSETSF:
+	dir = _IOC_READ;
+	size = sizeof(struct termios);
+	break;
+    case TIOCGSID:
+	dir = _IOC_WRITE;
+	size = sizeof(pid_t);
+	break;
+    case TIOCGPGRP:
+	dir = _IOC_WRITE;
+	size = sizeof(pid_t);
+	break;
+    case TIOCSPGRP:
+	dir = _IOC_READ;
+	size = sizeof(pid_t);
+	break;
+    case TIOCGWINSZ:
+	dir = _IOC_WRITE;
+	size = sizeof(struct winsize);
+	break;
+    case TIOCSWINSZ:
+	dir = _IOC_READ;
+	size = sizeof(struct winsize);
+	break;
+#if 0
+    case TIOCGSERIAL:
+	dir = _IOC_WRITE;
+	size = sizeof(struct serial_struct);
+	break;
+    case TIOCSSERIAL:
+	dir = _IOC_READ;
+	size = sizeof(struct serial_struct);
+	break;
+    case TIOCGRS485:
+	dir = _IOC_WRITE;
+	size = sizeof(struct serial_rs485);
+	break;
+    case TIOCSRS485:
+	dir = _IOC_READ;
+	size = sizeof(struct serial_rs485);
+	break;
+    case TCGETX:
+	dir = _IOC_WRITE;
+	size = sizeof(struct termiox);
+	break;
+    case TCSETX:
+    case TCSETXW:
+    case TCSETXF:
+	dir = _IOC_READ;
+	size = sizeof(struct termiox);
+	break;
+#endif
+    case TIOCGLCKTRMIOS:
+	dir = _IOC_WRITE;
+	size = sizeof(struct termios);
+	break;
+    case TIOCSLCKTRMIOS:
+	dir = _IOC_READ;
+	size = sizeof(struct termios);
+	break;
+#if 0
+    case TIOCGICOUNT:
+	dir = _IOC_WRITE;
+	size = sizeof(struct serial_icounter_struct);
+	break;
+#endif
+    default:
+	/* Generic */
+	printf ("[WARNING] Recording generic ioctl cmd %x\n", cmd);
+	dir  = _IOC_DIR(cmd);
+	size = _IOC_SIZE(cmd);
+	if (dir == _IOC_NONE || size == 0) {
+	    printf ("[ERROR] Generic IOCTL cmd %x has no data! This probably needs special handling!\n", cmd);
+	    dir = _IOC_NONE;
+	    size = 0;
+	}
+	break;
+    }
+    *pdir = dir;
+    *psize = size;
+}
+
+int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg)
+{
+    struct ioctl_recheck ichk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_ioctl);
+
+    /* I would trust the kernel size here */
+    decode_ioctl (cmd, &ichk.dir, &ichk.size);
+    printf ("ioctl: fd %d cmd %x dir %x retparams size %d\n", fd, cmd, ichk.dir, res->retparams_size);
+    write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+res->retparams_size-sizeof(u_long));
+    ichk.fd = fd;
+    ichk.cmd = cmd;
+    ichk.arg = arg;
+    if (res->retparams_size > 0) {
+	ichk.arglen = *((u_long *) res->retparams);
+    } else {
+	ichk.arglen = 0;
+    }
+    write_data_into_recheck_log (handle->recheckfd, &ichk, sizeof(ichk));
+    if (ichk.arglen > 0) write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), ichk.arglen);
+
+    return ichk.arglen;
+}

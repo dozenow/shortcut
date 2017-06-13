@@ -15,13 +15,6 @@
 
 #define USE_MERGE_HASH
 #define TAINT_STATS
-//#define TRACE_TAINT
-
-#ifdef TRACE_TAINT
-#define TPRINT printf
-#else
-#define TPRINT(x,...)
-#endif
 
 extern struct thread_data* current_thread;
 extern int splice_output;
@@ -69,10 +62,6 @@ struct taint_stats_profile tsp;
 struct slab_alloc leaf_alloc;
 struct slab_alloc node_alloc;
 
-#ifdef TAINT_DEBUG
-extern u_long taint_debug_inst;
-extern FILE* debug_f;
-#endif
 extern FILE* slice_f;
 
 // use taint numbers instead
@@ -264,12 +253,6 @@ add_merge_number(taint_t p1, taint_t p2)
 
     merge_buffer[merge_control_shm->merge_buffer_count].p1 = p1;
     merge_buffer[merge_control_shm->merge_buffer_count].p2 = p2;
-#ifdef TAINT_DEBUG
-    if (TAINT_DEBUG(p1) || TAINT_DEBUG(p2)|| TAINT_DEBUG(merge_control_shm->merge_total_count)) {
-	fprintf (debug_f, "merge %x,%x -> %lx inst %lx clock %ld\n", p1, p2, merge_control_shm->merge_total_count, taint_debug_inst, *ppthread_log_clock);
-    }
-#endif
-
     merge_control_shm->merge_buffer_count++;
     return merge_control_shm->merge_total_count++;
 }
@@ -397,7 +380,6 @@ static inline void init_taint_index(char* group_dir)
 
 static inline taint_t merge_taints(taint_t dst, taint_t src)
 {
-    if (dst != 0 || src != 0) TPRINT ("merge_taints %x %x\n", dst, src);
     if (dst == 0) {
         return src;
     }
@@ -421,7 +403,6 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges_saved++;
 #endif       
-	TPRINT  ("merge_taints ret %x\n", bucket.n);
 	return bucket.n;
     } else {
 	taint_t n = add_merge_number (dst, src);
@@ -431,8 +412,6 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
 #ifdef TAINT_STATS
 	tsp.merges++;
 #endif
-
-	TPRINT  ("merge_taints ret %x\n", n);
 	return n;
     }
 #else
@@ -522,24 +501,8 @@ u_long get_num_merges_saved(){
     return 0;
 }
 
-#ifdef TAINT_DEBUG
-#define TAINT_DEBUG_REG_GET(reg,size) \
-  {									\
-      int i;								\
-      for (i = (reg) * REG_SIZE; i < (reg) * REG_SIZE + (int) (size); i++) { \
-	  if (TAINT_DEBUG(current_thread->shadow_reg_table[i])) {	\
-	      fprintf (debug_f, "Register offset %d get taint %x at inst %lx clock %ld\n", \
-		       i, current_thread->shadow_reg_table[i], taint_debug_inst, *ppthread_log_clock); \
-	  }								\
-      }									\
-  }
-#else
-#define TAINT_DEBUG_REG_GET(reg,size)
-#endif
-
 static inline taint_t* get_reg_taints_internal(int reg)
 {
-    TAINT_DEBUG_REG_GET(reg,16)
     return &(current_thread->shadow_reg_table[reg * REG_SIZE]);
 }
 
@@ -555,7 +518,6 @@ static inline void clear_reg_internal (int reg, int size)
 
     for (i = 0; i < size; i++) {
         reg_table[reg * REG_SIZE + i] = 0;
-	TPRINT ("clear reg %x\n", reg * REG_SIZE + i);
     }
 }
 
@@ -580,12 +542,6 @@ static inline void taint_mem_internal(u_long mem_loc, taint_t t)
     if(!mem_root[index]) mem_root[index] = new_leaf_table(mem_loc);
     leaf_t = mem_root[index];
     leaf_t[mem_loc & LEAF_INDEX_MASK] = t;
-#ifdef TAINT_DEBUG
-    if (TAINT_DEBUG(t)) {
-	fprintf (debug_f, "taint_mem: address %lx set taint %x at inst %lx clock %ld\n", mem_loc, t, taint_debug_inst, *ppthread_log_clock);
-	fprintf (debug_f, "index %u table %p offset %lu\n", index, leaf_t, mem_loc&LEAF_INDEX_MASK);
-    }
-#endif
 }
 
 void taint_mem(u_long mem_loc, taint_t t)
@@ -606,14 +562,6 @@ static inline taint_t* get_mem_taints_internal(u_long mem_loc, uint32_t size)
 	}
     }
 
-#ifdef TAINT_DEBUG
-    u_long i;
-    for (i = 0; i < size; i++) {
-	if (TAINT_DEBUG(leaf_t[mem_loc&LEAF_INDEX_MASK])) {
-	    fprintf (debug_f, "get_mem_taints: address %lx get taint %x at instr %lx clock %ld\n", mem_loc+i, leaf_t[(mem_loc&LEAF_INDEX_MASK)+i], taint_debug_inst, *ppthread_log_clock);
-	}
-    }
-#endif
     return &leaf_t[mem_loc & LEAF_INDEX_MASK];
 }
 
@@ -882,33 +830,6 @@ int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx)
     return 0;
 }
 
-#ifdef TAINT_DEBUG
-// Prints out locations with the specified taint
-void print_taint_debug_reg (int tid, taint_t* pregs)
-{
-    for (int i = 0; i < NUM_REGS*REG_SIZE; i++) {
-	if (TAINT_DEBUG(pregs[i])) {
-	    fprintf (debug_f, "Register %d of thread %d has taint %x\n", i, tid, pregs[i]);
-	}
-    }
-}
-
-void print_taint_debug_mem ()
-{
-    for (u_long index = 0; index < ROOT_TABLE_SIZE; index++) {
-	taint_t* leaf = mem_root[index];
-	if (leaf) {
-	    for (u_long low_index = 0; low_index < LEAF_TABLE_SIZE; low_index++) {
-		if (TAINT_DEBUG(leaf[low_index])) {
-		    u_long addr = (index<<LEAF_TABLE_BITS) + low_index;
-		    fprintf (debug_f, "Address %lx has taint %x\n", addr, leaf[low_index]);
-		}
-	    }
-	}
-    }
-}
-#endif
-
 static inline uint32_t get_cmem_taints_internal(u_long mem_loc, uint32_t size, taint_t** mem_taints)
 {
     unsigned bytes_left = get_mem_split(mem_loc, size);
@@ -924,14 +845,6 @@ static inline uint32_t get_cmem_taints_internal(u_long mem_loc, uint32_t size, t
 	}
     }
 
-#ifdef TAINT_DEBUG
-    u_long i;
-    for (i = 0; i < size; i++) {
-	if (TAINT_DEBUG(leaf_t[mem_loc&LEAF_INDEX_MASK])) {
-	    fprintf (debug_f, "get_cmem_taints: address %lx get taint %x at instr %lx clock %ld\n", mem_loc+i, leaf_t[(mem_loc&LEAF_INDEX_MASK)+i], taint_debug_inst, *ppthread_log_clock);
-	}
-    }
-#endif
     *mem_taints = &leaf_t[mem_loc & LEAF_INDEX_MASK];
     return bytes_left;
 }
@@ -950,36 +863,7 @@ static void set_mem_taints(u_long mem_loc, uint32_t size, taint_t* values)
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memcpy(leaf_t + low_index, values, size * sizeof(taint_t));
-
-#ifdef TAINT_DEBUG
-    {
-        u_long i;
-        taint_t* mem_taints = leaf_t + low_index;
-	u_long addr = mem_loc;
-        for (i = 0; i < size; i++) {
-	    if (TAINT_DEBUG(mem_taints[i])) {
-		fprintf (debug_f, "set_mem_taints: address %lx set taint %x at inst %lx clock %ld\n", addr+i, mem_taints[i], taint_debug_inst, *ppthread_log_clock);
-	    }
-        }
-    }
-#endif
 }
-
-#if 0
-static void set_mem_taint(u_long mem_loc, uint32_t size, taint_t value)
-{
-    taint_t* leaf_t;
-    unsigned i;
-    unsigned index = mem_loc >> LEAF_TABLE_BITS;
-    if(!mem_root[index]) mem_root[index] = new_leaf_table(mem_loc);
-    leaf_t = mem_root[index];
-
-    unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    for (i = 0; i < size; i++) {
-	leaf_t[low_index+i] = value;
-    }
-}
-#endif
 
 /* Returns the number of bytes set in a memory location.
  *  This can be less than size if it requires walking over to another
@@ -996,18 +880,6 @@ static inline uint32_t set_cmem_taints(u_long mem_loc, uint32_t size, taint_t* v
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
-#ifdef TAINT_DEBUG
-    {
-	u_long i;
-        taint_t* mem_taints = leaf_t + low_index;
-	u_long addr = mem_loc;
-        for (i = 0; i < set_size; i++) {
-	    if (TAINT_DEBUG(mem_taints[i])) {
-		fprintf (debug_f, "set_cmem_taints: address %lx set taint %x at instr %lx clock %ld\n", addr+i, mem_taints[i], taint_debug_inst, *ppthread_log_clock);
-	    }
-        }
-    }
-#endif
 
     return set_size;
 }
@@ -1023,19 +895,6 @@ static inline uint32_t set_cmem_taints_one(u_long mem_loc, uint32_t size, taint_
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memset(leaf_t + low_index, value, set_size * sizeof(taint_t));
-#ifdef TAINT_DEBUG
-    {
-	u_long i;
-        taint_t* mem_taints = leaf_t + low_index;
-	u_long addr = mem_loc;
-        for (i = 0; i < set_size; i++) {
-	    if (TAINT_DEBUG(mem_taints[i])) {
-		fprintf (debug_f, "set_cmem_taints_one: address %lx set taint %x at inst %lx clock %ld\n", 
-			 addr+i, mem_taints[i], taint_debug_inst, *ppthread_log_clock);
-	    }
-        }
-    }
-#endif
 
     return set_size;
 }
@@ -1076,14 +935,6 @@ static inline void clear_reg_value(int reg, int offset, int size)
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memset(&shadow_reg_table[reg * REG_SIZE + offset], 0,
             size * sizeof(taint_t));
-#ifdef TRACE_TAINT
-    {
-	int i;
-	for (i = reg * REG_SIZE + offset; i < reg * REG_SIZE + offset + size; i++) {
-	    TPRINT ("clear reg %x\n", i);
-	}
-    }
-#endif
 }
 
 static inline void set_reg_value(int reg, int offset, int size, taint_t* values)
@@ -1091,17 +942,6 @@ static inline void set_reg_value(int reg, int offset, int size, taint_t* values)
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy(&shadow_reg_table[reg * REG_SIZE + offset], values,
             size * sizeof(taint_t));
-#ifdef TAINT_DEBUG
-    {
-	int i;
-	for (i = reg * REG_SIZE + offset; i < reg * REG_SIZE + offset + size; i++) {
-	    if (TAINT_DEBUG(shadow_reg_table[i])) {
-		fprintf (debug_f, "Register offset %d set taint %x at inst %lx clock %ld\n", 
-			 i, shadow_reg_table[i], taint_debug_inst, *ppthread_log_clock);
-	    }
-	}
-    }
-#endif
 }
 
 void set_syscall_retval_reg_value (int offset, taint_t value) {
@@ -1113,6 +953,27 @@ static inline void zero_partial_reg (int reg, int offset)
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memset(&shadow_reg_table[reg * REG_SIZE + offset], 0,
             (REG_SIZE - offset) * sizeof(taint_t));
+}
+
+static inline void set_clear_flags(taint_t* flagreg, taint_t t, int set_flags, int clear_flags) 
+{
+    int i;
+    if (set_flags != -1 && clear_flags != -1) {
+	for (i = 0; i<NUM_FLAGS; ++i) {
+	    if (set_flags & (1 << i)) {
+		flagreg[i] = t;
+	    } else if (clear_flags & (1 << i)) {
+		flagreg[i] = 0;
+	    }
+       }
+    }
+}
+
+TAINTSIGN taint_clear_reg_offset (int offset, int size, int set_flags, int clear_flags)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memset(&shadow_reg_table[offset], 0, size * sizeof(taint_t));
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], 0, set_flags, clear_flags);
 }
 
 static inline void zero_partial_reg_until (int reg, int offset, int until)
@@ -1169,73 +1030,6 @@ int translate_reg(int reg)
     return reg;
 }
 
-void* get_non_zero_taints(taint_t t) {
-    GHashTable* seen_indices = g_hash_table_new(g_direct_hash, g_direct_equal);
-    GList* list = NULL;
-    GQueue* queue = g_queue_new();
-    struct taint_node* n = (struct taint_node *) t;
-
-    g_queue_push_tail(queue, n);
-    while(!g_queue_is_empty(queue)) {
-        n = (struct taint_node *) g_queue_pop_head(queue);
-        if (g_hash_table_lookup(seen_indices, n)) {
-            continue;
-        }
-        g_hash_table_insert(seen_indices, n, GINT_TO_POINTER(1));
-
-        if (!n->parent1 && !n->parent2) { // leaf node
-            struct taint_leafnode* ln = (struct taint_leafnode *) n;
-            list = g_list_prepend(list, GUINT_TO_POINTER(ln->option));
-        } else {
-            if (!g_hash_table_lookup(seen_indices, n->parent1)) {
-                g_queue_push_tail(queue, n->parent1);
-            }
-            if (!g_hash_table_lookup(seen_indices, n->parent2)) {
-                g_queue_push_tail(queue, n->parent2);
-            }
-        }
-    }
-
-    g_queue_free(queue);
-    g_hash_table_destroy(seen_indices);
-    return (void *) list;
-}
-
-void print_options(FILE* fp, taint_t t)
-{
-    GHashTable* seen_indices = g_hash_table_new(g_direct_hash, g_direct_equal);
-    GList* list = NULL;
-    GQueue* queue = g_queue_new();
-    struct taint_node* n = (struct taint_node *) t;
-    assert(n);
-
-    g_queue_push_tail(queue, n);
-    while(!g_queue_is_empty(queue)) {
-        n = (struct taint_node *) g_queue_pop_head(queue);
-        assert(n);
-        if (g_hash_table_lookup(seen_indices, n)) {
-            continue;
-        }
-        g_hash_table_insert(seen_indices, n, GINT_TO_POINTER(1));
-
-        if (!n->parent1 && !n->parent2) { // leaf node
-            struct taint_leafnode* ln = (struct taint_leafnode *) n;
-            fprintf(fp, "%u, ", ln->option);
-            list = g_list_prepend(list, GUINT_TO_POINTER(ln->option));
-        } else {
-            if (!g_hash_table_lookup(seen_indices, n->parent1)) {
-                g_queue_push_tail(queue, n->parent1);
-            }
-            if (!g_hash_table_lookup(seen_indices, n->parent2)) {
-                g_queue_push_tail(queue, n->parent2);
-            }
-        }
-    }
-
-    g_queue_free(queue);
-    g_hash_table_destroy(seen_indices);
-}
-
 void shift_reg_taint_right(int reg, int shift)
 {
     assert(shift > 0);
@@ -1270,7 +1064,45 @@ void reverse_reg_taint(int reg, int size)
     reg_table[reg * REG_SIZE + 2] = tmp;
 }
 
-// mem2reg
+TAINTSIGN taint_mem2reg_offset(u_long mem_loc, int reg_off, uint32_t size)
+{
+    uint32_t offset = 0;
+    u_long mem_offset = mem_loc;
+
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    while (offset < size) {
+        taint_t* mem_taints = NULL;
+        uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
+        if (!mem_taints) {
+	    memset (&shadow_reg_table[reg_off+offset], 0, count*sizeof(taint_t));
+        } else {
+	    memcpy (&shadow_reg_table[reg_off+offset], mem_taints, count*sizeof(taint_t));
+        }
+        offset += count;
+        mem_offset += count;
+    }
+}
+
+TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, int reg_off, uint32_t size)
+{
+    uint32_t offset = 0;
+    u_long mem_offset = mem_loc;
+
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    while (offset < size) {
+        taint_t* mem_taints = NULL;
+        uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
+        if (!mem_taints) {
+	    memset (&shadow_reg_table[reg_off+offset], 0, count*sizeof(taint_t));
+        } else {
+	    memcpy (&shadow_reg_table[reg_off+offset], mem_taints, count*sizeof(taint_t));
+        }
+        offset += count;
+        mem_offset += count;
+    }
+    memset(&shadow_reg_table[reg_off+size], 0, (REG_SIZE-size) * sizeof(taint_t));
+}
+
 static inline void taint_mem2reg(u_long mem_loc, int reg, uint32_t size)
 {
     uint32_t offset = 0;
@@ -1290,184 +1122,12 @@ static inline void taint_mem2reg(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
-TAINTSIGN taint_mem2lbreg(u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2lbreg");
-    taint_mem2reg(mem_loc, reg, 1);
-}
-
-TAINTSIGN taint_mem2ubreg(u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2ubreg");
-    taint_t* mem_taints = get_mem_taints_internal(mem_loc, 1);
-    if (!mem_taints) {
-        clear_reg_value(reg, 1, 1);
-        return;
-    }
-    set_reg_value(reg, 1, 1, mem_taints);
-}
-
-TAINTSIGN taint_mem2hwreg(u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2hwreg");
-    taint_mem2reg(mem_loc, reg, 2);
-}
-
-TAINTSIGN taint_mem2wreg(u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2wreg"); 
-    taint_mem2reg(mem_loc, reg, 4);
-}
-
-TAINTSIGN taint_mem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2dwreg");
-    taint_mem2reg(mem_loc, reg, 8);
-}
-
-TAINTSIGN taint_mem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_mem2qwreg");
-    taint_mem2reg(mem_loc, reg, 16);
-}
-
-TAINTSIGN taint_bmem2hwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_bmem2hwreg");
-    taint_mem2lbreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_bmem2wreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_bmem2wreg");
-    taint_mem2lbreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_bmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_bmem2dwreg");
-    taint_mem2lbreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_bmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_bmem2qwreg");
-    taint_mem2lbreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_hwmem2wreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_hwmem2wreg");
-    taint_mem2hwreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_hwmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_hwmem2dwreg");
-    taint_mem2hwreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_hwmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_hwmem2qwreg");
-    taint_mem2hwreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_wmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_wmem2dwreg");
-    taint_mem2wreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_wmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_wmem2qwreg");
-    taint_mem2wreg(mem_loc, reg);
-}
-
-TAINTSIGN taint_dwmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_dwmem2qwreg");
-    taint_mem2dwreg(mem_loc, reg);
-}
-
-// mem2reg extend
-TAINTSIGN taintx_bmem2hwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_bmem2hwreg");
-    taint_mem2reg(mem_loc, reg, 1);
-    zero_partial_reg(reg, 1);
-}
-
-TAINTSIGN taintx_bmem2wreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_bmem2wreg");
-    taint_mem2reg(mem_loc, reg, 1);
-    zero_partial_reg(reg, 1);
-}
-
-TAINTSIGN taintx_bmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_bmem2dwreg");
-    taint_mem2reg(mem_loc, reg, 1);
-    zero_partial_reg(reg, 1);
-}
-
-TAINTSIGN taintx_bmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_bmem2qwreg");
-    taint_mem2reg(mem_loc, reg, 1);
-    zero_partial_reg(reg, 1);
-}
-
-
-TAINTSIGN taintx_hwmem2wreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_hwmem2wreg");
-    taint_mem2reg(mem_loc, reg, 2);
-    zero_partial_reg(reg, 2);
-}
-
-TAINTSIGN taintx_hwmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_hwmem2dwreg");
-    taint_mem2reg(mem_loc, reg, 2);
-    zero_partial_reg(reg, 2);
-}
-
-TAINTSIGN taintx_hwmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_hwmem2qwreg");
-    taint_mem2reg(mem_loc, reg, 2);
-    zero_partial_reg(reg, 2);
-}
-
-TAINTSIGN taintx_wmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_wmem2dwreg");
-    taint_mem2reg(mem_loc, reg, 4);
-    zero_partial_reg(reg, 4);
-}
-
-TAINTSIGN taintx_wmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_wmem2qwreg");
-    taint_mem2reg(mem_loc, reg, 4);
-    zero_partial_reg(reg, 4);
-}
-
-TAINTSIGN taintx_dwmem2qwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taintx_dwmem2qwreg");
-    taint_mem2reg(mem_loc, reg, 8);
-    zero_partial_reg(reg, 8);
-}
-
-TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size)
+TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags)
 {
     unsigned i = 0;
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
+    taint_t t = 0;
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {
@@ -1475,13 +1135,15 @@ TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size)
         uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
         if (mem_taints) {
             for (i = 0; i < count; i++) {
-                taint_t t = merge_taints(shadow_reg_table[reg_off + offset + i], mem_taints[i]);
+                t = merge_taints(shadow_reg_table[reg_off + offset + i], mem_taints[i]);
 		shadow_reg_table[reg_off + offset + i] = t;
             }
         } 
         offset += count;
         mem_offset += count;
     }
+
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
 // mem2reg xchg
@@ -1866,7 +1528,6 @@ TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, 
 	int i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 	uint32_t index =0;
-	//TPRINT ("start to taint_regreg2flag(address %x), dst_reg %u, src_reg %u\n", ip, dst_reg, src_reg);
 	taint_t result = 0;
 
 	//merge taints from two registers
@@ -1880,29 +1541,13 @@ TAINTSIGN taint_regreg2flag (uint32_t dst_reg, uint32_t src_reg, uint32_t mask, 
 			//merge taints into flag register
 			//TODO: should we only calculate this once for all flags??? Will the merge log preserve the merges?
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = result;
-			TPRINT ("taint_regreg2flag tainted flag index %d, value %x\n", i, shadow_reg_table[REG_EFLAGS*REG_SIZE + i]);
 		} 
 	}
 }
 
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
-	taint_t t = 0;
 	struct taint_creation_info tci;
-	//int flag_value = 0;
-
-        t = merge_flag_taints (flags);
-	//if (ip == 0x87d0cec)
-		//fprintf (stderr, "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
-	//TPRINT( "taint_jump: ip %#x flags %x, tainted value %u\n", ip, flags, t);
-	/*for (i = 0; i<NUM_FLAGS; ++i) {
-		if (flags & (1 << i)) {
-			TPRINT ("taint_jump flag index %d, taint value %x, flag value %d\n", i, current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + i], GET_FLAG_VALUE (eflag, i));
-			if (flag_value == 0) 
-				flag_value = GET_FLAG_VALUE(eflag, i);
-			else {
-			}
-		}
-	}*/
+        taint_t t = merge_flag_taints (flags);
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -1944,7 +1589,25 @@ TAINTSIGN taint_string_operation (ADDRINT ip) {
 	//DF_FLAG
 	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
 
-	TPRINT ("taint_string_operation: ip %#x tainted  %x\n", ip, t);
+	tci.type = TAINT_DATA_INST;
+	tci.record_pid = current_thread->record_pid;
+	tci.rg_id = current_thread->rg_id;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = 0;
+	tci.data = ip;
+
+	if (t != 0) {
+		output_jump_result (ip, t, &tci, outfd);
+	}
+}
+
+TAINTSIGN taint_scas (ADDRINT ip) {
+	taint_t t = 0;
+	struct taint_creation_info tci;
+
+	//DF_FLAG
+	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
 
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
@@ -1963,6 +1626,7 @@ TAINTSIGN taint_string_operation (ADDRINT ip) {
 TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 	int i = 0;
 	taint_t t = 0;
+	struct taint_creation_info tci;
 
 	//merge taints from all flags we care
 	//REPZ only cares about ZF, but REPZ CMPS cares about ZF and DF, so it's specific to instructions
@@ -1977,7 +1641,17 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
 	}
 
-	TPRINT( "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
+	tci.type = TAINT_DATA_INST;
+	tci.record_pid = current_thread->record_pid;
+	tci.rg_id = current_thread->rg_id;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = 0;
+	tci.data = ip;
+
+	if (t != 0) {
+		output_jump_result (ip, t, &tci, outfd);
+	}
 }
 
 
@@ -2072,13 +1746,11 @@ TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, i
 	}
 }
 
-// reg2mem
 static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
 {
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 
     // TODO remove this conditional
-    TAINT_DEBUG_REG_GET(reg,size);
     if (is_reg_zero(reg, size)) {
         uint32_t offset = 0;
         u_long mem_offset = mem_loc;
@@ -2183,6 +1855,37 @@ static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) {
 	}
 	return dst_value;
 }
+
+static const char* translate_mmx (uint32_t reg)
+{
+    switch (reg) {
+    case 54: return "xmm0";
+    case 55: return "xmm1";
+    case 56: return "xmm2";
+    case 57: return "xmm3";
+    case 58: return "xmm4";
+    case 59: return "xmm5";
+    case 60: return "xmm6";
+    case 61: return "xmm7";
+    default: return "unk";
+    }
+}
+
+static inline void add_imm_load_to_slice (uint32_t reg, uint32_t size, char* val, ADDRINT ip)
+{
+    printf ("add_imm_load_to_slice: size=%d\n", size);
+    if (size == 4) {
+      //printf ("[SLICE] #00000000 #mov %s, %lu [SLICE_INFO] comes with %x\n", translate_reg(reg), *((u_long *) val), ip);
+    } else if (size == 16) {
+	printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) val), ip);
+	printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (val+4)), ip);
+	printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (val+8)), ip);
+	printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (val+12)), ip);
+	printf ("[SLICE] #00000000 #movdqu %s, xmmword ptr [esp] [SLICE_INFO] comes with %x\n", translate_mmx(reg), ip);
+	printf ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] comes with %x\n", ip);
+    }
+}
+
 
 static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size, uint32_t regvalue, uint32_t is_upper8) { 
 	if (is_upper8)
@@ -2546,48 +2249,19 @@ TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_
 	return 0;
 }
 
-static const char* translate_mmx (uint32_t reg)
-{
-    switch (reg) {
-    case 54: return "xmm0";
-    case 55: return "xmm1";
-    case 56: return "xmm2";
-    case 57: return "xmm3";
-    case 58: return "xmm4";
-    case 59: return "xmm5";
-    case 60: return "xmm6";
-    case 61: return "xmm7";
-    default: return "unk";
-    }
-}
-
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val) 
 {
-	int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
-	int reg2_taint = is_reg_tainted (reg2, reg2_size, 0);
-	if (reg1_taint || reg2_taint) {
-		if (!reg1_taint) {
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) reg1_val), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+4)), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+8)), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg1_val+12)), ip);
-		    printf ("[SLICE] #00000000 #movdqu %s, xmmword ptr [esp] [SLICE_INFO] comes with %x\n", translate_mmx(reg1), ip);
-		    printf ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] comes with %x\n", ip);
-		}
-		if (!reg2_taint) {
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) reg2_val), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+4)), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+8)), ip);
-		    printf ("[SLICE] #00000000 #push %lu [SLICE_INFO] comes with %x\n", *((u_long *) (reg2_val+12)), ip);
-		    printf ("[SLICE] #00000000 #movdqu %s, xmmword ptr [esp] [SLICE_INFO] comes with %x\n", translate_mmx(reg2), ip);
-		    printf ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] comes with %x\n", ip);
-		}
-		printf ("[SLICE] #%x #%s\t", ip, ins_str);
-		printf ("    [SLICE_INFO] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %.16s, src_reg_value %.16s\n", 
-			reg1, reg1_taint, reg1_size, reg2, reg2_taint, reg2_size, reg1_val, reg2_val);
-		return 1;
-	}
-	return 0;
+    int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
+    int reg2_taint = is_reg_tainted (reg2, reg2_size, 0);
+    if (reg1_taint || reg2_taint) {
+	if (!reg1_taint) add_imm_load_to_slice (reg1, 16, reg1_val, ip);
+	if (!reg2_taint) add_imm_load_to_slice (reg2, 16, reg2_val, ip);
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %.16s, src_reg_value %.16s\n", 
+		reg1, reg1_taint, reg1_size, reg2, reg2_taint, reg2_size, reg1_val, reg2_val);
+	return 1;
+    }
+    return 0;
 }
 
 TAINTSIGN taint_lbreg2mem (u_long mem_loc, int reg)
@@ -2855,13 +2529,12 @@ TAINTSIGN taint_add_reg2flag_offset (int reg_off, uint32_t size, uint32_t flag) 
     }
 }
 
-#if 1
-// This is a faithful translation of Mike's function (yuck) 
 TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags)
 {
     unsigned i = 0;
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
+    taint_t t = 0;
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     while (offset < size) {
@@ -2869,82 +2542,107 @@ TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, 
         uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
         if (mem_taints) {
             for (i = 0; i < count; i++) {
-                mem_taints[i] = merge_taints(shadow_reg_table[reg_off + offset + i], mem_taints[i]);
+		t = merge_taints(shadow_reg_table[reg_off + offset + i], mem_taints[i]);
+		mem_taints[i]  = t;
             }
         } else {
             // mem not tainted, just a set
 	    if (shadow_reg_table[reg_off]) { // JNF: I think this is wrong
                 set_mem_taints(mem_offset, count, &shadow_reg_table[reg_off + offset]);
             }
+	    t = shadow_reg_table[reg_off]; // Also wrong
         }
         offset += count;
         mem_offset += count;
     }
+
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
-#else
-// This is probably wrong, tho
-TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags)
+
+// reg2mem rep
+TAINTSIGN taint_rep_lbreg2mem (u_long mem_loc, int reg, int count)
 {
-    unsigned i = 0;
-
-    // First accumulate memory taint 
-    taint_t result = 0;
-    uint32_t offset = 0;
-    u_long mem_offset = mem_loc;
-    while (offset < size) {
-        taint_t* mem_taints = NULL;
-        uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
-        if (mem_taints) {
-            for (i = 0; i < count; i++) {
-                result = merge_taints(result, mem_taints[i]);
-            }
-        }
-        offset += count;
-        mem_offset += count;
-    }
-
-    // Next, mix in register taint
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    for (i = 0; i < size; i++) {
-	result = merge_taints (result, shadow_reg_table[reg_off + i]);
-    }
-    if (result) {
-	// Now set memory taint
-	offset = 0;
-	mem_offset = mem_loc;
-	while (offset < size) {
-	    taint_t* mem_taints = NULL;
-	    uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
-	    if (mem_taints) {
-		for (i = 0; i < count; i++) {
-		    mem_taints[i] = result;
-		}
-	    } else {
-		set_mem_taint (mem_offset, count, result);
-	    }
-	    offset += count;
-	    mem_offset += count;
-	}
+    taint_t t = shadow_reg_table[reg * REG_SIZE];
+    uint32_t size = count;
+    if (t) {
+        unsigned i = 0; 
+        while (i < size) {
+            // FIXME: size is wrong on each iter
+            i += set_cmem_taints_one(mem_loc + i, size, t);
+        }
+    } else {
+        clear_mem_taints(mem_loc, size);
     }
 }
-#endif
+
+TAINTSIGN taint_rep_ubreg2mem (u_long mem_loc, int reg, int count)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t = shadow_reg_table[reg * REG_SIZE + 1];
+    uint32_t size = count;
+    if (t) {
+        unsigned i = 0; 
+        while (i < size) {
+            // FIXME: size is wrong on each iter
+            i += set_cmem_taints_one(mem_loc + i, size, t);
+        }
+    } else {
+        clear_mem_taints(mem_loc, size);
+    }
+}
+
+TAINTSIGN taint_rep_hwreg2mem (u_long mem_loc, int reg, int count) {
+    int i = 0;
+    for (i = 0; i < count; i++) {
+        taint_hwreg2mem(mem_loc + (i * 2), reg);
+    }
+}
+
+TAINTSIGN taint_rep_wreg2mem (u_long mem_loc, int reg, int count)
+{
+    int i = 0;
+    for (i = 0; i < count; i++) {
+        taint_wreg2mem(mem_loc + (i * 4), reg);
+    }
+}
+
+TAINTSIGN taint_rep_dwreg2mem (u_long mem_loc, int reg, int count)
+{
+    int i = 0;
+    for (i = 0; i < count; i++) {
+        taint_dwreg2mem(mem_loc + (i * 8), reg);
+    }
+}
+
+TAINTSIGN taint_rep_qwreg2mem (u_long mem_loc, int reg, int count)
+{
+    int i = 0;
+    for (i = 0; i < count; i++) {
+        taint_qwreg2mem(mem_loc + (i * 16), reg);
+    }
+}
+
+TAINTSIGN taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
+}
+
+// JNF: What mike did - but only really right for zero extension, not sign extension, etc.
+TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t size)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
+    memset(&shadow_reg_table[dst_reg_off+size], 0, (REG_SIZE-size) * sizeof(taint_t));
+}
 
 // reg2reg
 static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
 {
-    //TPRINT ("taint_reg2reg dest %d src %d\n", dst_reg, src_reg);
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
             &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
-
-#ifdef TRACE_TAINT
-    {
-	u_int i;
-	for (i = 0; i < size; i++) {
-	    TPRINT ("set reg %x to %x\n", dst_reg*REG_SIZE+i, shadow_reg_table[dst_reg*REG_SIZE+i]);
-	}
-    }
-#endif
 }
 
 static inline void taint_regreg2reg (int dst_reg, int base_reg, int index_reg, uint32_t size) {
@@ -2960,150 +2658,6 @@ static inline void taint_regreg2reg (int dst_reg, int base_reg, int index_reg, u
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg) { 
 	TAINT_START ("taint_wregwreg2wreg");
 	taint_regreg2reg (dst_reg, base_reg, index_reg, 4);
-}
-
-TAINTSIGN taint_lbreg2lbreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2lbreg");
-    taint_reg2reg(dst_reg, src_reg, 1);
-}
-
-TAINTSIGN taint_ubreg2lbreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2lbreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_lbreg2ubreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    // shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = shadow_reg_table[src_reg * REG_SIZE];
-}
-
-TAINTSIGN taint_ubreg2ubreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_wreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_wreg2wreg");
-    taint_reg2reg(dst_reg, src_reg, 4);
-}
-
-TAINTSIGN taint_hwreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_hwreg2hwreg");
-    taint_reg2reg(dst_reg, src_reg, 2);
-}
-
-TAINTSIGN taint_dwreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_dwreg2dwreg");
-    taint_reg2reg(dst_reg, src_reg, 8);
-}
-
-TAINTSIGN taint_qwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_qwreg2qwreg");
-    taint_reg2reg(dst_reg, src_reg, 16);
-}
-
-TAINTSIGN taint_lbreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2wreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE];
-}
-
-TAINTSIGN taint_lbreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2hwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE];
-}
-
-TAINTSIGN taint_lbreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2dwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE];
-}
-
-TAINTSIGN taint_lbreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_lbreg2qwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE];
-}
-
-TAINTSIGN taint_ubreg2hwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2hwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_ubreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2wreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_ubreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2dwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_ubreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_ubreg2qwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-}
-
-TAINTSIGN taint_hwreg2wreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_hwreg2wreg");
-    taint_reg2reg(dst_reg, src_reg, 2);
-}
-
-TAINTSIGN taint_hwreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_hwreg2dwreg");
-    taint_reg2reg(dst_reg, src_reg, 2);
-}
-
-TAINTSIGN taint_hwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_hwreg2qwreg");
-    taint_reg2reg(dst_reg, src_reg, 2);
-}
-
-TAINTSIGN taint_wreg2dwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_wreg2dwreg");
-    taint_reg2reg(dst_reg, src_reg, 4);
-}
-
-TAINTSIGN taint_wreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_wreg2qwreg");
-    taint_reg2reg(dst_reg, src_reg, 4);
-}
-
-TAINTSIGN taint_dwreg2qwreg (int dst_reg, int src_reg)
-{
-    TAINT_START("taint_qwreg2qwreg");
-    taint_reg2reg(dst_reg, src_reg, 8);
 }
 
 // reg2reg extend
@@ -3205,14 +2759,18 @@ TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg)
     zero_partial_reg(dst_reg, 8);
 }
 
-TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size)
+TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, int set_flags, int clear_flags)
 {
     unsigned i;
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t = 0;
 
     for (i = 0; i < size; i++) {
-        shadow_reg_table[dst_reg_off + i] = merge_taints(shadow_reg_table[dst_reg_off + i], shadow_reg_table[src_reg_off + i]);
+	t = merge_taints(shadow_reg_table[dst_reg_off + i], shadow_reg_table[src_reg_off + i]);
+	shadow_reg_table[dst_reg_off + i]  = t;
     } 
+
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
 // reg2reg xchg
@@ -3588,73 +3146,31 @@ TAINTSIGN taint_add2_hwmemhwreg_2breg (u_long mem_loc,
     shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
 }
 
-TAINTSIGN taint_add2_wmemwreg_2hwreg (u_long mem_loc, int src_reg,
-                                    int dst_reg1, int dst_reg2)
+TAINTSIGN taint_add3_mem2reg_2reg (u_long mem_loc, int src_reg1, int src_reg2, int dst_reg1, int dst_reg2, int size)
 {
     int i = 0;
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     taint_t* mem_taints;
-    taint_t merged_taints[4];
+    taint_t merged_taints[4]; // JNF: Correct for div - should rewrite this to just merge into common taint
     taint_t final_merged_taint;
 
-    for (i = 0; i < 4; i++) {
-        mem_taints = get_mem_taints_internal(mem_loc + i, 1);
-        if (mem_taints) {
-            merged_taints[i] = merge_taints(mem_taints[0], shadow_reg_table[src_reg * REG_SIZE + i]);
-        } else {
-            merged_taints[i] = shadow_reg_table[src_reg * REG_SIZE + i];
-        }
-    }
-    final_merged_taint = merged_taints[0];
-    for (i = 1; i < 4; i++) {
-        final_merged_taint = merge_taints(final_merged_taint, merged_taints[i]);
-    }
-    shadow_reg_table[dst_reg1 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 1] = final_merged_taint;
-}
-
-TAINTSIGN taint_add3_dwmem2wreg_2wreg (u_long mem_loc,
-                                    int src_reg1, int src_reg2,
-                                    int dst_reg1, int dst_reg2)
-{
-    int i = 0;
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    taint_t* mem_taints;
-    taint_t merged_taints[8];
-    taint_t final_merged_taint;
-
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < size; i++) {
         mem_taints = get_mem_taints_internal(mem_loc + i, 1);
         if (mem_taints) {
             merged_taints[i] = merge_taints(mem_taints[0], shadow_reg_table[src_reg1 * REG_SIZE + i]);
+	    merged_taints[i] = merge_taints(merged_taints[i], shadow_reg_table[src_reg2 * REG_SIZE + i]);
         } else {
-            merged_taints[i] = shadow_reg_table[src_reg1 * REG_SIZE + i];
+	    merged_taints[i] = merge_taints(shadow_reg_table[src_reg1 * REG_SIZE + i], shadow_reg_table[src_reg2 * REG_SIZE + i]);
         }
     }
-    for (i = 0; i < 4; i++) {
-        mem_taints = get_mem_taints_internal(mem_loc + 4 + i, 1);
-        if (mem_taints) {
-            merged_taints[i + 4] = merge_taints(mem_taints[0], shadow_reg_table[src_reg2 * REG_SIZE + i]);
-        } else {
-            merged_taints[i + 4] = shadow_reg_table[src_reg2 * REG_SIZE + i];
-        }
-    }
-
     final_merged_taint = merged_taints[0];
-    for (i = 1; i < 8; i++) {
+    for (i = 1; i < size; i++) {
         final_merged_taint = merge_taints(final_merged_taint, merged_taints[i]);
     }
-    shadow_reg_table[dst_reg1 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 2] = final_merged_taint;
-    shadow_reg_table[dst_reg1 * REG_SIZE + 3] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 1] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 2] = final_merged_taint;
-    shadow_reg_table[dst_reg2 * REG_SIZE + 3] = final_merged_taint;
-
+    for (i = 0; i < size; i++) {
+	shadow_reg_table[dst_reg1 * REG_SIZE + i] = final_merged_taint;
+	shadow_reg_table[dst_reg2 * REG_SIZE + i] = final_merged_taint;
+    }
 }
 
 TAINTSIGN taint_add2_hwregbreg_2breg (int src_reg1, int src_reg2,
@@ -3772,32 +3288,6 @@ TAINTSIGN taint_immvalqw2mem (u_long mem_loc)
     clear_mem_taints(mem_loc, 16);
 }
 
-// immval2mem add
-TAINTSIGN taint_add_immvalb2mem (u_long mem_loc)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immvalhw2mem (u_long mem_loc)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immvalw2mem (u_long mem_loc)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immvaldw2mem (u_long mem_loc)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immvalqw2mem (u_long mem_loc)
-{
-    return;
-}
-
 // immval2reg
 TAINTSIGN taint_immval2lbreg(int reg)
 {
@@ -3826,37 +3316,6 @@ TAINTSIGN taint_immval2dwreg(int reg)
 TAINTSIGN taint_immval2qwreg(int reg)
 {
     zero_partial_reg_until(reg, 0, 16);
-}
-
-// immval2reg add
-TAINTSIGN taint_add_immval2lbreg(int reg)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immval2ubreg(int reg)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immval2hwreg(int reg)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immval2wreg(int reg)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immval2dwreg(int reg)
-{
-    return;
-}
-
-TAINTSIGN taint_add_immval2qwreg(int reg)
-{
-    return;
 }
 
 TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size) { 
@@ -4113,12 +3572,6 @@ taint_t create_and_taint_option (u_long mem_addr)
 {
     taint_t t = taint_num++;
     taint_mem_internal(mem_addr, t);
-    TPRINT ("taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);
-#ifdef TAINT_DEBUG
-    if (TAINT_DEBUG(t)) {
-	fprintf (debug_f, "taint %x created at mem address %lx clock %ld\n", t, mem_addr, *ppthread_log_clock);
-    }
-#endif
     return t;
 }
 
