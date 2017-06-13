@@ -28,7 +28,8 @@
 
 #define DF_INDEX 6
 
-//actual hardware mask// Don't use them directly (only used once in computeEA function) 
+//actual hardware mask
+//Normally we don't use them directly (only used once in computeEA function) 
 #define CF_MASK 0x01
 #define PF_MASK 0x04
 #define AF_MASK 0x10
@@ -212,6 +213,11 @@ struct thread_data {
     int syscall_handled;            // flag to indicate if a syscall is handled at the glibc wrapper instead
     taint_t shadow_reg_table[NUM_REGS * REG_SIZE];
     taint_t saved_flag_taints[REG_SIZE]; //for pushfd and popfd
+   
+    uint32_t repz_counts;
+    u_long repz_src_mem_loc;
+    u_long repz_dst_mem_loc;
+    
     struct syscall_info syscall_info_cache;
     struct thread_data*      next;
     struct thread_data*      prev;
