@@ -324,6 +324,7 @@ void taint_add_fd2mem(u_long mem_loc, uint32_t size, int fd);
 
 /* So that we can check if syscall args are tainted */
 int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8);
+int is_mem_arg_tainted (u_long mem_loc, uint32_t size);
 int is_flag_tainted (uint32_t flag);
 
 #ifdef __cplusplus
