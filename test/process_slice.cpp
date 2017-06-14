@@ -24,7 +24,7 @@ class AddrToRestore {
 			this->size = size;
 		}
 		void printPush() {
-			if (size == 2 || size == 4 || size == 16)
+			if (size == 2 || size == 4 || size == 8)
 				cout << "push " << memSizeToPrefix(size) << "[0x" << loc << "]" << endl;
 			else {
 				//use movsb
@@ -37,7 +37,7 @@ class AddrToRestore {
 			}
 		}
 		void printPop () { 
-			if (size == 2 || size == 4 || size == 16)
+			if (size == 2 || size == 4 || size == 8)
 				cout << "pop " << memSizeToPrefix(size) << "[0x" << loc + "]" << endl;
 			else {
 				//use movsb
@@ -155,9 +155,10 @@ string memSizeToPrefix(int size){
 		case 1: return" byte ptr ";
 		case 2: return " word ptr ";
 		case 4: return" dword ptr ";
+		case 8: return" qword ptr ";
 		case 16: return" xmmword ptr ";
 		default:
-			cout <<"unrecognized mem size "  + size << endl;
+			cerr <<"unrecognized mem size "  <<  size << endl;
 			assert (0);
 	}
 }
@@ -216,9 +217,9 @@ string replaceReg (string s) {
 			//println (out)
 			return out;
 		} else  {
-			cout << "cannot find corresponding reg!!!!!!." << endl;
-			cout << s << endl;
-			assert (0);
+			cerr << "cannot find corresponding reg!!!!!!." << s << endl;
+			cerr << s << endl;
+                        assert (0);
 		}
 	} 
 	return s;
@@ -285,9 +286,12 @@ inline int getLineType (string line) {
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
 		return SLICE_RESTORE_REG;
-	else { 
+        else if (line.compare (0, 5, "[BUG]") == 0) {
+                cerr <<"BUG line: " <<line <<endl;
+                return -1;
+        } else { 
 		cerr << "Unrecognized line: " << line <<endl;
-		assert (0);
+                return -1;
 	}
 }
 
@@ -338,6 +342,9 @@ int main (int argc, char* argv[]) {
 					buffer.push (make_pair(SLICE, lastLine));
 				lastLine = s;
 				break;
+                        case -1:
+                                //ignore this line
+                                break;
 			default: 
 				//printerr (s);
 				buffer.push (make_pair(type, s));
@@ -411,9 +418,9 @@ int main (int argc, char* argv[]) {
 							size_t memPtrIndex = s.find (" ptr ");
 							size_t memPtrEnd = s.find ("]", memPtrIndex);
 							if (memPtrIndex == string::npos || memPtrEnd == string::npos) {
-								cout<< line <<endl;
-								cout << s << endl;
-								//assert (0);
+								cerr<< line <<endl;
+								cerr << s << endl;
+								assert (0);
 							}
 							//special case: we need to replace string instructions
 							if (s.find ("scas") != string::npos || s.find("stos") != string::npos) {

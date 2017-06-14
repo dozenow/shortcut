@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 13793
+#define EXTRA_DEBUG 0
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3001,6 +3001,7 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
                                 IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
+                                IARG_REG_REFERENCE, dstreg, 
 				IARG_END);
 		fw_slice_check_address (ins);
 	} else {
@@ -3016,6 +3017,7 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
                                 IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
+                                IARG_REG_REFERENCE, dstreg, 
 				IARG_END);
 	}
 	put_copy_of_disasm (str);
@@ -3521,7 +3523,14 @@ static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) {
 			    IARG_END);
 
     }
-    fw_slice_check_address (ins);
+    if (!repz) fw_slice_check_address (ins);
+    else {
+        fprintf (stderr, "fw_slice_check_address with IPOINT_AFTER?\n");
+        INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
+                IARG_FIRST_REP_ITERATION,
+                IARG_END);
+
+    }
     put_copy_of_disasm (str);
 }
 
