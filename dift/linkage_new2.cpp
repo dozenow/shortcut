@@ -82,7 +82,6 @@ int s = -1;
 // #define COPY_ONLY                    // just copies
 // #define LINKAGE_DATA                 // data flow
 // #define LINKAGE_DATA_OFFSET
-// #define LINKAGE_FPU
 // #define LINKAGE_SYSCALL              // system call & libc function abstraction
 // #define LINKAGE_CODE
 //#define LINKAGE_FDTRACK
@@ -2894,23 +2893,19 @@ static inline void fw_slice_check_address (INS ins) {
 }
 
 static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, int is_dst_mem) { 
-	IARG_TYPE reg_value = IARG_REG_VALUE;
-	if (src_regsize == 16)
-		reg_value = IARG_UINT32;
-
 	char* str = get_copy_of_disasm (ins);
 	IARG_TYPE mem_ea = IARG_INVALID;
-
+        
 	if (is_dst_mem == 0) { 
 		INS_InsertCall(ins, IPOINT_BEFORE,
 				AFUNPTR(fw_slice_reg),
 				IARG_FAST_ANALYSIS_CALL,
 				IARG_INST_PTR,
 				IARG_PTR, str,
-				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, srcreg, //no need for translate_reg
 				IARG_UINT32, src_regsize,
 				IARG_ADDRINT, 0,
-				reg_value, srcreg,
+                                IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
 	} else { 
@@ -2920,16 +2915,16 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 			mem_ea = IARG_MEMORYWRITE_EA;
 		}
 
-		if (INS_MemoryOperandCount (ins) > 0) {
+                if (INS_MemoryOperandCount (ins) > 0) {
 			INS_InsertIfCall(ins, IPOINT_BEFORE,
 					AFUNPTR(fw_slice_reg),
 					IARG_FAST_ANALYSIS_CALL,
 					IARG_INST_PTR,
 					IARG_PTR, str,
-					IARG_UINT32, translate_reg (srcreg),
+                                        IARG_UINT32, srcreg, //no need for translate_reg
 					IARG_UINT32, src_regsize,
 					mem_ea,
-					reg_value, srcreg,
+                                        IARG_CONST_CONTEXT,
 					IARG_UINT32, REG_is_Upper8(srcreg),
 					IARG_END);
 
@@ -2940,10 +2935,10 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, 
 					IARG_FAST_ANALYSIS_CALL,
 					IARG_INST_PTR,
 					IARG_PTR, str,
-					IARG_UINT32, translate_reg (srcreg),
+                                        IARG_UINT32, srcreg, //no need for translate_reg
 					IARG_UINT32, src_regsize,
 					mem_ea,
-					reg_value, srcreg,
+                                        IARG_CONST_CONTEXT,
 					IARG_UINT32, REG_is_Upper8(srcreg),
 					IARG_END);
 
@@ -2992,16 +2987,6 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 //the following three functions merges taints from two operands and also consider different operand sizes
 //dstreg does not necessarily mean the destination register, refer to instrument_lea
 static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize) { 
-	IARG_TYPE dst_reg_value = IARG_REG_VALUE;
-	IARG_TYPE src_reg_value = IARG_REG_VALUE;
-	if (dst_regsize == 16) { 
-		dst_reg_value = IARG_UINT32;	
-	} 
-	if (src_regsize == 16) { 
-		src_reg_value = IARG_UINT32;
-	}
-
-	//assert (INS_IsMemoryWrite(ins) == 0);
 	char* str = get_copy_of_disasm (ins);
 	if (INS_MemoryOperandCount (ins) > 0) {
 		INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -3009,12 +2994,11 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 				IARG_FAST_ANALYSIS_CALL,
 				IARG_INST_PTR,
 				IARG_PTR, str,
-				IARG_UINT32, translate_reg (dstreg),
-				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, dstreg,
+				IARG_UINT32, srcreg,
 				IARG_UINT32, dst_regsize,
 				IARG_UINT32, src_regsize,
-				dst_reg_value, dstreg,
-				src_reg_value, srcreg,
+                                IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
@@ -3025,12 +3009,11 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 				IARG_FAST_ANALYSIS_CALL,
 				IARG_INST_PTR,
 				IARG_PTR, str,
-				IARG_UINT32, translate_reg (dstreg),
-				IARG_UINT32, translate_reg (srcreg),
+				IARG_UINT32, dstreg,
+				IARG_UINT32, srcreg,
 				IARG_UINT32, dst_regsize,
 				IARG_UINT32, src_regsize,
-				dst_reg_value, dstreg,
-				src_reg_value, srcreg,
+                                IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_END);
@@ -3053,20 +3036,15 @@ static inline void fw_slice_src_memmem (INS ins, uint32_t memread_size, uint32_t
 	put_copy_of_disasm (str);
 }
 static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize) { 
-	IARG_TYPE reg_value = IARG_INVALID;
-	if (reg_size == 16) { 
-		reg_value = IARG_UINT32;	
-	} else 
-		reg_value = IARG_REG_VALUE;
 	char* str = get_copy_of_disasm (ins);
 	INS_InsertIfCall(ins, IPOINT_BEFORE,
 			AFUNPTR(fw_slice_memreg),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_INST_PTR,
 			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (reg), 
+			IARG_ADDRINT, reg, 
 			IARG_UINT32, reg_size,
-			reg_value, reg, 
+                        IARG_CONST_CONTEXT,
 			IARG_UINT32, REG_is_Upper8(reg),
 			mem_ea, 
 			IARG_UINT32, memsize,
@@ -3101,13 +3079,6 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask) {
 }
 
 static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize, REG countreg, uint32_t count_regsize) { 
-	//assert (INS_IsMemoryWrite(ins) == 0);
-	IARG_TYPE dst_regvalue = IARG_REG_VALUE;
-	IARG_TYPE src_regvalue = IARG_REG_VALUE;
-	IARG_TYPE count_regvalue = IARG_REG_VALUE;
-	if (dst_regsize == 16) dst_regvalue = IARG_UINT32;
-	if (src_regsize == 16) src_regvalue = IARG_UINT32;
-	if (count_regsize == 16) count_regvalue = IARG_UINT32;
 	char* str = get_copy_of_disasm (ins);
 
 	if (INS_MemoryOperandCount(ins) > 0) { 
@@ -3116,15 +3087,13 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 				IARG_FAST_ANALYSIS_CALL,
 				IARG_INST_PTR,
 				IARG_PTR, str,
-				IARG_UINT32, translate_reg (dstreg),
-				IARG_UINT32, translate_reg (srcreg),
-				IARG_UINT32, translate_reg (countreg),
+				IARG_UINT32, dstreg,
+				IARG_UINT32, srcreg,
+				IARG_UINT32, countreg,
 				IARG_UINT32, dst_regsize,
 				IARG_UINT32, src_regsize,
 				IARG_UINT32, count_regsize,
-				dst_regvalue, dstreg,
-				src_regvalue, srcreg,
-				count_regvalue, countreg,
+                                IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_UINT32, REG_is_Upper8(countreg),
@@ -3136,15 +3105,13 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, uint32_t dst_reg
 				IARG_FAST_ANALYSIS_CALL,
 				IARG_INST_PTR,
 				IARG_PTR, str,
-				IARG_UINT32, translate_reg (dstreg),
-				IARG_UINT32, translate_reg (srcreg),
-				IARG_UINT32, translate_reg (countreg),
+				IARG_UINT32, dstreg,
+				IARG_UINT32, srcreg,
+				IARG_UINT32, countreg,
 				IARG_UINT32, dst_regsize,
 				IARG_UINT32, src_regsize,
 				IARG_UINT32, count_regsize,
-				dst_regvalue, dstreg,
-				src_regvalue, srcreg,
-				count_regvalue, countreg,
+                                IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
 				IARG_UINT32, REG_is_Upper8(countreg),
@@ -3316,7 +3283,7 @@ TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_l
         //fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
 	if (count_reg) { //count_reg is set only with REP prefix
 		assert (count_reg == 9); //should always be ecx, otherwise, add the support
-		tainted = fw_slice_memreg (ip, inst_str, count_reg, 4, counts, 0, ea_src_mem_loc, size);
+		tainted = fw_slice_memreg_imm_value (ip, inst_str, count_reg, 4, counts, 0, ea_src_mem_loc, size);
 	} else{ 
 		tainted = fw_slice_mem (ip, inst_str, ea_src_mem_loc, size, dst_mem);
 	}
@@ -3339,7 +3306,7 @@ TAINTINT fw_slice_stringstring_internal (ADDRINT ip, char* inst_str, ADDRINT src
 	ADDRINT ea_dst_mem_loc = computeEA (dst_mem_loc, eflags, counts, op_size);
 	if (count_reg) { //count_reg is set only with REP prefix
 		assert (count_reg == 9); //should always be ecx, otherwise, add the support
-		tainted = fw_slice_memmemreg (ip, inst_str, ea_src_mem_loc, ea_dst_mem_loc, size, size, count_reg, 4, counts, 0);
+		tainted = fw_slice_memmemreg_imm_value (ip, inst_str, ea_src_mem_loc, ea_dst_mem_loc, size, size, count_reg, 4, counts, 0);
 	} else{ 
 		tainted = fw_slice_memmem (ip, inst_str, ea_src_mem_loc, ea_dst_mem_loc, size, size);
 	}
@@ -3373,7 +3340,7 @@ TAINTINT fw_slice_stringreg_internal (ADDRINT ip, char* inst_str,
 		assert (count_reg == 9); //should always be ecx, otherwise, add the support
 		tainted = fw_slice_memregreg (ip, inst_str, count_reg, 4, counts, 0, reg, reg_size, reg_value, is_upper8, ea_src_mem_loc, size);
 	} else{ 
-		tainted = fw_slice_memreg (ip, inst_str, reg, reg_size, reg_value, is_upper8, ea_src_mem_loc, size);
+		tainted = fw_slice_memreg_imm_value (ip, inst_str, reg, reg_size, reg_value, is_upper8, ea_src_mem_loc, size);
 	}
 	//assert for DF_FLAG
 	assert (is_flag_tainted(DF_FLAG) == 0);
@@ -6210,7 +6177,7 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
 	    return;
     }
     ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
-    fprintf (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
+    //fprintf (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
     if (count_reg) { //for rep and repz
     	taint_regmem2flag_with_different_size(ea_mem_loc, reg, mask, size, reg_size);
 	taint_add_reg2flag_offset (LEVEL_BASE::REG_ECX*REG_SIZE, 4, mask);
@@ -9393,13 +9360,13 @@ void instruction_instrumentation(INS ins, void *v)
                         IARG_END);
                 slice_handled = 1;
                 break;
-            /*case XED_ICLASS_FSTP:
+            case XED_ICLASS_FSTP:
                 if (INS_IsMemoryWrite(ins))
                     instrument_taint_reg2mem (ins, INS_OperandReg(ins, 1), 0);
                 else 
                     instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 0);
                 slice_handled = 1;
-                break;*/
+                break;
             default:
                 if (INS_IsNop(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument noop %s\n",
