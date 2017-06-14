@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 0
+//#define EXTRA_DEBUG 0
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3523,13 +3523,13 @@ static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) {
 			    IARG_END);
 
     }
-    if (!repz) fw_slice_check_address (ins);
+    if (!repz) 
+        fw_slice_check_address (ins);
     else {
-        fprintf (stderr, "fw_slice_check_address with IPOINT_AFTER?\n");
-        INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
-                IARG_FIRST_REP_ITERATION,
+        INS_InsertThenCall (ins, IPOINT_AFTER, (AFUNPTR)fw_slice_addressing_repz,
+                IARG_INST_PTR,
+                IARG_UINT32, INS_MemoryOperandSize (ins,0),
                 IARG_END);
-
     }
     put_copy_of_disasm (str);
 }

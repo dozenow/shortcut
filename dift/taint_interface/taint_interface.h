@@ -96,6 +96,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip,
 		int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
 		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
 		u_long mem_loc, uint32_t mem_size, uint32_t is_read);
+TAINTSIGN fw_slice_addressing_repz (ADDRINT ip, uint32_t op_size);
 TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, 
 		int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, uint32_t base_reg1_u8, 
 		int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, uint32_t index_reg1_u8, 

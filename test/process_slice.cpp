@@ -24,7 +24,7 @@ class AddrToRestore {
 			this->size = size;
 		}
 		void printPush() {
-			if (size == 2 || size == 4 || size == 8)
+			if (size == 2 || size == 4) //qword and xmmword are not suported for push on 32-bit
 				cout << "push " << memSizeToPrefix(size) << "[0x" << loc << "]" << endl;
 			else {
 				//use movsb
@@ -37,7 +37,7 @@ class AddrToRestore {
 			}
 		}
 		void printPop () { 
-			if (size == 2 || size == 4 || size == 8)
+			if (size == 2 || size == 4)
 				cout << "pop " << memSizeToPrefix(size) << "[0x" << loc + "]" << endl;
 			else {
 				//use movsb
@@ -155,7 +155,7 @@ string memSizeToPrefix(int size){
 		case 1: return" byte ptr ";
 		case 2: return " word ptr ";
 		case 4: return" dword ptr ";
-		case 8: return" qword ptr ";
+		case 8: return" qdword ptr ";
 		case 16: return" xmmword ptr ";
 		default:
 			cerr <<"unrecognized mem size "  <<  size << endl;
@@ -431,7 +431,10 @@ int main (int argc, char* argv[]) {
 							//special case: we need to replace two memory operands 
 							//TODO: change this to regex for cmps and so on
 							if (s.find("movsd ") != string::npos || s.find("movs ") != string::npos || s.find("movsq ") != string::npos
-									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos) {
+									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos
+                                                            || s.find("cmpsd ") != string::npos || s.find("cmps ") != string::npos || s.find("cmpsq ") != string::npos
+									|| s.find("cmpsw ") != string::npos || s.find("cmpsb ") != string::npos) {
+
 								println ("mov edi, " + immAddress + "   /*string inst converted: " + line + "*/");
 								address.pop();
 								line = address.front();
