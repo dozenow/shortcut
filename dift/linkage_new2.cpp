@@ -3001,7 +3001,6 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
                                 IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
-                                IARG_REG_REFERENCE, dstreg, 
 				IARG_END);
 		fw_slice_check_address (ins);
 	} else {
@@ -3017,7 +3016,6 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
                                 IARG_CONST_CONTEXT,
 				IARG_UINT32, REG_is_Upper8(dstreg),
 				IARG_UINT32, REG_is_Upper8(srcreg),
-                                IARG_REG_REFERENCE, dstreg, 
 				IARG_END);
 	}
 	put_copy_of_disasm (str);
@@ -4548,7 +4546,7 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 
     if (extend && regsize > memsize) {
 	INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(taint_mem2reg_offset),
+		       AFUNPTR(taint_mem2reg_ext_offset),
 		       IARG_FAST_ANALYSIS_CALL,
 		       IARG_MEMORYREAD_EA,
 		       IARG_UINT32, get_reg_off (dstreg),
@@ -6662,80 +6660,30 @@ void instrument_xchg (INS ins)
     op2reg = INS_OperandIsReg(ins, 1);
 
     if (op1reg && op2reg) {
-        int treg1, treg2;
         REG reg1, reg2;
 
-        INSTRUMENT_PRINT(log_f, "op1 and op2 of xchg are registers\n");
         reg1 = INS_OperandReg(ins, 0);
         reg2 = INS_OperandReg(ins, 1);
+        INSTRUMENT_PRINT(log_f, "op1 and op2 of xchg are registers: %u %u\n", reg1, reg2);
         if(!REG_valid(reg1) || !REG_valid(reg2)) {
             return;
         }
         assert(REG_Size(reg1) == REG_Size(reg2));
-        treg1 = translate_reg(reg1);
-        treg2 = translate_reg(reg2);
+        UINT32 regsize1 = REG_Size(reg1);
+        UINT32 regsize2 = REG_Size(reg2);
 #ifdef FW_SLICE
-	fw_slice_src_regreg (ins, reg1, REG_Size(reg1), reg2, REG_Size(reg2));
+	fw_slice_src_regreg (ins, reg1, regsize1, reg2, regsize2);
 #endif
+        if(reg1 == reg2) return;
+        UINT32 reg1_off = get_reg_off (reg1);
+        UINT32 reg2_off = get_reg_off (reg2);
 
-        switch(REG_Size(reg1)) {
-            case 1:
-                if (REG_is_Lower8(reg1) && REG_is_Lower8(reg2)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_lbreg2lbreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                } else if (REG_is_Lower8(reg1) && REG_is_Upper8(reg2)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_lbreg2ubreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                } else if (REG_is_Upper8(reg1) && REG_is_Lower8(reg2)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_ubreg2lbreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                } else if (REG_is_Upper8(reg1) && REG_is_Upper8(reg2)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_ubreg2ubreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                } else {
-                    assert(0);
-                }
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_hwreg2hwreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_wreg2wreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_UINT32, treg1,
-                        IARG_UINT32, treg2,
-                        IARG_END);
-                break;
-            default:
-                ERROR_PRINT (stderr, "Unsupported size %d for xchg reg2reg, %s %s\n",
-                        REG_Size(reg1),
-                        REG_StringShort(reg1).c_str(),
-                        REG_StringShort(reg2).c_str());
-                assert(0);
-                break;
-        }
+        INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_xchg_reg2reg_offset),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_UINT32, reg1_off,
+                IARG_UINT32, reg2_off,
+                IARG_UINT32, regsize1,
+                IARG_END);
     } else if (op1reg && op2mem) {
         REG reg;
         int treg;
@@ -8905,6 +8853,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_MOVNTDQA:
             case XED_ICLASS_MOVNTDQ:
                 instrument_mov(ins);
+                rep_handled = 1; //it seems these instructions are always prefixed with 0xF3
 		slice_handled = 1;
                 break;
             case XED_ICLASS_PALIGNR:
@@ -9342,9 +9291,6 @@ void instruction_instrumentation(INS ins, void *v)
                 // ignore this instruction
 		slice_handled = 1;
                 break;
-		//FPU operations
-	    case XED_ICLASS_FILD:
-		break;
             case XED_ICLASS_PUSHFD:
 #ifdef FW_SLICE
                 fw_slice_src_flag (ins, uint32_t(-1));
@@ -9369,11 +9315,48 @@ void instruction_instrumentation(INS ins, void *v)
                         IARG_END);
                 slice_handled = 1;
                 break;
-            case XED_ICLASS_FSTP:
-                if (INS_IsMemoryWrite(ins))
-                    instrument_taint_reg2mem (ins, INS_OperandReg(ins, 1), 0);
+            case XED_ICLASS_FLD:
+            case XED_ICLASS_FILD:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                assert (INS_OperandCount(ins) == 4);
+                if (INS_IsMemoryRead(ins))
+                    instrument_taint_mem2reg (ins, INS_OperandReg(ins, 0), 1);
                 else 
-                    instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 0);
+                    instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 1);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FLDZ:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                assert (INS_OperandCount(ins) == 3);
+                instrument_clear_dst (ins);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FSTP:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                assert (INS_OperandCount(ins) == 4);
+                if (INS_IsMemoryWrite(ins))
+                    instrument_taint_reg2mem (ins, INS_OperandReg(ins, 1), 1);
+                else 
+                    instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 1);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FMULP:
+            case XED_ICLASS_FMUL:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                if (INS_IsMemoryRead(ins))
+                    instrument_taint_add_mem2reg (ins, INS_OperandReg(ins, 0), -1, -1); //FPU flags are not tainted for now
+                else 
+                    instrument_taint_add_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), -1, -1);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FCOMI:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                instrument_taint_regreg2flag (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), ZF_FLAG | PF_FLAG | CF_FLAG);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FXCH:
+                fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                instrument_xchg (ins); //this function only supports reg2reg exchange with FPU registers  currently
                 slice_handled = 1;
                 break;
             default:

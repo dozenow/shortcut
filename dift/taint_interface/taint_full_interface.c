@@ -2096,7 +2096,7 @@ TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t size, u
 
 //print out two reg values if both operands are registers
 TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int orig_src_reg, uint32_t dst_regsize, uint32_t src_regsize, const CONTEXT* ctx,
-		uint32_t dst_reg_u8, uint32_t src_reg_u8, PIN_REGISTER* dst_reg_test_value) {
+		uint32_t dst_reg_u8, uint32_t src_reg_u8) {
         int dst_reg = translate_reg (orig_dst_reg);
         int src_reg = translate_reg (orig_src_reg);
         PIN_REGISTER dst_regvalue;
@@ -2857,89 +2857,14 @@ TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t s
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
-// reg2reg xchg
-TAINTSIGN taint_xchg_lbreg2lbreg (int dst_reg, int src_reg)
-{
-    taint_t tmp;
-    TAINT_START("taint_xchg_lbreg2lbreg");
+TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size) { 
+    //fprintf (stderr, "taint_xchg_reg2reg_offset:dst_off %d, src_off %d, size %u\n", dst_reg_off, src_reg_off, size);
+    taint_t tmp[REG_SIZE];
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[dst_reg * REG_SIZE];
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE];
-    shadow_reg_table[src_reg * REG_SIZE] = tmp;
-}
-
-TAINTSIGN taint_xchg_ubreg2ubreg (int dst_reg, int src_reg)
-{
-    taint_t tmp;
-    TAINT_START("taint_xchg_ubreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[dst_reg * REG_SIZE + 1];
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = shadow_reg_table[src_reg * REG_SIZE + 1];
-    shadow_reg_table[src_reg * REG_SIZE + 1] = tmp;
-}
-
-TAINTSIGN taint_xchg_ubreg2lbreg (int dst_reg, int src_reg)
-{
-    taint_t tmp;
-    TAINT_START("taint_xchg_ubreg2lbreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[dst_reg * REG_SIZE + 1];
-    shadow_reg_table[dst_reg * REG_SIZE + 1] = shadow_reg_table[src_reg * REG_SIZE];
-    shadow_reg_table[src_reg * REG_SIZE] = tmp;
-}
-
-TAINTSIGN taint_xchg_lbreg2ubreg (int dst_reg, int src_reg)
-{
-    taint_t tmp;
-    TAINT_START("taint_xchg_lbreg2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[dst_reg * REG_SIZE];
-    shadow_reg_table[dst_reg * REG_SIZE] = shadow_reg_table[src_reg * REG_SIZE + 1];
-    shadow_reg_table[src_reg * REG_SIZE + 1] = tmp;
-}
-
-TAINTSIGN taint_xchg_hwreg2hwreg (int dst_reg, int src_reg)
-{
-    taint_t tmp[2];
-    TAINT_START("taint_xchg_hwreg2hwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&tmp, &shadow_reg_table[dst_reg * REG_SIZE], 2 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
-            &shadow_reg_table[src_reg * REG_SIZE], 2 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[src_reg * REG_SIZE], &tmp, 2 * sizeof(taint_t));
-}
-
-TAINTSIGN taint_xchg_wreg2wreg (int dst_reg, int src_reg)
-{
-    taint_t tmp[4];
-    TAINT_START("taint_xchg_wreg2wreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&tmp, &shadow_reg_table[dst_reg * REG_SIZE], 4 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
-            &shadow_reg_table[src_reg * REG_SIZE], 4 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[src_reg * REG_SIZE], &tmp, 4 * sizeof(taint_t));
-}
-
-TAINTSIGN taint_xchg_dwreg2dwreg (int dst_reg, int src_reg)
-{
-    taint_t tmp[8];
-    TAINT_START("taint_xchg_dwreg2dwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&tmp, &shadow_reg_table[dst_reg * REG_SIZE], 8 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
-            &shadow_reg_table[src_reg * REG_SIZE], 8 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[src_reg * REG_SIZE], &tmp, 8 * sizeof(taint_t));
-}
-
-TAINTSIGN taint_xchg_qwreg2qwreg (int dst_reg, int src_reg)
-{
-    taint_t tmp[16];
-    TAINT_START("taint_xchg_qwreg2qwreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&tmp, &shadow_reg_table[dst_reg * REG_SIZE], 16 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
-            &shadow_reg_table[src_reg * REG_SIZE], 16 * sizeof(taint_t));
-    memcpy(&shadow_reg_table[src_reg * REG_SIZE], &tmp, 16 * sizeof(taint_t));
+    memcpy((char*)&tmp, &shadow_reg_table[dst_reg_off], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[dst_reg_off],
+            &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[src_reg_off], (char*)&tmp, size * sizeof(taint_t));
 }
 
 TAINTSIGN taint_mask_reg2reg (int dst_reg, int src_reg)
