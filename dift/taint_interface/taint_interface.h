@@ -76,11 +76,13 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 TAINTSIGN taint_regmem2flag_with_different_size (u_long mem_loc, uint32_t reg, uint32_t mask, uint32_t size_mem, uint32_t size_reg);
 TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, uint32_t size);
 TAINTSIGN taint_mem2flag (u_long mem_loc, uint32_t mask, uint32_t size);
-TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size);
+TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size, uint32_t is_upper8);
 TAINTSIGN taint_flag2mem (u_long mem_loc, uint32_t mask, uint32_t size);
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size);
 TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size);
+TAINTSIGN taint_merge_mem2reg (u_long mem_loc, int dst_reg, uint32_t size);
+TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size);
  
 TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);

@@ -1296,9 +1296,10 @@ inline taint_t merge_mem_taints (u_long mem_loc, uint32_t size) {
 	return result;
 }
 
-inline taint_t merge_reg_taints (uint32_t reg, uint32_t size) { 
+inline taint_t merge_reg_taints (uint32_t reg, uint32_t size, uint32_t is_upper8) { 
     uint32_t i = 0;
     taint_t result = 0;
+    if (is_upper8) i = 1;
     for (; i<size; ++i) {
         result = merge_taints (current_thread->shadow_reg_table[reg*REG_SIZE + i], result);
     }
@@ -1352,7 +1353,7 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 	if (mem_loc2 != 0) 
 		result = merge_mem_taints (mem_loc2, size2);
 	else {
-		result = merge_reg_taints (reg2, size2);
+		result = merge_reg_taints (reg2, size2, 0); //won't be upper8
 	} 
 	//merge input register taints for operand1
 	for (i = 0; i<size_reg; ++i) {
@@ -1446,13 +1447,15 @@ TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, ui
 	//fprintf (stderr, "taint_memmem2flag: flags %x, tainted %x, size %d\n", mask, result, size);
 }
 
-TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size) {
+//don't support upper 8
+TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size, uint32_t is_upper8) {
 	uint32_t i = 0;
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 	taint_t result = 0;
+        if (is_upper8) i = 1;
 
 	//merge taints
-	for (i = 0; i<size; ++i) {
+	for (; i<size; ++i) {
 		result = merge_taints (result, shadow_reg_table[reg*REG_SIZE +i]);
 	}
 
@@ -1461,6 +1464,27 @@ TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size) {
 			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = result;
 		} 
 	}
+}
+
+//merge all taints from src_reg and put the merged taint value to all bytes in dst_reg
+TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size) { 
+    taint_t t = merge_reg_taints (src_reg, size, 0);
+    uint32_t i = 0;
+    assert (size != 1); //don't handle AH
+
+    for (; i<size; ++i) { 
+        current_thread->shadow_reg_table[dst_reg*REG_SIZE+i] = t;
+    }
+}
+
+TAINTSIGN taint_merge_mem2reg (u_long mem_loc, int dst_reg, uint32_t size) { 
+    taint_t t = merge_mem_taints (mem_loc, size);
+    uint32_t i = 0;
+    assert (size != 1);
+
+    for (; i<size; ++i) { 
+        current_thread->shadow_reg_table[dst_reg*REG_SIZE+i] = t;
+    }
 }
 
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size) { 
@@ -1564,7 +1588,7 @@ TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 }
 
 TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip) {
-	taint_t t = merge_reg_taints (translate_reg(LEVEL_BASE::REG_ECX), size);
+	taint_t t = merge_reg_taints (translate_reg(LEVEL_BASE::REG_ECX), size, 0);
 	struct taint_creation_info tci;
 
 	tci.type = TAINT_DATA_INST;
@@ -1636,7 +1660,7 @@ TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
 	for (i = 0; i<4; ++i) { 
 		t = merge_taints (current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE + i], t);
 	}
-	t = merge_reg_taints (LEVEL_BASE::REG_ECX, 4);
+	t = merge_reg_taints (LEVEL_BASE::REG_ECX, 4, 0);
 	for (i = 0; i<4; ++i) { //this is because old ecx value can affect the final state of ecx
 		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
 	}
@@ -1662,10 +1686,11 @@ TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg) {
 		//CL is the count register
 		int count_reg = translate_reg(LEVEL_BASE::REG_ECX);
 		//merge all taints from dstreg
-		taint_t dst_taint = merge_reg_taints (dstreg, size);
+		taint_t dst_taint = merge_reg_taints (dstreg, size, 0);
 		result = merge_taints (dst_taint, shadow_reg_table[count_reg*REG_SIZE]);
 	} else { 
-		result = merge_reg_taints (dstreg, size);
+                if (size == 1) fprintf (stderr, "[POTENTIAL BUG]taint_rotate_reg: merge_reg_taints needs upper8 support.\n");
+		result = merge_reg_taints (dstreg, size, 0);
 	}
 	uint32_t i = 0;
 	//set taints
@@ -1710,7 +1735,7 @@ TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uin
 	//compare AL.. with mem_loc
 	taint_t flag_taint = 0;
 	taint_t mem_taints = merge_mem_taints (mem_loc, size);
-	taint_t reg_taints = merge_reg_taints (eax_reg, size);
+	taint_t reg_taints = merge_reg_taints (eax_reg, size, 0);//won't be AH
 	flag_taint = merge_taints (mem_taints, reg_taints);
 	for (; i<NUM_FLAGS; ++i)  {
 		if (mask && (1<<i)) {
@@ -1735,8 +1760,9 @@ TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, i
 	//set ZF_FLAG
 	//compare AL.. with dst_reg
 	taint_t flag_taint = 0;
-	taint_t dst_taints = merge_reg_taints (dst_reg, size);
-	taint_t eax_taints = merge_reg_taints (eax_reg, size);
+        if (size == 1) fprintf (stderr, "[POTENTIAL BUG]taint_cmpxchg_reg: merge_reg_taints needs upper8 support.\n");
+	taint_t dst_taints = merge_reg_taints (dst_reg, size, 0);
+	taint_t eax_taints = merge_reg_taints (eax_reg, size, 0);
 	flag_taint = merge_taints (dst_taints, eax_taints);
 	for (; i<NUM_FLAGS; ++i)  {
 		if (mask && (1<<i)) {
@@ -1831,28 +1857,28 @@ static inline int is_mem_tainted (u_long mem_loc, uint32_t size) {
 static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) { 
 	UINT32 dst_value = 0;
 	assert (mem_loc != 0);
-	assert (mem_loc > 0x100);
-	switch (size) { 
-		case 1: {
-			UINT8 tmp = *((UINT8*) mem_loc);
-			dst_value = (UINT32) tmp;
-			break;
-			}
-		case 2: {
-			UINT16 tmp = *((UINT16*) mem_loc);
-			dst_value = (UINT32) tmp;
-			break;
-			}
-		case 4: {
-			dst_value = *((UINT32*) mem_loc);
-			break;
-			}
-		default:
-			{
-				fprintf (stderr, "get_mem_value: size is %u. \n", size);
-				return 0;
-			}
-	}
+        assert (mem_loc > 0x100);
+        switch (size) { 
+            case 1: {
+                        UINT8 tmp = *((UINT8*) mem_loc);
+                        dst_value = (UINT32) tmp;
+                        break;
+                    }
+            case 2: {
+                        UINT16 tmp = *((UINT16*) mem_loc);
+                        dst_value = (UINT32) tmp;
+                        break;
+                    }
+            case 4: {
+                        dst_value = *((UINT32*) mem_loc);
+                        break;
+                    }
+            default:
+                    {
+                        fprintf (stderr, "[ERROR]get_mem_value: size is %u. \n", size);
+                        return 0;
+                    }
+        }
 	return dst_value;
 }
 
@@ -2729,19 +2755,15 @@ static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
             &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
 }
 
-static inline void taint_regreg2reg (int dst_reg, int base_reg, int index_reg, uint32_t size) {
-	taint_t base_taint = merge_reg_taints(base_reg, size);
-	taint_t index_taint = merge_reg_taints (index_reg, size);
-	taint_t result = merge_taints (base_taint, index_taint);
-	uint32_t i = 0;
-	for (; i<size; ++i) { 
-		current_thread->shadow_reg_table[dst_reg*REG_SIZE+i] = result;
-	}
-}
-
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg) { 
-	TAINT_START ("taint_wregwreg2wreg");
-	taint_regreg2reg (dst_reg, base_reg, index_reg, 4);
+    uint32_t size = 4;
+    taint_t base_taint = merge_reg_taints(base_reg, size, 0);
+    taint_t index_taint = merge_reg_taints (index_reg, size, 0);
+    taint_t result = merge_taints (base_taint, index_taint);
+    uint32_t i = 0;
+    for (; i<size; ++i) { 
+        current_thread->shadow_reg_table[dst_reg*REG_SIZE+i] = result;
+    }
 }
 
 // reg2reg extend

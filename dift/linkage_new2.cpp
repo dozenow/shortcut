@@ -2664,9 +2664,13 @@ void pred_instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend);
 void pred_instrument_taint_mem2reg(INS ins, REG dstreg, int extend);
 
 void instrument_taint_immval2mem(INS ins);
+void instrument_taint_reg2regflag (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags);
+void instrument_taint_mem2regflag (INS ins, REG dstreg, int set_flags, int clear_flags);
 
 void instrument_clear_dst(INS ins);
 void instrument_clear_reg(INS ins, REG reg);
+void instrument_clear_flag (INS ins, uint32_t mask);
+void instrument_clear_mem_src (INS ins);
 
 // Trivial analysis routine to pass its argument back in an IfCall 
 // so that we can use it to control the next piece of instrumentation.
@@ -8275,6 +8279,9 @@ void instrument_psrldq(INS ins)
     assert(INS_OperandIsImmediate(ins, 1));
     int treg = translate_reg(INS_OperandReg(ins, 0));
     int shift = INS_OperandImmediate(ins, 1);
+#ifdef FW_SLICE
+    fw_slice_src_reg (ins, INS_OperandReg(ins, 0), REG_Size(INS_OperandReg(ins, 0)), 0);
+#endif
 
     INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(shift_reg_taint_right),
@@ -8308,7 +8315,6 @@ void instrument_pmovmskb(INS ins)
 }
 
 inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
-	//TODO add TRACE_TAINT_OPS
 	int treg;
 	UINT32 regsize;
 	UINT32 memsize;
@@ -8426,9 +8432,10 @@ void instrument_test_or_cmp (INS ins, uint32_t mask)
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			    AFUNPTR(taint_reg2flag),
 			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_UINT32, reg, 
+			    IARG_UINT32, translate_reg(reg), 
 			    IARG_UINT32, mask, 
 			    IARG_UINT32, regsize,
+                            IARG_UINT32, REG_is_Upper8(reg),
 			    IARG_END);
     }else{
         //if the arithmatic involves an immediate instruction the taint does
@@ -8631,6 +8638,7 @@ void instrument_bt (INS ins) {
 			    IARG_UINT32, reg, 
 			    IARG_UINT32, CF_FLAG, 
 			    IARG_UINT32, regsize,
+                            IARG_UINT32, REG_is_Upper8(reg),
 			    IARG_END);
 	} else if (op1mem && op2imm) { 
 	    uint32_t addrsize = INS_MemoryReadSize(ins);
@@ -8647,10 +8655,51 @@ void instrument_bt (INS ins) {
 	} else { 
 		assert (0);
 	}
-
 }
 
-void instrument_fst (INS ins) { 
+void instrument_bit_scan (INS ins) { 
+    if (INS_IsMemoryRead(ins)) {  //mem to reg
+        REG dstreg = INS_OperandReg(ins, 0);
+#ifdef FW_SLICE
+        fw_slice_src_mem (ins, 0);
+#endif
+        INS_InsertCall (ins, IPOINT_BEFORE, 
+                AFUNPTR(taint_merge_mem2reg),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_MEMORYREAD_EA, 
+                IARG_UINT32, translate_reg(dstreg),
+                IARG_UINT32, REG_Size(dstreg),
+                IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+                AFUNPTR(taint_mem2flag),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_MEMORYREAD_EA,
+                IARG_UINT32, ZF_FLAG, 
+                IARG_UINT32, INS_MemoryReadSize(ins),
+                IARG_END);
+    } else {
+        REG dstreg = INS_OperandReg (ins, 0);
+        REG srcreg = INS_OperandReg (ins, 1);
+#ifdef FW_SLICE
+        fw_slice_src_reg (ins, srcreg, REG_Size(srcreg), 0);
+#endif
+        assert (REG_is_Upper8(srcreg) == 0);
+        INS_InsertCall (ins, IPOINT_BEFORE, 
+                AFUNPTR(taint_merge_reg2reg), 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_UINT32, translate_reg (dstreg),
+                IARG_UINT32, translate_reg (srcreg),
+                IARG_UINT32, REG_Size (dstreg),
+                IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+                AFUNPTR(taint_reg2flag),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_UINT32, translate_reg(srcreg),
+                IARG_UINT32, ZF_FLAG,  
+                IARG_UINT32, REG_Size(srcreg),
+                IARG_UINT32, REG_is_Upper8(srcreg),
+                IARG_END);
+    }
 }
 
 void count_inst_executed (void) { 
@@ -8823,6 +8872,7 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_SHL:
 	    case XED_ICLASS_SHR:
 	    case XED_ICLASS_SHRD:
+            case XED_ICLASS_SHLD:
 		    fw_slice_shift (ins);
 		    slice_handled = 1;
 		    break;
@@ -9001,6 +9051,7 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_PSRLDQ:
                 instrument_psrldq(ins);
+                slice_handled = 1;
                 break;
                 /*
             case XED_ICLASS_PSRLW:
@@ -9133,18 +9184,12 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst(ins);
                 break;
 #endif
-#ifdef CTRL_FLOW_OLD
-            // TODO
-           // case XED_ICLASS_BSF:
-           // case XED_ICLASS_BSR:
-           //     break;
-#else
+#ifdef CTRL_FLOW
            case XED_ICLASS_BSF:
            case XED_ICLASS_BSR:
-                instrument_clear_dst(ins);
+                instrument_bit_scan (ins);
+                slice_handled = 1;
                 break;
-#endif
-#ifdef CTRL_FLOW
 	   case XED_ICLASS_TEST:
                 //INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
                 instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG);
@@ -9326,6 +9371,12 @@ void instruction_instrumentation(INS ins, void *v)
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FLDZ:
+            case XED_ICLASS_FLD1:
+            case XED_ICLASS_FLDL2T:
+            case XED_ICLASS_FLDL2E:
+            case XED_ICLASS_FLDPI:
+            case XED_ICLASS_FLDLG2:
+            case XED_ICLASS_FLDLN2:
                 fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
                 assert (INS_OperandCount(ins) == 3);
                 instrument_clear_dst (ins);
@@ -9342,6 +9393,17 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_FMULP:
             case XED_ICLASS_FMUL:
+            case XED_ICLASS_FADD:
+            case XED_ICLASS_FADDP:
+            case XED_ICLASS_FSUB:
+            case XED_ICLASS_FISUB:
+            case XED_ICLASS_FSUBP:
+            case XED_ICLASS_FSUBR:
+            case XED_ICLASS_FISUBR:
+            case XED_ICLASS_FSUBRP:
+            case XED_ICLASS_FDIV:
+            case XED_ICLASS_FIDIV:
+            case XED_ICLASS_FDIVP:
                 fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
                 if (INS_IsMemoryRead(ins))
                     instrument_taint_add_mem2reg (ins, INS_OperandReg(ins, 0), -1, -1); //FPU flags are not tainted for now
@@ -9350,6 +9412,9 @@ void instruction_instrumentation(INS ins, void *v)
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
+            case XED_ICLASS_FCOMIP:
+            case XED_ICLASS_FUCOMI:
+            case XED_ICLASS_FUCOMIP:
                 fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
                 instrument_taint_regreg2flag (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), ZF_FLAG | PF_FLAG | CF_FLAG);
                 slice_handled = 1;
@@ -9357,6 +9422,20 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FXCH:
                 fprintf (stderr, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
                 instrument_xchg (ins); //this function only supports reg2reg exchange with FPU registers  currently
+                slice_handled = 1;
+                break;
+            //TODO:currently, we ignore the FPU control word
+            case XED_ICLASS_FNSTCW:
+                instrument_clear_dst (ins); 
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FLDCW:
+                //do nothing
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FISTP:
+            case XED_ICLASS_FIST:
+                instrument_taint_reg2mem (ins, LEVEL_BASE::REG_ST0, 0);
                 slice_handled = 1;
                 break;
             default:
