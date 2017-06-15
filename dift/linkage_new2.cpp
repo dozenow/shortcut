@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 0
+//#define EXTRA_DEBUG 1739
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -8717,7 +8717,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
-    printf ("edx tainted? %d eax tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0));
+    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), 
+	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0));
+    // If you want to debug a memory address taint, can uncomment and change this
+    //    printf ("840a8a0 tainted? %d\n", is_mem_arg_tainted (0x840a8a0, 4)); 
     fflush (stdout);
 }
 

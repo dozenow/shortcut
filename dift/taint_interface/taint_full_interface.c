@@ -1802,7 +1802,7 @@ static inline void taint_reg2mem(u_long mem_loc, int reg, uint32_t size)
 void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t total_size) {
 	uint32_t i = 0;
 	for (; i<total_size; i+=reg_size) { 
-		taint_reg2mem (mem_loc+i*reg_size, reg, reg_size);
+	    taint_reg2mem (mem_loc+i, reg, reg_size);
 	}
 }
 
@@ -1822,12 +1822,6 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
 		}
 	}
 	return tainted;
-}
-
-/* For calling above from linkage_new.cpp (sigh) */
-int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8) 
-{
-    return is_reg_tainted (reg, size, is_upper8);
 }
 
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size) { 
@@ -1852,6 +1846,17 @@ static inline int is_mem_tainted (u_long mem_loc, uint32_t size) {
 		mem_offset += count;
 	}
 	return tainted;
+}
+
+/* For calling above from linkage_new.cpp (sigh) */
+int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8) 
+{
+    return is_reg_tainted (reg, size, is_upper8);
+}
+
+int is_mem_arg_tainted (u_long mem_loc, uint32_t size) 
+{
+    return is_mem_tainted (mem_loc, size);
 }
 
 static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) { 
