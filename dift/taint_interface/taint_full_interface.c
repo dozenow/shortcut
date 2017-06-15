@@ -2387,8 +2387,13 @@ TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u
     int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
     int mem_taints = is_mem_tainted (mem_loc2, mem_size);
     if (reg1_taint || mem_taints) {
-        fprintf (stderr, "[ERROR] pcmp[i_or_e]stri not handled with mem location.\n");
-        assert (0);
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_regmem_pcmp[i_or_e]stri[%d:%d:%u,%lx:%d:%u] #dst_reg_value %.16s, src_mem_value %u\n", 
+		reg1, reg1_taint, reg1_size, mem_loc2, mem_taints, mem_size, reg1_val, get_mem_value(mem_loc2, mem_size));
+	if (!reg1_taint) add_imm_load_to_slice (reg1, 16, reg1_val, ip);
+        if (!mem_taints) { 
+            printf ("[BUG][SLICE] cannot handle tainted mem for pcmpistri for now, because we didn't init the untainted mem values correctly\n");
+        }
     }
     return 0;
 }
