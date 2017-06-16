@@ -7464,23 +7464,19 @@ void instrument_rotate(INS ins)
 	}
 }
 
-//not used currently
+//TODO affect flags
 void instrument_shift(INS ins)
 {
     int count = INS_OperandCount(ins);
     if(count == 2) {
-        // TODO ctrlflow
+        assert (0);
     } else if (count == 3) {
         if (INS_OperandIsReg(ins, 0) && INS_OperandIsReg(ins, 1)) {
-            fprintf(stderr, "shift 3: %s\n", INS_Disassemble(ins).c_str());
-            fprintf(stderr, "src reg is %s, dst reg is %s\n", REG_StringShort(INS_OperandReg(ins, 1)).c_str(),
-                    REG_StringShort(INS_OperandReg(ins, 0)).c_str());
             instrument_taint_add_reg2reg(ins, INS_OperandReg(ins, 0),
 					 INS_OperandReg(ins, 1), -1, -1);
         }
     } else if (count == 4) {
         if (INS_OperandIsReg(ins, 2)) {
-            fprintf(stderr, "2 %s\n", REG_StringShort(INS_OperandReg(ins, 2)).c_str());
             if (INS_OperandIsReg(ins, 0)) {
                 instrument_taint_add_reg2reg(ins, INS_OperandReg(ins, 0),
 					     INS_OperandReg(ins, 2), -1, -1);
@@ -8556,6 +8552,7 @@ void fw_slice_shift (INS ins) {
 	int count = INS_OperandCount (ins);
 	int handled = 0;
 	if (count == 3) {
+                //the third one is EFLAG, ignore for now
 		int op1reg = INS_OperandIsReg (ins, 0); 
 		int op1mem = INS_OperandIsMemory (ins, 0);
 		int op2reg = INS_OperandIsReg (ins, 1);
@@ -8583,11 +8580,13 @@ void fw_slice_shift (INS ins) {
 		int op1mem = INS_OperandIsMemory (ins, 0);
 		int op2reg = INS_OperandIsReg (ins, 1);
 		int op3reg = INS_OperandIsReg (ins, 2);
+                //the fourth one is EFLAG, ignore for now
 		if (op1reg) { 
 			REG reg1 = INS_OperandReg (ins, 0);	
 			REG reg2 = INS_OperandReg (ins, 1);
 			if (op2reg && op3reg) { 
 				REG reg3 = INS_OperandReg (ins, 2);
+                                assert (reg3 != LEVEL_BASE::REG_EFLAGS);
 				fw_slice_src_regregreg (ins, reg1, REG_Size(reg1), reg2, REG_Size(reg2), reg3, REG_Size(reg3));
 			} else {
 				fw_slice_src_regreg (ins, reg1, REG_Size(reg1), reg2, REG_Size(reg2));
@@ -8918,20 +8917,18 @@ void instruction_instrumentation(INS ins, void *v)
 #ifdef COPY_ONLY
         instrument_clear_dst(ins);
 #else
-	//TODO xdou: do we care about tainting shift instructions?
 	//TODO: flags are affected 
-        //TODO: OperandCount is probably not right?
-        // instrument_shift(ins);
-#endif
-#ifdef FW_SLICE
 	switch (opcode) { 
 	    //case XED_ICLASS_SAL:
 	    case XED_ICLASS_SAR:
 	    case XED_ICLASS_SHL:
 	    case XED_ICLASS_SHR:
 	    case XED_ICLASS_SHRD:
-            case XED_ICLASS_SHLD:
+            case XED_ICLASS_SHLD: 
+#ifdef FW_SLICE
 		    fw_slice_shift (ins);
+#endif
+                    instrument_shift(ins);
 		    slice_handled = 1;
 		    break;
 	    default:

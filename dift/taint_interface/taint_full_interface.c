@@ -1988,6 +1988,7 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
             printf ("[SLICE_EXTRA] mov $reg(%d,%u), %u //comes with %x\n", reg, reg_size, *regvalue->dword, ip);
             break;
         case 8:
+        case 10:
             printf ("[SLICE_EXTRA] unhandled size of reg: %d\n", reg_size);
             break;
         case 16:
