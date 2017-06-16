@@ -150,6 +150,12 @@ string cleanupAddressingLine (string s) {
 	return s.substr(start_index, end_index - start_index) + " /* [SLICE_ADDRESSING]" + s.substr(end_index) + "*/";
 }
 
+string cleanupVerificationLine (string s) { 
+	size_t start_index = s.find("]") + 2;
+	size_t end_index = s.find("//");
+	return s.substr(start_index, end_index - start_index) + " /* [SLICE_VERIFICATION]" + s.substr(end_index) + "*/";
+}
+
 string memSizeToPrefix(int size){ 
 	switch(size){
 		case 1: return" byte ptr ";
@@ -381,6 +387,7 @@ int main (int argc, char* argv[]) {
 	//println ("**************************")
 	queue<string> extraLines;
 	queue<string> address; //here I can handle multiple address convertion
+        queue<string> addr_verification;
 	while (!buffer.empty()) {
 		auto p = buffer.front();
 		string s= p.second;
@@ -399,6 +406,12 @@ int main (int argc, char* argv[]) {
 				 //special case: to avoid affecting esp, we change pos/push to mov instructions
 				 //special case: convert jumps
 				 s = rewriteInst (s);
+                                //process SLICE_VERIFICATION for memory addresses
+                                while (!addr_verification.empty()) {
+                                    string v = addr_verification.front();
+                                    println (cleanupVerificationLine(replaceReg(v)));
+                                    addr_verification.pop();
+                                }
 				//processs SLICE_ADDRESSING
 				while (!address.empty()) {
 					string line = address.front();
@@ -468,7 +481,7 @@ int main (int argc, char* argv[]) {
 				println (cleanupSliceLine(s));
 				break;
 			case SLICE_VERIFICATION:
-				println ("/*" + s + "*/");
+                                addr_verification.push (s);
 				break;
 			default:
 				println ("unrecognized: " + s);
@@ -495,6 +508,17 @@ int main (int argc, char* argv[]) {
 	println ("push ecx");
 	println ("push edx");
 	println ("call handle_jump_diverge");
+	println ("push edx");
+	println ("push ecx");
+	println ("push eax");
+
+	//index divergence
+	println ("/* function that handles index divergence */");
+	println ("index_diverge:");
+	println ("push eax");
+	println ("push ecx");
+	println ("push edx");
+	println ("call handle_index_diverge");
 	println ("push edx");
 	println ("push ecx");
 	println ("push eax");

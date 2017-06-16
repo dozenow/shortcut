@@ -7453,6 +7453,7 @@ void instrument_rotate(INS ins)
 	}
 }
 
+//not used currently
 void instrument_shift(INS ins)
 {
     int count = INS_OperandCount(ins);
@@ -8109,19 +8110,18 @@ void instrument_mul(INS ins)
     }
 }
 
+//IMPORTANT: retval of INS_OperandCount won't correspond to the actual operand counts in the intel manual! 
+//Apperantly, pin has its only definition of operand counts
+//It prints out all hidden registers and EFLAGS as operands
 void instrument_imul(INS ins)
 {
     int count;
     INSTRUMENT_PRINT (log_f, "imul instruction: %s\n", INS_Disassemble(ins).c_str());
     count = INS_OperandCount(ins);
     INSTRUMENT_PRINT (log_f, "num operands is %d\n", count);
-    if (count == 2) {
-        // one operand version is same as mul
-        INSTRUMENT_PRINT (log_f, "imul is the 2 operand version\n");
-        INSTRUMENT_PRINT (log_f, "imul instruction: %s\n", INS_Disassemble(ins).c_str());
-        instrument_mul(ins);
-    } else if (count == 3) {
-        // two operand version is taint_add src to dst
+    if (count == 3) {
+        //format: imul r32, r/m32  (r32 = r32*r/m32)
+        // taint_add src to dst
         assert (INS_OperandIsReg(ins, 0));
         REG dst_reg = INS_OperandReg(ins, 0);
         if (INS_IsMemoryRead(ins)) {
@@ -8154,10 +8154,20 @@ void instrument_imul(INS ins)
 			   IARG_UINT32, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG,
 			   IARG_END);
         }
-    } else if (count == 4) {
-        // three operand version is taint src to dst
-        if (INS_OperandIsReg(ins, 0)) {
-
+    } else if (count == 2) {
+        //xdou: I don't think this will happen? 
+        fprintf (stderr, "[BUG] imul with 2 operands??\n");
+        assert (0);
+    }else if (count == 4) {
+        //format1: imul r/m32 (EDX:EAX = EAX*r/m32), same as mul
+        //format2: imul r32, r/m32, imm32 (r32=r/m32*imm32),  taint src to dst
+        /*int i = 0;
+        for (; i<4; ++i) { 
+            fprintf (stderr, "[INFO]imul %d %d %d %d, reg (%d)\n", INS_OperandIsReg (ins, i), INS_OperandIsMemory(ins, i), INS_OperandIsImmediate(ins, i), INS_OperandIsImplicit(ins, i), INS_OperandReg(ins, i));
+        }
+        fprintf (stderr, "[INFO] imul %s\n", INS_Disassemble(ins).c_str());*/
+        if (INS_OperandIsImmediate (ins, 2)) {
+            //format 2
             assert (INS_OperandIsReg(ins, 0));
             REG dst_reg = INS_OperandReg(ins, 0);
 
@@ -8189,12 +8199,9 @@ void instrument_imul(INS ins)
                                IARG_UINT32, REG_Size(src_reg),
 			       IARG_END);
             }
-        } else {
-            // in this case the instruction looks like this:
-            //   imul dword ptr [esp+0x88]
-            //   which is just like the 2 count version,
-            //   it's 4 because of the index register
-            instrument_mul(ins);
+        } else { 
+            //format 1
+            instrument_mul (ins);
         }
     }
 }
@@ -8892,6 +8899,7 @@ void instruction_instrumentation(INS ins, void *v)
 #else
 	//TODO xdou: do we care about tainting shift instructions?
 	//TODO: flags are affected 
+        //TODO: OperandCount is probably not right?
         // instrument_shift(ins);
 #endif
 #ifdef FW_SLICE

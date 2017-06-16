@@ -68,6 +68,13 @@ void handle_jump_diverge()
     exit(-1);
 }
 
+void handle_index_diverge()
+{
+    fprintf (stderr, "[MISMATCH] index diverges.\n");
+    //fail hardly
+    exit(-1);
+}
+
 static inline void check_retval (const char* name, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
