@@ -1780,7 +1780,7 @@ void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t tot
 	}
 }
 
-//TODO: this is not correct: if al is tainted and ah is not, when reading from ax, we should init ah with SLICE_EXTRA
+// Returns 2 for partial taint now.  Calling functions must handle this.
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) { 
 	int tainted = 0;
 	uint32_t i = 0;
@@ -1794,6 +1794,15 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
 			tainted = 1;
 			break;
 		}
+	}
+	if (tainted) {
+	    for (++i; i<end; ++i) {
+		if (current_thread->shadow_reg_table[reg*REG_SIZE + i] == 0) {
+		    printf ("[ERROR]: register %d size %d is partially tainted\n", reg, size);
+		    tainted = 2;
+		    break;
+		}
+	    }
 	}
 	return tainted;
 }
@@ -1878,16 +1887,57 @@ static const char* translate_mmx (uint32_t reg)
 
 static inline void add_imm_load_to_slice (uint32_t reg, uint32_t size, char* val, ADDRINT ip)
 {
-    if (size == 4) {
-      //printf ("[SLICE] #00000000 #mov %s, %lu [SLICE_INFO] comes with %x\n", translate_reg(reg), *((u_long *) val), ip);
-    } else if (size == 16) {
-	printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) val), ip);
-	printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+4)), ip);
-	printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+8)), ip);
-	printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+12)), ip);
-	printf ("[SLICE_EXTRA] movdqu %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
-	printf ("[SLICE_EXTRA] add esp, 16 // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) val), ip);
+    printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+4)), ip);
+    printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+8)), ip);
+    printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+12)), ip);
+    printf ("[SLICE_EXTRA] movdqu %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    printf ("[SLICE_EXTRA] add esp, 16 // comes with %x\n", ip);
+}
+
+static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char* val, ADDRINT ip)
+{
+    int i, j;
+    u_long mask, vals;
+
+    // (1) Set up a bitmask in memory 
+    for (i = 3; i >= 0; i--) {
+	mask = 0;
+	for (j = 3; j >= 0; j--) {
+	    mask = mask << 8;
+	    if (current_thread->shadow_reg_table[reg*REG_SIZE + i*4+j]) {
+		printf ("Byte %d is tainted\n", i*4+j);
+		mask |= 0xff;
+	    } 
+	}
+	printf ("[SLICE_EXTRA] push 0x%lx // comes with %x\n", mask, ip);
     }
+
+    // Debug
+    //printf ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    //printf ("[SLICE_EXTRA] call handle_jump_diverge // comes with %x\n", ip);
+
+    // (2) And register with max to include only tainted values
+    printf ("[SLICE_EXTRA] pand %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+
+    // (3) Set up the non-tainted values in memory
+    for (i = 3; i >= 0; i--) {
+	vals = 0;
+	for (j = 3; j >= 0; j--) {
+	    vals = vals << 8;
+	    printf ("Byte %d has val %x\n", i*4+j, val[i*4+j]);
+	    if (current_thread->shadow_reg_table[reg*REG_SIZE + i*4+j] == 0) {
+		vals |= (u_char) val[i*4+j];
+	    } 
+	}
+	printf ("[SLICE_EXTRA] push 0x%lx // comes with %x\n", vals, ip);
+    }
+
+    // (4) Or with the register to load those values
+    printf ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+
+    // (5) Fix the stack
+    printf ("[SLICE_EXTRA] add esp, 32 // comes with %x\n", ip);
 }
 
 static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t reg_size, uint32_t regvalue, uint32_t is_upper8) { 
@@ -1897,7 +1947,7 @@ static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t
         printf ("[SLICE_EXTRA] mov $reg(%d,%u), %u //comes with %x\n", reg, reg_size, regvalue, ip);
 }
 
-static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size, PIN_REGISTER* regvalue, uint32_t is_upper8) { 
+static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size, PIN_REGISTER* regvalue, uint32_t is_upper8, int tainted) { 
     switch (reg_size) {
         case 1:
             if (is_upper8)
@@ -1915,7 +1965,11 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
             printf ("[SLICE_EXTRA] unhandled size of reg: %d\n", reg_size);
             break;
         case 16:
-            add_imm_load_to_slice (reg, reg_size, (char*) regvalue, ip);
+	    if (!tainted) {
+		add_imm_load_to_slice (reg, reg_size, (char*) regvalue, ip);
+	    } else {
+		add_partial_load_to_slice (reg, reg_size, (char*) regvalue, ip);
+	    }
             break;
         default: 
             assert (0);
@@ -2109,7 +2163,6 @@ TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int orig_
 
 	int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
 	int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
-	//printf ("    [DEBUG] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %u, src_reg_value %u\n", dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, dst_regvalue, src_regvalue);
 
 	if (tainted1 || tainted2){
 		PRINT ("regreg\n");
@@ -2118,8 +2171,8 @@ TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int orig_
                 printf ("[SLICE] #%x #%s\t", ip, ins_str);
                 printf ("    [SLICE_INFO] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %u, src_reg_value %u\n", 
                         dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, *dst_regvalue.dword, *src_regvalue.dword);
-                if (!tainted1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8);
-		if (!tainted2) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8);
+                if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
+		if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
 		return 1;
 	}
 	return 0;
@@ -2149,9 +2202,9 @@ TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int or
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_regregreg[%d:%d:%u,%d:%d:%u,%d:%d:%u] #dst_reg_value %u, src_reg_value %u, count_reg_value %u\n", 
 				dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, count_reg, tainted3, count_regsize, *dst_regvalue.dword, *src_regvalue.dword, *count_regvalue.dword);
-		if (!tainted1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8);
-		if (!tainted2) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8);
-		if (!tainted3) print_extra_move_reg (ip, count_reg, count_regsize, &count_regvalue, count_reg_u8);
+		if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
+		if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
+		if (tainted3 != 1) print_extra_move_reg (ip, count_reg, count_regsize, &count_regvalue, count_reg_u8, tainted3);
 		return 1;
 	}
 	return 0;
@@ -2189,8 +2242,7 @@ TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_rea
 				get_mem_value (mem_write, mem_writesize), get_mem_value (mem_read, mem_readsize), regvalue);
 		if (!tainted1) print_extra_move_mem (ip, mem_read, mem_readsize);
 		if (!tainted2) print_extra_move_mem (ip, mem_write, mem_writesize);
-		if (!tainted3)
-                    print_extra_move_reg_imm_value (ip, reg, reg_size, regvalue, reg_u8);
+		if (!tainted3) print_extra_move_reg_imm_value (ip, reg, reg_size, regvalue, reg_u8);
 		return 1;
 	}
 	return 0;
@@ -2207,10 +2259,8 @@ TAINTINT fw_slice_memreg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t reg_
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %u\n", 
 				mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value (mem_loc, mem_size), *regvalue.dword);
-		if (reg_tainted == 0) 
-			print_extra_move_reg (ip, reg, reg_size, &regvalue, reg_u8);
-		else if (mem_tainted == 0) 
-			print_extra_move_mem (ip, mem_loc, mem_size);
+		if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, &regvalue, reg_u8, reg_tainted);
+		else if (mem_tainted == 0) print_extra_move_mem (ip, mem_loc, mem_size);
 		return 1;
 	}
 	return 0;

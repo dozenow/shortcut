@@ -61,9 +61,7 @@ struct write_recheck {
     int fd;
     void* buf;
     size_t count;
-    size_t writelen;
 };
-/* Followed by variable length write data */
 
 struct ugetrlimit_recheck {
     int resource;

@@ -11,6 +11,8 @@
 
 using namespace std;
 
+int pushed = 0; // For aligning stack
+
 string memSizeToPrefix(int size);
 class AddrToRestore {
 	private: 
@@ -35,6 +37,7 @@ class AddrToRestore {
 				cout << "lea esi, [0x" << loc << "]" << endl;
 				cout << "rep movsb" << endl;
 			}
+			pushed += size;
 		}
 		void printPop () { 
 			if (size == 2 || size == 4)
@@ -376,7 +379,13 @@ int main (int argc, char* argv[]) {
 	for (AddrToRestore addrRestore: restoreAddress) 
 		addrRestore.printPush();
 
+	// Stack must be aligned for use during slice
+	if (pushed%16) {
+		cout << "sub esp, " << 16-(pushed%16) << endl;
+	}
+
 	println ("/*slice begins*/");
+
 	//switch posistion and generate compilable assembly
 	//println ("**************************")
 	queue<string> extraLines;
@@ -477,6 +486,10 @@ int main (int argc, char* argv[]) {
 		buffer.pop();
 	}
 	println ("/* restoring address and registers */");
+	if (pushed%16) {
+		cout << "add esp, " << 16-(pushed%16) << endl;
+	}
+
 	for (auto addrRestore = restoreAddress.rbegin(); addrRestore!=restoreAddress.rend(); ++addrRestore) {
 		addrRestore->printPop();
 	}

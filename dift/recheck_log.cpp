@@ -2,14 +2,14 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <syscall.h>
-#include <termios.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
+#include <sys/termios.h>
 
-
+#include "taint_interface/taint_interface.h"
 #include "recheck_log.h"
 
 struct recheck_handle {
@@ -154,25 +154,25 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     return 0;
 }
 
-//sys_write wiP
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count)
 {
     struct write_recheck wrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_write);
+    int i;
 
-    if (res->psr.flags & SR_HAS_RETPARAMS) {
-	wrchk.has_retvals = 1;
-	wrchk.writelen = res->retparams_size;
-    } else {
-	wrchk.has_retvals = 0;
-	wrchk.writelen = 0;
-    }
-    write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck) + wrchk.writelen);
+    write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck));
     wrchk.fd = fd;
     wrchk.buf = buf;
     wrchk.count = count;
+
+    // If memory is tainted, need to deal with this
+    for (i = 0; i < res->retval; i++) {
+	if (is_mem_arg_tainted ((u_long) buf+i, 1)) { // This could be more efficient
+	    printf ("[ERROR] write buffer byte %d tainted\n", i);
+	}
+    }
+    
     write_data_into_recheck_log (handle->recheckfd, &wrchk, sizeof(wrchk));
-    if (wrchk.writelen) write_data_into_recheck_log (handle->recheckfd, res->retparams, wrchk.writelen);
 
     return 0;
 }
@@ -419,6 +419,8 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
        I stole this from replay.c and it should be kept up to date with kernel. */
     int dir, size;
 
+#define TERMIOS_SIZE 36 /* Not sure how to get this reliably */
+
     switch (cmd) {
     case TCSBRK:
     case TCSBRKP:
@@ -448,10 +450,13 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
 	dir = _IOC_READ | _IOC_WRITE;
 	size = sizeof(char);
 	break;
+    case TCXONC:
+	dir = _IOC_READ;
+	size = 0;
+	break;
     case FIONBIO:
     case FIOASYNC:
 	/*case FIBMAP:*/
-    case TCXONC:
     case TIOCMBIS:
     case TIOCMBIC:
     case TIOCMSET:
@@ -477,8 +482,9 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
 	break;
     case TCGETA:
     case TCGETS:
+    case TIOCGLCKTRMIOS:
 	dir = _IOC_WRITE;
-	size = sizeof(struct termios);
+	size = TERMIOS_SIZE;
 	break;
     case TCSETA:
     case TCSETS:
@@ -486,8 +492,9 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
     case TCSETAF:
     case TCSETSW:
     case TCSETSF:
+    case TIOCSLCKTRMIOS:
 	dir = _IOC_READ;
-	size = sizeof(struct termios);
+	size = TERMIOS_SIZE;
 	break;
     case TIOCGSID:
 	dir = _IOC_WRITE;
@@ -537,14 +544,6 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
 	size = sizeof(struct termiox);
 	break;
 #endif
-    case TIOCGLCKTRMIOS:
-	dir = _IOC_WRITE;
-	size = sizeof(struct termios);
-	break;
-    case TIOCSLCKTRMIOS:
-	dir = _IOC_READ;
-	size = sizeof(struct termios);
-	break;
 #if 0
     case TIOCGICOUNT:
 	dir = _IOC_WRITE;
@@ -574,8 +573,13 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
 
     /* I would trust the kernel size here */
     decode_ioctl (cmd, &ichk.dir, &ichk.size);
-    printf ("ioctl: fd %d cmd %x dir %x retparams size %d\n", fd, cmd, ichk.dir, res->retparams_size);
-    write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+res->retparams_size-sizeof(u_long));
+    printf ("ioctl: fd %d cmd %x dir %x size %d retparams size %d arg %lx\n", 
+	    fd, cmd, ichk.dir, ichk.size, res->retparams_size, (u_long) arg);
+    if (ichk.dir == _IOC_WRITE) {
+	write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+res->retparams_size-sizeof(u_long));
+    } else if (ichk.dir == _IOC_READ) {
+	write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+2*(ichk.size));
+    }
     ichk.fd = fd;
     ichk.cmd = cmd;
     ichk.arg = arg;
@@ -585,7 +589,20 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
 	ichk.arglen = 0;
     }
     write_data_into_recheck_log (handle->recheckfd, &ichk, sizeof(ichk));
-    if (ichk.arglen > 0) write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), ichk.arglen);
-
+    if (ichk.dir == _IOC_WRITE && ichk.arglen > 0) {
+	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), ichk.arglen);
+    }
+    if (ichk.dir == _IOC_READ && ichk.size > 0) {
+	char tainted[ichk.size];
+	u_int i;
+	for (i = 0; i < ichk.size; i++) {
+	    tainted[i] = is_mem_arg_tainted ((u_long) arg+i, 1); // This could be more efficient
+	    if (tainted[i]) {
+		printf ("outbuf byte %d tainted\n", i);
+	    }
+	}
+	write_data_into_recheck_log (handle->recheckfd, tainted, ichk.size);
+	write_data_into_recheck_log (handle->recheckfd, arg, ichk.size);
+    }
     return ichk.arglen;
 }
