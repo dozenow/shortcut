@@ -1982,7 +1982,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 				else 
 					printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", base_reg, base_reg_size, base_reg_value, ip);
 			} else 
-				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards), address %lx\n", base_reg, base_reg_size, ip, mem_loc);
+				printf ("[SLICE_VERIFICATION] tainted $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", base_reg, base_reg_size, base_reg_value, ip, mem_loc);
 		} 
 		if (index_reg_size > 0) { 
 			if (is_reg_tainted (index_reg, index_reg_size, index_reg_u8) == 0) {
@@ -1993,7 +1993,7 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 					printf ("[SLICE_ADDRESSING] mov $reg(%d,%u), 0x%x //comes with %x (move upwards)\n", index_reg, index_reg_size, index_reg_value, ip);
 				fprintf (stderr, "[TODO] double check if the index tool handles all cases\n");
 			} else { 
-				printf ("[SLICE_VERIFICATION] $reg(%d,%u) is tainted //comes with %x (move upwards), address %lx\n", index_reg, index_reg_size, ip, mem_loc);
+				printf ("[SLICE_VERIFICATION] tainted $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", index_reg, index_reg_size, index_reg_value, ip, mem_loc);
 			}
 		}
 	}

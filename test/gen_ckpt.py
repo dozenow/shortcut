@@ -91,7 +91,7 @@ outfd.close();
 #os.system("as /tmp/exslice.asm -o /tmp/exslice.o")
 #os.system("ld -m elf_i386 -s -shared -o /tmp/exslice.so /tmp/exslice.o")
 os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice.c -o "+outputdir+"/exslice.o")
-os.system("gcc -shared "+outputdir+"exslice.o -o "+outputdir+"/exslice.so recheck_support.o")
+os.system("gcc -shared "+outputdir+"/exslice.o -o "+outputdir+"/exslice.so recheck_support.o")
 
 # Generate a checkpoint
 p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])

@@ -62,12 +62,13 @@ for(i <- args(0).toInt to args(1).toInt) {
 			} else { 
 				throw new Exception ("Cannot find the clock in ckpt_clocks file")
 			}
-			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock " + ckpt_clock 
+			val link_command = "./seqtt  /replay_logdb/rec_" + i + " -ckpt_clock " + ckpt_clock  + " -filter_syscall 173 -run_data_tool -group_dir /startup_db/" + i
 			println ("####Executing " + link_command)
-			val link_result = link_command!!;
+                        //val link_result = link_command!!;
+                        link_command!;
 		}
 		//3. generate the checkpoint files
-		val resume_command = "./resume /replay_logdb/rec_" + i + " --pthread /home/dozenow/omniplay/eglibc-2.15/prefix/lib --ckpt_at=" + ckpt_clock
+		/*val resume_command = "./resume /replay_logdb/rec_" + i + " --pthread /home/dozenow/omniplay/eglibc-2.15/prefix/lib --ckpt_at=" + ckpt_clock
 		println ("####Excuting " + resume_command)
 		val resume_result = resume_command!!;
 		println (resume_result)
@@ -88,7 +89,7 @@ for(i <- args(0).toInt to args(1).toInt) {
 		if (fast == false) { 
 			pw.println (i + "," + ckpt_clock)
 			pw.flush
-		}
+		}*/
 	} else {
 		println ("####Skipping...")
 	}
