@@ -2395,7 +2395,7 @@ TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t or
 		PRINT ("regflag\n");
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_regflag[%d:%d:%u,%x:%d:4] #reg_value %u, flag_value TODO\n", src_reg, reg_tainted, size, mask, flag_tainted, *regvalue.dword);
-		if (!reg_tainted) print_extra_move_reg (ip, src_reg, size, &regvalue, reg_u8);
+		if (reg_tainted != 1) print_extra_move_reg (ip, src_reg, size, &regvalue, reg_u8, reg_tainted);
 		if (!flag_tainted) print_extra_move_flag (ip, ins_str, mask);
 		return 1;
 	}
