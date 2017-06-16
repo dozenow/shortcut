@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1739
+//#define EXTRA_DEBUG 13799
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -144,9 +144,6 @@ struct save_state {
     int syscall_cnt; // the per-thread count
     unsigned long open_file_cnt; 
 };
-
-//long total_recv; //for debugging this stuff
-//long total_send; //for debugging this stuff
 
 /* Global state */
 
@@ -899,6 +896,12 @@ static void sys_ioctl_stop (int rc)
     }
 }
 
+
+static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd)
+{
+    printf ("fcntl64: fd %d cmd %d\n", fd, cmd);
+}
+
 #ifdef LINKAGE_FDTRACK
 static void sys_select_start(struct thread_data* tdata, int nfds, fd_set* readfds, fd_set* writefds, 
 			     fd_set* exceptfds, struct timeval* timeout)
@@ -1010,10 +1013,16 @@ static void sys_munmap_stop(int rc)
 }
 #endif
 
-static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, int size)
+static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, size_t count)
 {
     fprintf (stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->op.write_info_cache;
+    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	printf ("[SLICE] #00000000 #call write_recheck [SLICE_INFO]\n");
+#endif
+	recheck_write (tdata->recheck_handle, fd, buf, count);
+    }
     wi->fd = fd;
     wi->buf = buf;
     tdata->save_syscall_info = (void *) wi;
@@ -1130,8 +1139,7 @@ static void sys_socket_start (struct thread_data* tdata, int domain, int type, i
 	printf ("[SLICE] #00000000 #call socket_recheck [SLICE_INFO]\n");
 #endif
 	recheck_socket (tdata->recheck_handle, domain, type, protocol);
-    
-}
+    }
     struct socket_info* si = (struct socket_info*) malloc(sizeof(struct socket_info));
     if (si == NULL) {
 	fprintf (stderr, "Unable to malloc socket info\n");
@@ -1878,7 +1886,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_write:
         case SYS_pwrite64:
-	    sys_write_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
+	    sys_write_start(tdata, (int) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2);
             break;
         case SYS_writev:
             sys_writev_start(tdata, (int) syscallarg0, (struct iovec *) syscallarg1, (int) syscallarg2);
@@ -1940,6 +1948,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             }
             break;
         }
+        case SYS_fcntl64:
+	    sys_fcntl64_start (tdata, (int)syscallarg0, (int)syscallarg1);
+	    break;
         case SYS_mmap:
         case SYS_mmap2:
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
@@ -8743,8 +8754,18 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     PIN_UnlockClient();
     printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0));
-    // If you want to debug a memory address taint, can uncomment and change this
-    //    printf ("840a8a0 tainted? %d\n", is_mem_arg_tainted (0x840a8a0, 4)); 
+    // If you want to debug a memory address or xmm taint, can uncomment and change this
+    //printf ("bfffe7a1 tainted? %d\t", is_mem_arg_tainted (0xbffe7a1, 1)); 
+    //printf ("reg xmm1 tainted? ");
+    //for (int i = 0; i < 16; i++) {
+//	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
+    //}
+    //printf ("\t");
+    //printf ("reg xmm2 tainted? ");
+    //for (int i = 0; i < 16; i++) {
+//	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM2*REG_SIZE + i] != 0));
+    //}
+    //printf ("\n");
     fflush (stdout);
 }
 

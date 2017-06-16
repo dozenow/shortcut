@@ -64,8 +64,7 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     fprintf (stderr, "[MISMATCH] control flow diverges.\n");
-    //fail hardly
-    exit(-1);
+    abort();
 }
 
 void handle_index_diverge()
@@ -198,6 +197,30 @@ void read_recheck ()
             partial_read (pread, tmpbuf, readData, 0, rc);
 	}
     }
+}
+
+void write_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct write_recheck* pwrite;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pwrite = (struct write_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("write: fd %d buf %lx count %d rc %ld\n", pwrite->fd, (u_long) pwrite->buf,
+	   pwrite->count, pentry->retval);
+#endif
+    if (pwrite->fd == 99999) return;  // Debugging fd - ignore
+    if (cache_files_opened[pwrite->fd].is_open_cache_file) {
+	printf ("[ERROR] Should not be writing to a cache fiele\n");
+	handle_mismatch();
+    }
+    rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
+    check_retval ("write", pentry->retval, rc);
 }
 
 void open_recheck ()
@@ -828,7 +851,8 @@ void ioctl_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("ioctl: fd %u cmd %x dir %x size %x rc %ld\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, pentry->retval);
+    printf("ioctl: fd %u cmd %x dir %x size %x arg %lx arglen %ld rc %ld\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, 
+	   (u_long) pioctl->arg, pioctl->arglen, pentry->retval);
 #endif 
 
     if (pioctl->dir == _IOC_WRITE) {
@@ -836,19 +860,19 @@ void ioctl_recheck ()
 	check_retval ("ioctl", pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
-    } else {
-	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE for now\n");
-    }
-#if 0
-	if (pioctl->arglen > 0) {
-	    if (memcmp(addr, tmpbuf, pioctl->arglen)) {
-		printf ("[MISMATCH] ioctl returns buffer with different contents arglen %ld size %d\n", pioctl->arglen, pioctl->size);
-		for (i = 0; i < pioctl->arglen; i++) {
-		    printf ("byte %3d: ioctl returns %02x recorded %02x (%d)\n", i, tmpbuf[i], addr[i], tmpbuf[i] == addr[i]);
-		}
-		handle_mismatch();
+    } else if (pioctl->dir == _IOC_READ) {
+	if (pioctl->size) {
+	    char* tainted = addr;
+	    char* outbuf = addr + pioctl->size;
+	    for (i = 0; i < pioctl->size; i ++) {
+		printf ("byte %d tainted? %d cur value %02x rec value %02x\n", i, tainted[i], pioctl->arg[i], outbuf[i]);
+		if (!tainted[i]) pioctl->arg[i] = outbuf[i];
 	    }
 	}
-#endif
+	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);
+	check_retval ("ioctl", pentry->retval, rc);
+    } else {
+	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
+    }
 }
 
