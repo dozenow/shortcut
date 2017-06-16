@@ -76,11 +76,13 @@ TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t r
 TAINTSIGN taint_regmem2flag_with_different_size (u_long mem_loc, uint32_t reg, uint32_t mask, uint32_t size_mem, uint32_t size_reg);
 TAINTSIGN taint_memmem2flag (u_long mem_loc1, u_long mem_loc2, uint32_t mask, uint32_t size);
 TAINTSIGN taint_mem2flag (u_long mem_loc, uint32_t mask, uint32_t size);
-TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size);
+TAINTSIGN taint_reg2flag (uint32_t reg, uint32_t mask, uint32_t size, uint32_t is_upper8);
 TAINTSIGN taint_flag2mem (u_long mem_loc, uint32_t mask, uint32_t size);
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size);
 TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size);
+TAINTSIGN taint_merge_mem2reg (u_long mem_loc, int dst_reg, uint32_t size);
+TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size);
  
 TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
@@ -107,7 +109,7 @@ TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip,
 int fw_slice_check_final_mem_taint (taint_t* pregs);
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, u_long mem_loc, const CONTEXT* ctx, uint32_t reg_u8);
 TAINTINT fw_slice_regreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int orig_src_reg, uint32_t dst_regsize, uint32_t src_regsize, const CONTEXT* ctx,
-		uint32_t dst_reg_u8, uint32_t src_reg_u8, PIN_REGISTER* dst_reg_test_value);
+		uint32_t dst_reg_u8, uint32_t src_reg_u8);
 
 TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc);
 TAINTINT fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_read_size, uint32_t mem_write_size);
@@ -122,8 +124,9 @@ TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int or
                 const CONTEXT* ctx,
 		uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);
 TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t size);
-TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t src_reg, uint32_t size, ADDRINT regvalue, uint32_t reg_u8);
+TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t orig_src_reg, uint32_t size, const CONTEXT* ctx, int32_t reg_u8);
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
+TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u_long mem_loc2, uint32_t reg1_size, uint32_t mem_size, char* reg1_val);
 TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag);
 TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
@@ -221,14 +224,7 @@ TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg);
 TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, int set_flags, int clear_flags);
 
 // reg2reg xchg
-TAINTSIGN taint_xchg_lbreg2lbreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_ubreg2ubreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_ubreg2lbreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_lbreg2ubreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_hwreg2hwreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_wreg2wreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_dwreg2dwreg (int dst_reg, int src_reg);
-TAINTSIGN taint_xchg_qwreg2qwreg (int dst_reg, int src_reg);
+TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size);
 
 TAINTSIGN taint_mask_reg2reg (int dst_reg, int src_reg);
 

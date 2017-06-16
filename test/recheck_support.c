@@ -94,8 +94,10 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
 	    pass = 0;
         }
     }
-    if(pread->partial_read_end > total_size) 
+    if(pread->partial_read_end > total_size) {
 	    printf ("[BUG] partial_read_end out of boundary.\n");
+            pread->partial_read_end = total_size;
+    }
     if (pread->partial_read_end < total_size) { 
 	    if (is_cache_file == 0) {
 		    if (memcmp (newdata+pread->partial_read_end, olddata+pread->partial_read_end, total_size-pread->partial_read_end)) {
