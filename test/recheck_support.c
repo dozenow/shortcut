@@ -970,6 +970,10 @@ void ioctl_recheck ()
 	check_retval ("ioctl", pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
+	if (pioctl->cmd == 0x5413) {
+	  short* ps = (short *) &tmpbuf;
+	  printf ("window size is %d %d\n", ps[0], ps[1]);
+	}
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
 	    char* tainted = addr;

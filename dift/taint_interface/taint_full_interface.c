@@ -1808,29 +1808,33 @@ void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t tot
 
 // Returns 2 for partial taint now.  Calling functions must handle this.
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) { 
-	int tainted = 0;
-	uint32_t i = 0;
-	uint32_t end = size;
-	if (is_upper8) {
-		i = 1;
-		end = size + i;
-	}
-	for (; i<end; ++i) { 
-		if (current_thread->shadow_reg_table[reg*REG_SIZE + i] != 0) {
-			tainted = 1;
-			break;
-		}
-	}
-	if (tainted) {
-	    for (++i; i<end; ++i) {
-		if (current_thread->shadow_reg_table[reg*REG_SIZE + i] == 0) {
-		    printf ("[ERROR]: register %d size %d is partially tainted\n", reg, size);
-		    tainted = 2;
-		    break;
-		}
+    int tainted = 0;
+    uint32_t i = 0;
+    uint32_t end = size;
+    if (is_upper8) {
+	i = 1;
+	end = size + i;
+    }
+    for (; i<end; ++i) { 
+	if (current_thread->shadow_reg_table[reg*REG_SIZE + i] != 0) {
+	    if (i && !is_upper8) {
+		return 2; // Partially tainted: first bytes were untainted
+	    } else {
+		tainted = 1;
+		break;
 	    }
 	}
-	return tainted;
+    }
+    if (tainted) {
+	for (++i; i<end; ++i) {
+	    if (current_thread->shadow_reg_table[reg*REG_SIZE + i] == 0) {
+		printf ("[ERROR]: register %d size %d is partially tainted\n", reg, size);
+		tainted = 2;
+		break;
+	    }
+	}
+    }
+    return tainted;
 }
 
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size) { 
