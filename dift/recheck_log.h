@@ -137,6 +137,31 @@ struct ioctl_recheck {
     u_long arglen;
 };
 
+struct fcntl64_getfl_recheck {
+    int fd;
+};
+
+struct fcntl64_setfl_recheck {
+    int fd;
+    long flags;
+};
+
+struct fcntl64_getlk_recheck {
+    int has_retvals;
+    struct flock flock;
+    int fd;
+    void* arg;
+};
+
+struct fcntl64_getown_recheck {
+    int fd;
+};
+
+struct fcntl64_setown_recheck {
+    int fd;
+    long owner;
+};
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -158,8 +183,14 @@ int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int i
 int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz);
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol);
 int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
+int recheck_getpid (struct recheck_handle* handle);
 int recheck_getuid32 (struct recheck_handle* handle);
 int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence);
 int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg);
+int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd);
+int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags);
+int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg);
+int recheck_fcntl64_getown (struct recheck_handle* handle, int fd);
+int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner);
 
 #endif

@@ -97,7 +97,7 @@ int s = -1;
 //used in order to trace instructions! 
 //#define TRACE_INST
 
-#define LOGGING_ON
+//#define LOGGING_ON
 #define LOG_F log_f
 #define ERROR_PRINT fprintf
 
@@ -897,9 +897,53 @@ static void sys_ioctl_stop (int rc)
 }
 
 
-static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd)
+static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* arg)
 {
-    printf ("fcntl64: fd %d cmd %d\n", fd, cmd);
+    printf ("fcntl64: fd %d cmd %d arg %p\n", fd, cmd, arg);
+    switch (cmd) {
+    case F_GETFL:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getfl_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getfl (tdata->recheck_handle, fd);
+	}
+	break;
+    case F_SETFL:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_setfl_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_setfl (tdata->recheck_handle, fd, (long) arg);
+	}
+	break;
+    case F_GETLK:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getlk_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getlk (tdata->recheck_handle, fd, arg);
+	}
+	break;
+    case F_GETOWN:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getown_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getown (tdata->recheck_handle, fd);
+	}
+	break;
+    case F_SETOWN:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_setown_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg);
+	}
+	break;
+    default:
+	fprintf (stderr, "[ERROR] fcntl64 cmd %d not yet handled for recheck\n", cmd);
+    }
 }
 
 #ifdef LINKAGE_FDTRACK
@@ -1015,7 +1059,6 @@ static void sys_munmap_stop(int rc)
 
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, size_t count)
 {
-    fprintf (stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->op.write_info_cache;
     if (tdata->recheck_handle) {
 #ifdef FW_SLICE
@@ -1576,11 +1619,13 @@ static inline void sys_clock_gettime_stop (int rc) {
 }
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
+    SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
+    if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
-	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call getpid_recheck [SLICE_INFO]\n");
 #endif
+	recheck_getuid32 (tdata->recheck_handle);
+    }
 }
 
 static inline void sys_getpid_stop (int rc) {
@@ -1949,7 +1994,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         }
         case SYS_fcntl64:
-	    sys_fcntl64_start (tdata, (int)syscallarg0, (int)syscallarg1);
+	    sys_fcntl64_start (tdata, (int)syscallarg0, (int)syscallarg1,(void *)syscallarg2);
 	    break;
         case SYS_mmap:
         case SYS_mmap2:
