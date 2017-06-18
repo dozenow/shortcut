@@ -97,12 +97,12 @@ int s = -1;
 //used in order to trace instructions! 
 //#define TRACE_INST
 
-#define LOGGING_ON
+//#define LOGGING_ON
 #define LOG_F log_f
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 13799
+//#define EXTRA_DEBUG 13795
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -126,7 +126,6 @@ int s = -1;
  #define SYSCALL_DEBUG(x,...);
  #define PRINTX(x,...);
 #endif
-#define SPECIAL_REG(X) (X == LEVEL_BASE::REG_EBP || X == LEVEL_BASE::REG_ESP)
 
 //#define USE_CODEFLUSH_TRACK
 // Debug Macros
@@ -897,9 +896,53 @@ static void sys_ioctl_stop (int rc)
 }
 
 
-static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd)
+static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* arg)
 {
-    printf ("fcntl64: fd %d cmd %d\n", fd, cmd);
+    printf ("fcntl64: fd %d cmd %d arg %p\n", fd, cmd, arg);
+    switch (cmd) {
+    case F_GETFL:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getfl_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getfl (tdata->recheck_handle, fd);
+	}
+	break;
+    case F_SETFL:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_setfl_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_setfl (tdata->recheck_handle, fd, (long) arg);
+	}
+	break;
+    case F_GETLK:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getlk_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getlk (tdata->recheck_handle, fd, arg);
+	}
+	break;
+    case F_GETOWN:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_getown_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_getown (tdata->recheck_handle, fd);
+	}
+	break;
+    case F_SETOWN:
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call fcntl64_setown_recheck [SLICE_INFO]\n");
+#endif
+	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg);
+	}
+	break;
+    default:
+	fprintf (stderr, "[ERROR] fcntl64 cmd %d not yet handled for recheck\n", cmd);
+    }
 }
 
 #ifdef LINKAGE_FDTRACK
@@ -1015,7 +1058,6 @@ static void sys_munmap_stop(int rc)
 
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, size_t count)
 {
-    fprintf (stderr, "sys_write_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct write_info* wi = &tdata->op.write_info_cache;
     if (tdata->recheck_handle) {
 #ifdef FW_SLICE
@@ -1576,11 +1618,13 @@ static inline void sys_clock_gettime_stop (int rc) {
 }
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
+    SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
+    if (tdata->recheck_handle) {
 #ifdef FW_SLICE
-	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpid);
-	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO]\n");
+	printf ("[SLICE] #00000000 #call getpid_recheck [SLICE_INFO]\n");
 #endif
+	recheck_getuid32 (tdata->recheck_handle);
+    }
 }
 
 static inline void sys_getpid_stop (int rc) {
@@ -1949,7 +1993,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         }
         case SYS_fcntl64:
-	    sys_fcntl64_start (tdata, (int)syscallarg0, (int)syscallarg1);
+	    sys_fcntl64_start (tdata, (int)syscallarg0, (int)syscallarg1,(void *)syscallarg2);
 	    break;
         case SYS_mmap:
         case SYS_mmap2:
@@ -6941,9 +6985,7 @@ void instrument_mov (INS ins)
         // ADDRDELTA displacement = INS_MemoryDisplacement(ins);
 
         assert(INS_IsMemoryRead(ins) == 1);
-        if (SPECIAL_REG(reg)) {
-            return;
-        }
+
 #ifdef COPY_ONLY
         instrument_taint_mem2reg(ins, reg, 0);
 #else
@@ -7130,17 +7172,13 @@ void instrument_movx (INS ins)
     if (op1reg && op2reg) {
         REG dst_reg = INS_OperandReg(ins, 0);
         REG src_reg = INS_OperandReg(ins, 1);
-        if (SPECIAL_REG(dst_reg)) {
-            return;
-        }
+
         INSTRUMENT_PRINT(log_f, "instrument movx address %#x is src reg: %d into dst reg: %d\n", INS_Address(ins), src_reg, dst_reg); 
         instrument_taint_reg2reg(ins, dst_reg, src_reg, 1);
     } else if (op1reg && op2mem) {
         assert(INS_IsMemoryRead(ins) == 1);
         REG dst_reg = INS_OperandReg(ins, 0);
-	if (SPECIAL_REG(dst_reg)) {
-            return;
-        }
+
 #ifdef COPY_ONLY
         instrument_taint_mem2reg(ins, dst_reg, 1);
 #else
@@ -7327,13 +7365,12 @@ void instrument_cmov(INS ins, uint32_t mask)
 
     //2 (src) operand is memory...destination must be a register
     if(ismemread) {
-        if (!SPECIAL_REG(reg)) {
-            INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
-                    reg, REG_StringShort(reg).c_str(), addrsize);
+	INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
+			 reg, REG_StringShort(reg).c_str(), addrsize);
 #ifdef COPY_ONLY
-            pred_instrument_taint_mem2reg(ins, reg, 0);
+	pred_instrument_taint_mem2reg(ins, reg, 0);
 #ifdef FW_SLICE
-	    assert (0); //not handled with COPY_ONLY
+	assert (0); //not handled with COPY_ONLY
 #endif
 #else
  #ifndef LINKAGE_DATA_OFFSET //data flow tool
@@ -7377,12 +7414,11 @@ void instrument_cmov(INS ins, uint32_t mask)
                     IARG_END);
  #endif // LINKAGE_DATA_OFFSET
 #endif // COPY_ONLY
-        }
     } else if(ismemwrite) {
-	    assert (0);//shouldn't happen for cmov
-    } else if (!SPECIAL_REG(dstreg)) {
+	assert (0);//shouldn't happen for cmov
+    } else {
         if(immval) {
-		assert (0);// shouldn't happen
+	    assert (0);// shouldn't happen
         } else {
             //reg to reg
             assert(REG_Size(reg) == REG_Size(dstreg));
@@ -7390,7 +7426,7 @@ void instrument_cmov(INS ins, uint32_t mask)
             int src_treg = translate_reg((int)reg);
             assert (!REG_is_Upper8(reg));
             assert (!REG_is_Upper8(dstreg));
-
+	    
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
 #ifdef COPY_ONLY
             pred_instrument_taint_reg2reg (ins, dstreg, reg, 0);
@@ -8750,10 +8786,12 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
-    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), 
-	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0));
+    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), 
+	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), 
+	    is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
-    //printf ("bfffe7a1 tainted? %d\t", is_mem_arg_tainted (0xbffe7a1, 1)); 
+    printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
+	    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
 //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));

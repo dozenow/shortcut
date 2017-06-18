@@ -261,6 +261,76 @@ int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
     return 0;
 }
 
+int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd)
+{
+    struct fcntl64_getfl_recheck fchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getfl_recheck));
+    fchk.fd = fd;
+    write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
+
+    return 0;
+}
+
+int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg)
+{
+    struct fcntl64_getlk_recheck fchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getlk_recheck));
+    if (res->psr.flags & SR_HAS_RETPARAMS) {
+	printf ("retvals %lu sizeof flock: %u\n", *((u_long *) res->retparams), sizeof(struct flock));
+	fchk.has_retvals = 1;
+	memcpy (&fchk.flock, res->retparams, sizeof(fchk.flock));
+    } else {
+	fchk.has_retvals = 0;
+    }
+    fchk.fd = fd;
+    fchk.arg = arg;
+    write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
+
+    return 0;
+}
+
+int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags)
+{
+    struct fcntl64_setfl_recheck fchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setfl_recheck));
+    fchk.fd = fd;
+    fchk.flags = flags;
+    write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
+
+    return 0;
+}
+
+int recheck_fcntl64_getown (struct recheck_handle* handle, int fd)
+{
+    struct fcntl64_getown_recheck fchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getown_recheck));
+    fchk.fd = fd;
+    write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
+
+    return 0;
+}
+
+int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner)
+{
+    struct fcntl64_setown_recheck fchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setown_recheck));
+    fchk.fd = fd;
+    fchk.owner = owner;
+    write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
+
+    return 0;
+}
+
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim)
 {
     struct ugetrlimit_recheck ugchk;
@@ -386,6 +456,14 @@ int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr*
     cchk.addrlen = addrlen;
     write_data_into_recheck_log (handle->recheckfd, &cchk, sizeof(cchk));
     write_data_into_recheck_log (handle->recheckfd, addr, addrlen);
+
+    return 0;
+}
+
+int recheck_getpid (struct recheck_handle* handle)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_getpid);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getpid, res->retval, 0);
 
     return 0;
 }

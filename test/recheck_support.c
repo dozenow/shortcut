@@ -470,6 +470,108 @@ void fstat64_recheck ()
     }
 }
 
+void fcntl64_getfl_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct fcntl64_getfl_recheck* pgetfl;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pgetfl = (struct fcntl64_getfl_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("fcntl64 getfl: fd %d rc %ld\n", pgetfl->fd, pentry->retval);
+#endif
+
+    rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
+    check_retval ("fcntl64 getfl", pentry->retval, rc);
+}
+
+void fcntl64_setfl_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct fcntl64_setfl_recheck* psetfl;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    psetfl = (struct fcntl64_setfl_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("fcntl64 setfl: fd %d flags %lx rc %ld\n", psetfl->fd, psetfl->flags, pentry->retval);
+#endif
+
+    rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
+    check_retval ("fcntl64 setfl", pentry->retval, rc);
+}
+
+void fcntl64_getlk_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct fcntl64_getlk_recheck* pgetlk;
+    struct flock fl;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pgetlk = (struct fcntl64_getlk_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("fcntl64 getlk: fd %d arg %lx rc %ld\n", pgetlk->fd, (u_long) pgetlk->arg, pentry->retval);
+#endif
+
+    rc = syscall(SYS_fcntl64, pgetlk->fd, F_GETLK, &fl);
+    check_retval ("fcntl64 getlk", pentry->retval, rc);
+    if (pgetlk->has_retvals) {
+	if (memcmp(&fl, &pgetlk->flock, sizeof(fl))) {
+	    fprintf (stderr, "[MISMATCH] fcntl64 getlk does not match\n");
+	    handle_mismatch();
+	}
+    }
+}
+
+void fcntl64_getown_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct fcntl64_getown_recheck* pgetown;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pgetown = (struct fcntl64_getown_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("fcntl64 getown: fd %d rc %ld\n", pgetown->fd, pentry->retval);
+#endif
+
+    rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
+    check_retval ("fcntl64 getown", pentry->retval, rc);
+}
+
+void fcntl64_setown_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct fcntl64_setown_recheck* psetown;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    psetown = (struct fcntl64_setown_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("fcntl64 setown: fd %d owner %lx rc %ld\n", psetown->fd, psetown->owner, pentry->retval);
+#endif
+
+    rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, psetown->owner);
+    check_retval ("fcntl64 setown", pentry->retval, rc);
+}
+
 void ugetrlimit_recheck ()
 {
     struct recheck_entry* pentry;
@@ -792,6 +894,21 @@ void connect_recheck ()
     check_retval ("connect", pentry->retval, rc);
 }
 
+void getpid_recheck ()
+{
+    struct recheck_entry* pentry;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+
+#ifdef PRINT_VALUES
+    printf("getpid: rc %ld\n", pentry->retval);
+#endif 
+    rc = syscall(SYS_getpid);
+    check_retval ("getpid", pentry->retval, rc);
+}
+
 void getuid32_recheck ()
 {
     struct recheck_entry* pentry;
@@ -860,6 +977,10 @@ void ioctl_recheck ()
 	check_retval ("ioctl", pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
+	if (pioctl->cmd == 0x5413) {
+	  short* ps = (short *) &tmpbuf;
+	  printf ("window size is %d %d\n", ps[0], ps[1]);
+	}
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
 	    char* tainted = addr;
