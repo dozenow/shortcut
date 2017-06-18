@@ -2360,7 +2360,8 @@ TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t re
 }
 
 //only used for cmov
-TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
+//reg1 is the base register and reg2 is the index register
+TAINTINT fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag) { 
 	int tainted1 = (reg1_size>0)?is_reg_tainted (reg1, reg1_size, reg1_u8):0;
 	int mem_tainted2 = is_mem_tainted (mem_loc, mem_size);
@@ -2372,9 +2373,9 @@ TAINTINT fw_slice_memregregflag (ADDRINT ip, char* ins_str, int reg1, uint32_t r
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d\n", 
 				reg1, tainted1, reg1_size, mem_loc, mem_tainted2, mem_size, reg2, tainted3, reg2_size, reg1_value, get_mem_value (mem_loc, mem_size), reg2_value, flag, tainted4);
-		if (!tainted1 && reg1_size > 0) print_extra_move_reg_imm_value (ip, reg1, reg1_size, reg1_value, reg1_u8);
+                //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
 		if (!mem_tainted2 && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
-		if (!tainted3 && reg2_size > 0) print_extra_move_reg_imm_value (ip, reg2, reg2_size, reg2_value, reg2_u8);
+                //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
 		if (!tainted4) print_extra_move_flag (ip, ins_str, flag);
 		return 1;
 	}

@@ -3157,36 +3157,37 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 	put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_regregmemflag (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
+//only use this for CMOV  with index tool enabled
+static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
 	char* str = get_copy_of_disasm (ins);
-        if (REG_valid(reg1) && REG_valid(reg2))
+        if (REG_valid(base_reg) && REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag),
+			AFUNPTR(fw_slice_memregregflag_cmov),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_INST_PTR,
 			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (reg1), 
-			IARG_UINT32, reg1_size,
-			IARG_REG_VALUE, reg1, 
-			IARG_UINT32, REG_is_Upper8(reg1),
-			IARG_ADDRINT, translate_reg (reg2), 
-			IARG_UINT32, reg2_size,
-			IARG_REG_VALUE, reg2, 
-			IARG_UINT32, REG_is_Upper8(reg2),
+			IARG_ADDRINT, translate_reg (base_reg), 
+			IARG_UINT32, base_reg_size,
+			IARG_REG_VALUE, base_reg, 
+			IARG_UINT32, REG_is_Upper8(base_reg),
+			IARG_ADDRINT, translate_reg (index_reg), 
+			IARG_UINT32, index_reg_size,
+			IARG_REG_VALUE, index_reg, 
+			IARG_UINT32, REG_is_Upper8(index_reg),
 			mem_ea, 
 			IARG_UINT32, memsize,
                         IARG_UINT32, flag,
 			IARG_END);
-        else if (REG_valid(reg1) && !REG_valid(reg2))
+        else if (REG_valid(base_reg) && !REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag),
+			AFUNPTR(fw_slice_memregregflag_cmov),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_INST_PTR,
 			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (reg1), 
-			IARG_UINT32, reg1_size,
-			IARG_REG_VALUE, reg1, 
-			IARG_UINT32, REG_is_Upper8(reg1),
+			IARG_ADDRINT, translate_reg (base_reg), 
+			IARG_UINT32, base_reg_size,
+			IARG_REG_VALUE, base_reg, 
+			IARG_UINT32, REG_is_Upper8(base_reg),
 			IARG_UINT32, 0,
 			IARG_UINT32, 0,
 			IARG_UINT32, 0,
@@ -3195,9 +3196,9 @@ static inline void fw_slice_src_regregmemflag (INS ins, REG reg1, uint32_t reg1_
 			IARG_UINT32, memsize,
                         IARG_UINT32, flag,
 			IARG_END);
-        else if (!REG_valid(reg1) && REG_valid(reg2))
+        else if (!REG_valid(base_reg) && REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag),
+			AFUNPTR(fw_slice_memregregflag_cmov),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_INST_PTR,
 			IARG_PTR, str,
@@ -3205,17 +3206,17 @@ static inline void fw_slice_src_regregmemflag (INS ins, REG reg1, uint32_t reg1_
                         IARG_UINT32, 0,
                         IARG_UINT32, 0,
                         IARG_UINT32, 0,
-			IARG_ADDRINT, translate_reg (reg2), 
-			IARG_UINT32, reg2_size,
-			IARG_REG_VALUE, reg2, 
-			IARG_UINT32, REG_is_Upper8(reg2),
+			IARG_ADDRINT, translate_reg (index_reg), 
+			IARG_UINT32, index_reg_size,
+			IARG_REG_VALUE, index_reg, 
+			IARG_UINT32, REG_is_Upper8(index_reg),
 			mem_ea, 
 			IARG_UINT32, memsize,
                         IARG_UINT32, flag,
 			IARG_END);
-        if (!REG_valid(reg1) && !REG_valid(reg2))
+        if (!REG_valid(base_reg) && !REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag),
+			AFUNPTR(fw_slice_memregregflag_cmov),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_INST_PTR,
 			IARG_PTR, str,
@@ -6966,26 +6967,24 @@ void instrument_mov (INS ins)
 */
 
    #ifdef FW_SLICE
-      if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            // arithmetic operation
-	    fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
+        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
+            fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
             instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 0, 0);
             instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
         } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		fw_slice_src_regregmem (ins, base_reg, REG_Size (base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-		instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
-		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-	} else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-	        fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-	} else {
-	    instrument_taint_mem2reg(ins, dst_reg, 0);
+            fw_slice_src_regregmem (ins, base_reg, REG_Size (base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
+            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
+            instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
+            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
+        } else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
+            fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
+            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
+            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
+        } else {
+            instrument_taint_mem2reg(ins, dst_reg, 0);
         }
    #else
         if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            // arithmetic operation
             instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
             instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
         } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
@@ -7361,7 +7360,7 @@ void instrument_cmov(INS ins, uint32_t mask)
             assert (!REG_is_Upper8(index_reg));
             assert (!REG_is_Upper8(reg));
         #ifdef FW_SLICE                                
-            fw_slice_src_regregmemflag (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
+            fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
         #endif
             INS_InsertCall (ins, IPOINT_BEFORE,
                     AFUNPTR(taint_cmov_memregreg2reg),
