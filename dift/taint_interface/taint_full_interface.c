@@ -2039,6 +2039,8 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
+u_long debug_counter = 0;
+
 TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
 		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
 		u_long mem_loc, uint32_t mem_size, uint32_t is_read) { 
@@ -2062,7 +2064,9 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			} else {
 				printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
 				printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", base_reg, base_reg_size, base_reg_value, ip, mem_loc);
+                                printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
                                 printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+                                printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
 				printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
                         }
 		} 
@@ -2077,7 +2081,9 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			} else { 
 				printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
 				printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", index_reg, index_reg_size, index_reg_value, ip, mem_loc);
+                                printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
                                 printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+                                printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
 				printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
 			}
 		}

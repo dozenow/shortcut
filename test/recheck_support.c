@@ -63,15 +63,16 @@ void handle_mismatch()
 
 void handle_jump_diverge()
 {
-    fprintf (stderr, "[MISMATCH] control flow diverges.\n");
+    int i;
+    fprintf (stderr, "[MISMATCH] control flow diverges at %lx.\n", *((u_long *) ((u_long) &i + 32)));
     abort();
 }
 
-void handle_index_diverge()
+void handle_index_diverge(u_long foo)
 {
-    fprintf (stderr, "[MISMATCH] index diverges.\n");
-    //fail hardly
-    exit(-1);
+    int i;
+    fprintf (stderr, "[MISMATCH] index diverges at %lx.\n", *((u_long *) ((u_long) &i + 32)));
+    abort ();
 }
 
 static inline void check_retval (const char* name, int expected, int actual) {

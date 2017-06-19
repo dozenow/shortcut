@@ -38,7 +38,7 @@ extern "C" {
 #define TOK_STAT_ATIME 16
 #define TOK_UNAME 17
 #define TOK_STATFS64 18
-#define TOK_IOCTL 19
+#define TOK_SYSCALL_MEM 19  /* This is more generic - I think that's OK since info is elsewhere */
 
 /* A token represents one or more contiguous inputs,
  * e.g. a range of bytes from read

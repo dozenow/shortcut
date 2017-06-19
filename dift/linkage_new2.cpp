@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 13795
+#define EXTRA_DEBUG 13825
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -877,24 +877,28 @@ static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* 
     }
 }
 
+static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_long size) 
+{
+    struct taint_creation_info tci;
+    tci.type = TOK_SYSCALL_MEM;
+    tci.rg_id = current_thread->rg_id;
+    tci.record_pid = current_thread->record_pid;
+    tci.syscall_cnt = current_thread->syscall_cnt;
+    tci.offset = 0;
+    tci.fileno = 0;
+    tci.data = 0;
+    create_taints_from_buffer_unfiltered (buf, size, &tci, tokens_fd);
+    printf ("[SLICE_TAINT] %s %lx %lx\n", sysname, (u_long)buf, (u_long)buf+size);
+    add_tainted_mem_for_final_check ((u_long)buf, size);
+}
+
 static void sys_ioctl_stop (int rc) 
 {
     struct ioctl_info* ii = &current_thread->op.ioctl_info_cache;
     if (rc >= 0 && ii->retval_size > 0) {
-        struct taint_creation_info tci;
-	tci.type = TOK_IOCTL;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = ii->fd;
-	tci.data = 0;
-	printf ("ioctl: tainting %ld bytes in buffer %p\n", ii->retval_size, ii->buf);
-	create_taints_from_buffer_unfiltered (ii->buf, ii->retval_size, &tci, tokens_fd);
-	add_tainted_mem_for_final_check ((u_long) ii->buf, ii->retval_size);
+	taint_syscall_memory_out ("ioctl", ii->buf, ii->retval_size);
     }
 }
-
 
 static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* arg)
 {
@@ -1567,27 +1571,15 @@ static inline void sys_gettimeofday_start (struct thread_data* tdata, struct tim
 }
 
 static inline void sys_gettimeofday_stop (int rc) {
-	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		//char* channel_name = (char*) "gettimeofday-tv";
-		tci.type = TOK_GETTIMEOFDAY;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = -1;
-		tci.data = 0;
-		create_taints_from_buffer_unfiltered (ri->tv, sizeof(struct timeval), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)ri->tv, sizeof(struct timeval));
-		if (ri->tz != NULL) {
-			//channel_name = (char*) "gettimeofday-tz";
-			create_taints_from_buffer_unfiltered (ri->tz, sizeof(struct timezone), &tci, tokens_fd);
-			add_tainted_mem_for_final_check ((u_long)ri->tz, sizeof(struct timezone));
-		}
+    struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
+    if (rc == 0) {
+	taint_syscall_memory_out ("gettimeofday", (char *) ri->tv, sizeof(struct timeval));
+	if (ri->tz != NULL) {
+	    taint_syscall_memory_out ("gettimeofday", (char *) ri->tz, sizeof(struct timezone));
 	}
-	memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
-	current_thread->save_syscall_info = 0;
+    }
+    memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
+    current_thread->save_syscall_info = 0;
 }
 
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
@@ -1721,27 +1713,15 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 
 static inline void sys_fstat64_stop (int rc) 
 {
-	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
-	clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = fsi->fd;
-		tci.data = 0;
-		tci.type = TOK_STAT_ATIME;
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_ino, sizeof(fsi->buf->st_ino), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
-	}
-	LOG_PRINT ("Done with fstat64.\n");
+    struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
+    clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
+    if (rc == 0) {
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
+    }
+    LOG_PRINT ("Done with fstat64.\n");
 }
 
 static inline void sys_stat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
@@ -1760,22 +1740,10 @@ static inline void sys_stat64_stop (int rc)
 	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
 	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
 	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_STAT_ATIME;
-		create_taints_from_buffer_unfiltered (&si->buf->st_ino, sizeof(si->buf->st_ino), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ino, sizeof(si->buf->st_ino));
-		create_taints_from_buffer_unfiltered (&si->buf->st_atime, sizeof(si->buf->st_atime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_atime, sizeof(si->buf->st_atime));
-		create_taints_from_buffer_unfiltered (&si->buf->st_ctime, sizeof(si->buf->st_ctime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
-		create_taints_from_buffer_unfiltered (&si->buf->st_mtime, sizeof(si->buf->st_mtime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with stat64.\n");
 }
@@ -1833,21 +1801,12 @@ static inline void sys_uname_start (struct thread_data* tdata, struct utsname* b
 
 static inline void sys_uname_stop (int rc) 
 {
-	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
-	clear_mem_taints ((u_long)uni->buf, sizeof(struct utsname));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_UNAME;
-		create_taints_from_buffer_unfiltered (&uni->buf->version, sizeof(uni->buf->version), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&uni->buf->version, sizeof(uni->buf->version));
-	}
-	LOG_PRINT ("Done with uname.\n");
+    struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
+    clear_mem_taints ((u_long)uni->buf, sizeof(struct utsname));
+    if (rc == 0) {
+	taint_syscall_memory_out ("uname", (char *)&uni->buf->version, sizeof(uni->buf->version));
+    }
+    LOG_PRINT ("Done with uname.\n");
 }
 
 static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, size_t sz, struct statfs64* buf) 
@@ -1864,28 +1823,14 @@ static inline void sys_statfs64_start (struct thread_data* tdata, const char* pa
 
 static inline void sys_statfs64_stop (int rc) 
 {
-	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
-	clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs64));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_STATFS64;
-		printf ("statfs64 f_bfree is %p size %d\n", &sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
-		printf ("statfs64 f_bavail is %p size %d\n", &sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
-		printf ("statfs64 f_ffree is %p size %d\n", &sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
-	}
-	LOG_PRINT ("Done with statfs64.\n");
+    struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
+    clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs64));
+    if (rc == 0) {
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));	
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
+    }
+    LOG_PRINT ("Done with statfs64.\n");
 }
 
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
@@ -8790,8 +8735,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
-    printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
-	    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
+    //printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
+    //    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
 //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -10621,9 +10566,6 @@ int main(int argc, char** argv)
 
 	produce_output = false;
     }
-
-
-
 
     if (KnobMergeEntries.Value() > 0) {
 	num_merge_entries = KnobMergeEntries.Value();
