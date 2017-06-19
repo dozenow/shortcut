@@ -1615,7 +1615,7 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 #ifdef FW_SLICE
 	printf ("[SLICE] #00000000 #call getpid_recheck [SLICE_INFO]\n");
 #endif
-	recheck_getuid32 (tdata->recheck_handle);
+	recheck_getpid (tdata->recheck_handle);
     }
 }
 
@@ -3146,6 +3146,7 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 	put_copy_of_disasm (str);
 }
 
+#ifdef LINKAGE_DATA_OFFSET
 //only use this for CMOV  with index tool enabled
 static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
 	char* str = get_copy_of_disasm (ins);
@@ -3226,6 +3227,99 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint3
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
+
+//only use this for MOV/MOVX  with index tool enabled
+static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) { 
+	char* str = get_copy_of_disasm (ins);
+        int t_base_reg = 0;
+        int t_index_reg = 0;
+        int base_reg_size = 0;
+        int index_reg_size = 0;
+        int base_reg_u8 = 0;
+        int index_reg_u8 = 0;
+        IARG_TYPE base_reg_value_type = IARG_UINT32;
+        IARG_TYPE index_reg_value_type = IARG_UINT32;
+        if (REG_valid(base_reg)) { 
+            t_base_reg = translate_reg (base_reg);
+            base_reg_size = REG_Size (base_reg);
+            base_reg_u8 = REG_is_Upper8 (base_reg);
+            base_reg_value_type = IARG_REG_VALUE;
+        }
+        if (REG_valid(index_reg)) { 
+            t_index_reg = translate_reg (index_reg);
+            index_reg_size = REG_Size (index_reg);
+            index_reg_u8 = REG_is_Upper8 (index_reg);
+            index_reg_value_type = IARG_REG_VALUE;
+        }
+
+        INS_InsertIfCall(ins, IPOINT_BEFORE,
+                AFUNPTR(fw_slice_memregreg_mov),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR,
+                IARG_PTR, str,
+                IARG_ADDRINT, t_base_reg, 
+                IARG_UINT32, base_reg_size,
+                base_reg_value_type, base_reg, 
+                IARG_UINT32, base_reg_u8,
+                IARG_ADDRINT, t_index_reg, 
+                IARG_UINT32, index_reg_size,
+                index_reg_value_type, index_reg, 
+                IARG_UINT32, index_reg_u8,
+                mem_ea, 
+                IARG_UINT32, memsize,
+                IARG_END);
+
+	fw_slice_check_address (ins);
+	put_copy_of_disasm (str);
+}
+
+//only use this for MOV/MOVX  with index tool enabled
+static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, REG index_reg) { 
+	char* str = get_copy_of_disasm (ins);
+        int t_base_reg = 0;
+        int t_index_reg = 0;
+        int base_reg_size = 0;
+        int index_reg_size = 0;
+        int base_reg_u8 = 0;
+        int index_reg_u8 = 0;
+        IARG_TYPE base_reg_value_type = IARG_UINT32;
+        IARG_TYPE index_reg_value_type = IARG_UINT32;
+        if (REG_valid(base_reg)) { 
+            t_base_reg = translate_reg (base_reg);
+            base_reg_size = REG_Size (base_reg);
+            base_reg_u8 = REG_is_Upper8 (base_reg);
+            base_reg_value_type = IARG_REG_VALUE;
+        }
+        if (REG_valid(index_reg)) { 
+            t_index_reg = translate_reg (index_reg);
+            index_reg_size = REG_Size (index_reg);
+            index_reg_u8 = REG_is_Upper8 (index_reg);
+            index_reg_value_type = IARG_REG_VALUE;
+        }
+
+        INS_InsertIfCall(ins, IPOINT_BEFORE,
+                AFUNPTR(fw_slice_regregreg_mov),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR,
+                IARG_PTR, str,
+                IARG_ADDRINT, translate_reg (reg), 
+                IARG_UINT32, REG_Size (reg), 
+                IARG_REG_REFERENCE, reg, 
+                IARG_UINT32, REG_is_Upper8 (reg), 
+                IARG_ADDRINT, t_base_reg, 
+                IARG_UINT32, base_reg_size,
+                base_reg_value_type, base_reg, 
+                IARG_UINT32, base_reg_u8,
+                IARG_ADDRINT, t_index_reg, 
+                IARG_UINT32, index_reg_size,
+                index_reg_value_type, index_reg, 
+                IARG_UINT32, index_reg_u8,
+                IARG_END);
+
+	fw_slice_check_address (ins);
+	put_copy_of_disasm (str);
+}
+#endif
 
 static inline void fw_slice_src_regflag (INS ins, uint32_t mask, REG reg, uint32_t reg_size) {
 	char* str = get_copy_of_disasm (ins);
@@ -6954,21 +7048,19 @@ void instrument_mov (INS ins)
 */
 
    #ifdef FW_SLICE
+        fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
         if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
             instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 0, 0);
             instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
         } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            fw_slice_src_regregmem (ins, base_reg, REG_Size (base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
             instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
             instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
             instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
         } else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-            fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
             instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
             instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
         } else {
-            instrument_taint_mem2reg(ins, dst_reg, 0);
+            instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
         }
    #else
         if (REG_valid(base_reg) && !REG_valid(index_reg)) {
@@ -7001,22 +7093,19 @@ void instrument_mov (INS ins)
             //ADDRDELTA displacement = INS_MemoryDisplacement(ins);
 
    #ifdef FW_SLICE
+            fw_slice_src_regregreg_mov (ins, reg, base_reg, index_reg);
 	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-		    // arithmetic operation
-	   	    fw_slice_src_regreg (ins, reg, REG_Size (reg), base_reg, REG_Size(base_reg));
 		    instrument_taint_reg2mem_slice(ins, base_reg, 0, 0);
 		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
 	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		    fw_slice_src_regregreg (ins, reg, REG_Size (reg), base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg));
 		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
 		    instrument_taint_add_reg2mem_slice(ins, base_reg, 0, -1, -1);
 		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
 	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		    fw_slice_src_regreg (ins, reg, REG_Size (reg), index_reg, REG_Size(index_reg));
 		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
 		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
 	    } else {
-		    instrument_taint_reg2mem(ins, reg, 0);
+		    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
 	    }
    #else
 	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
@@ -7135,21 +7224,19 @@ void instrument_movx (INS ins)
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 
    #ifdef FW_SLICE
+        fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		fw_slice_src_regregmem (ins, base_reg, REG_Size (base_reg), index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 1, 0);
 		instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
 	} else if (REG_valid(base_reg)) {
-		fw_slice_src_regmem (ins, base_reg, REG_Size(base_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 		instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 1, 0);
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
 	} else if (REG_valid(index_reg)) {
-		fw_slice_src_regmem (ins, index_reg, REG_Size(index_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 1, 0);
 		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
 	} else {
-		instrument_taint_mem2reg(ins, dst_reg, 1);
+		instrument_taint_mem2reg_slice(ins, dst_reg, 1, 0);
 	}
    #else
         // no filtering in index mode
@@ -7181,21 +7268,19 @@ void instrument_movx (INS ins)
         REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
    #ifdef FW_SLICE
+        fw_slice_src_regregreg_mov (ins, src_reg, base_reg, index_reg);
         if (REG_valid(base_reg) && REG_valid(index_reg)) {
-	    fw_slice_src_regregreg (ins, src_reg, REG_Size (src_reg), base_reg, REG_Size(base_reg), index_reg, REG_Size(index_reg));
             instrument_taint_reg2mem_slice(ins, index_reg, 1, 0);
             instrument_taint_add_reg2mem_slice(ins, base_reg, 0, -1, -1);
             instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
         } else if (REG_valid(base_reg)) {
-	    fw_slice_src_regreg (ins, src_reg, REG_Size (src_reg), base_reg, REG_Size(base_reg));
             instrument_taint_reg2mem_slice(ins, base_reg, 1, 0);
             instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
         } else if (REG_valid(index_reg)) {
-	    fw_slice_src_regreg (ins, src_reg, REG_Size (src_reg), index_reg, REG_Size(index_reg));
             instrument_taint_reg2mem_slice(ins, index_reg, 1, 0);
             instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
 	} else {
-	    instrument_taint_reg2mem(ins, src_reg, 1);
+	    instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
 	}
    #else
         // no filtering in index mode

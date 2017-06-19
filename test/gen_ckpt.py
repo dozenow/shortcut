@@ -45,7 +45,7 @@ outfd = open(outputdir+"/pinout", "w")
 if (taint_filter > 0):
 	if (taint_syscall):
 		p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-s", 
-			str(taint_syscall), "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at)],
+			str(taint_syscall), "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at)], 
 			stdout=outfd)
 	elif (taint_byterange):
 		p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-b", 

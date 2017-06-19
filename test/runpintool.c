@@ -19,6 +19,7 @@ int main (int argc, char* argv[])
     char* dirname, *pintool;
     pid_t cpid, mpid;
     int fd, rc, status, i;
+    int attach_gdb = 0;
 
     if (argc < 2) {
 	fprintf (stderr, "format: runpintool <replay dir> <tool> [args]\n");
@@ -55,6 +56,10 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "-pid";
 	sprintf (cpids, "%d", cpid);
 	args[argcnt++] = cpids;
+        if (attach_gdb) {
+            args[argcnt++] = "-pause_tool";
+            args[argcnt++] = "15";
+        }
 	args[argcnt++] = "-t";
 	args[argcnt++] = pintool;
 	for (i = 3; i < argc; i++) {
