@@ -2026,6 +2026,7 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
     }
 }
 
+//TODO: handle partial taints for mem, just like registers
 static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t mem_size) { 
 	printf ("[SLICE_EXTRA] mov $addr(%lx,%u), %u  //comes with %x\n", mem_loc, mem_size, get_mem_value(mem_loc, mem_size), ip);
 }
@@ -2379,8 +2380,9 @@ TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t re
 	return 0;
 }
 
-//only used for cmov
+//only used for cmov with index tool 
 //reg1 is the base register and reg2 is the index register
+//won't handle FPU registers
 TAINTINT fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag) { 
 	int tainted1 = (reg1_size>0)?is_reg_tainted (reg1, reg1_size, reg1_u8):0;
@@ -2401,6 +2403,53 @@ TAINTINT fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int reg1, uint3
 	}
 	return 0;
 }
+
+//only used for mov and movx with index tool
+//won't handle FPU registers
+TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
+        u_long mem_loc, uint32_t mem_size) { 
+    int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
+    int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
+    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+
+    if (base_tainted || index_tainted || mem_tainted) { 
+        PRINT ("memregreg_mov");
+        printf ("[SLICE] #%x #%s\t", ip, ins_str);
+        printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
+                base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
+        //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
+        if (!mem_tainted && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
+        //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
+        return 1;
+    }
+    return 0;
+}
+
+//only used for mov and movx with index tool
+//won't handle FPU registers
+TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str, 
+        int reg, uint32_t reg_size, PIN_REGISTER* reg_value, uint32_t reg_u8,
+        int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8) 
+{
+    int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
+    int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
+    int reg_tainted = is_reg_tainted (reg, reg_size, reg_u8);
+
+    if (base_tainted || index_tainted || reg_tainted) { 
+        PRINT ("regregreg_mov");
+        printf ("[SLICE] #%x #%s\t", ip, ins_str);
+        printf ("    [SLICE_INFO] #src_regregreg_mov[%d:%d:%u,%d:%d:%u,%d:%d:%u] #base_reg_value %u, reg_value %u, index_reg_value %u\n", 
+                base_reg, base_tainted, base_reg_size, reg, reg_tainted, reg_size, index_reg, index_tainted, index_reg_size, base_reg_value, *reg_value->dword, index_reg_value);
+        if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, reg_value, reg_u8, reg_tainted);
+        //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
+        //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
+        return 1;
+    }
+    return 0;
+}
+
 
 TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) {
 	int tainted = is_flag_tainted (mask);
