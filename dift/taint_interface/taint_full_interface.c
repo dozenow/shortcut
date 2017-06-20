@@ -2419,17 +2419,13 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
 
-    if (base_tainted || index_tainted || mem_tainted) { 
+    if (mem_tainted) { 
         PRINT ("memregreg_mov");
         printf ("[SLICE] #%x #%s\t", ip, ins_str);
         printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
-        //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
-        if (!mem_tainted && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
-        //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
-        return 1;
     }
-    return 0;
+    return (base_tainted || index_tainted || mem_tainted);
 }
 
 //only used for mov and movx with index tool

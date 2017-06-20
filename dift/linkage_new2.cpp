@@ -7025,12 +7025,6 @@ void instrument_mov (INS ins)
 
         assert(INS_IsMemoryRead(ins) == 1);
 
-#ifdef COPY_ONLY
-        instrument_taint_mem2reg(ins, reg, 0);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-       instrument_taint_mem2reg(ins, reg, 0);
- #else
         REG dst_reg = INS_OperandReg(ins, 0);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -7047,84 +7041,15 @@ void instrument_mov (INS ins)
     +-------------+----------------------------+-----------------------------+
 */
 
-   #ifdef FW_SLICE
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 0, 0);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-            instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else {
-            instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
-        }
-   #else
-        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
-            instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-        } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-		instrument_taint_add_reg2reg(ins, dst_reg, base_reg, -1, -1);
-		instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-		instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else {
-	    instrument_taint_mem2reg(ins, dst_reg, 0);
-        }
-   #endif//FW_SLICE
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+	instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
     } else if(ismemwrite) {
         if(!immval) {
             //mov register to memory location
-#ifdef COPY_ONLY
-            instrument_taint_reg2mem(ins, reg, 0);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-            instrument_taint_reg2mem(ins, reg, 0);
- #else
             REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
-            //ADDRDELTA displacement = INS_MemoryDisplacement(ins);
-
-   #ifdef FW_SLICE
             fw_slice_src_regregreg_mov (ins, reg, base_reg, index_reg);
-	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, base_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, base_reg, 0, -1, -1);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else {
-		    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
-	    }
-   #else
-	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-		    // arithmetic operation
-		    instrument_taint_reg2mem(ins, base_reg, 0);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem(ins, index_reg, 0);
-		    instrument_taint_add_reg2mem(ins, base_reg, -1, -1);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem(ins, index_reg, 0);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else {
-		    instrument_taint_reg2mem(ins, reg, 0);
-	    }
-   #endif //FW_SLICE
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+	    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
         } else {
             //move immediate to memory location
             instrument_taint_immval2mem(ins);
