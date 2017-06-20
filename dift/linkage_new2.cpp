@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 333 
+//#define EXTRA_DEBUG 13825
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -877,24 +877,28 @@ static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* 
     }
 }
 
+static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_long size) 
+{
+    struct taint_creation_info tci;
+    tci.type = TOK_SYSCALL_MEM;
+    tci.rg_id = current_thread->rg_id;
+    tci.record_pid = current_thread->record_pid;
+    tci.syscall_cnt = current_thread->syscall_cnt;
+    tci.offset = 0;
+    tci.fileno = 0;
+    tci.data = 0;
+    create_taints_from_buffer_unfiltered (buf, size, &tci, tokens_fd);
+    printf ("[SLICE_TAINT] %s %lx %lx\n", sysname, (u_long)buf, (u_long)buf+size);
+    add_tainted_mem_for_final_check ((u_long)buf, size);
+}
+
 static void sys_ioctl_stop (int rc) 
 {
     struct ioctl_info* ii = &current_thread->op.ioctl_info_cache;
     if (rc >= 0 && ii->retval_size > 0) {
-        struct taint_creation_info tci;
-	tci.type = TOK_IOCTL;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = ii->fd;
-	tci.data = 0;
-	printf ("ioctl: tainting %ld bytes in buffer %p\n", ii->retval_size, ii->buf);
-	create_taints_from_buffer_unfiltered (ii->buf, ii->retval_size, &tci, tokens_fd);
-	add_tainted_mem_for_final_check ((u_long) ii->buf, ii->retval_size);
+	taint_syscall_memory_out ("ioctl", ii->buf, ii->retval_size);
     }
 }
-
 
 static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* arg)
 {
@@ -1567,27 +1571,15 @@ static inline void sys_gettimeofday_start (struct thread_data* tdata, struct tim
 }
 
 static inline void sys_gettimeofday_stop (int rc) {
-	struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		//char* channel_name = (char*) "gettimeofday-tv";
-		tci.type = TOK_GETTIMEOFDAY;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = -1;
-		tci.data = 0;
-		create_taints_from_buffer_unfiltered (ri->tv, sizeof(struct timeval), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)ri->tv, sizeof(struct timeval));
-		if (ri->tz != NULL) {
-			//channel_name = (char*) "gettimeofday-tz";
-			create_taints_from_buffer_unfiltered (ri->tz, sizeof(struct timezone), &tci, tokens_fd);
-			add_tainted_mem_for_final_check ((u_long)ri->tz, sizeof(struct timezone));
-		}
+    struct gettimeofday_info* ri = (struct gettimeofday_info*) &current_thread->op.gettimeofday_info_cache;
+    if (rc == 0) {
+	taint_syscall_memory_out ("gettimeofday", (char *) ri->tv, sizeof(struct timeval));
+	if (ri->tz != NULL) {
+	    taint_syscall_memory_out ("gettimeofday", (char *) ri->tz, sizeof(struct timezone));
 	}
-	memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
-	current_thread->save_syscall_info = 0;
+    }
+    memset (&current_thread->op.gettimeofday_info_cache, 0, sizeof (struct gettimeofday_info));
+    current_thread->save_syscall_info = 0;
 }
 
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
@@ -1721,27 +1713,15 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 
 static inline void sys_fstat64_stop (int rc) 
 {
-	struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
-	clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = fsi->fd;
-		tci.data = 0;
-		tci.type = TOK_STAT_ATIME;
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_ino, sizeof(fsi->buf->st_ino), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_atime, sizeof(fsi->buf->st_atime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
-		create_taints_from_buffer_unfiltered (&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
-	}
-	LOG_PRINT ("Done with fstat64.\n");
+    struct fstat64_info* fsi = (struct fstat64_info*) &current_thread->op.fstat64_info_cache;
+    clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
+    if (rc == 0) {
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
+    }
+    LOG_PRINT ("Done with fstat64.\n");
 }
 
 static inline void sys_stat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
@@ -1760,22 +1740,10 @@ static inline void sys_stat64_stop (int rc)
 	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
 	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
 	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_STAT_ATIME;
-		create_taints_from_buffer_unfiltered (&si->buf->st_ino, sizeof(si->buf->st_ino), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ino, sizeof(si->buf->st_ino));
-		create_taints_from_buffer_unfiltered (&si->buf->st_atime, sizeof(si->buf->st_atime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_atime, sizeof(si->buf->st_atime));
-		create_taints_from_buffer_unfiltered (&si->buf->st_ctime, sizeof(si->buf->st_ctime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
-		create_taints_from_buffer_unfiltered (&si->buf->st_mtime, sizeof(si->buf->st_mtime), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with stat64.\n");
 }
@@ -1833,21 +1801,12 @@ static inline void sys_uname_start (struct thread_data* tdata, struct utsname* b
 
 static inline void sys_uname_stop (int rc) 
 {
-	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
-	clear_mem_taints ((u_long)uni->buf, sizeof(struct utsname));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_UNAME;
-		create_taints_from_buffer_unfiltered (&uni->buf->version, sizeof(uni->buf->version), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&uni->buf->version, sizeof(uni->buf->version));
-	}
-	LOG_PRINT ("Done with uname.\n");
+    struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
+    clear_mem_taints ((u_long)uni->buf, sizeof(struct utsname));
+    if (rc == 0) {
+	taint_syscall_memory_out ("uname", (char *)&uni->buf->version, sizeof(uni->buf->version));
+    }
+    LOG_PRINT ("Done with uname.\n");
 }
 
 static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, size_t sz, struct statfs64* buf) 
@@ -1864,28 +1823,14 @@ static inline void sys_statfs64_start (struct thread_data* tdata, const char* pa
 
 static inline void sys_statfs64_stop (int rc) 
 {
-	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
-	clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs64));
-	if (rc == 0) {
-		struct taint_creation_info tci;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = 0;
-		tci.data = 0;
-		tci.type = TOK_STATFS64;
-		printf ("statfs64 f_bfree is %p size %d\n", &sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));
-		printf ("statfs64 f_bavail is %p size %d\n", &sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
-		printf ("statfs64 f_ffree is %p size %d\n", &sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
-		create_taints_from_buffer_unfiltered (&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree), &tci, tokens_fd);
-		add_tainted_mem_for_final_check ((u_long)&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
-	}
-	LOG_PRINT ("Done with statfs64.\n");
+    struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
+    clear_mem_taints ((u_long)sfi->buf, sizeof(struct statfs64));
+    if (rc == 0) {
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_bfree, sizeof(sfi->buf->f_bfree));	
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_bavail, sizeof(sfi->buf->f_bavail));
+	taint_syscall_memory_out ("statfs64", (char *)&sfi->buf->f_ffree, sizeof(sfi->buf->f_ffree));
+    }
+    LOG_PRINT ("Done with statfs64.\n");
 }
 
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
@@ -3204,6 +3149,7 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 #ifdef LINKAGE_DATA_OFFSET
 //only use this for CMOV  with index tool enabled
 static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         if (REG_valid(base_reg) && REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -3281,10 +3227,12 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint3
 
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
+#endif
 }
 
 //only use this for MOV/MOVX  with index tool enabled
 static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         int t_base_reg = 0;
         int t_index_reg = 0;
@@ -3326,10 +3274,12 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
 
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
+#endif
 }
 
 //only use this for MOV/MOVX  with index tool enabled
 static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, REG index_reg) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         int t_base_reg = 0;
         int t_index_reg = 0;
@@ -3373,6 +3323,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
 
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
+#endif
 }
 #endif
 
@@ -7080,12 +7031,6 @@ void instrument_mov (INS ins)
 
         assert(INS_IsMemoryRead(ins) == 1);
 
-#ifdef COPY_ONLY
-        instrument_taint_mem2reg(ins, reg, 0);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-       instrument_taint_mem2reg(ins, reg, 0);
- #else
         REG dst_reg = INS_OperandReg(ins, 0);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -7102,84 +7047,15 @@ void instrument_mov (INS ins)
     +-------------+----------------------------+-----------------------------+
 */
 
-   #ifdef FW_SLICE
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 0, 0);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-            instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-            instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 0, 0);
-            instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-        } else {
-            instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
-        }
-   #else
-        if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            instrument_taint_reg2reg(ins, dst_reg, base_reg, 0);
-            instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-        } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-		instrument_taint_add_reg2reg(ins, dst_reg, base_reg, -1, -1);
-		instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else if (!REG_valid (base_reg) && REG_valid (index_reg)) { 
-		instrument_taint_reg2reg(ins, dst_reg, index_reg, 0);
-		instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else {
-	    instrument_taint_mem2reg(ins, dst_reg, 0);
-        }
-   #endif//FW_SLICE
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+	instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
     } else if(ismemwrite) {
         if(!immval) {
             //mov register to memory location
-#ifdef COPY_ONLY
-            instrument_taint_reg2mem(ins, reg, 0);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-            instrument_taint_reg2mem(ins, reg, 0);
- #else
             REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
-            //ADDRDELTA displacement = INS_MemoryDisplacement(ins);
-
-   #ifdef FW_SLICE
             fw_slice_src_regregreg_mov (ins, reg, base_reg, index_reg);
-	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, base_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, base_reg, 0, -1, -1);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem_slice(ins, index_reg, 0, 0);
-		    instrument_taint_add_reg2mem_slice(ins, reg, 0, -1, -1);
-	    } else {
-		    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
-	    }
-   #else
-	    if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-		    // arithmetic operation
-		    instrument_taint_reg2mem(ins, base_reg, 0);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem(ins, index_reg, 0);
-		    instrument_taint_add_reg2mem(ins, base_reg, -1, -1);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		    instrument_taint_reg2mem(ins, index_reg, 0);
-		    instrument_taint_add_reg2mem(ins, reg, -1, -1);
-	    } else {
-		    instrument_taint_reg2mem(ins, reg, 0);
-	    }
-   #endif //FW_SLICE
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+	    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
         } else {
             //move immediate to memory location
             instrument_taint_immval2mem(ins);
@@ -7267,94 +7143,18 @@ void instrument_movx (INS ins)
     } else if (op1reg && op2mem) {
         assert(INS_IsMemoryRead(ins) == 1);
         REG dst_reg = INS_OperandReg(ins, 0);
-
-#ifdef COPY_ONLY
-        instrument_taint_mem2reg(ins, dst_reg, 1);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-        instrument_taint_mem2reg(ins, dst_reg, 1);
- #else
-
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 
-   #ifdef FW_SLICE
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-	if (REG_valid(base_reg) && REG_valid(index_reg)) {
-		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 1, 0);
-		instrument_taint_add_reg2reg_slice(ins, dst_reg, base_reg, 0, -1, -1);
-		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-	} else if (REG_valid(base_reg)) {
-		instrument_taint_reg2reg_slice(ins, dst_reg, base_reg, 1, 0);
-		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-	} else if (REG_valid(index_reg)) {
-		instrument_taint_reg2reg_slice(ins, dst_reg, index_reg, 1, 0);
-		instrument_taint_add_mem2reg_slice(ins, dst_reg, 0, -1, -1);
-	} else {
-		instrument_taint_mem2reg_slice(ins, dst_reg, 1, 0);
-	}
-   #else
-        // no filtering in index mode
-        if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            instrument_taint_reg2reg(ins, dst_reg, index_reg, 1);
-            instrument_taint_add_reg2reg(ins, dst_reg, base_reg, -1, -1);
-            instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-        } else if (REG_valid(base_reg) && !REG_valid(index_reg)) {
-            instrument_taint_reg2reg(ins, dst_reg, base_reg, 1);
-            instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else if (!REG_valid(base_reg) && REG_valid(index_reg)) {
-		instrument_taint_reg2reg(ins, dst_reg, index_reg, 1);
-		instrument_taint_add_mem2reg(ins, dst_reg, -1, -1);
-	} else {
-            instrument_taint_mem2reg(ins, dst_reg, 1);
-        }
-   #endif
- #endif
-#endif // COPY_ONLY
+        instrument_taint_mem2reg_slice(ins, dst_reg, 1, 0);
     } else if (op1mem && op2reg) {
         assert(INS_IsMemoryWrite(ins) == 1);
         REG src_reg = INS_OperandReg(ins, 1);
-#ifdef COPY_ONLY
-        instrument_taint_reg2mem(ins, src_reg, 1);
-#else
- #ifndef LINKAGE_DATA_OFFSET
-        instrument_taint_reg2mem(ins, src_reg, 1);
- #else
         REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
-   #ifdef FW_SLICE
         fw_slice_src_regregreg_mov (ins, src_reg, base_reg, index_reg);
-        if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            instrument_taint_reg2mem_slice(ins, index_reg, 1, 0);
-            instrument_taint_add_reg2mem_slice(ins, base_reg, 0, -1, -1);
-            instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
-        } else if (REG_valid(base_reg)) {
-            instrument_taint_reg2mem_slice(ins, base_reg, 1, 0);
-            instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
-        } else if (REG_valid(index_reg)) {
-            instrument_taint_reg2mem_slice(ins, index_reg, 1, 0);
-            instrument_taint_add_reg2mem_slice(ins, src_reg, 0, -1, -1);
-	} else {
-	    instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
-	}
-   #else
-        // no filtering in index mode
-        if (REG_valid(base_reg) && REG_valid(index_reg)) {
-            instrument_taint_reg2mem(ins, index_reg, 1);
-            instrument_taint_add_reg2mem(ins, base_reg, -1, -1);
-            instrument_taint_add_reg2mem(ins, src_reg, -1, -1);
-        } else if (REG_valid(base_reg)) {
-            instrument_taint_reg2mem(ins, base_reg, 1);
-	    instrument_taint_add_reg2mem(ins, src_reg, -1, -1);
-	} else if (REG_valid(index_reg)) {
-	    instrument_taint_reg2mem(ins, index_reg, 1);
-	    instrument_taint_add_reg2mem(ins, src_reg, -1, -1);
-	} else {
-	    instrument_taint_reg2mem(ins, src_reg, 1);
-        }
-   #endif
- #endif
-#endif // COPY_ONLY
+        instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
     } else if (op1mem && op2mem) {
         instrument_taint_mem2mem(ins, 1);
     } else {
@@ -7450,55 +7250,27 @@ void instrument_cmov(INS ins, uint32_t mask)
 
     //2 (src) operand is memory...destination must be a register
     if(ismemread) {
-	INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
-			 reg, REG_StringShort(reg).c_str(), addrsize);
-#ifdef COPY_ONLY
-	pred_instrument_taint_mem2reg(ins, reg, 0);
-#ifdef FW_SLICE
-	assert (0); //not handled with COPY_ONLY
-#endif
-#else
- #ifndef LINKAGE_DATA_OFFSET //data flow tool
-    #ifdef FW_SLICE
-            fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
-    #endif
-            INS_InsertCall (ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_cmov_mem2reg),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_UINT32, mask, 
-                    IARG_UINT32, translate_reg (reg),
-                    IARG_MEMORYREAD_EA,
-                    IARG_UINT32, REG_Size(reg),
-                    IARG_EXECUTING,
-                    IARG_END);
- #else //LINKAGE_DATA_OFFSET
-            REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-            REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-            uint32_t base_reg_size = 0;
-            uint32_t index_reg_size = 0;
-            if (REG_valid(base_reg)) base_reg_size = REG_Size (base_reg);
-            if (REG_valid(index_reg)) index_reg_size = REG_Size (index_reg);
-            assert (!REG_is_Upper8(base_reg));
-            assert (!REG_is_Upper8(index_reg));
-            assert (!REG_is_Upper8(reg));
-        #ifdef FW_SLICE                                
-            fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
-        #endif
-            INS_InsertCall (ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_cmov_memregreg2reg),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_UINT32, mask, 
-                    IARG_UINT32, translate_reg (reg),
-                    IARG_MEMORYREAD_EA,
-                    IARG_UINT32, REG_Size(reg),
-                    IARG_EXECUTING,
-                    IARG_UINT32, translate_reg(base_reg),
-                    IARG_UINT32, base_reg_size,
-                    IARG_UINT32, translate_reg(index_reg),
-                    IARG_UINT32, index_reg_size,
-                    IARG_END);
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+        INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
+                reg, REG_StringShort(reg).c_str(), addrsize);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        uint32_t base_reg_size = 0;
+        uint32_t index_reg_size = 0;
+        if (REG_valid(base_reg)) base_reg_size = REG_Size (base_reg);
+        if (REG_valid(index_reg)) index_reg_size = REG_Size (index_reg);
+        assert (!REG_is_Upper8(base_reg));
+        assert (!REG_is_Upper8(index_reg));
+        assert (!REG_is_Upper8(reg));
+        fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
+        INS_InsertCall (ins, IPOINT_BEFORE,
+                AFUNPTR(taint_cmov_mem2reg),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_UINT32, mask, 
+                IARG_UINT32, translate_reg (reg),
+                IARG_MEMORYREAD_EA,
+                IARG_UINT32, REG_Size(reg),
+                IARG_EXECUTING,
+                IARG_END);
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {
@@ -7513,12 +7285,6 @@ void instrument_cmov(INS ins, uint32_t mask)
             assert (!REG_is_Upper8(dstreg));
 	    
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
-#ifdef COPY_ONLY
-            pred_instrument_taint_reg2reg (ins, dstreg, reg, 0);
-#ifdef FW_SLICE
-            assert (0);
-#endif
-#else
 #ifdef FW_SLICE
             fw_slice_src_regflag (ins, mask, reg, REG_Size(reg));
 #endif
@@ -7531,7 +7297,6 @@ void instrument_cmov(INS ins, uint32_t mask)
                     IARG_UINT32, REG_Size(reg),
                     IARG_EXECUTING,
                     IARG_END);
-#endif
         }
     }
 }
@@ -8875,8 +8640,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
-    printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
-	    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
+    //printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
+    //    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
 //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -10706,9 +10471,6 @@ int main(int argc, char** argv)
 
 	produce_output = false;
     }
-
-
-
 
     if (KnobMergeEntries.Value() > 0) {
 	num_merge_entries = KnobMergeEntries.Value();

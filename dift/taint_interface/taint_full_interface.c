@@ -2040,6 +2040,8 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
+u_long debug_counter = 0;
+
 TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
 		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
 		u_long mem_loc, uint32_t mem_size, uint32_t is_read) { 
@@ -2063,7 +2065,9 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			} else {
 				printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
 				printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", base_reg, base_reg_size, base_reg_value, ip, mem_loc);
+                                printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
                                 printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+                                printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
 				printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
                         }
 		} 
@@ -2078,7 +2082,9 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
 			} else { 
 				printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
 				printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", index_reg, index_reg_size, index_reg_value, ip, mem_loc);
+                                printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
                                 printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+                                printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
 				printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
 			}
 		}
@@ -2391,17 +2397,17 @@ TAINTINT fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int reg1, uint3
 	int tainted4 = is_flag_tainted (flag);
 
 	if (tainted1 || mem_tainted2 || tainted3 || tainted4) {
-		PRINT ("memregregflag\n");
+		PRINT ("memregregflag_cmov\n");
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d\n", 
 				reg1, tainted1, reg1_size, mem_loc, mem_tainted2, mem_size, reg2, tainted3, reg2_size, reg1_value, get_mem_value (mem_loc, mem_size), reg2_value, flag, tainted4);
                 //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
-		if (!mem_tainted2 && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
                 //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
+                if (!mem_tainted2) print_extra_move_mem (ip, mem_loc, mem_size);
 		if (!tainted4) print_extra_move_flag (ip, ins_str, flag);
-		return 1;
+                return 1;
 	}
-	return 0;
+        return 0;
 }
 
 //only used for mov and movx with index tool
@@ -2413,17 +2419,13 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
 
-    if (base_tainted || index_tainted || mem_tainted) { 
+    if (mem_tainted) { 
         PRINT ("memregreg_mov");
         printf ("[SLICE] #%x #%s\t", ip, ins_str);
         printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
-        //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
-        if (!mem_tainted && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
-        //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
-        return 1;
     }
-    return 0;
+    return (base_tainted || index_tainted || mem_tainted);
 }
 
 //only used for mov and movx with index tool

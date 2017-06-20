@@ -34,7 +34,6 @@ APP_CC=gcc
 # defining the test name twice (once in TOOL_ROOTS and again in TEST_ROOTS).
 # Tests defined here should not be defined in TOOL_ROOTS and TEST_ROOTS.
 TEST_TOOL_ROOTS := linkage_offset \
-		linkage_data \
 		print_bb
 
 # This defines the tests to be run that were not already defined in TEST_TOOL_ROOTS.
