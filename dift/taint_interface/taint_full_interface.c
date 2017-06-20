@@ -3111,11 +3111,13 @@ TAINTSIGN taint_mem2mem_qw (u_long src_loc, u_long dst_loc)
 
 TAINTSIGN taint_call_near (u_long esp)
 {
+    //printf ("taint_call_near: clear mem %lx\n", esp-4);
     clear_cmem_taints (esp-4, 4); /* IP written to stack */
 }
 
 TAINTSIGN taint_call_far (u_long esp)
 {
+    //printf ("taint_call_near: clear mem %lx\n", esp-8);
     clear_cmem_taints (esp-8, 8); /* IP and CS written to stack */
 }
 
