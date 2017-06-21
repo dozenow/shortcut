@@ -281,6 +281,7 @@ void printerr (string s) {
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
 #define SLICE_VERIFICATION 5
+#define SLICE_TAINT 6
 
 inline int getLineType (string line) { 
 	if (line.compare (0, 7, "[SLICE]") == 0)
@@ -291,6 +292,8 @@ inline int getLineType (string line) {
 		return SLICE_ADDRESSING;
 	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
+	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
+                return SLICE_TAINT;
 	else if (line.compare (0, 23, "[SLICE_RESTORE_ADDRESS]") == 0) 
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
@@ -485,6 +488,9 @@ int main (int argc, char* argv[]) {
 			case SLICE_VERIFICATION:
                                 addr_verification.push (s);
 				break;
+                        case SLICE_TAINT:
+                                println ("/*Eliminated " + s + "*/");
+                                break;
 			default:
 				println ("unrecognized: " + s);
 				assert (0);
