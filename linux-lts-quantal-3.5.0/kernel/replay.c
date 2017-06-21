@@ -14064,44 +14064,47 @@ replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 			return prt->rp_saved_rc; // Since pin won't redo system call, use real return code now
 		}
 	}
-	if (recbuf) {
-		rg_lock(prt->rp_record_thread->rp_group);
-		if (is_replay_cache_file (prt->rp_mmap_files, fd, &cache_fd)) {
-			printk ("mmap reusing cache file %d for fd %ld\n", cache_fd, fd);
-			given_fd = cache_fd;
-		} else {
-			given_fd = open_mmap_cache_file (recbuf->dev, recbuf->ino, recbuf->mtime, (prot&PROT_WRITE) && (flags&MAP_SHARED));
-			printk ("mmap using cache file %d for fd %ld\n", given_fd, fd);
-			if (set_replay_cache_file (prt->rp_mmap_files, fd, given_fd) < 0) return syscall_mismatch();
+
+	if ((long) rc > 0 || (long) rc < -1024) { 
+		if (recbuf) {
+			rg_lock(prt->rp_record_thread->rp_group);
+			if (is_replay_cache_file (prt->rp_mmap_files, fd, &cache_fd)) {
+				printk ("mmap reusing cache file %d for fd %ld\n", cache_fd, fd);
+				given_fd = cache_fd;
+			} else {
+				given_fd = open_mmap_cache_file (recbuf->dev, recbuf->ino, recbuf->mtime, (prot&PROT_WRITE) && (flags&MAP_SHARED));
+				printk ("mmap using cache file %d for fd %ld\n", given_fd, fd);
+				if (set_replay_cache_file (prt->rp_mmap_files, fd, given_fd) < 0) return syscall_mismatch();
+			}
+			rg_unlock(prt->rp_record_thread->rp_group);
+			DPRINT ("replay_mmap_pgoff opens cache file %x %lx %lx.%lx, fd = %d\n", recbuf->dev, recbuf->ino, recbuf->mtime.tv_sec, recbuf->mtime.tv_nsec, given_fd);
+			if (given_fd < 0) {
+				printk ("replay_mmap_pgoff: can't open cache file, rc=%d\n", given_fd);
+				syscall_mismatch();
+			}
+			argsconsume(current->replay_thrd->rp_record_thread, sizeof(struct mmap_pgoff_retvals));
+		} else if (is_replay_cache_file (prt->rp_cache_files, fd, &given_fd)) {
+			DPRINT ("replay_mmap_pgoff uses open cache file %d for %lu\n", given_fd, fd);
+			is_cache_file = 1;
+		} else if (given_fd >= 0) {
+			printk ("replay_mmap_pgoff: fd is %d but there are no return values recorded\n", given_fd);
 		}
-		rg_unlock(prt->rp_record_thread->rp_group);
-		DPRINT ("replay_mmap_pgoff opens cache file %x %lx %lx.%lx, fd = %d\n", recbuf->dev, recbuf->ino, recbuf->mtime.tv_sec, recbuf->mtime.tv_nsec, given_fd);
-		if (given_fd < 0) {
-			printk ("replay_mmap_pgoff: can't open cache file, rc=%d\n", given_fd);
-			syscall_mismatch();
+
+		retval = sys_mmap_pgoff (rc, len, prot, (flags | MAP_FIXED), given_fd, pgoff);
+		MPRINT("mmap'd (%#lx, %#lx) from fd %d\n",retval, retval + len, given_fd);
+
+		DPRINT ("Pid %d replays mmap_pgoff with address %lx len %lx input address %lx fd %d flags %lx prot %lx pgoff %lx returning %lx, flags & MAP_FIXED %lu\n", current->pid, addr, len, rc, given_fd, flags, prot, pgoff, retval, flags & MAP_FIXED);
+
+		if (rc != retval) {
+			printk ("Replay mmap_pgoff returns different value %lx than %lx\n", retval, rc);
+			if (IS_ERR((void *) retval)) {
+				printk ("is error: %ld\n", PTR_ERR((void *) retval)); //HERE
+			}
+			syscall_mismatch ();
 		}
-		argsconsume(current->replay_thrd->rp_record_thread, sizeof(struct mmap_pgoff_retvals));
-	} else if (is_replay_cache_file (prt->rp_cache_files, fd, &given_fd)) {
-		DPRINT ("replay_mmap_pgoff uses open cache file %d for %lu\n", given_fd, fd);
-		is_cache_file = 1;
-	} else if (given_fd >= 0) {
-		printk ("replay_mmap_pgoff: fd is %d but there are no return values recorded\n", given_fd);
+
+		if (recbuf && given_fd > 0 && !is_cache_file) sys_close(given_fd);
 	}
-
-	retval = sys_mmap_pgoff (rc, len, prot, (flags | MAP_FIXED), given_fd, pgoff);
-	MPRINT("mmap'd (%#lx, %#lx) from fd %d\n",retval, retval + len, given_fd);
-
-	DPRINT ("Pid %d replays mmap_pgoff with address %lx len %lx input address %lx fd %d flags %lx prot %lx pgoff %lx returning %lx, flags & MAP_FIXED %lu\n", current->pid, addr, len, rc, given_fd, flags, prot, pgoff, retval, flags & MAP_FIXED);
-
-	if (rc != retval) {
-		printk ("Replay mmap_pgoff returns different value %lx than %lx\n", retval, rc);
-		if (IS_ERR((void *) retval)) {
-			printk ("is error: %ld\n", PTR_ERR((void *) retval)); //HERE
-		}
-		syscall_mismatch ();
-	}
-
-	if (recbuf && given_fd > 0 && !is_cache_file) sys_close(given_fd);
 
 	// Save the regions for preallocation for replay+pin
 	if (prt->rp_record_thread->rp_group->rg_save_mmap_flag) {
@@ -15917,8 +15920,8 @@ static ssize_t write_log_data (struct file* file, loff_t* ppos, struct record_th
 	struct argsalloc_node* node;
 	ssize_t copyed = 0;
 	struct iovec* pvec; // Concurrent writes need their own vector
-	int kcnt = 0;
 	u_long data_len;
+        char* syscall_buf_start = (char*) psr;
 
 	if (count <= 0) return 0;
 
@@ -15940,12 +15943,18 @@ static ssize_t write_log_data (struct file* file, loff_t* ppos, struct record_th
 
 	MPRINT ("Pid %d write_log_data count %d, size %d\n", current->pid, count, sizeof(struct syscall_result)*count);
 
-	copyed = vfs_write(file, (char *) psr, sizeof(struct syscall_result)*count, ppos);
-	if (copyed != sizeof(struct syscall_result)*count) {
-		printk ("write_log_data: tried to write %d, got rc %d\n", sizeof(struct syscall_result)*count, copyed);
-		KFREE (pvec);
-		return -EINVAL;
-	}
+        copyed = 0;
+        //This loop is necessary for java recording, as vfs_write tends to write only 4096-byte chunk each time
+	while (copyed != sizeof(struct syscall_result)*count) {
+                u_long ret = vfs_write(file, syscall_buf_start+copyed, sizeof(struct syscall_result)*count - copyed, ppos);
+                copyed += ret;
+		DPRINT ("write_log_data: tried to write %d, got rc %d\n", sizeof(struct syscall_result)*count, copyed);
+                if (ret <= 0) {
+                    printk ("[BUG]write_log_data: cannot write into log, written %d, expected %u, current ret %lu\n", copyed, sizeof(struct syscall_result)*count, ret);
+                    KFREE (pvec);
+                    return -EINVAL;
+                }
+        }
 
 	/* Now write ancillary data - count of bytes goes first */
 	data_len = 0;
@@ -15960,17 +15969,27 @@ static ssize_t write_log_data (struct file* file, loff_t* ppos, struct record_th
 		return -EINVAL;
 	}
 
+        copyed = 0;
 	list_for_each_entry_reverse (node, &prect->rp_argsalloc_list, list) {
+                u_long write_count = 0;
+                int size_to_write = node->pos - node->head;
 		MPRINT ("Pid %d argssize write buffer slab size %d\n", current->pid, node->pos - node->head);
-		pvec[kcnt].iov_base = node->head;
-		pvec[kcnt].iov_len = node->pos - node->head;
-		if (++kcnt == UIO_MAXIOV) {
-			copyed = vfs_writev (file, pvec, kcnt, ppos);
-			kcnt = 0;
-		}
+                 //This loop is necessary for java recording, as vfs_write tends to write only 4096-byte chunk each time
+                while (write_count != size_to_write) {
+                    u_long ret = vfs_write (file, ((char*) node->head) + write_count, size_to_write - write_count, ppos);
+                    write_count += ret;
+                    DPRINT ("write_log_data: buf %p, write %d got %lu\n", node->head, size_to_write, ret);
+                    if (ret <= 0) { 
+                        printk ("[BUG] write_log_data: cannot write ancillary data.\n");
+                        break;
+                    }
+                }
+                copyed += size_to_write;
 	}
 
-	vfs_writev (file, pvec, kcnt, ppos); // Write any remaining data before exit
+        if (copyed != data_len) { 
+            printk ("[BUG]write_log_data: tried to write out ancillary data: epected %lu, actual %d\n", data_len, copyed);
+        }
 	
 	DPRINT ("Wrote %d bytes to the file for sysnum %d\n", copyed, psr->sysnum);
 	KFREE (pvec);
