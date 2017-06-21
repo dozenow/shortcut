@@ -2810,7 +2810,7 @@ static inline void fw_slice_check_address (INS ins) {
 		int base_value[2] = {0};
 		int index_value[2] = {0};
 		uint32_t index = 0;
-		uint32_t is_read[2] = {-1,-1};
+		uint32_t is_read[2] = {0,0};
 		IARG_TYPE mem_type[2];
 		UINT32 memsize[2];
 		if (INS_MemoryOperandIsWritten(ins, 0)) {
