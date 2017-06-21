@@ -2397,17 +2397,17 @@ TAINTINT fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int reg1, uint3
 	int tainted4 = is_flag_tainted (flag);
 
 	if (tainted1 || mem_tainted2 || tainted3 || tainted4) {
-		PRINT ("memregregflag\n");
+		PRINT ("memregregflag_cmov\n");
 		printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d\n", 
 				reg1, tainted1, reg1_size, mem_loc, mem_tainted2, mem_size, reg2, tainted3, reg2_size, reg1_value, get_mem_value (mem_loc, mem_size), reg2_value, flag, tainted4);
                 //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
-		if (!mem_tainted2 && mem_size > 0) print_extra_move_mem (ip, mem_loc, mem_size);
                 //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
+                if (!mem_tainted2) print_extra_move_mem (ip, mem_loc, mem_size);
 		if (!tainted4) print_extra_move_flag (ip, ins_str, flag);
-		return 1;
+                return 1;
 	}
-	return 0;
+        return 0;
 }
 
 //only used for mov and movx with index tool
@@ -3113,11 +3113,13 @@ TAINTSIGN taint_mem2mem_qw (u_long src_loc, u_long dst_loc)
 
 TAINTSIGN taint_call_near (u_long esp)
 {
+    //printf ("taint_call_near: clear mem %lx\n", esp-4);
     clear_cmem_taints (esp-4, 4); /* IP written to stack */
 }
 
 TAINTSIGN taint_call_far (u_long esp)
 {
+    //printf ("taint_call_near: clear mem %lx\n", esp-8);
     clear_cmem_taints (esp-8, 8); /* IP and CS written to stack */
 }
 
