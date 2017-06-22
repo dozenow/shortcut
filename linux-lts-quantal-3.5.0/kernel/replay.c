@@ -14006,7 +14006,7 @@ record_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 	 * Needed for Pin support	
 	 */
 	if (current->record_thrd->rp_group->rg_save_mmap_flag) {
-		if (rc != -1) {
+		if (rc > 0 || rc < -1024) {
 			MPRINT("Pid %d record mmap_pgoff reserve memory addr %lx len %lx\n", current->pid, addr, len);
 			reserve_memory(rc, len);
 		}
@@ -14108,7 +14108,7 @@ replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 
 	// Save the regions for preallocation for replay+pin
 	if (prt->rp_record_thread->rp_group->rg_save_mmap_flag) {
-		if (rc != -1) {
+		if ((long) rc > 0 || (long) rc < -1024) {
 			MPRINT ("Pid %d replay mmap_pgoff reserve memory addr %lx len %lx\n", current->pid, rc, len);
 			reserve_memory(rc, len);
 		}

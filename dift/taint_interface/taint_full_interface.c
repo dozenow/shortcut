@@ -1837,6 +1837,7 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
     return tainted;
 }
 
+//TODO: Partial mem taints
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size) { 
 	uint32_t offset = 0;
 	u_long mem_offset = mem_loc;
@@ -2425,7 +2426,12 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
         printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
     }
-    return (base_tainted || index_tainted || mem_tainted);
+    if (base_tainted || index_tainted || mem_tainted) { 
+        //check address
+        fw_slice_addressing (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc, mem_size, 1);
+        return 1;
+    } else 
+        return 0;
 }
 
 //only used for mov and movx with index tool
@@ -2433,7 +2439,8 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
 TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str, 
         int reg, uint32_t reg_size, PIN_REGISTER* reg_value, uint32_t reg_u8,
         int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8) 
+        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
+        u_long mem_loc, uint32_t mem_size) 
 {
     int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
@@ -2445,8 +2452,8 @@ TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str,
         printf ("    [SLICE_INFO] #src_regregreg_mov[%d:%d:%u,%d:%d:%u,%d:%d:%u] #base_reg_value %u, reg_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, reg, reg_tainted, reg_size, index_reg, index_tainted, index_reg_size, base_reg_value, *reg_value->dword, index_reg_value);
         if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, reg_value, reg_u8, reg_tainted);
-        //don't print out the SLICE_EXTRA for base_reg (reg1), as this will be handled later by SLICE_ADDRESSING anyway
-        //don't print out the SLICE_EXTRA for index_reg (reg2), as this will be handled later by SLICE_ADDRESSING anyway
+        //check address
+         fw_slice_addressing (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc, mem_size, 0);
         return 1;
     }
     return 0;

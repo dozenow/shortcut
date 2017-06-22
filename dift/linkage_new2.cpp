@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 13825
+//#define EXTRA_DEBUG 487
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -620,7 +620,7 @@ static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t siz
 
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
-    SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
+    SYSCALL_DEBUG (stderr, "open_start: filename %s, clock %lu\n", filename, *ppthread_log_clock);
     struct open_info* oi = (struct open_info *) malloc (sizeof(struct open_info));
     strncpy(oi->name, filename, OPEN_PATH_LEN);
     oi->fileno = open_file_cnt;
@@ -659,6 +659,7 @@ static inline void sys_open_stop(int rc)
 
 static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
+    SYSCALL_DEBUG (stderr, "close_start @ %lu\n", *ppthread_log_clock);
     tdata->save_syscall_info = (void *) fd;
     if (tdata->recheck_handle) {
 	if (!current_thread->ignore_flag || !(*(int *)(current_thread->ignore_flag))) {
@@ -674,6 +675,7 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 
 static inline void sys_close_stop(int rc)
 {
+    SYSCALL_DEBUG (stderr, "close_stop @ %lu\n", *ppthread_log_clock);
     int fd = (int) current_thread->save_syscall_info;
     // remove the fd from the list of open files
     if (!rc) {
@@ -2714,6 +2716,7 @@ static inline void fw_slice_check_address (INS ins) {
 					} else {
 						mem_ea = IARG_MEMORYREAD_EA;
 						memsize = INS_MemoryReadSize(ins);
+                                                ++ memory_read_count;
 					}
 				} else if (INS_IsMemoryWrite(ins)) {
 					mem_ea = IARG_MEMORYWRITE_EA;
@@ -2819,13 +2822,17 @@ static inline void fw_slice_check_address (INS ins) {
 		} else if(INS_MemoryOperandIsRead(ins, 0)) {
 			mem_type[0] = IARG_MEMORYREAD_EA;
 			is_read[0] = 1;
+                        ++ memory_read_count;
 		} else 
 			assert (0);
 		if (INS_MemoryOperandIsWritten(ins, 1)) {
 			mem_type[1] = IARG_MEMORYWRITE_EA;
 			is_read[0] = 0;
 		} else if(INS_MemoryOperandIsRead(ins, 1)) {
-			mem_type[1] = IARG_MEMORYREAD_EA;
+                        if (memory_read_count == 1) 
+                            mem_type[1] = IARG_MEMORYREAD2_EA;
+                        else
+                            mem_type[1] = IARG_MEMORYREAD_EA;
 			is_read[0] = 1;
 		} else 
 			assert (0);
@@ -3255,7 +3262,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertIfCall(ins, IPOINT_BEFORE,
+        INS_InsertCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_memregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3272,7 +3279,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
                 IARG_UINT32, memsize,
                 IARG_END);
 
-	fw_slice_check_address (ins);
+	//fw_slice_check_address (ins);// no need to call the function here, as we called it inside fw_slice_memregreg_mov
 	put_copy_of_disasm (str);
 #endif
 }
@@ -3302,7 +3309,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertIfCall(ins, IPOINT_BEFORE,
+        INS_InsertCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_regregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3319,9 +3326,11 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
                 IARG_UINT32, index_reg_size,
                 index_reg_value_type, index_reg, 
                 IARG_UINT32, index_reg_u8,
+                IARG_MEMORYWRITE_EA,
+                IARG_UINT32, INS_MemoryWriteSize(ins), 
                 IARG_END);
 
-	fw_slice_check_address (ins);
+	//fw_slice_check_address (ins); //no need to call the function here, as we called it inside fw_slice_regregreg_mov
 	put_copy_of_disasm (str);
 #endif
 }
@@ -8633,7 +8642,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
     printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), 

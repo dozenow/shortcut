@@ -135,7 +135,8 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
 TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str, 
         int reg, uint32_t reg_size, PIN_REGISTER* regv_value, uint32_t reg_u8,
         int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8);
+        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
+        u_long mem_loc, uint32_t mem_size);
 TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8,
 		int reg3, uint32_t reg3_size, uint32_t reg3_value, uint32_t reg3_u8, u_long mem_loc, uint32_t mem_size);
