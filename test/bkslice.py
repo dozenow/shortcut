@@ -6,14 +6,18 @@ import sys
 lineno = int(sys.argv[1])
 
 sources = {}
-regname = {}
 
+regname = {}
 regname["3"] = "edi"
+regname["4"] = "esi"
 regname["5"] = "ebp"
 regname["7"] = "ebx"
 regname["8"] = "edx"
 regname["9"] = "ecx"
 regname["10"] = "eax"
+
+transreg = {}
+transreg["dl"] = "edx"
 
 def is_reg (loc):
     return loc in regname.values()
@@ -34,7 +38,9 @@ def findSources(target):
     for src in target[b:e].split(","):
         (reg,taint,sz) = src.split(":")
         #print reg, taint, sz
-        if int(taint): 
+        if (reg[:2] == "FM"):
+            sources["flags"] = 1
+        elif int(taint): 
             if (int(reg,16) < 4096):
                 #print "look for reg", reg
                 sources[regname[reg]] = 1
@@ -58,6 +64,8 @@ def findNextBSlice(cnt):
                     del sources[addr]
                     print addrline,
                 dest = lines[cnt].split()[3].split(",")[0]
+                if dest in transreg:
+                    dest = transreg[dest];
                 if dest in sources or use_next_slice:
                     print cnt+1, lines[cnt],
                     if (not use_next_slice):

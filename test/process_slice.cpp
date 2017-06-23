@@ -281,6 +281,7 @@ void printerr (string s) {
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
 #define SLICE_VERIFICATION 5
+#define SLICE_TAINT 6
 
 inline int getLineType (string line) { 
 	if (line.compare (0, 7, "[SLICE]") == 0)
@@ -295,6 +296,8 @@ inline int getLineType (string line) {
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
 		return SLICE_RESTORE_REG;
+	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
+		return SLICE_TAINT;
         else if (line.compare (0, 5, "[BUG]") == 0) {
                 cerr <<"BUG line: " <<line <<endl;
                 return -1;
@@ -318,7 +321,7 @@ int main (int argc, char* argv[]) {
 	list<AddrToRestore> restoreAddress;
 	list<string> restoreReg;
 	int totalRestoreSize = 0;
-	string s;
+	string s, lastAddr;
 	while (!in.eof()) {
 		if (in.fail() || in.bad()) assert (0);
 		getline (in, s);
@@ -350,13 +353,30 @@ int main (int argc, char* argv[]) {
 				if (!lastLine.empty())
 					buffer.push (make_pair(SLICE, lastLine));
 				lastLine = s;
+				lastAddr = s.substr(9);
+				lastAddr = lastAddr.substr(0,lastAddr.find(" "));
 				break;
+		        case SLICE_TAINT:
                         case -1:
                                 //ignore this line
                                 break;
 			default: 
-				//printerr (s);
-				buffer.push (make_pair(type, s));
+			    size_t addrstart = s.find("comes with ");
+			    if (addrstart != string::npos) {
+				string addr = s.substr(addrstart+11);
+				size_t addrend = addr.find(" ");
+				if (addrend != string::npos) addr = addr.substr(0,addrend);
+				if (addr != lastAddr) {
+				    // This doesn't go with prior slice
+				    if (!lastLine.empty()) {
+					buffer.push (make_pair(SLICE, lastLine));
+					lastLine.clear();
+				    }
+				}
+			    } else {
+				cout << "lastAddr check fails" << endl;
+			    }
+			    buffer.push (make_pair(type, s));
 		}
 	}
 	//printerr (lastLine);
@@ -396,7 +416,6 @@ int main (int argc, char* argv[]) {
 	//println ("**************************")
 	queue<string> extraLines;
 	queue<string> address; //here I can handle multiple address convertion
-        queue<string> addr_verification;
 	while (!buffer.empty()) {
 		auto p = buffer.front();
 		string s= p.second;
@@ -415,12 +434,6 @@ int main (int argc, char* argv[]) {
 				 //special case: to avoid affecting esp, we change pos/push to mov instructions
 				 //special case: convert jumps
 				 s = rewriteInst (s);
-                                //process SLICE_VERIFICATION for memory addresses
-                                while (!addr_verification.empty()) {
-                                    string v = addr_verification.front();
-                                    println (cleanupVerificationLine(replaceReg(v)));
-                                    addr_verification.pop();
-                                }
 				//processs SLICE_ADDRESSING
 				while (!address.empty()) {
 					string line = address.front();
@@ -483,8 +496,8 @@ int main (int argc, char* argv[]) {
 				println (cleanupSliceLine(s));
 				break;
 			case SLICE_VERIFICATION:
-                                addr_verification.push (s);
-				break;
+			    println (cleanupVerificationLine(replaceReg(s)));
+			    break;
 			default:
 				println ("unrecognized: " + s);
 				assert (0);

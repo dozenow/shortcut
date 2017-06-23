@@ -5,6 +5,8 @@ from subprocess import Popen, PIPE
 import sys
 import argparse
 
+instr_jumps = False
+
 # Modify these config paraemters for new checkpoint
 parser = argparse.ArgumentParser()
 parser.add_argument("rec_group_id", help = "record group id")
@@ -81,7 +83,14 @@ outfd.close()
 infd = open(outputdir+"/exslice.asm", "r")
 outfd = open(outputdir+"/exslice.c", "w")
 outfd.write ("asm (\n")
+jcnt = 0
 for line in infd:
+    if instr_jumps and " jump_diverge" in line:
+        outfd.write ("\"" + "push " + str(jcnt) + "\\n\"\n")
+	outfd.write ("\"" + line.strip() + "\\n\"\n")
+        outfd.write ("\"" + "add esp, 4" + "\\n\"\n")
+        jcnt = jcnt + 1
+    else:
 	outfd.write ("\"" + line.strip() + "\\n\"\n")
 outfd.write (");\n")
 
