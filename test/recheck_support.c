@@ -253,6 +253,27 @@ void open_recheck ()
     }
 }
 
+void openat_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct openat_recheck* popen;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    popen = (struct openat_recheck *) bufptr;
+    char* fileName = bufptr+sizeof(struct openat_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    printf("openat: filename %s flags %x mode %d", fileName, popen->flags, popen->mode);
+    printf (" rc %ld\n", pentry->retval);
+#endif
+    rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
+    check_retval ("openat", pentry->retval, rc);
+    assert (rc < MAX_FDS);
+}
+
 void close_recheck ()
 {
     struct recheck_entry* pentry;
@@ -938,6 +959,36 @@ void geteuid32_recheck ()
 #endif 
     rc = syscall(SYS_geteuid32);
     check_retval ("geteuid32", pentry->retval, rc);
+}
+
+void getgid32_recheck ()
+{
+    struct recheck_entry* pentry;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+
+#ifdef PRINT_VALUES
+    printf("getgid32: rc %ld\n", pentry->retval);
+#endif 
+    rc = syscall(SYS_getgid32);
+    check_retval ("getgid32", pentry->retval, rc);
+}
+
+void getegid32_recheck ()
+{
+    struct recheck_entry* pentry;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+
+#ifdef PRINT_VALUES
+    printf("getegid32: rc %ld\n", pentry->retval);
+#endif 
+    rc = syscall(SYS_getegid32);
+    check_retval ("getegid32", pentry->retval, rc);
 }
 
 void llseek_recheck ()

@@ -47,6 +47,7 @@ struct open_info {
     char name[OPEN_PATH_LEN];
     int flags;
     int fileno;
+    int dirfd;
 };
 
 struct read_info {

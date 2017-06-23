@@ -199,6 +199,21 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     return 0;
 }
 
+int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode)
+{
+    struct openat_recheck orchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_openat);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_openat, res->retval, sizeof (struct openat_recheck) + strlen(filename) + 1);
+    orchk.dirfd = dirfd;
+    orchk.flags = flags;
+    orchk.mode = mode;
+    write_data_into_recheck_log (handle->recheckfd, &orchk, sizeof(orchk));
+    write_data_into_recheck_log (handle->recheckfd, filename, strlen(filename)+1);
+
+    return 0;
+}
+
 int recheck_close (struct recheck_handle* handle, int fd)
 {
     struct close_recheck crchk;
@@ -481,6 +496,22 @@ int recheck_geteuid32 (struct recheck_handle* handle)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_geteuid32);
     write_header_into_recheck_log (handle->recheckfd, SYS_geteuid32, res->retval, 0);
+
+    return 0;
+}
+
+int recheck_getgid32 (struct recheck_handle* handle)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_getgid32);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getgid32, res->retval, 0);
+
+    return 0;
+}
+
+int recheck_getegid32 (struct recheck_handle* handle)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_getegid32);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getegid32, res->retval, 0);
 
     return 0;
 }

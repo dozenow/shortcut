@@ -2043,6 +2043,7 @@ u_long debug_counter = 0;
 
 static inline void verify_register (ADDRINT ip, u_long mem_loc, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8)
 {
+    //if (ip == 0xb7e6ebcb) return; //itoa function
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
     printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", reg, reg_size, reg_value, ip, mem_loc);
     printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);

@@ -33,6 +33,14 @@ struct open_recheck {
 };
 /* Followed by filename */
 
+struct openat_recheck { 
+    int dirfd;
+    int flags;
+    int mode;
+    char filename[0];
+};
+/* Followed by filename */
+
 struct close_recheck {
     int fd;
 };
@@ -169,6 +177,7 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode);
+int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode);
 int recheck_close (struct recheck_handle* handle, int fd);
 int recheck_access (struct recheck_handle* handle, char* pathname, int mode);
 int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf);
@@ -186,6 +195,8 @@ int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr*
 int recheck_getpid (struct recheck_handle* handle);
 int recheck_getuid32 (struct recheck_handle* handle);
 int recheck_geteuid32 (struct recheck_handle* handle);
+int recheck_getgid32 (struct recheck_handle* handle);
+int recheck_getegid32 (struct recheck_handle* handle);
 int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence);
 int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg);
 int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd);
