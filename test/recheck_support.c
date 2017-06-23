@@ -308,16 +308,16 @@ void stat64_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("stat64: has ret vals %d\n", pstat64->has_retvals);
+    printf("stat64: rc %ld pathname %s buf %lx ", pentry->retval, pathName, (u_long) pstat64->buf);
     if (pstat64->has_retvals) {
 	printf("stat64 retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
 	       "st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
 	       pstat64->retvals.st_dev, pstat64->retvals.st_ino, pstat64->retvals.st_mode, pstat64->retvals .st_nlink, pstat64->retvals.st_uid,pstat64->retvals .st_gid,
 	       pstat64->retvals.st_rdev, pstat64->retvals.st_size, pstat64->retvals .st_atime, pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
 	       pstat64->retvals.st_blocks); 
+    } else {
+	printf ("no return values\n");
     }
-    printf("buf %lx\n", (u_long) pstat64->buf);
-    printf("pathname %s\n", pathName);
 #endif
 
     rc = syscall(SYS_stat64, pathName, &st);
@@ -923,6 +923,21 @@ void getuid32_recheck ()
 #endif 
     rc = syscall(SYS_getuid32);
     check_retval ("getuid32", pentry->retval, rc);
+}
+
+void geteuid32_recheck ()
+{
+    struct recheck_entry* pentry;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+
+#ifdef PRINT_VALUES
+    printf("geteuid32: rc %ld\n", pentry->retval);
+#endif 
+    rc = syscall(SYS_geteuid32);
+    check_retval ("geteuid32", pentry->retval, rc);
 }
 
 void llseek_recheck ()

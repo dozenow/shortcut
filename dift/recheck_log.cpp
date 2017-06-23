@@ -477,6 +477,14 @@ int recheck_getuid32 (struct recheck_handle* handle)
     return 0;
 }
 
+int recheck_geteuid32 (struct recheck_handle* handle)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_geteuid32);
+    write_header_into_recheck_log (handle->recheckfd, SYS_geteuid32, res->retval, 0);
+
+    return 0;
+}
+
 int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence)
 {
     struct llseek_recheck rchk;
