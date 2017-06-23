@@ -228,6 +228,7 @@ int filter_regex(char* buf, int len) {
 
 // Assumes syscalls are uniquely ordered in a replay group,
 // so don't the pid
+// xdou:why??? the syscall here is the index in each thread I think, not the global replay clock
 int filter_byte_range(int syscall, int byteoffset)
 {
     struct filter_byterange* fbr;
@@ -443,7 +444,7 @@ void create_taints_from_buffer(void* buf, int size,
     }
 
     start = taint_num;
-    //fprintf (stderr, "create_taints_from_buffer: taint num %u(%x)\n", start, start);
+    printf( "create_taints_from_buffer_filtered: taint num %u(%x), buf %p, size %d\n", start, start, buf, size);
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
                 !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
@@ -473,6 +474,7 @@ void create_taints_from_buffer_unfiltered(void* buf, int size,
     if(outfd == -99999) { 
 	return;
     }
+    printf( "create_taints_from_buffer_unfiltered: taint num %u(%x), buf %p, size %d\n", start, start, buf, size);
 
     start = taint_num;
     for (i = 0; i < size; i++) {

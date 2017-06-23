@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 14067
+#define EXTRA_DEBUG 105
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -620,7 +620,7 @@ static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t siz
 
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
-    SYSCALL_DEBUG (stderr, "open_start: filename %s\n", filename);
+    SYSCALL_DEBUG (stderr, "open_start: filename %s, clock %lu\n", filename, *ppthread_log_clock);
     struct open_info* oi = (struct open_info *) malloc (sizeof(struct open_info));
     strncpy(oi->name, filename, OPEN_PATH_LEN);
     oi->fileno = open_file_cnt;
@@ -659,6 +659,7 @@ static inline void sys_open_stop(int rc)
 
 static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
+    SYSCALL_DEBUG (stderr, "close_start @ %lu\n", *ppthread_log_clock);
     tdata->save_syscall_info = (void *) fd;
     if (tdata->recheck_handle) {
 	if (!current_thread->ignore_flag || !(*(int *)(current_thread->ignore_flag))) {
@@ -674,6 +675,7 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 
 static inline void sys_close_stop(int rc)
 {
+    SYSCALL_DEBUG (stderr, "close_stop @ %lu\n", *ppthread_log_clock);
     int fd = (int) current_thread->save_syscall_info;
     // remove the fd from the list of open files
     if (!rc) {
@@ -2727,6 +2729,7 @@ static inline void fw_slice_check_address (INS ins) {
 					} else {
 						mem_ea = IARG_MEMORYREAD_EA;
 						memsize = INS_MemoryReadSize(ins);
+                                                ++ memory_read_count;
 					}
 				} else if (INS_IsMemoryWrite(ins)) {
 					mem_ea = IARG_MEMORYWRITE_EA;
@@ -2823,7 +2826,7 @@ static inline void fw_slice_check_address (INS ins) {
 		int base_value[2] = {0};
 		int index_value[2] = {0};
 		uint32_t index = 0;
-		uint32_t is_read[2] = {-1,-1};
+		uint32_t is_read[2] = {0,0};
 		IARG_TYPE mem_type[2];
 		UINT32 memsize[2];
 		if (INS_MemoryOperandIsWritten(ins, 0)) {
@@ -2832,13 +2835,17 @@ static inline void fw_slice_check_address (INS ins) {
 		} else if(INS_MemoryOperandIsRead(ins, 0)) {
 			mem_type[0] = IARG_MEMORYREAD_EA;
 			is_read[0] = 1;
+                        ++ memory_read_count;
 		} else 
 			assert (0);
 		if (INS_MemoryOperandIsWritten(ins, 1)) {
 			mem_type[1] = IARG_MEMORYWRITE_EA;
 			is_read[0] = 0;
 		} else if(INS_MemoryOperandIsRead(ins, 1)) {
-			mem_type[1] = IARG_MEMORYREAD_EA;
+                        if (memory_read_count == 1) 
+                            mem_type[1] = IARG_MEMORYREAD2_EA;
+                        else
+                            mem_type[1] = IARG_MEMORYREAD_EA;
 			is_read[0] = 1;
 		} else 
 			assert (0);
@@ -3162,6 +3169,7 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 #ifdef LINKAGE_DATA_OFFSET
 //only use this for CMOV  with index tool enabled
 static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         if (REG_valid(base_reg) && REG_valid(index_reg))
 	        INS_InsertIfCall(ins, IPOINT_BEFORE,
@@ -3239,10 +3247,12 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint3
 
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
+#endif
 }
 
 //only use this for MOV/MOVX  with index tool enabled
 static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         int t_base_reg = 0;
         int t_index_reg = 0;
@@ -3265,7 +3275,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertIfCall(ins, IPOINT_BEFORE,
+        INS_InsertCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_memregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3282,12 +3292,14 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
                 IARG_UINT32, memsize,
                 IARG_END);
 
-	fw_slice_check_address (ins);
+	//fw_slice_check_address (ins);// no need to call the function here, as we called it inside fw_slice_memregreg_mov
 	put_copy_of_disasm (str);
+#endif
 }
 
 //only use this for MOV/MOVX  with index tool enabled
 static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, REG index_reg) { 
+#ifdef FW_SLICE
 	char* str = get_copy_of_disasm (ins);
         int t_base_reg = 0;
         int t_index_reg = 0;
@@ -3310,7 +3322,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertIfCall(ins, IPOINT_BEFORE,
+        INS_InsertCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_regregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3327,10 +3339,13 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
                 IARG_UINT32, index_reg_size,
                 index_reg_value_type, index_reg, 
                 IARG_UINT32, index_reg_u8,
+                IARG_MEMORYWRITE_EA,
+                IARG_UINT32, INS_MemoryWriteSize(ins), 
                 IARG_END);
 
-	fw_slice_check_address (ins);
+	//fw_slice_check_address (ins); //no need to call the function here, as we called it inside fw_slice_regregreg_mov
 	put_copy_of_disasm (str);
+#endif
 }
 #endif
 
@@ -7194,9 +7209,8 @@ void instrument_movx (INS ins)
         REG src_reg = INS_OperandReg(ins, 1);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
-
         fw_slice_src_regregreg_mov (ins, src_reg, base_reg, index_reg);
-	instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
+        instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
     } else if (op1mem && op2mem) {
         instrument_taint_mem2mem(ins, 1);
     } else {
@@ -7292,55 +7306,27 @@ void instrument_cmov(INS ins, uint32_t mask)
 
     //2 (src) operand is memory...destination must be a register
     if(ismemread) {
-	INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
-			 reg, REG_StringShort(reg).c_str(), addrsize);
-#ifdef COPY_ONLY
-	pred_instrument_taint_mem2reg(ins, reg, 0);
-#ifdef FW_SLICE
-	assert (0); //not handled with COPY_ONLY
-#endif
-#else
- #ifndef LINKAGE_DATA_OFFSET //data flow tool
-    #ifdef FW_SLICE
-            fw_slice_src_memflag (ins, mask, IARG_MEMORYREAD_EA, addrsize);
-    #endif
-            INS_InsertCall (ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_cmov_mem2reg),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_UINT32, mask, 
-                    IARG_UINT32, translate_reg (reg),
-                    IARG_MEMORYREAD_EA,
-                    IARG_UINT32, REG_Size(reg),
-                    IARG_EXECUTING,
-                    IARG_END);
- #else //LINKAGE_DATA_OFFSET
-            REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-            REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-            uint32_t base_reg_size = 0;
-            uint32_t index_reg_size = 0;
-            if (REG_valid(base_reg)) base_reg_size = REG_Size (base_reg);
-            if (REG_valid(index_reg)) index_reg_size = REG_Size (index_reg);
-            assert (!REG_is_Upper8(base_reg));
-            assert (!REG_is_Upper8(index_reg));
-            assert (!REG_is_Upper8(reg));
-        #ifdef FW_SLICE                                
-            fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
-        #endif
-            INS_InsertCall (ins, IPOINT_BEFORE,
-                    AFUNPTR(taint_cmov_memregreg2reg),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_UINT32, mask, 
-                    IARG_UINT32, translate_reg (reg),
-                    IARG_MEMORYREAD_EA,
-                    IARG_UINT32, REG_Size(reg),
-                    IARG_EXECUTING,
-                    IARG_UINT32, translate_reg(base_reg),
-                    IARG_UINT32, base_reg_size,
-                    IARG_UINT32, translate_reg(index_reg),
-                    IARG_UINT32, index_reg_size,
-                    IARG_END);
- #endif // LINKAGE_DATA_OFFSET
-#endif // COPY_ONLY
+        INSTRUMENT_PRINT(log_f, "instrument mov is mem read: reg: %d (%s), size of mem read is %u\n", 
+                reg, REG_StringShort(reg).c_str(), addrsize);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        uint32_t base_reg_size = 0;
+        uint32_t index_reg_size = 0;
+        if (REG_valid(base_reg)) base_reg_size = REG_Size (base_reg);
+        if (REG_valid(index_reg)) index_reg_size = REG_Size (index_reg);
+        assert (!REG_is_Upper8(base_reg));
+        assert (!REG_is_Upper8(index_reg));
+        assert (!REG_is_Upper8(reg));
+        fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
+        INS_InsertCall (ins, IPOINT_BEFORE,
+                AFUNPTR(taint_cmov_mem2reg),
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_UINT32, mask, 
+                IARG_UINT32, translate_reg (reg),
+                IARG_MEMORYREAD_EA,
+                IARG_UINT32, REG_Size(reg),
+                IARG_EXECUTING,
+                IARG_END);
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {
@@ -7355,12 +7341,6 @@ void instrument_cmov(INS ins, uint32_t mask)
             assert (!REG_is_Upper8(dstreg));
 	    
             INSTRUMENT_PRINT(log_f, "instrument cmov is src reg: %d into dst reg: %d\n", reg, dstreg); 
-#ifdef COPY_ONLY
-            pred_instrument_taint_reg2reg (ins, dstreg, reg, 0);
-#ifdef FW_SLICE
-            assert (0);
-#endif
-#else
 #ifdef FW_SLICE
             fw_slice_src_regflag (ins, mask, reg, REG_Size(reg));
 #endif
@@ -7373,7 +7353,6 @@ void instrument_cmov(INS ins, uint32_t mask)
                     IARG_UINT32, REG_Size(reg),
                     IARG_EXECUTING,
                     IARG_END);
-#endif
         }
     }
 }
@@ -8667,7 +8646,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
     printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d edx value %x ebp tainted? %d esp tainted? %d\n", 
