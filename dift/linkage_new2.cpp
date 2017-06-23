@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 105
+//#define EXTRA_DEBUG 105
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3275,7 +3275,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertCall(ins, IPOINT_BEFORE,
+        INS_InsertIfCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_memregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3292,7 +3292,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
                 IARG_UINT32, memsize,
                 IARG_END);
 
-	//fw_slice_check_address (ins);// no need to call the function here, as we called it inside fw_slice_memregreg_mov
+	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 #endif
 }
@@ -3322,7 +3322,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
             index_reg_value_type = IARG_REG_VALUE;
         }
 
-        INS_InsertCall(ins, IPOINT_BEFORE,
+        INS_InsertIfCall(ins, IPOINT_BEFORE,
                 AFUNPTR(fw_slice_regregreg_mov),
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR,
@@ -3343,7 +3343,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
                 IARG_UINT32, INS_MemoryWriteSize(ins), 
                 IARG_END);
 
-	//fw_slice_check_address (ins); //no need to call the function here, as we called it inside fw_slice_regregreg_mov
+	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 #endif
 }
