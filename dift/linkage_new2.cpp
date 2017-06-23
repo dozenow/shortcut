@@ -9336,9 +9336,10 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_clear_dst (ins);
                 slice_handled = 1;
                 break;
+            case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                assert (INS_OperandCount(ins) == 4);
+                assert (INS_OperandCount(ins) == 4 || INS_OperandCount(ins) == 3);
                 if (INS_IsMemoryWrite(ins))
                     instrument_taint_reg2mem (ins, INS_OperandReg(ins, 1), 1);
                 else 

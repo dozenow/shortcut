@@ -92,8 +92,9 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 			case 125: break;
 			case 192: break;
 			case 174: break;
+                        case 258: break; //already handled
 			default:
-				fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped.\n", res->psr.sysnum , res->index); 
+				fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped, start_clock %lu\n", res->psr.sysnum , res->index, res->start_clock); 
 		}
 	}
     } while (res->psr.sysnum != syscall);
