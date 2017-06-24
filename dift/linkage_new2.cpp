@@ -1604,6 +1604,37 @@ static inline void sys_gettimeofday_stop (int rc) {
     current_thread->save_syscall_info = 0;
 }
 
+static inline void sys_time_start (struct thread_data* tdata, time_t* t) {
+	SYSCALL_DEBUG(stderr, "sys_time_start.\n");
+	tdata->save_syscall_info = (void*) t;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+            printf ("[SLICE] #0000000 #call time_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
+#endif
+            recheck_time (tdata->recheck_handle, t);
+	}
+}
+
+static inline void sys_time_stop (int rc) {
+    time_t* t = (time_t*) current_thread->save_syscall_info;
+    if (rc != -1) {
+	struct taint_creation_info tci;
+	tci.rg_id = current_thread->rg_id;
+	tci.record_pid = current_thread->record_pid;
+	tci.syscall_cnt = current_thread->syscall_cnt;
+	tci.offset = 0;
+	tci.fileno = -1;
+	tci.data = 0;
+	tci.type = TOK_TIME;
+
+	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	if (t != NULL) {
+	    taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
+	}
+    }
+    current_thread->save_syscall_info = 0;
+}
+
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
 	SYSCALL_DEBUG(stderr, "sys_clock_gettime_start %p.\n", tp);
 	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
@@ -1798,6 +1829,29 @@ static inline void sys_stat64_stop (int rc)
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
 	}
 	LOG_PRINT ("Done with stat64.\n");
+}
+
+static inline void sys_lstat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	si->buf = buf;
+	if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+	    printf ("[SLICE] #00000000 #call lstat64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+#endif
+	    recheck_lstat64 (tdata->recheck_handle, path, buf);
+	}
+}
+
+static inline void sys_lstat64_stop (int rc) 
+{
+	struct stat64_info* si = (struct stat64_info*) &current_thread->op.stat64_info_cache;
+	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
+	if (rc == 0) {
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	}
 }
 
 static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
@@ -2002,6 +2056,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
 	    break;
+        case SYS_time:
+            sys_time_start (tdata, (time_t*) syscallarg0);
+            break;
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
 	    break;
@@ -2055,6 +2112,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_fstat64:
 	    sys_fstat64_start (tdata, (int)syscallarg0, (struct stat64 *)syscallarg1);
 	    break;
+        case SYS_lstat64:
+            sys_lstat64_start (tdata, (char*) syscallarg0, (struct stat64*) syscallarg1);
+            break;
     }
 }
 
@@ -2108,6 +2168,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);
 	    break;
+        case SYS_time:
+            sys_time_stop (rc);
+            break;
         case SYS_ioctl:
 	    sys_ioctl_stop(rc);
 	    break;
@@ -2126,6 +2189,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_fstat64:
 	    sys_fstat64_stop(rc);
 	    break;
+        case SYS_lstat64:
+            sys_lstat64_stop(rc);
+            break;
 	case SYS_ugetrlimit:
 	    sys_ugetrlimit_stop(rc);
 	    break;

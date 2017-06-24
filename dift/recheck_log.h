@@ -93,6 +93,10 @@ struct gettimeofday_recheck {
     struct timezone* tz_ptr;
 };
 
+struct time_recheck { 
+    time_t *t;
+};
+
 struct prlimit64_recheck {
     int has_retvals;
     pid_t pid;
@@ -182,11 +186,13 @@ int recheck_close (struct recheck_handle* handle, int fd);
 int recheck_access (struct recheck_handle* handle, char* pathname, int mode);
 int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf);
 int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf); 
+int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf);
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count);
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim);
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf);
 int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf);
 int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz);
+int recheck_time (struct recheck_handle* handle, time_t* t);
 int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit);
 int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted);
 int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz);

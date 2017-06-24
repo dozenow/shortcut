@@ -258,6 +258,25 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     return 0;
 }
 
+int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf)
+{
+    struct stat64_recheck srchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_lstat64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_lstat64, res->retval, sizeof (struct stat64_recheck) + strlen(pathname) + 1);
+    if (res->psr.flags & SR_HAS_RETPARAMS) {
+	srchk.has_retvals = 1;
+	memcpy (&srchk.retvals, res->retparams, sizeof(srchk.retvals));
+    } else {
+	srchk.has_retvals = 0;
+    }
+    srchk.buf = buf;
+    write_data_into_recheck_log (handle->recheckfd, &srchk, sizeof(srchk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname)+1);
+
+    return 0;
+}
+
 int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
 {
     struct fstat64_recheck srchk;
@@ -395,6 +414,17 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck));
     chk.tv_ptr = tv;
     chk.tz_ptr = tz;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_time (struct recheck_handle* handle, time_t* t) {
+    struct time_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_time);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_time, res->retval, sizeof(struct time_recheck));
+    chk.t = t;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
     
     return 0;
