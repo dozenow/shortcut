@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 682
+#define EXTRA_DEBUG 14067
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3286,86 +3286,52 @@ static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size
 
 #ifdef LINKAGE_DATA_OFFSET
 //only use this for CMOV  with index tool enabled
-static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) { 
-#ifdef FW_SLICE
-	char* str = get_copy_of_disasm (ins);
-        if (REG_valid(base_reg) && REG_valid(index_reg))
-	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag_cmov),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (base_reg), 
-			IARG_UINT32, base_reg_size,
-			IARG_REG_VALUE, base_reg, 
-			IARG_UINT32, REG_is_Upper8(base_reg),
-			IARG_ADDRINT, translate_reg (index_reg), 
-			IARG_UINT32, index_reg_size,
-			IARG_REG_VALUE, index_reg, 
-			IARG_UINT32, REG_is_Upper8(index_reg),
-			mem_ea, 
-			IARG_UINT32, memsize,
-                        IARG_UINT32, flag,
-			IARG_END);
-        else if (REG_valid(base_reg) && !REG_valid(index_reg))
-	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag_cmov),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (base_reg), 
-			IARG_UINT32, base_reg_size,
-			IARG_REG_VALUE, base_reg, 
-			IARG_UINT32, REG_is_Upper8(base_reg),
-			IARG_UINT32, 0,
-			IARG_UINT32, 0,
-			IARG_UINT32, 0,
-			IARG_UINT32, 0,
-			mem_ea, 
-			IARG_UINT32, memsize,
-                        IARG_UINT32, flag,
-			IARG_END);
-        else if (!REG_valid(base_reg) && REG_valid(index_reg))
-	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag_cmov),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-			IARG_ADDRINT, translate_reg (index_reg), 
-			IARG_UINT32, index_reg_size,
-			IARG_REG_VALUE, index_reg, 
-			IARG_UINT32, REG_is_Upper8(index_reg),
-			mem_ea, 
-			IARG_UINT32, memsize,
-                        IARG_UINT32, flag,
-			IARG_END);
-        if (!REG_valid(base_reg) && !REG_valid(index_reg))
-	        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregregflag_cmov),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-                        IARG_UINT32, 0,
-			mem_ea, 
-			IARG_UINT32, memsize,
-                        IARG_UINT32, flag,
-			IARG_END);
+static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG dest_reg, REG base_reg, uint32_t base_reg_size, REG index_reg, uint32_t index_reg_size, IARG_TYPE mem_ea, uint32_t memsize, uint32_t flag) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    printf ("%s\n", str);
+    fflush(stdout);
+    int base_is_upper = 0, index_is_upper = 0, tbase_reg = 0, tindex_reg = 0;
+    IARG_TYPE base_reg_value_type = IARG_UINT32, index_reg_value_type = IARG_UINT32;
+    if (!REG_valid(base_reg)) {
+	base_reg_size = 0;
+    } else {
+	tbase_reg = translate_reg (base_reg);
+	base_is_upper = REG_is_Upper8(base_reg);
+	base_reg_value_type = IARG_REG_VALUE;
+    }
+    if (!REG_valid(index_reg)) {
+	index_reg_size = 0;
+    } else {
+	tindex_reg = translate_reg (index_reg);
+	index_is_upper = REG_is_Upper8(index_reg);
+	index_reg_value_type = IARG_REG_VALUE;
+    }
 
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_memregregflag_cmov),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_ADDRINT, translate_reg(dest_reg),
+		   IARG_UINT32, REG_Size(dest_reg),
+		   IARG_REG_REFERENCE, dest_reg,
+		   IARG_UINT32, REG_is_Upper8(dest_reg),
+		   IARG_ADDRINT, tbase_reg,
+		   IARG_UINT32, base_reg_size,
+		   base_reg_value_type, base_reg, 
+		   IARG_UINT32, base_is_upper,
+		   IARG_ADDRINT, tindex_reg,
+		   IARG_UINT32, index_reg_size,
+		   index_reg_value_type, index_reg, 
+		   IARG_UINT32, index_is_upper,
+		   mem_ea, 
+		   IARG_UINT32, memsize,
+		   IARG_UINT32, flag,
+		   IARG_EXECUTING,
+		   IARG_END);
 
-	fw_slice_check_address (ins);
-	put_copy_of_disasm (str);
-#endif
+    put_copy_of_disasm (str);
 }
 
 //only use this for MOV/MOVX  with index tool enabled
@@ -7351,14 +7317,6 @@ TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg,
     }
 }
 
-TAINTSIGN taint_cmov_mem2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed) {
-    if (executed) { 
-        taint_memflag2reg (mask, dst_reg, mem_loc, size);
-    } else { 
-        taint_regflag2reg (mask, dst_reg, dst_reg, size);
-    }
-}
-
 TAINTSIGN taint_cmov_memregreg2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed, uint32_t base_reg, uint32_t base_reg_size, uint32_t index_reg, uint32_t index_reg_size) { 
     if (executed) { 
         taint_memflag2reg (mask, dst_reg, mem_loc, size);
@@ -7441,16 +7399,16 @@ void instrument_cmov(INS ins, uint32_t mask)
         assert (!REG_is_Upper8(base_reg));
         assert (!REG_is_Upper8(index_reg));
         assert (!REG_is_Upper8(reg));
-        fw_slice_src_regregmemflag_cmov (ins, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
+        fw_slice_src_regregmemflag_cmov (ins, reg, base_reg, base_reg_size, index_reg, index_reg_size, IARG_MEMORYREAD_EA, addrsize, mask); 
         INS_InsertCall (ins, IPOINT_BEFORE,
-                AFUNPTR(taint_cmov_mem2reg),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_UINT32, mask, 
-                IARG_UINT32, translate_reg (reg),
-                IARG_MEMORYREAD_EA,
-                IARG_UINT32, REG_Size(reg),
-                IARG_EXECUTING,
-                IARG_END);
+			AFUNPTR(taint_cmov_mem2reg),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_UINT32, mask, 
+			IARG_UINT32, translate_reg (reg),
+			IARG_MEMORYREAD_EA,
+			IARG_UINT32, REG_Size(reg),
+			IARG_EXECUTING,
+			IARG_END);
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {

@@ -5,7 +5,7 @@ from subprocess import Popen, PIPE
 import sys
 import argparse
 
-instr_jumps = False
+instr_jumps = True
 
 # Modify these config paraemters for new checkpoint
 parser = argparse.ArgumentParser()
@@ -86,9 +86,11 @@ outfd.write ("asm (\n")
 jcnt = 0
 for line in infd:
     if instr_jumps and " jump_diverge" in line:
+        outfd.write ("\"" + "pushfd" + "\\n\"\n")
         outfd.write ("\"" + "push " + str(jcnt) + "\\n\"\n")
 	outfd.write ("\"" + line.strip() + "\\n\"\n")
         outfd.write ("\"" + "add esp, 4" + "\\n\"\n")
+        outfd.write ("\"" + "popfd" + "\\n\"\n")
         jcnt = jcnt + 1
     else:
 	outfd.write ("\"" + line.strip() + "\\n\"\n")
