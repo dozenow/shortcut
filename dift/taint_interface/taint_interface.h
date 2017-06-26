@@ -145,6 +145,7 @@ TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_rea
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
+TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size);
 TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int clear_flags);
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 
 				       int set_flags, int clear_flags);

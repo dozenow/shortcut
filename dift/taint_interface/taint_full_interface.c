@@ -2406,9 +2406,9 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 	if (index_tainted) verify_register (ip, mem_loc, index_reg, index_reg_size, index_reg_value, index_reg_u8);
 	if (!mem_tainted2) {
 	    print_extra_move_mem (ip, mem_loc, mem_size);
-	    printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
 	}
 	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, dest_reg_size, dest_reg_value, dest_reg_u8, dest_reg_tainted);
+        printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
     } else {
 	if (executed) {
 	    if (mem_tainted2) {
@@ -2420,6 +2420,7 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 		//printf ("[SLICE] #%x #%s\t", ip, ins_str);
 		printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d\n", 
 			base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
+                printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
 	    }
 	    if (base_tainted) verify_register (ip, mem_loc, base_reg, base_reg_size, base_reg_value, base_reg_u8);
 	    if (index_tainted) verify_register (ip, mem_loc, index_reg, index_reg_size, index_reg_value, index_reg_u8);
@@ -3051,6 +3052,11 @@ TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t s
     } 
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size) { 
+    taint_t t =  merge_mem_taints (mem_loc, size);
+    set_cmem_taints_one (mem_loc, size, t);
 }
 
 TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int clear_flags)

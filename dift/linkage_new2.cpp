@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 14067
+//#define EXTRA_DEBUG 1224
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -4964,6 +4964,17 @@ void instrument_taint_mix_reg (INS ins, REG reg, int set_flags, int clear_flags)
 		   IARG_END);
 }
 
+void instrument_taint_mix_mem (INS ins) 
+{ 
+    fw_slice_src_mem (ins, 1);
+    INS_InsertCall (ins, IPOINT_BEFORE,
+            AFUNPTR (taint_mix_mem),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYWRITE_EA,
+            IARG_UINT32, INS_MemoryWriteSize(ins),
+            IARG_END);
+}
+
 void instrument_taint_mix_regreg2reg (INS ins, REG dstreg, REG srcreg1, REG srcreg2, int set_flags, int clear_flags)
 {
     UINT32 dstregsize = REG_Size(dstreg);
@@ -7503,7 +7514,7 @@ void instrument_shift(INS ins)
 	    if (INS_OperandIsReg(ins, 1)) {
 		instrument_taint_add_reg2mem (ins, INS_OperandReg(ins, 1), -1, -1); 
 	    } else {
-		assert (0);
+                instrument_taint_mix_mem (ins);
 	    }
 	}
     } else if (count == 4) {

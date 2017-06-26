@@ -778,7 +778,7 @@ void time_recheck () {
 	bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-	printf ("time: pointer t %p\n", pget->t);
+	printf ("time: pointer t %x\n", (int)(pget->t));
 #endif
 	rc = syscall (SYS_time, pget->t);
 	check_retval ("time", pentry->retval, rc);
