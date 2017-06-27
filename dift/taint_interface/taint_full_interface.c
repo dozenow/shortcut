@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+using namespace boost::icl;
 
 #define USE_MERGE_HASH
 #define TAINT_STATS
@@ -2098,36 +2099,36 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
     printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
     // let's check the memory address at the checkpoint clock
     if (is_read == 0) {//only check dst memory operand
-	struct address_taint_set* addr_struct = NULL;
-	HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
-	if (addr_struct == NULL) {
-	    addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
-	    addr_struct->loc = mem_loc;
-	    addr_struct->size = mem_size;
-	    HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
-	} else { 
-	    if (addr_struct->size != mem_size) { 
-		fprintf (stderr, "[INFO] the memory address is overlapping (for checking taints on the final checkpoint, %x\n", ip);
-		fprintf (stderr, "[INFO] $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
-	    }
-	}
+        add_tainted_mem_for_final_check (mem_loc, mem_size);
     }
 }
 
-int fw_slice_check_final_mem_taint (taint_t* pregs) { 
-	struct address_taint_set* addr_struct = NULL;
+void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t size) { 
+    interval<unsigned long>::type mem_interval = interval<unsigned long>::closed(mem_loc, mem_loc+size-1);
+    current_thread->address_taint_set->insert (mem_interval);
+}
+
+int fw_slice_check_final_mem_taint (taint_t* pregs) 
+{ 
 	int has_mem = 0;
 	int mem_count = 0;
+        u_long mem_size_count = 0;
+        u_long tainted_size = 0;
 	int i;
-	for (addr_struct = current_thread->address_taint_set; addr_struct != NULL; addr_struct = (struct address_taint_set*)addr_struct->hh.next) { 
-		//printf ("checking mem_loc,is_imm,size: %lx, %d, %u\n", addr_struct->loc, addr_struct->is_imm, addr_struct->size);
-		if (is_mem_tainted (addr_struct->loc, addr_struct->size) == 0) {
-			printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, %d, %u\n", addr_struct->loc, addr_struct->is_imm, addr_struct->size);
-			has_mem = 1;
-		}
-		++ mem_count;
-	}
-	printf ("fw_slice_check_final_mem_taint: %d mem addrs are checked.\n", mem_count);
+       
+        for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
+                iter != current_thread->address_taint_set->end(); ++iter) {
+            u_long loc = iter->lower();
+            u_long size = iter->upper() - iter->lower() + 1;
+            if (is_mem_tainted (loc, (unsigned int) size) == 0) {
+                printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", loc, size);
+                has_mem = 1;
+                tainted_size += size;
+            }
+            ++ mem_count;
+            mem_size_count += size;
+        }
+	printf ("fw_slice_check_final_mem_taint: %d mem addrs are checked (size of %lu), total restore size %lu\n", mem_count, mem_size_count, tainted_size);
 
 	/* Assume 1 thread for now */
 	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {

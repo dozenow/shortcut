@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "taint_interface/taint.h"
-#include "uthash.h"
+#include <boost/icl/interval_set.hpp>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -168,13 +168,6 @@ struct prlimit64_info {
     struct rlimit64* old_limit;
 };
 
-struct address_taint_set {
-    u_long loc;
-    int is_imm;
-    uint32_t size;
-    UT_hash_handle hh;
-};
-
 struct ioctl_info {
     u_int fd;
     char* buf;
@@ -231,7 +224,7 @@ struct thread_data {
     struct thread_data*      next;
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
-    struct address_taint_set* address_taint_set;
+    boost::icl::interval_set<unsigned long> *address_taint_set;
 };
 
 struct memcpy_header {

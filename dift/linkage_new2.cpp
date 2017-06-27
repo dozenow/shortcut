@@ -601,23 +601,6 @@ char* get_file_ext(char* filename){
     return dot+1;
 }
 
-static inline void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t size) { 
-	struct address_taint_set* addr_struct = NULL;
-	HASH_FIND_ULONG (current_thread->address_taint_set, &mem_loc, addr_struct);
-	if (addr_struct == NULL) {
-		addr_struct = (struct address_taint_set*)malloc (sizeof(struct address_taint_set));
-		addr_struct->loc = mem_loc;
-		addr_struct->is_imm = 1;
-		addr_struct->size = size;
-		HASH_ADD_ULONG (current_thread->address_taint_set, loc, addr_struct);
-	} else { 
-		//TODO: we didn't check memory overlapping correctly
-		if (addr_struct->size != size) { 
-		    printf ("[BUG] tricky: the memory address is overlapping (for checking taints on the final checkpoint\n");
-		}
-	}
-}
-
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
     SYSCALL_DEBUG (stderr, "open_start: filename %s, clock %lu\n", filename, *ppthread_log_clock);
@@ -10020,8 +10003,8 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     } else {
 	ptdata->recheck_handle = NULL;
     }	
-    ptdata->address_taint_set = NULL;
 
+    ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
 				       ptdata, (void **) &current_thread, &thread_ndx);
@@ -10199,6 +10182,7 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
+    if (tdata->address_taint_set) delete tdata->address_taint_set;
 }
 
 #ifndef NO_FILE_OUTPUT
