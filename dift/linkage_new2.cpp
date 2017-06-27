@@ -102,7 +102,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1224
+//#define EXTRA_DEBUG 14229
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -5006,6 +5006,25 @@ inline void instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg, int se
     return instrument_taint_add_reg2reg_slice (ins, dstreg, srcreg, 1, set_flags, clear_flags);
 }
 
+static void instrument_taint_add_reg2esp (INS ins, REG srcreg, int set_flags, int clear_flags)
+{
+    UINT32 src_regsize = REG_Size(srcreg);
+    assert (src_regsize <= 4);
+
+    // Verify - so not part of slice
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_add_reg2esp),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_UINT32, srcreg,
+		   IARG_UINT32, src_regsize,
+		   IARG_REG_VALUE, srcreg, 
+		   IARG_UINT32, REG_is_Upper8 (srcreg), 
+		   IARG_UINT32, set_flags, 
+		   IARG_UINT32, clear_flags,
+		   IARG_END);
+}
+
 void instrument_taint_add_reg2mem_slice(INS ins, REG srcreg, int fw_slice, int set_flags, int clear_flags)
 {
     UINT32 regsize = REG_Size(srcreg);
@@ -7839,8 +7858,13 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
 			    IARG_UINT32, clear_flags,
 			    IARG_END);
         } else {
-            assert (REG_Size(dstreg) == REG_Size(reg));
-	    instrument_taint_add_reg2reg(ins, dstreg, reg, set_flags, clear_flags);
+	    assert (REG_Size(dstreg) == REG_Size(reg));
+	    if (dstreg == LEVEL_BASE::REG_ESP) {
+		// Special case: don't taint esp - instead verify other register is the same
+		instrument_taint_add_reg2esp(ins, reg, set_flags, clear_flags);
+	    } else {
+		instrument_taint_add_reg2reg(ins, dstreg, reg, set_flags, clear_flags);
+	    }
         }
     } else if(op1mem && op2imm) {
 #ifdef FW_SLICE
@@ -8179,6 +8203,7 @@ void instrument_imul(INS ins)
 			   IARG_FAST_ANALYSIS_CALL,
 			   IARG_MEMORYREAD_EA,
 			   IARG_UINT32, get_reg_off(dst_reg),
+			   IARG_UINT32, REG_Size(dst_reg),
 			   IARG_UINT32, CF_FLAG|OF_FLAG,
 			   IARG_UINT32, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG,
 			   IARG_END);
@@ -8726,17 +8751,16 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     }
     PIN_UnlockClient();
-    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d edx value %x ebp tainted? %d esp tainted? %d\n", 
+    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
-	    is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), val,
-	    is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
+	    is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
     //printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
     //    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
-    printf ("reg xmm1 tainted? ");
-    for (int i = 0; i < 16; i++) {
-	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
-    }
+    //printf ("reg xmm1 tainted? ");
+    //for (int i = 0; i < 16; i++) {
+    //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
+    //}
     //printf ("\t");
     //printf ("reg xmm2 tainted? ");
     //for (int i = 0; i < 16; i++) {

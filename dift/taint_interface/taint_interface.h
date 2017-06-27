@@ -235,6 +235,7 @@ TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg);
 
 // reg2reg add
 TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, int set_flags, int clear_flags);
+TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_t src_value, uint32_t src_u8, int set_flags, int clear_flags);
 
 // reg2reg xchg
 TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size);

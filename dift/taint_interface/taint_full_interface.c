@@ -2915,6 +2915,7 @@ TAINTSIGN taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size)
     memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
 }
 
+
 // JNF: What mike did - but only really right for zero extension, not sign extension, etc.
 TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t size)
 {
@@ -3053,6 +3054,24 @@ TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t s
     } 
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_t src_value, uint32_t src_u8, int set_flags, int clear_flags)
+{
+    uint32_t i;
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+    int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
+    assert (src_tainted != 2); // Verification would fail for partial taint
+    if (src_tainted) {
+	verify_register (ip, 0, src_reg, src_size, src_value, src_u8);
+
+	// Since we verified, src and flags are not tainted
+	for (i = 0; i < src_size; i++) {
+	    shadow_reg_table[src_reg*REG_SIZE+i] = 0;
+	} 
+	set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], 0, set_flags, clear_flags); 
+    }
 }
 
 TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size) { 
