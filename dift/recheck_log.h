@@ -174,6 +174,14 @@ struct fcntl64_setown_recheck {
     long owner;
 };
 
+struct getdents64_recheck {
+    u_int fd;
+    char* buf;
+    u_int count;
+    u_long arglen;
+};
+/* Followed by variable length buffer of size arglen */
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -210,5 +218,6 @@ int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags);
 int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg);
 int recheck_fcntl64_getown (struct recheck_handle* handle, int fd);
 int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner);
+int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count);
 
 #endif
