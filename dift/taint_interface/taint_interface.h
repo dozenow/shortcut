@@ -127,8 +127,12 @@ TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_
 TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t orig_src_reg, uint32_t size, const CONTEXT* ctx, int32_t reg_u8);
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
 TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u_long mem_loc2, uint32_t reg1_size, uint32_t mem_size, char* reg1_val);
+
+TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int src_reg, 
+				    PIN_REGISTER* src_reg_value, uint32_t src_reg_u8, uint32_t flag, BOOL executed);
 TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 				       int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed);
+
 TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
         int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
         u_long mem_loc, uint32_t mem_size);
@@ -318,6 +322,7 @@ TAINTSIGN taint_popfd (u_long mem_loc, uint32_t size);
 TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size);
 
 TAINTSIGN taint_cmov_mem2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed);
+TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size, BOOL executed);
 
 // File descriptor taint-tracking
 int add_taint_fd(int fd, int cloexec);
