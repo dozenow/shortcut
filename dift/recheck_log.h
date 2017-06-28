@@ -197,7 +197,7 @@ int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, s
 int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted);
 int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz);
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol);
-int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
+int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen);
 int recheck_getpid (struct recheck_handle* handle);
 int recheck_getuid32 (struct recheck_handle* handle);
 int recheck_geteuid32 (struct recheck_handle* handle);

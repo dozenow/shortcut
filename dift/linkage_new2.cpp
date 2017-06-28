@@ -1221,7 +1221,7 @@ static void sys_connect_start(thread_data* tdata, int sockfd, struct sockaddr* a
 #ifdef FW_SLICE
 	printf ("[SLICE] #00000000 #call connect_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 #endif
-	recheck_connect (tdata->recheck_handle, sockfd, addr, addrlen);
+	recheck_connect_or_bind (tdata->recheck_handle, sockfd, addr, addrlen);
     }
     if (monitor_has_fd(open_socks, sockfd)) {
         struct socket_info* si = (struct socket_info*) monitor_get_fd_data(open_socks, sockfd);
@@ -2024,7 +2024,17 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 		    SYSCALL_DEBUG(stderr, "send_start\n");
                     sys_send_start(tdata, (int)args[0], (char *)args[1], (int)args[2], (int)args[3]);
 		    break;
+                case SYS_BIND:
+                    SYSCALL_DEBUG(stderr, "bind_start\n");
+                    if (tdata->recheck_handle) {
+#ifdef FW_SLICE
+                        printf ("[SLICE] #00000000 #call bind_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+#endif
+                        recheck_connect_or_bind (tdata->recheck_handle, (int)args[0], (struct sockaddr*)args[1], (socklen_t)args[2]);
+                    }
+                    break;
                 default:
+                    fprintf (stderr, "[UNHANDLED] socketcall unhandled %d\n", call);
                     break;
             }
             break;

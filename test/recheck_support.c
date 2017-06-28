@@ -918,7 +918,7 @@ void socket_recheck ()
     check_retval ("socket", pentry->retval, rc);
 }
 
-void connect_recheck ()
+inline void connect_or_bind_recheck (int call, char* call_name)
 {
     struct recheck_entry* pentry;
     struct connect_recheck* pconnect;
@@ -933,13 +933,21 @@ void connect_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("connect: sockfd %d addlen %d rc %ld\n", pconnect->sockfd, pconnect->addrlen, pentry->retval);
+    printf("%s: sockfd %d addlen %d rc %ld\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval);
 #endif 
     block[0] = pconnect->sockfd;
     block[1] = (u_long) addr;
     block[2] = pconnect->addrlen;
-    rc = syscall(SYS_socketcall, SYS_CONNECT, &block);
-    check_retval ("connect", pentry->retval, rc);
+    rc = syscall(SYS_socketcall, call, &block);
+    check_retval (call_name, pentry->retval, rc);
+}
+
+void connect_recheck () { 
+    connect_or_bind_recheck (SYS_CONNECT, "connect");
+}
+
+void bind_recheck () {
+    connect_or_bind_recheck (SYS_BIND, "bind");
 }
 
 void getpid_recheck ()

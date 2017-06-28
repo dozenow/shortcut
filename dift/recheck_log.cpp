@@ -493,7 +493,7 @@ int recheck_socket (struct recheck_handle* handle, int domain, int type, int pro
     return 0;
 }
 
-int recheck_connect (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen)
+int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen)
 {
     struct connect_recheck cchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
