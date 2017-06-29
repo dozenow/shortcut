@@ -754,3 +754,21 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
     }
     return ichk.arglen;
 }
+
+int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count)
+{
+    struct getdents64_recheck gchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_getdents64);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_getdents64, res->retval, sizeof(gchk)+res->retparams_size);
+    gchk.fd = fd;
+    gchk.buf = buf;
+    gchk.count = count;
+    gchk.arglen = res->retparams_size;
+    write_data_into_recheck_log (handle->recheckfd, &gchk, sizeof(gchk));
+    if (gchk.arglen > 0) {
+	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams, gchk.arglen);
+    }
+
+    return 0;
+}

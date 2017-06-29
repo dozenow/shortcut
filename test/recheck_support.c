@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <dirent.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
@@ -58,7 +59,7 @@ void handle_mismatch()
 {
     static cnt = 0;
     cnt++;
-    if (cnt < 3) sleep (5); // Just so we notice it for now
+    if (cnt < 10) sleep (3); // Just so we notice it for now
 }
 
 void handle_jump_diverge()
@@ -266,8 +267,7 @@ void openat_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("openat: filename %s flags %x mode %d", fileName, popen->flags, popen->mode);
-    printf (" rc %ld\n", pentry->retval);
+    printf("openat: dirfd %d filename %s flags %x mode %d rc %ld\n", popen->dirfd, fileName, popen->flags, popen->mode, pentry->retval);
 #endif
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
     check_retval ("openat", pentry->retval, rc);
@@ -1095,6 +1095,58 @@ void ioctl_recheck ()
 	check_retval ("ioctl", pentry->retval, rc);
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
+    }
+}
+
+// Can I find this definition at user level?
+struct linux_dirent64 {
+	__u64		d_ino;
+	__s64		d_off;
+	unsigned short	d_reclen;
+	unsigned char	d_type;
+	char		d_name[0];
+};
+
+void getdents64_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct getdents64_recheck* pgetdents64;
+    char* dents;
+    int rc, i;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pgetdents64 = (struct getdents64_recheck *) bufptr;
+    if (pgetdents64->arglen > 0) {
+	dents = bufptr+sizeof(struct getdents64_recheck);
+    }
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    printf("getdents64: fd %u buf %p count %u arglen %ld rc %ld\n", pgetdents64->fd, pgetdents64->buf, pgetdents64->count, pgetdents64->arglen, pentry->retval);
+#endif 
+    rc = syscall(SYS_getdents64, pgetdents64->fd, tmpbuf, pgetdents64->count);
+    check_retval ("getdents64", pentry->retval, rc);
+    if (rc > 0) {
+	int compared = 0;
+	char* p = dents; 
+	char* c = tmpbuf;
+	while (compared < rc) {
+	    struct linux_dirent64* prev = (struct linux_dirent64 *) p;
+	    struct linux_dirent64* curr = (struct linux_dirent64 *) c;
+	    if (prev->d_ino != curr->d_ino || prev->d_off != curr->d_off ||
+		prev->d_reclen != curr->d_reclen || prev->d_type != curr->d_type ||
+		strcmp(prev->d_name, curr->d_name)) {
+		printf ("{MISMATCH] getdetnts64: inode %llu vs. %llu\t", prev->d_ino, curr->d_ino);
+		printf ("offset %lld vs. %lld\t", prev->d_off, curr->d_off);
+		printf ("reclen %d vs. %d\t", prev->d_reclen, curr->d_reclen);
+		printf ("name %s vs. %s\t", prev->d_name, curr->d_name);
+		printf ("type %d vs. %d\n", prev->d_type, curr->d_type);
+		handle_mismatch();
+	    }
+	    if (prev->d_reclen <= 0) break;
+	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
+	}
     }
 }
 
