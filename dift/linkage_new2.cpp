@@ -41,6 +41,7 @@ using namespace std;
 #include "splice.h"
 #include "taint_nw.h"
 #include "recheck_log.h"
+#include "mmap_regions.h"
 
 #define PIN_NORMAL         0
 #define PIN_ATTACH_RUNNING 1
@@ -959,13 +960,14 @@ static void sys_select_stop(int rc)
 }
 #endif
 
-static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd)
+static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd, int flags)
 {
     struct mmap_info* mmi = &tdata->op.mmap_info_cache;
     mmi->addr = addr;
     mmi->length = len;
     mmi->prot = prot;
     mmi->fd = fd;
+    mmi->flags = flags;
     tdata->save_syscall_info = (void *) mmi;
     tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
 }
@@ -1018,6 +1020,10 @@ static void sys_mmap_stop(int rc)
     }
 
 #endif
+    if (rc > 0 || rc < -1024) {
+        mmi->addr = rc;
+        add_mmap_region (current_thread, mmi);
+    }
 }
 
 #if 0
@@ -1977,7 +1983,17 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_mmap:
         case SYS_mmap2:
-            sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
+            sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
+            break;
+        case SYS_munmap:
+            delete_mmap_region (tdata, (u_long)syscallarg0, (int)syscallarg1);
+            break;
+        case SYS_mprotect:
+            change_mmap_region (tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            break;
+        case SYS_mremap:
+            fprintf (stderr, "[UNHANDLED] for read-only mmap region detection.\n");
+            break;
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -8550,6 +8566,8 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     }	
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
+    ptdata->all_mmap_regions = new std::map<u_long, struct mmap_info>();
+    ptdata->ro_mmap_regions = new std::list<struct mmap_info>();
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
 				       ptdata, (void **) &current_thread, &thread_ndx);
@@ -8728,6 +8746,8 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
+    if (tdata->all_mmap_regions) delete tdata->all_mmap_regions;
+    if (tdata->ro_mmap_regions) delete tdata->ro_mmap_regions;
 }
 
 #ifndef NO_FILE_OUTPUT

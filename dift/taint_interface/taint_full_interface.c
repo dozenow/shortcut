@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include "../mmap_regions.h"
 using namespace boost::icl;
 
 #define USE_MERGE_HASH
@@ -2101,15 +2102,21 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 
 u_long debug_counter = 0;
 
-static inline void verify_register (ADDRINT ip, u_long mem_loc, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8)
+static inline void verify_register (ADDRINT ip, u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8)
 {
-    //if (ip == 0xb7e6ebcb) return; //itoa function
-    printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
-    printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", reg, reg_size, reg_value, ip, mem_loc);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
-    printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
-    printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
-    printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
+    struct mmap_info* info = NULL;
+    //this read comes from a read-only area
+    //we'll check if future memory access will still fall into this range
+    if ((info = is_readonly_mmap_region(current_thread, mem_loc, mem_size)) != NULL) {
+        fprintf (stderr, "verify_register: memory %lx, %u is from a read-only region %lx, %d, ip %x\n", mem_loc, mem_size, info->addr, info->length, ip);
+    } else {
+        printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
+        printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards), address %lx\n", reg, reg_size, reg_value, ip, mem_loc);
+        printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
+        printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+        printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
+        printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
+    }
 }
 
 TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
@@ -2461,8 +2468,8 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
 	printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d\n", 
 		base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
-	if (base_tainted) verify_register (ip, mem_loc, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-	if (index_tainted) verify_register (ip, mem_loc, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	if (base_tainted) verify_register (ip, mem_loc, mem_size, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+	if (index_tainted) verify_register (ip, mem_loc, mem_size, index_reg, index_reg_size, index_reg_value, index_reg_u8);
 	if (!mem_tainted2) {
 	    print_extra_move_mem (ip, mem_loc, mem_size);
 	}
@@ -2480,8 +2487,8 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 			base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
                 printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
 	    }
-	    if (base_tainted) verify_register (ip, mem_loc, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-	    if (index_tainted) verify_register (ip, mem_loc, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	    if (base_tainted) verify_register (ip, mem_loc, mem_size, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+	    if (index_tainted) verify_register (ip, mem_loc, mem_size, index_reg, index_reg_size, index_reg_value, index_reg_u8);
 	}
 	// If flag not tainted and mov not executed, then this is a noop in the slice
     }
@@ -2502,8 +2509,8 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
         printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
     }
-    if (base_tainted) verify_register (ip, mem_loc, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-    if (index_tainted) verify_register (ip, mem_loc, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+    if (base_tainted) verify_register (ip, mem_loc, mem_size, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+    if (index_tainted) verify_register (ip, mem_loc, mem_size, index_reg, index_reg_size, index_reg_value, index_reg_u8);
     return mem_tainted;
 }
 
@@ -2525,8 +2532,8 @@ TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str,
         printf ("    [SLICE_INFO] #src_regregreg_mov[%d:%d:%u,%d:%d:%u,%d:%d:%u] #base_reg_value %u, reg_value %u, index_reg_value %u\n", 
                 base_reg, base_tainted, base_reg_size, reg, reg_tainted, reg_size, index_reg, index_tainted, index_reg_size, base_reg_value, *reg_value->dword, index_reg_value);
     }
-    if (base_tainted) verify_register (ip, 0, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-    if (index_tainted) verify_register (ip, 0, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+    if (base_tainted) verify_register (ip, mem_loc, mem_size, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+    if (index_tainted) verify_register (ip, mem_loc, mem_size, index_reg, index_reg_size, index_reg_value, index_reg_u8);
     return reg_tainted;
 }
 
@@ -3121,7 +3128,7 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
-	verify_register (ip, 0, src_reg, src_size, src_value, src_u8);
+	verify_register (ip, 0, 0, src_reg, src_size, src_value, src_u8);
 
 	// Since we verified, src and flags are not tainted
 	for (i = 0; i < src_size; i++) {
