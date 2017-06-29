@@ -101,7 +101,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 14944
+//#define EXTRA_DEBUG 234
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3348,12 +3348,11 @@ static inline void fw_slice_src_regflag_cmov (INS ins, uint32_t mask, REG dst, R
 		       IARG_FAST_ANALYSIS_CALL,
 		       IARG_INST_PTR,
 		       IARG_PTR, str,
-		       IARG_ADDRINT, translate_reg(dst),
+		       IARG_ADDRINT, dst,
 		       IARG_UINT32, REG_Size(dst),
-		       IARG_REG_REFERENCE, dst,
+                       IARG_CONST_CONTEXT,
 		       IARG_UINT32, REG_is_Upper8(dst),
-		       IARG_ADDRINT, translate_reg(src),
-		       IARG_REG_REFERENCE, src,
+		       IARG_ADDRINT,src,
 		       IARG_UINT32, REG_is_Upper8(src),
 		       IARG_UINT32, mask,
 		       IARG_EXECUTING,

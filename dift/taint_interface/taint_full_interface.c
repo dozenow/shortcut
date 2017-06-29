@@ -2416,28 +2416,34 @@ TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t re
 }
 
 //only used for cmov
-//won't handle FPU registers
-TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int src_reg, 
-				    PIN_REGISTER* src_reg_value, uint32_t src_reg_u8, uint32_t flag, BOOL executed) 
+TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int orig_dst_reg, uint32_t size, const CONTEXT* ctx, uint32_t dest_reg_u8, int orig_src_reg, 
+				    uint32_t src_reg_u8, uint32_t flag, BOOL executed) 
 { 
+    int dest_reg = translate_reg (orig_dst_reg);
+    int src_reg = translate_reg (orig_src_reg);
     int dest_reg_tainted = is_reg_tainted (dest_reg, size, dest_reg_u8);
     int src_reg_tainted = is_reg_tainted (src_reg, size, src_reg_u8);
     int flag_tainted = is_flag_tainted (flag);
-    int src_value, dest_value;
-    if (size == 4) {
-	dest_value = *dest_reg_value->dword;
-	src_value = *src_reg_value->dword;
-    } else {
-	dest_value = *dest_reg_value->word;
-	src_value = *src_reg_value->word;
+    int src_value = 0, dest_value = 0;
+    PIN_REGISTER dest_reg_value, src_reg_value;
+    if (flag_tainted || (executed && src_reg_tainted)) {
+        PIN_GetContextRegval (ctx, REG(orig_dst_reg), (UINT8*) &dest_reg_value);
+        PIN_GetContextRegval (ctx, REG(orig_src_reg), (UINT8*) &src_reg_value);
+        if (size == 4) {
+            dest_value = *dest_reg_value.dword;
+            src_value = *src_reg_value.dword;
+        } else {
+            dest_value = *dest_reg_value.word;
+            src_value = *src_reg_value.word;
+        }
     }
     
     if (flag_tainted) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
 	printf ("    [SLICE_INFO] #src_regregflag[%d:%d:%u,%d:%d:%u,FM%x:%d:4] #dest_value %u, src_value %u, executed %d\n", 
 		dest_reg, dest_reg_tainted, size, src_reg, src_reg_tainted, size, flag, flag_tainted, dest_value, src_value, executed);
-	if (src_reg_tainted != 1) print_extra_move_reg (ip, src_reg, size, src_reg_value, src_reg_u8, src_reg_tainted);
-	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, size, dest_reg_value, dest_reg_u8, dest_reg_tainted);
+	if (src_reg_tainted != 1) print_extra_move_reg (ip, src_reg, size, &src_reg_value, src_reg_u8, src_reg_tainted);
+	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, size, &dest_reg_value, dest_reg_u8, dest_reg_tainted);
     } else {
 	if (executed) {
 	    if (src_reg_tainted) {
