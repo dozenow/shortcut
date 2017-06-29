@@ -123,7 +123,6 @@ TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int or
 		uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, 
                 const CONTEXT* ctx,
 		uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);
-TAINTINT fw_slice_memflag (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t size);
 TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t orig_src_reg, uint32_t size, const CONTEXT* ctx, int32_t reg_u8);
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
 TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u_long mem_loc2, uint32_t reg1_size, uint32_t mem_size, char* reg1_val);
@@ -149,10 +148,12 @@ TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_rea
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
-TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size);
 TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int clear_flags);
+TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, int set_flags, int clear_flags);
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 
 				       int set_flags, int clear_flags);
+TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, int set_flags, int clear_flags);
+TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_off, uint32_t reg_size, int set_flags, int clear_flags);
 
 // mem2reg add
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags);
@@ -323,6 +324,9 @@ TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size);
 
 TAINTSIGN taint_cmov_mem2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size, BOOL executed);
 TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size, BOOL executed);
+
+// JNF: Updated for partial taint and verification
+TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter);
 
 // File descriptor taint-tracking
 int add_taint_fd(int fd, int cloexec);
