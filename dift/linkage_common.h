@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include "taint_interface/taint.h"
 #include <boost/icl/interval_set.hpp>
+#include <list>
+#include <map>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -232,6 +234,8 @@ struct thread_data {
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
+    std::map<u_long, struct mmap_info> *all_mmap_regions;
+    std::list<struct mmap_info> *ro_mmap_regions; //readonly regions
 };
 
 struct memcpy_header {
