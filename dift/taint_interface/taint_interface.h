@@ -94,6 +94,9 @@ TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) ;
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
+
+#define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
+
 TAINTSIGN fw_slice_addressing (ADDRINT ip, 
 		int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
 		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
@@ -128,9 +131,8 @@ TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, u
 TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u_long mem_loc2, uint32_t reg1_size, uint32_t mem_size, char* reg1_val);
 TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int orig_dest_reg, uint32_t size, const CONTEXT* ctx, uint32_t dest_reg_u8, int orig_src_reg, 
 				    uint32_t src_reg_u8, uint32_t flag, BOOL executed);
-TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
-				       int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed);
-
+TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, BASE_INDEX_ARGS,
+				       u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed);
 TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
         int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
         u_long mem_loc, uint32_t mem_size);
@@ -144,6 +146,7 @@ TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t re
 		int reg3, uint32_t reg3_size, uint32_t reg3_value, uint32_t reg3_u8, u_long mem_loc, uint32_t mem_size);
 TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_readsize, uint32_t mem_writesize, 
 		int reg, uint32_t reg_size, uint32_t regvalue, uint32_t reg_u8);
+TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
@@ -308,6 +311,10 @@ TAINTSIGN taint_immval2qwreg(int reg);
 // call
 TAINTSIGN taint_call_near (u_long esp);
 TAINTSIGN taint_call_far (u_long esp);
+
+// Souce not affected, but need to update flags
+TAINTSIGN taint_mem_set_clear_flags_offset (int reg_off, uint32_t size, int set_flags, int clear_flags);
+TAINTSIGN taint_reg_set_clear_flags_offset (int reg_off, uint32_t size, int set_flags, int clear_flags);
 
 // TODO need to do transfers to and from flags
 TAINTSIGN taint_immval2flag();
