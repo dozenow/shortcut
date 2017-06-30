@@ -93,7 +93,7 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow diverges at %lx.\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] control flow diverges at 0x%lx.\n", *((u_long *) ((u_long) &i + 32)));
     abort();
 }
 

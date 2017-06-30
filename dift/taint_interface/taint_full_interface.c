@@ -2750,8 +2750,8 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 
 	// Always verify registers if not untainted
 	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
-	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, ecx_val, 0);
-	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, ecx_val, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
+	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0);
 
 	// Move string if src memory is tainted 
 	if (mem_tainted) {

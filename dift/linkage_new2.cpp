@@ -98,7 +98,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 19497
+//#define EXTRA_DEBUG 47159
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -6608,8 +6608,12 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
-    //printf ("bfffea20 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffea20), is_mem_arg_tainted (0xbfffea20, 1), is_mem_arg_tainted (0xbfffea21, 1), 
-    //    is_mem_arg_tainted (0xbfffea22, 1), is_mem_arg_tainted (0xbfffea23, 1));
+    static u_long old_val = 0;
+    if (*((u_long *) 0xbfffe530) != old_val) {
+	printf ("bfffe530 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffe530), is_mem_arg_tainted (0xbfffe530, 1), is_mem_arg_tainted (0xbfffe531, 1), 
+		is_mem_arg_tainted (0xbfffe532, 1), is_mem_arg_tainted (0xbfffe533, 1));
+	old_val = *((u_long *) 0xbfffe530);
+    }
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
     //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
