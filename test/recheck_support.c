@@ -19,6 +19,12 @@
 #include "../dift/recheck_log.h"
 
 #define PRINT_VALUES
+#define PRINT_TO_LOG
+
+#ifdef PRINT_VALUES
+char logbuf[4096];
+int logfd;
+#endif
 
 char buf[1024*1024];
 char tmpbuf[1024*1024];
@@ -53,7 +59,29 @@ void recheck_start(char* filename)
     for (i = 0; i < MAX_FDS; i++) {
 	cache_files_opened[i].is_open_cache_file = 0;
     }
+
+#ifdef PRINT_VALUES
+#ifdef PRINT_TO_LOG
+    fd = open ("/tmp/slice_log", O_RDWR|O_CREAT|O_TRUNC, 0644);
+    if (fd < 0) {
+	fprintf (stderr, "Cannot open log file\n");
+	return;
+    }
+    rc = dup2 (fd,1023);
+    if (rc < 0) {
+	fprintf (stderr, "Cannot dup log file descriptor\n");
+	return;
+    }
+    close(fd);
+#endif
+#endif
 }
+
+#ifdef PRINT_TO_LOG
+#define LPRINT(args...) sprintf (logbuf, args); write(1023, logbuf, strlen(logbuf));
+#else
+#define LPRINT printf
+#endif
 
 void handle_mismatch()
 {
@@ -94,7 +122,7 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
     //only verify bytes not in this range
     int pass = 1;
 #ifdef PRINT_VALUES
-    printf("partial read: %d %d\n", pread->partial_read_start, pread->partial_read_end);
+    LPRINT ("partial read: %d %d\n", pread->partial_read_start, pread->partial_read_end);
 #endif
     if (pread->partial_read_start > 0) { 
         if (memcmp (newdata, olddata, pread->partial_read_start)) {
@@ -126,8 +154,11 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
     //copy other bytes to the actual address
     memcpy (pread->buf+pread->partial_read_start, newdata+pread->partial_read_start, pread->partial_read_end-pread->partial_read_start);
 #ifdef PRINT_VALUES
-    if (pass) printf ("partial_read: pass.\n");
-    else printf ("partial_read: verification fails.\n");
+    if (pass) {
+	LPRINT ("partial_read: pass.\n");
+    } else {
+	LPRINT ("partial_read: verification fails.\n");
+    }
 #endif
 }
 
@@ -149,11 +180,11 @@ void read_recheck ()
 	readData += sizeof(u_int);
     }
 #ifdef PRINT_VALUES
-    printf("read: has ret vals %d ", pread->has_retvals);
+    LPRINT ( "read: has ret vals %d ", pread->has_retvals);
     if (pread->has_retvals) {
-	printf ("is_cache_file: %x ", is_cache_file);
+	LPRINT ( "is_cache_file: %x ", is_cache_file);
     }
-    printf("fd %d buf %lx count %d readlen %d returns %ld\n", pread->fd, (u_long) pread->buf, pread->count, pread->readlen, pentry->retval);
+    LPRINT ( "fd %d buf %lx count %d readlen %d returns %ld\n", pread->fd, (u_long) pread->buf, pread->count, pread->readlen, pentry->retval);
 #endif
     if (is_cache_file && pentry->retval >= 0) {
 	struct stat64 st;
@@ -213,7 +244,7 @@ void write_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("write: fd %d buf %lx count %d rc %ld\n", pwrite->fd, (u_long) pwrite->buf,
+    LPRINT ( "write: fd %d buf %lx count %d rc %ld\n", pwrite->fd, (u_long) pwrite->buf,
 	   pwrite->count, pentry->retval);
 #endif
     if (pwrite->fd == 99999) return;  // Debugging fd - ignore
@@ -238,12 +269,12 @@ void open_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("open: filename %s flags %x mode %d", fileName, popen->flags, popen->mode);
+    LPRINT ( "open: filename %s flags %x mode %d", fileName, popen->flags, popen->mode);
     if (popen->has_retvals) {
-	printf(" dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
+	LPRINT ( " dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
     }
-    printf (" rc %ld\n", pentry->retval);
+    LPRINT ( " rc %ld\n", pentry->retval);
 #endif
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
     check_retval ("open", pentry->retval, rc);
@@ -267,7 +298,7 @@ void openat_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("openat: dirfd %d filename %s flags %x mode %d rc %ld\n", popen->dirfd, fileName, popen->flags, popen->mode, pentry->retval);
+    LPRINT ( "openat: dirfd %d filename %s flags %x mode %d rc %ld\n", popen->dirfd, fileName, popen->flags, popen->mode, pentry->retval);
 #endif
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
     check_retval ("openat", pentry->retval, rc);
@@ -286,7 +317,7 @@ void close_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES 
-    printf("close: fd %d\n", pclose->fd);
+    LPRINT ( "close: fd %d\n", pclose->fd);
 #endif
 
     assert (pclose->fd < MAX_FDS);
@@ -308,7 +339,7 @@ void access_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("acccess: mode %d pathname %s\n", paccess->mode, accessName);
+    LPRINT ( "acccess: mode %d pathname %s\n", paccess->mode, accessName);
 #endif
 
     rc = syscall(SYS_access, accessName, paccess->mode);
@@ -329,15 +360,15 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("%s: rc %ld pathname %s buf %lx ", syscall_name, pentry->retval, pathName, (u_long) pstat64->buf);
+    LPRINT ( "%s: rc %ld pathname %s buf %lx ", syscall_name, pentry->retval, pathName, (u_long) pstat64->buf);
     if (pstat64->has_retvals) {
-	printf("%s retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
+	LPRINT ( "%s retvals: st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
 	       "st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
 	       syscall_name, pstat64->retvals.st_dev, pstat64->retvals.st_ino, pstat64->retvals.st_mode, pstat64->retvals .st_nlink, pstat64->retvals.st_uid,pstat64->retvals .st_gid,
 	       pstat64->retvals.st_rdev, pstat64->retvals.st_size, pstat64->retvals .st_atime, pstat64->retvals.st_mtime, pstat64->retvals.st_ctime, pstat64->retvals.st_blksize,
 	       pstat64->retvals.st_blocks); 
     } else {
-	printf ("no return values\n");
+	LPRINT ( "no return values\n");
     }
 #endif
 
@@ -425,15 +456,15 @@ void fstat64_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fstat64: rc %ld fd %d buf %lx ", pentry->retval, pfstat64->fd, (u_long) pfstat64->buf);
+    LPRINT ( "fstat64: rc %ld fd %d buf %lx ", pentry->retval, pfstat64->fd, (u_long) pfstat64->buf);
     if (pfstat64->has_retvals) {
-	printf("st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
+	LPRINT ( "st_dev %llu st_ino %llu st_mode %d st_nlink %d st_uid %d st_gid %d st_rdev %llu "
 	       "st_size %lld st_atime %ld st_mtime %ld st_ctime %ld st_blksize %ld st_blocks %lld\n",
 	       pfstat64->retvals.st_dev, pfstat64->retvals.st_ino, pfstat64->retvals.st_mode, pfstat64->retvals .st_nlink, pfstat64->retvals.st_uid,pfstat64->retvals .st_gid,
 	       pfstat64->retvals.st_rdev, pfstat64->retvals.st_size, pfstat64->retvals .st_atime, pfstat64->retvals.st_mtime, pfstat64->retvals.st_ctime, pfstat64->retvals.st_blksize,
 	       pfstat64->retvals.st_blocks); 
     } else {
-	printf ("no return values\n");
+	LPRINT ( "no return values\n");
     }
 #endif
 
@@ -512,7 +543,7 @@ void fcntl64_getfl_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fcntl64 getfl: fd %d rc %ld\n", pgetfl->fd, pentry->retval);
+    LPRINT ( "fcntl64 getfl: fd %d rc %ld\n", pgetfl->fd, pentry->retval);
 #endif
 
     rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
@@ -531,7 +562,7 @@ void fcntl64_setfl_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fcntl64 setfl: fd %d flags %lx rc %ld\n", psetfl->fd, psetfl->flags, pentry->retval);
+    LPRINT ( "fcntl64 setfl: fd %d flags %lx rc %ld\n", psetfl->fd, psetfl->flags, pentry->retval);
 #endif
 
     rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
@@ -551,14 +582,14 @@ void fcntl64_getlk_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fcntl64 getlk: fd %d arg %lx rc %ld\n", pgetlk->fd, (u_long) pgetlk->arg, pentry->retval);
+    LPRINT ( "fcntl64 getlk: fd %d arg %lx rc %ld\n", pgetlk->fd, (u_long) pgetlk->arg, pentry->retval);
 #endif
 
     rc = syscall(SYS_fcntl64, pgetlk->fd, F_GETLK, &fl);
     check_retval ("fcntl64 getlk", pentry->retval, rc);
     if (pgetlk->has_retvals) {
 	if (memcmp(&fl, &pgetlk->flock, sizeof(fl))) {
-	    fprintf (stderr, "[MISMATCH] fcntl64 getlk does not match\n");
+	    printf ("[MISMATCH] fcntl64 getlk does not match\n");
 	    handle_mismatch();
 	}
     }
@@ -576,7 +607,7 @@ void fcntl64_getown_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fcntl64 getown: fd %d rc %ld\n", pgetown->fd, pentry->retval);
+    LPRINT ( "fcntl64 getown: fd %d rc %ld\n", pgetown->fd, pentry->retval);
 #endif
 
     rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
@@ -595,7 +626,7 @@ void fcntl64_setown_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("fcntl64 setown: fd %d owner %lx rc %ld\n", psetown->fd, psetown->owner, pentry->retval);
+    LPRINT ( "fcntl64 setown: fd %d owner %lx rc %ld\n", psetown->fd, psetown->owner, pentry->retval);
 #endif
 
     rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, psetown->owner);
@@ -615,14 +646,14 @@ void ugetrlimit_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("ugetrlimit: resource %d rlimit %ld %ld rc %ld\n", pugetrlimit->resource, pugetrlimit->rlim.rlim_cur,
+    LPRINT ( "ugetrlimit: resource %d rlimit %ld %ld rc %ld\n", pugetrlimit->resource, pugetrlimit->rlim.rlim_cur,
 	   pugetrlimit->rlim.rlim_max, pentry->retval);
 #endif
 
     rc = syscall(SYS_ugetrlimit, pugetrlimit->resource, &rlim);
     check_retval ("ugetrlimit", pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
-	fprintf (stderr, "[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
+	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
 	handle_mismatch();
     }
 }
@@ -640,7 +671,7 @@ void uname_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("uname: sysname %s nodename %s release %s version %s machine %s rc %ld\n", 
+    LPRINT ( "uname: sysname %s nodename %s release %s version %s machine %s rc %ld\n", 
 	   puname->utsname.sysname, puname->utsname.nodename, puname->utsname.release, puname->utsname.version, 
 	   puname->utsname.machine, pentry->retval);
 #endif
@@ -662,8 +693,8 @@ void uname_recheck ()
     }
     /* Assume version will be handled by tainting since it changes often */
 #ifdef PRINT_VALUES
-    printf ("Buffer is %lx\n", (u_long) puname->buf);
-    printf ("Copy to version buffer at %lx\n", (u_long) &((struct utsname *) puname->buf)->version);
+    LPRINT ( "Buffer is %lx\n", (u_long) puname->buf);
+    LPRINT ( "Copy to version buffer at %lx\n", (u_long) &((struct utsname *) puname->buf)->version);
 #endif
     memcpy (&((struct utsname *) puname->buf)->version, &puname->utsname.version, sizeof(puname->utsname.version));
     if (memcmp(&uname.machine, &puname->utsname.machine, sizeof(uname.machine))) {
@@ -686,7 +717,7 @@ void statfs64_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("statfs64: path %s size %u type %d bsize %d blocks %lld bfree %lld bavail %lld files %lld ffree %lld fsid %d %d namelen %d frsize %d rc %ld\n", path, pstatfs64->sz,
+    LPRINT ( "statfs64: path %s size %u type %d bsize %d blocks %lld bfree %lld bavail %lld files %lld ffree %lld fsid %d %d namelen %d frsize %d rc %ld\n", path, pstatfs64->sz,
 	   pstatfs64->statfs.f_type, pstatfs64->statfs.f_bsize, pstatfs64->statfs.f_blocks, pstatfs64->statfs.f_bfree, pstatfs64->statfs.f_bavail, pstatfs64->statfs.f_files, 
 	   pstatfs64->statfs.f_ffree, pstatfs64->statfs.f_fsid.__val[0], pstatfs64->statfs.f_fsid.__val[1], pstatfs64->statfs.f_namelen, pstatfs64->statfs.f_frsize, pentry->retval);
 #endif
@@ -708,12 +739,12 @@ void statfs64_recheck ()
 	}
 	/* Assume free and available blocks handled by tainting */
 #ifdef PRINT_VALUES
-	printf ("Buffer is %lx\n", (u_long) pstatfs64->buf);
-	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bfree);
+	LPRINT ( "Buffer is %lx\n", (u_long) pstatfs64->buf);
+	LPRINT ( "Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bfree);
 #endif
 	pstatfs64->buf->f_bfree = st.f_bfree;
 #ifdef PRINT_VALUES
-	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bavail);
+	LPRINT ( "Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_bavail);
 #endif
 	pstatfs64->buf->f_bavail = st.f_bavail;
 	if (pstatfs64->statfs.f_files != st.f_files) {
@@ -722,7 +753,7 @@ void statfs64_recheck ()
 	}
 	/* Assume free files handled by tainting */
 #ifdef PRINT_VALUES
-	printf ("Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_ffree);
+	LPRINT ( "Copy to version buffer at %lx\n", (u_long) &pstatfs64->buf->f_ffree);
 #endif
 	pstatfs64->buf->f_ffree = st.f_ffree;
 	if (pstatfs64->statfs.f_fsid.__val[0] != st.f_fsid.__val[0] || pstatfs64->statfs.f_fsid.__val[1] != st.f_fsid.__val[1]) {
@@ -753,7 +784,7 @@ void gettimeofday_recheck () {
 	bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-	printf ("gettimeofday: pointer tv %lx tz %lx\n", (long) pget->tv_ptr, (long) pget->tz_ptr);
+	LPRINT ( "gettimeofday: pointer tv %lx tz %lx\n", (long) pget->tv_ptr, (long) pget->tz_ptr);
 #endif
 	rc = syscall (SYS_gettimeofday, &tv, &tz);
 	check_retval ("gettimeofday", pentry->retval, rc);
@@ -798,10 +829,10 @@ void prlimit64_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    printf("prlimit64: pid %d resource %d new limit %lx old limit %lx rc %ld\n", prlimit->pid, prlimit->resource, 
+    LPRINT ( "prlimit64: pid %d resource %d new limit %lx old limit %lx rc %ld\n", prlimit->pid, prlimit->resource, 
 	   (u_long) prlimit->new_limit, (u_long) prlimit->old_limit, pentry->retval);
     if (prlimit->has_retvals) {
-	printf("old soft limit: %lld hard limit %lld\n", prlimit->retparams.rlim_cur, prlimit->retparams.rlim_max);
+	LPRINT ( "old soft limit: %lld hard limit %lld\n", prlimit->retparams.rlim_cur, prlimit->retparams.rlim_max);
     }
 #endif
     if (prlimit->old_limit) {
@@ -835,7 +866,7 @@ void setpgid_recheck (int pid, int pgid)
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("setpgid: pid tainted? %d record pid %d passed pid %d pgid tainted? %d record pgid %d passed pgid %d\n", 
+    LPRINT ( "setpgid: pid tainted? %d record pid %d passed pid %d pgid tainted? %d record pgid %d passed pgid %d\n", 
 	   psetpgid->is_pid_tainted, psetpgid->pid, pid, psetpgid->is_pgid_tainted, psetpgid->pgid, pgid);
 #endif 
     if (psetpgid->is_pid_tainted) {
@@ -874,15 +905,15 @@ void readlink_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("readlink: buf %p size %d ", preadlink->buf, preadlink->bufsiz);
+    LPRINT ( "readlink: buf %p size %d ", preadlink->buf, preadlink->bufsiz);
     if (pentry->retval) {
-	printf ("linkdata ");
+	LPRINT ( "linkdata ");
 	for (i = 0; i < pentry->retval; i++) {
-	    printf ("%c", linkdata[i]);
+	    LPRINT ( "%c", linkdata[i]);
 	}
-	printf (" ");
+	LPRINT ( " ");
     }
-    printf ("path %s rc %ld\n", path, pentry->retval);
+    LPRINT ( "path %s rc %ld\n", path, pentry->retval);
 #endif 
     rc = syscall(SYS_readlink, path, tmpbuf, preadlink->bufsiz);
     check_retval ("readlink", pentry->retval, rc);
@@ -907,7 +938,7 @@ void socket_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("socket: domain %d type %d protocol %d rc %ld\n", psocket->domain, 
+    LPRINT ( "socket: domain %d type %d protocol %d rc %ld\n", psocket->domain, 
 	   psocket->type, psocket->protocol, pentry->retval);
 #endif 
 
@@ -933,7 +964,7 @@ inline void connect_or_bind_recheck (int call, char* call_name)
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("%s: sockfd %d addlen %d rc %ld\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval);
+    LPRINT ( "%s: sockfd %d addlen %d rc %ld\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval);
 #endif 
     block[0] = pconnect->sockfd;
     block[1] = (u_long) addr;
@@ -959,7 +990,7 @@ void getpid_recheck ()
     bufptr += sizeof(struct recheck_entry);
 
 #ifdef PRINT_VALUES
-    printf("getpid: rc %ld\n", pentry->retval);
+    LPRINT ( "getpid: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_getpid);
     check_retval ("getpid", pentry->retval, rc);
@@ -974,7 +1005,7 @@ void getuid32_recheck ()
     bufptr += sizeof(struct recheck_entry);
 
 #ifdef PRINT_VALUES
-    printf("getuid32: rc %ld\n", pentry->retval);
+    LPRINT ( "getuid32: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_getuid32);
     check_retval ("getuid32", pentry->retval, rc);
@@ -989,7 +1020,7 @@ void geteuid32_recheck ()
     bufptr += sizeof(struct recheck_entry);
 
 #ifdef PRINT_VALUES
-    printf("geteuid32: rc %ld\n", pentry->retval);
+    LPRINT ( "geteuid32: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_geteuid32);
     check_retval ("geteuid32", pentry->retval, rc);
@@ -1004,7 +1035,7 @@ void getgid32_recheck ()
     bufptr += sizeof(struct recheck_entry);
 
 #ifdef PRINT_VALUES
-    printf("getgid32: rc %ld\n", pentry->retval);
+    LPRINT ( "getgid32: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_getgid32);
     check_retval ("getgid32", pentry->retval, rc);
@@ -1019,7 +1050,7 @@ void getegid32_recheck ()
     bufptr += sizeof(struct recheck_entry);
 
 #ifdef PRINT_VALUES
-    printf("getegid32: rc %ld\n", pentry->retval);
+    LPRINT ( "getegid32: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_getegid32);
     check_retval ("getegid32", pentry->retval, rc);
@@ -1038,12 +1069,12 @@ void llseek_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("llseek: fd %u high offset %lx low offset %lx whence %u rc %ld ", pllseek->fd,
+    LPRINT ( "llseek: fd %u high offset %lx low offset %lx whence %u rc %ld ", pllseek->fd,
 	   pllseek->offset_high, pllseek->offset_low, pllseek->whence, pentry->retval);
     if (pentry->retval >= 0) {
-	printf ("off %llu\n", pllseek->result);
+	LPRINT ( "off %llu\n", pllseek->result);
     } else {
-	printf ("\n");
+	LPRINT ( "\n");
     }
 #endif 
 
@@ -1069,7 +1100,7 @@ void ioctl_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("ioctl: fd %u cmd %x dir %x size %x arg %lx arglen %ld rc %ld\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, 
+    LPRINT ( "ioctl: fd %u cmd %x dir %x size %x arg %lx arglen %ld rc %ld\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, 
 	   (u_long) pioctl->arg, pioctl->arglen, pentry->retval);
 #endif 
 
@@ -1080,14 +1111,15 @@ void ioctl_recheck ()
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
 	if (pioctl->cmd == 0x5413) {
 	  short* ps = (short *) &tmpbuf;
-	  printf ("window size is %d %d\n", ps[0], ps[1]);
+#ifdef PRINT_VALUES
+	  LPRINT ("window size is %d %d\n", ps[0], ps[1]);
+#endif
 	}
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
 	    char* tainted = addr;
 	    char* outbuf = addr + pioctl->size;
 	    for (i = 0; i < pioctl->size; i ++) {
-		printf ("byte %d tainted? %d cur value %02x rec value %02x\n", i, tainted[i], pioctl->arg[i], outbuf[i]);
 		if (!tainted[i]) pioctl->arg[i] = outbuf[i];
 	    }
 	}
@@ -1123,7 +1155,7 @@ void getdents64_recheck ()
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    printf("getdents64: fd %u buf %p count %u arglen %ld rc %ld\n", pgetdents64->fd, pgetdents64->buf, pgetdents64->count, pgetdents64->arglen, pentry->retval);
+    LPRINT ( "getdents64: fd %u buf %p count %u arglen %ld rc %ld\n", pgetdents64->fd, pgetdents64->buf, pgetdents64->count, pgetdents64->arglen, pentry->retval);
 #endif 
     rc = syscall(SYS_getdents64, pgetdents64->fd, tmpbuf, pgetdents64->count);
     check_retval ("getdents64", pentry->retval, rc);

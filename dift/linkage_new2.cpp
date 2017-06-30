@@ -98,7 +98,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 234
+//#define EXTRA_DEBUG 19497
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -2629,7 +2629,6 @@ static inline char* get_copy_of_disasm (INS ins) {
 	return str;
 }
 static inline void put_copy_of_disasm (char* str) { 
-	//if (str) free (str);
 	//TODO memory leak
 }
 
@@ -3120,95 +3119,75 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG dest_reg, REG b
     put_copy_of_disasm (str);
 }
 
+#define SETUP_BASE_INDEX(base_reg,index_reg) \
+    int t_base_reg = 0;			     \
+    int t_index_reg = 0;		     \
+    int base_reg_size = 0;		     \
+    int index_reg_size = 0;		     \
+    int base_reg_u8 = 0;		     \
+    int index_reg_u8 = 0;			     \
+    IARG_TYPE base_reg_value_type = IARG_UINT32;      \
+    IARG_TYPE index_reg_value_type = IARG_UINT32;     \
+    if (REG_valid(base_reg)) {			      \
+	t_base_reg = translate_reg (base_reg);	      \
+	base_reg_size = REG_Size (base_reg);	      \
+	base_reg_u8 = REG_is_Upper8 (base_reg);	      \
+	base_reg_value_type = IARG_REG_VALUE;	      \
+    }						      \
+    if (REG_valid(index_reg)) {			      \
+	t_index_reg = translate_reg (index_reg);      \
+	index_reg_size = REG_Size (index_reg);	      \
+	index_reg_u8 = REG_is_Upper8 (index_reg);     \
+	index_reg_value_type = IARG_REG_VALUE;	      \
+    }
+
+#define PASS_BASE_INDEX	 IARG_ADDRINT, t_base_reg,	\
+	IARG_UINT32, base_reg_size,			\
+	base_reg_value_type, base_reg,			\
+	IARG_UINT32, base_reg_u8,			\
+	IARG_ADDRINT, t_index_reg,			\
+	IARG_UINT32, index_reg_size,			\
+	index_reg_value_type, index_reg,		\
+	IARG_UINT32, index_reg_u8			
+
 //only use this for MOV/MOVX  with index tool enabled
-static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) { 
+static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) 
+{ 
 	char* str = get_copy_of_disasm (ins);
-        int t_base_reg = 0;
-        int t_index_reg = 0;
-        int base_reg_size = 0;
-        int index_reg_size = 0;
-        int base_reg_u8 = 0;
-        int index_reg_u8 = 0;
-        IARG_TYPE base_reg_value_type = IARG_UINT32;
-        IARG_TYPE index_reg_value_type = IARG_UINT32;
-        if (REG_valid(base_reg)) { 
-            t_base_reg = translate_reg (base_reg);
-            base_reg_size = REG_Size (base_reg);
-            base_reg_u8 = REG_is_Upper8 (base_reg);
-            base_reg_value_type = IARG_REG_VALUE;
-        }
-        if (REG_valid(index_reg)) { 
-            t_index_reg = translate_reg (index_reg);
-            index_reg_size = REG_Size (index_reg);
-            index_reg_u8 = REG_is_Upper8 (index_reg);
-            index_reg_value_type = IARG_REG_VALUE;
-        }
+	SETUP_BASE_INDEX(base_reg, index_reg);
 
         INS_InsertIfCall(ins, IPOINT_BEFORE,
-                AFUNPTR(fw_slice_memregreg_mov),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR,
-                IARG_PTR, str,
-                IARG_ADDRINT, t_base_reg, 
-                IARG_UINT32, base_reg_size,
-                base_reg_value_type, base_reg, 
-                IARG_UINT32, base_reg_u8,
-                IARG_ADDRINT, t_index_reg, 
-                IARG_UINT32, index_reg_size,
-                index_reg_value_type, index_reg, 
-                IARG_UINT32, index_reg_u8,
-                mem_ea, 
-                IARG_UINT32, memsize,
-                IARG_END);
-
+			 AFUNPTR(fw_slice_memregreg_mov),
+			 IARG_FAST_ANALYSIS_CALL,
+			 IARG_INST_PTR,
+			 IARG_PTR, str,
+			 PASS_BASE_INDEX,
+			 mem_ea, 
+			 IARG_UINT32, memsize,
+			 IARG_END);
+	
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
 }
 
 //only use this for MOV/MOVX  with index tool enabled
-static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, REG index_reg) { 
+static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, REG index_reg) 
+{ 
 	char* str = get_copy_of_disasm (ins);
-        int t_base_reg = 0;
-        int t_index_reg = 0;
-        int base_reg_size = 0;
-        int index_reg_size = 0;
-        int base_reg_u8 = 0;
-        int index_reg_u8 = 0;
-        IARG_TYPE base_reg_value_type = IARG_UINT32;
-        IARG_TYPE index_reg_value_type = IARG_UINT32;
-        if (REG_valid(base_reg)) { 
-            t_base_reg = translate_reg (base_reg);
-            base_reg_size = REG_Size (base_reg);
-            base_reg_u8 = REG_is_Upper8 (base_reg);
-            base_reg_value_type = IARG_REG_VALUE;
-        }
-        if (REG_valid(index_reg)) { 
-            t_index_reg = translate_reg (index_reg);
-            index_reg_size = REG_Size (index_reg);
-            index_reg_u8 = REG_is_Upper8 (index_reg);
-            index_reg_value_type = IARG_REG_VALUE;
-        }
-
+	SETUP_BASE_INDEX(base_reg, index_reg);
         INS_InsertIfCall(ins, IPOINT_BEFORE,
-                AFUNPTR(fw_slice_regregreg_mov),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR,
-                IARG_PTR, str,
-                IARG_ADDRINT, translate_reg (reg), 
-                IARG_UINT32, REG_Size (reg), 
-                IARG_REG_REFERENCE, reg, 
-                IARG_UINT32, REG_is_Upper8 (reg), 
-                IARG_ADDRINT, t_base_reg, 
-                IARG_UINT32, base_reg_size,
-                base_reg_value_type, base_reg, 
-                IARG_UINT32, base_reg_u8,
-                IARG_ADDRINT, t_index_reg, 
-                IARG_UINT32, index_reg_size,
-                index_reg_value_type, index_reg, 
-                IARG_UINT32, index_reg_u8,
-                IARG_MEMORYWRITE_EA,
-                IARG_UINT32, INS_MemoryWriteSize(ins), 
-                IARG_END);
+			 AFUNPTR(fw_slice_regregreg_mov),
+			 IARG_FAST_ANALYSIS_CALL,
+			 IARG_INST_PTR,
+			 IARG_PTR, str,
+			 IARG_ADDRINT, translate_reg (reg), 
+			 IARG_UINT32, REG_Size (reg), 
+			 IARG_REG_REFERENCE, reg, 
+			 IARG_UINT32, REG_is_Upper8 (reg), 
+			 PASS_BASE_INDEX,
+			 IARG_MEMORYWRITE_EA,
+			 IARG_UINT32, INS_MemoryWriteSize(ins), 
+			 IARG_END);
 
 	fw_slice_check_address (ins);
 	put_copy_of_disasm (str);
@@ -5778,16 +5757,33 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
 	fw_slice_src_mem (ins, 1);
         /*imm does not change taint value of the destination*/
         INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is mem and op2 is immediate\n");
+	INS_InsertCall (ins, IPOINT_BEFORE,
+			AFUNPTR(taint_mem_set_clear_flags_offset),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_MEMORYREAD_EA,
+			IARG_UINT32, INS_MemoryReadSize(ins),
+			IARG_UINT32, set_flags,
+			IARG_UINT32, clear_flags,
+			IARG_END);
     } else if(op1reg && op2imm){
         REG reg = INS_OperandReg(ins, 0);
 	fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
         INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg (%d) and op2 is immediate\n", reg);
+	INS_InsertCall (ins, IPOINT_BEFORE,
+			AFUNPTR(taint_reg_set_clear_flags_offset),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_UINT32, get_reg_off(reg),
+			IARG_UINT32, REG_Size(reg),
+			IARG_UINT32, set_flags,
+			IARG_UINT32, clear_flags,
+			IARG_END);
     } else {
         //if the arithmatic involves an immediate instruction the taint does
         //not propagate...
         string instruction;
         instruction = INS_Disassemble(ins);
         printf("unknown combination of arithmatic ins: %s\n", instruction.c_str());
+	assert (0);
     }
 }
 
@@ -6568,8 +6564,33 @@ void instrument_bit_scan (INS ins) {
     }
 }
 
-void count_inst_executed (void) { 
-	++num_of_inst_executed;
+/* For right now, verify when we load into FPU, we do not handle FPU ops */
+/* Can change to track and slice FPU ops when needed */
+void instrument_fpu_load (INS ins) 
+{
+    assert (INS_OperandCount(ins) >= 2);
+    if (INS_OperandIsMemory(ins, 1)) {	
+	char* str = get_copy_of_disasm (ins);
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+	SETUP_BASE_INDEX (base_reg, index_reg);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(fw_slice_mem2fpu),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_INST_PTR,
+		       IARG_PTR, str,
+		       IARG_MEMORYREAD_EA, 
+		       IARG_UINT32, INS_MemoryReadSize(ins),
+		       PASS_BASE_INDEX,
+		       IARG_END);
+    } else {
+	assert (INS_OperandIsReg(ins, 1));
+    }
+}
+
+void count_inst_executed (void) 
+{ 
+    ++num_of_inst_executed;
 }
 
 void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT val)
@@ -7152,14 +7173,9 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_FLD:
             case XED_ICLASS_FILD:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                assert (INS_OperandCount(ins) == 4);
-                if (INS_IsMemoryRead(ins))
-                    instrument_taint_mem2reg (ins, INS_OperandReg(ins, 0), 1);
-                else 
-                    instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 1);
-                slice_handled = 1;
-                break;
+		instrument_fpu_load (ins);
+		slice_handled = 1;
+		break;
             case XED_ICLASS_FLDZ:
             case XED_ICLASS_FLD1:
             case XED_ICLASS_FLDL2T:

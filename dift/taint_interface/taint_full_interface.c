@@ -2124,6 +2124,21 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 
 u_long debug_counter = 0;
 
+static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
+{
+    printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards)\n", ip); //save flags
+    for (uint32_t i = 0; i < mem_size; i++) {
+	if (is_mem_tainted(mem_loc+i, 1)) {
+	    printf ("[SLICE_VERIFICATION] cmp byte ptr [0x%lx], 0x%x //comes with %x (move upwards)\n", mem_loc+i, *(u_char *) (mem_loc+i), ip);
+	    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
+	    printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
+	    printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
+	}
+    }
+    printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards)\n", ip); 
+    clear_mem_taints (mem_loc, mem_size);
+}
+
 static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8)
 {
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards)\n", ip); //save flags
@@ -2534,14 +2549,30 @@ TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int orig_dst_reg,
     }
 }
 
-TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int base_reg, uint32_t base_reg_size, 
-				       uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, u_long mem_loc, 
-				       uint32_t mem_size, uint32_t flag, BOOL executed) 
+TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS)
+{
+    // Currently, do not handle FPU taint, so verify both memory and base/index registers.
+    // Can remove memory verification by handling FPU taint
+    int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
+    int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
+    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+
+    if (base_tainted || index_tainted) { 
+	verify_base_index_registers (ip, ins_str, mem_loc, mem_size, 
+				     base_reg, base_reg_size, base_reg_value, base_reg_u8,
+				     index_reg, index_reg_size, index_reg_value, index_reg_u8,
+				     base_tainted, index_tainted);
+    }
+    if (mem_tainted) verify_memory (ip, mem_loc, mem_size);
+}
+
+TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, BASE_INDEX_ARGS,
+				       u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed) 
 { 
     int dest_reg_tainted = is_reg_tainted (dest_reg, dest_reg_size, dest_reg_u8);
     int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
-    int mem_tainted2 = is_mem_tainted (mem_loc, mem_size);
     int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
+    int mem_tainted2 = is_mem_tainted (mem_loc, mem_size);
     int tainted4 = is_flag_tainted (flag);
 
     if (tainted4) {
@@ -3026,6 +3057,21 @@ TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, 
         mem_offset += count;
     }
 
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_mem_set_clear_flags_offset (int mem_loc, uint32_t size, int set_flags, int clear_flags)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t = merge_mem_taints (mem_loc, size);
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_reg_set_clear_flags_offset (int reg_off, uint32_t size, int set_flags, int clear_flags)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t = shadow_reg_table[reg_off];
+    for (uint32_t i = 1; i < size; i++) t = merge_taints(shadow_reg_table[reg_off+i], t);
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
