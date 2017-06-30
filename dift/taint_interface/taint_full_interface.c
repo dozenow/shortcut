@@ -2028,6 +2028,7 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
 static inline void copy_value_to_pin_register (PIN_REGISTER* reg, uint32_t reg_value, uint32_t reg_size, uint32_t reg_u8) 
 { 
     memset (reg, 0, sizeof (PIN_REGISTER));
+    if (reg_size == 0) return;
     switch (reg_size) { 
         case 4: 
             *reg->dword = reg_value;
@@ -2152,7 +2153,7 @@ static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str,
     } while (operand_index > 0);
     char* end_index = strchr (start_index, ']');
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
-    printf ("[SLICE_VERIFICATION] push eax //comes with %x, address %lx, %s\n", ip, mem_loc, ins_str);
+    printf ("[SLICE_VERIFICATION] push eax //comes with %x address %lx, %s\n", ip, mem_loc, ins_str);
     printf ("[SLICE_VERIFICATION] lea eax, %.*s  //comes with %x\n", end_index-start_index+1, start_index, ip);
     printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", region->addr, ip);
     //printf ("[SLICE_VERIFICATION] push eax //comes with %x, input params to index_diverge\n", ip);
@@ -2165,32 +2166,34 @@ static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str,
     printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); 
 }
 
-static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, 
+//return 1 if this is from a read-only region
+static inline int verify_base_index_registers (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, 
         int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, 
         int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
         int base_tainted, int index_tainted) 
 { 
-#ifdef THIS_IS_BROKEN
     struct mmap_info* region = NULL;
     if ((region = verify_effective_address_readonly_range (ip, ins_str, mem_loc, mem_size)) == NULL) {
-#endif
+        //if TRACK_READONLY_REGION is turned off, this branch will always be executed
         if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
         if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
-#ifdef THIS_IS_BROKEN
+        return 0;
     } else { 
         //for read-only regions, first initialize untainted registers 
         //then verify we're still within the range boundary
         PIN_REGISTER base_value;
         PIN_REGISTER index_value;
-        copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
-        copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
-        fprintf (stderr, "verify_register: memory %lx, %u is from a read-only region %lx, %d, ip %x\n", mem_loc, mem_size, region->addr, region->length, ip);
-        fprintf (stderr, "base tainted %d, index %d\n", base_tainted, index_tainted);
-        if (base_tainted != 1) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
-        if (index_tainted != 1) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
+        if (base_reg_size > 0) 
+            copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
+        if (index_reg_size > 0)
+            copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
+        //fprintf (stderr, "verify_register: memory %lx, %u is from a read-only region %lx, %d, ip %x\n", mem_loc, mem_size, region->addr, region->length, ip);
+        //fprintf (stderr, "base tainted %d, index %d\n", base_tainted, index_tainted);
+        if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
+        if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
         print_readonly_range_verification (ip, ins_str, region, mem_loc, mem_size);
+        return 1;
     }
-#endif
 }
 
 TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
@@ -2591,6 +2594,7 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
     int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    int read_only_mem = 0;
 
     if (mem_tainted) { 
         PRINT ("memregreg_mov");
@@ -2599,12 +2603,15 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
                 base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
     }
     if (base_tainted || index_tainted) {
-        verify_base_index_registers (ip, ins_str, mem_loc, mem_size, 
+        read_only_mem = verify_base_index_registers (ip, ins_str, mem_loc, mem_size, 
                 base_reg, base_reg_size, base_reg_value, base_reg_u8,
                 index_reg, index_reg_size, index_reg_value, index_reg_u8,
                 base_tainted, index_tainted);
     }
-    return mem_tainted;
+    //only print the immediate_address if it's not a memory read from a read-only region
+    //If read-only, we need to have a boundary check in the slice instread of replacing the memory operands with immediate address
+    if(mem_tainted && read_only_mem == 0) printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
+    return 0;
 }
 
 //only used for mov and movx with index tool

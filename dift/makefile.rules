@@ -115,10 +115,10 @@ $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX): xray_slab_alloc.h xray_slab_alloc.c
 $(OBJDIR)taint_byte_creation$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_byte_creation.c $(TAINTS_INTERFACE)/taint_creation.h taint_nw.h
 	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_byte_creation$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_byte_creation.c
 
-$(OBJDIR)mmap_regions$(OBJ_SUFFIX): mmap_regions.h mmap_regions.cpp 
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) $(GLIB_INCLUDES) mmap_regions.cpp 
+$(OBJDIR)mmap_regions$(OBJ_SUFFIX): mmap_regions.h mmap_regions.cpp linkage_common.h
+	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror -O2 -c -o $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) $(GLIB_INCLUDES) mmap_regions.cpp 
 
-$(OBJDIR)taint_full_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_interface.h taint_nw.h mmap_regions.h mmap_regions.cpp
+$(OBJDIR)taint_full_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_interface.h taint_nw.h mmap_regions.h mmap_regions.cpp linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
 
 $(OBJDIR)taint_forward_creation$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_forward_creation.c $(TAINTS_INTERFACE)/taint_creation.h
@@ -127,7 +127,7 @@ $(OBJDIR)taint_forward_creation$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_forward_
 $(OBJDIR)taint_forward_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_forward_interface.c $(TAINTS_INTERFACE)/taint_interface.h
 	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_forward_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_forward_interface.c
 
-$(OBJDIR)linkage_new2$(OBJ_SUFFIX): linkage_new2.cpp xray_slab_alloc.c xray_slab_alloc.h mmap_regions.h mmap_regions.cpp $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c taint_nw.h
+$(OBJDIR)linkage_new2$(OBJ_SUFFIX): linkage_new2.cpp xray_slab_alloc.c xray_slab_alloc.h mmap_regions.h mmap_regions.cpp $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c taint_nw.h linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
 
 $(OBJDIR)linkage_new2$(PINTOOL_SUFFIX): $(OBJDIR)linkage_new2$(OBJ_SUFFIX)
@@ -141,7 +141,7 @@ $(OBJDIR)linkage_data$(PINTOOL_SUFFIX): $(OBJDIR)linkage_data$(OBJ_SUFFIX)
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS) $(TAINT_BACK_OBJS) $(TAINT_OBJS) -lglib-2.0 -lrt
 
 # DATA+INDEX TOOL
-$(OBJDIR)linkage_offset$(OBJ_SUFFIX): linkage_new2.cpp recheck_log.cpp xray_slab_alloc.c xray_slab_alloc.h $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c splice.c maputil.c mmap_regions.h mmap_regions.cpp
+$(OBJDIR)linkage_offset$(OBJ_SUFFIX): linkage_new2.cpp recheck_log.cpp xray_slab_alloc.c xray_slab_alloc.h $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c splice.c maputil.c mmap_regions.h mmap_regions.cpp linkage_common.h
 	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
 
 $(OBJDIR)linkage_offset$(PINTOOL_SUFFIX): $(OBJDIR)linkage_offset$(OBJ_SUFFIX)

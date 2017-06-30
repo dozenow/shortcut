@@ -7709,6 +7709,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->all_mmap_regions = new std::map<u_long, struct mmap_info>();
     ptdata->ro_mmap_regions = new std::list<struct mmap_info>();
+    init_mmap_region (ptdata);
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
 				       ptdata, (void **) &current_thread, &thread_ndx);

@@ -377,6 +377,7 @@ int main (int argc, char* argv[]) {
 				}
 			    } else {
 				cout << "lastAddr check fails" << endl;
+                                cout << s <<endl;
 			    }
 			    buffer.push (make_pair(type, s));
 		}
