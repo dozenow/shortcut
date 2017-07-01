@@ -3313,10 +3313,8 @@ TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int c
     for (i = 1; i < size; i++) {
 	t = merge_taints(shadow_reg_table[reg_off + i], t);
     } 
-    if (t != shadow_reg_table[reg_off]) {
-	for (i = 0; i < size; i++) {
-	    shadow_reg_table[reg_off + i] = t;
-	}
+    for (i = 0; i < size; i++) {
+	shadow_reg_table[reg_off + i] = t;
     }
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
@@ -3338,10 +3336,8 @@ TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_
     for (i = 0; i < src2_size; i++) {
 	t = merge_taints(shadow_reg_table[src2_off + i], t);
     } 
-    if (t != shadow_reg_table[dst_off]) {
-	for (i = 0; i < dst_size; i++) {
-	    shadow_reg_table[dst_off + i] = t;
-	}
+    for (i = 0; i < dst_size; i++) {
+	shadow_reg_table[dst_off + i] = t;
     }
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
@@ -3359,10 +3355,8 @@ TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off,
     for (i = 0; i < src_size; i++) {
 	t = merge_taints(shadow_reg_table[src_off + i], t);
     } 
-    if (t != shadow_reg_table[dst_off]) {
-	for (i = 0; i < dst_size; i++) {
-	    shadow_reg_table[dst_off + i] = t;
-	}
+    for (i = 0; i < dst_size; i++) {
+	shadow_reg_table[dst_off + i] = t;
     }
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);

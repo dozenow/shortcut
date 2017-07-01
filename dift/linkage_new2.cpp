@@ -98,7 +98,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 47159
+//#define EXTRA_DEBUG 19430
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -4485,7 +4485,13 @@ void instrument_move_string(INS ins)
 		       IARG_FIRST_REP_ITERATION,
 		       IARG_END);
 	put_copy_of_disasm (str);
-	taint_mem2mem_b (IARG_MEMORYREAD_EA, IARG_MEMORYWRITE_EA);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_mem2mem),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYREAD_EA, 
+		       IARG_MEMORYWRITE_EA, 
+		       IARG_UINT32, INS_MemoryOperandSize(ins,0),
+		       IARG_END);
     } else if (INS_RepnePrefix(ins)) {
 	// This seems wrong - please verify - JNF
         fw_slice_src_string(ins, 1, 1);
@@ -6608,11 +6614,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	    is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
     // If you want to debug a memory address or xmm taint, can uncomment and change this
-    static u_long old_val = 0;
-    if (*((u_long *) 0xbfffe530) != old_val) {
-	printf ("bfffe530 val %lu tainted? %d%d%d%d\n", *((u_long *) 0xbfffe530), is_mem_arg_tainted (0xbfffe530, 1), is_mem_arg_tainted (0xbfffe531, 1), 
-		is_mem_arg_tainted (0xbfffe532, 1), is_mem_arg_tainted (0xbfffe533, 1));
-	old_val = *((u_long *) 0xbfffe530);
+    static u_short old_val = 0;
+    if (*((u_short *) 0x857b6ba) != old_val) {
+	printf ("857b6ba val %u tainted? %d%d\n", *((u_short *) 0x857b6ba), is_mem_arg_tainted (0x857b6ba, 1), is_mem_arg_tainted (0x857b6ba, 1));
+	old_val = *((u_short *) 0x857b6ba);
     }
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
