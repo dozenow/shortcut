@@ -104,7 +104,7 @@ void change_mmap_region (struct thread_data* tdata, u_long addr, int len, int pr
     map<u_long, struct mmap_info>::iterator it = tdata->all_mmap_regions->find (addr); 
     DPRINT (stderr, "change_mmap_region: %lx %d %x\n", addr, len, prot);
     if (it == tdata->all_mmap_regions->end()) {
-        fprintf (stderr, "[ERROR]change_mmap_region cannot find the region: %lx %d %x, is this the text region or stack?\n", addr, len, prot);
+        fprintf (stderr, "[ERROR]change_mmap_region cannot find the region: %lx %d %x, is this the text region or stack or a subset of some region?\n", addr, len, prot);
         return;
     }
     if (it->second.length > len) { 
