@@ -3159,6 +3159,7 @@ static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_
 		       IARG_MEMORYREAD_EA, 
 		       IARG_UINT32, INS_MemoryReadSize(ins),
 		       IARG_END);
+
 	put_copy_of_disasm (str);
 }
 
@@ -5135,6 +5136,12 @@ void instrument_mov (INS ins)
 
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
 	instrument_taint_mem2reg_slice (ins, dst_reg, 0);
+#ifdef TRACK_READONLY_REGION
+        //here I still merge taints of index/base registers in
+        //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, base_reg, 0, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, index_reg, 0, -1, -1);
+#endif
     } else if(ismemwrite) {
         if(!immval) {
             //mov register to memory location
@@ -5255,6 +5262,12 @@ void instrument_movx (INS ins)
 
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
 	instrument_taint_mem2reg_slice(ins, dst_reg, 1);
+#ifdef TRACK_READONLY_REGION
+        //here I still merge taints of index/base registers in
+        //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, base_reg, 0, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, index_reg, 0, -1, -1);
+#endif
     } else if (op1mem && op2reg) {
         assert(INS_IsMemoryWrite(ins) == 1);
         REG src_reg = INS_OperandReg(ins, 1);
@@ -5335,6 +5348,12 @@ void instrument_cmov(INS ins, uint32_t mask)
 			IARG_UINT32, REG_Size(reg),
 			IARG_EXECUTING,
 			IARG_END);
+#ifdef TRACK_READONLY_REGION
+        //here I still merge taints of index/base registers in
+        //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, reg, base_reg, 0, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, reg, index_reg, 0, -1, -1);
+#endif
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {
@@ -7781,6 +7800,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->all_mmap_regions = new std::map<u_long, struct mmap_info>();
     ptdata->ro_mmap_regions = new std::list<struct mmap_info>();
+    init_mmap_region (ptdata);
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
 				       ptdata, (void **) &current_thread, &thread_ndx);

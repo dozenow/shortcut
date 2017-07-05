@@ -99,7 +99,7 @@ void handle_jump_diverge()
 void handle_index_diverge(u_long foo)
 {
     int i;
-    fprintf (stderr, "[MISMATCH] index diverges at %lx.\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n", *((u_long *) ((u_long) &i + 32)));
     abort ();
 }
 

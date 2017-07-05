@@ -41,6 +41,8 @@
 #define OF_MASK 0x800
 #define DF_MASK 0x400
 
+//#define TRACK_READONLY_REGION
+
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
 
