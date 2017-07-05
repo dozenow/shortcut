@@ -1051,21 +1051,6 @@ void shift_reg_taint_right(int reg, int shift)
     }
 }
 
-void reverse_reg_taint(int reg, int size)
-{
-    // Only support word-sized registers for now
-    assert(size == 4);
-    taint_t* reg_table = current_thread->shadow_reg_table;
-    taint_t tmp;
-    tmp = reg_table[reg * REG_SIZE];
-    reg_table[reg * REG_SIZE] = reg_table[reg * REG_SIZE + 3];
-    reg_table[reg * REG_SIZE + 3] = tmp;
-    
-    tmp = reg_table[reg * REG_SIZE + 1];
-    reg_table[reg * REG_SIZE + 1] = reg_table[reg * REG_SIZE + 2];
-    reg_table[reg * REG_SIZE + 2] = tmp;
-}
-
 TAINTSIGN taint_mem2reg_offset(u_long mem_loc, int reg_off, uint32_t size)
 {
     uint32_t offset = 0;
@@ -2616,9 +2601,10 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 
 //only used for mov and movx with index tool
 //won't handle FPU registers
-TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
-        u_long mem_loc, uint32_t mem_size) { 
+TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+				  int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
+				  u_long mem_loc, uint32_t mem_size) 
+{ 
     int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
@@ -2626,8 +2612,10 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
     if (mem_tainted) { 
         PRINT ("memregreg_mov");
         printf ("[SLICE] #%x #%s\t", ip, ins_str);
-        printf ("    [SLICE_INFO] #src_memregreg_mov[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
-                base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
+        printf ("    [SLICE_INFO] #src_memregreg_mov[%lx:%d:%u] #ndx_reg[%d:%d:%u,%d:%d:%u] #base_reg_value %u, mem_value %u, index_reg_value %u\n", 
+                mem_loc, mem_tainted, mem_size, base_reg, base_tainted, base_reg_size, index_reg, index_tainted, index_reg_size, 
+		base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value);
+	printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
     }
     if (base_tainted || index_tainted) {
         verify_base_index_registers (ip, ins_str, mem_loc, mem_size, 
@@ -2635,7 +2623,6 @@ TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32
                 index_reg, index_reg_size, index_reg_value, index_reg_u8,
                 base_tainted, index_tainted);
     }
-    return mem_tainted;
 }
 
 //only used for mov and movx with index tool
@@ -3318,6 +3305,27 @@ TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int c
     }
 
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_mix_cwde ()
+{
+    // This is simply a sign extend of EAX from 2 to 4 bytes
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    int eax_offset = LEVEL_BASE::REG_EAX*REG_SIZE;
+    shadow_reg_table[eax_offset+2] = shadow_reg_table[eax_offset+1];
+    shadow_reg_table[eax_offset+3] = shadow_reg_table[eax_offset+1];
+}
+
+TAINTSIGN taint_bswap_offset (int reg_offset)
+{
+    // Swap bytes 0 and 3, 1 and 2
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t = shadow_reg_table[reg_offset];
+    shadow_reg_table[reg_offset] = shadow_reg_table[reg_offset+3];
+    shadow_reg_table[reg_offset+3] = t;
+    t = shadow_reg_table[reg_offset+1];
+    shadow_reg_table[reg_offset+1] = shadow_reg_table[reg_offset+2];
+    shadow_reg_table[reg_offset+2] = t;
 }
 
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 

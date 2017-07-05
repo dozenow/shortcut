@@ -63,7 +63,6 @@ TAINTSIGN clear_flag_taint (uint32_t mask);
 
 /* shift the taints of the bytes of a reg by shift num of bytes */
 void shift_reg_taint_right(int reg, int shift);
-void reverse_reg_taint(int reg, int size);
 
 // interface for different taint transfers
 TAINTSIGN taint_mem2reg_offset(u_long mem_loc, int reg_off, uint32_t size);
@@ -133,9 +132,9 @@ TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int orig_dest_reg
 				    uint32_t src_reg_u8, uint32_t flag, BOOL executed);
 TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, BASE_INDEX_ARGS,
 				       u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed);
-TAINTINT fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
-        u_long mem_loc, uint32_t mem_size);
+TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
+				  int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
+				  u_long mem_loc, uint32_t mem_size);
 TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str, 
         int reg, uint32_t reg_size, PIN_REGISTER* regv_value, uint32_t reg_u8,
         int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
@@ -150,12 +149,15 @@ TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t m
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 
+TAINTSIGN taint_mix_cwde ();
 TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, int set_flags, int clear_flags);
 TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, int set_flags, int clear_flags);
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 
 				       int set_flags, int clear_flags);
 TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, int set_flags, int clear_flags);
 TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_off, uint32_t reg_size, int set_flags, int clear_flags);
+
+TAINTSIGN taint_bswap_offset (int reg_off);
 
 // mem2reg add
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, int set_flags, int clear_flags);

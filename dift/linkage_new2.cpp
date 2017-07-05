@@ -11,6 +11,7 @@
 #include <sched.h>
 #include <errno.h>
 #include <stdint.h>
+#include <poll.h>
 #include <netdb.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -84,7 +85,6 @@ int s = -1;
 // #define LINKAGE_DATA_OFFSET
 // #define LINKAGE_SYSCALL              // system call & libc function abstraction
 // #define LINKAGE_CODE
-//#define LINKAGE_FDTRACK
 // #define ALT_PATH_EXPLORATION         // indirect control flow
 // #define CONFAID
 #define RECORD_TRACE_INFO 
@@ -545,18 +545,7 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
 static inline void sys_open_stop(int rc)
 {
     if (rc > 0) {
-      struct open_info* oi = (struct open_info *) current_thread->save_syscall_info; 
         monitor_add_fd(open_fds, rc, 0, current_thread->save_syscall_info);
-	//SYSCALL_DEBUG(stderr, "open: added fd %d\n", rc);
-
-#ifdef LINKAGE_FDTRACK
-        int cloexec = oi->flags | O_CLOEXEC;
-        add_taint_fd(rc, cloexec);
-#else 
-	if (oi->flags) {
-		//do nothing, just to shut up the compiler
-	}
-#endif
     }
     current_thread->save_syscall_info = NULL;
 }
@@ -609,9 +598,6 @@ static inline void sys_close_stop(int rc)
 		monitor_remove_fd(open_socks, fd);
 		SYSCALL_DEBUG (stderr, "close: remove sock fd %d\n", fd);
 	}
-#ifdef LINKAGE_FDTRACK
-        remove_taint_fd(fd);
-#endif
     }
     current_thread->save_syscall_info = 0;
 }
@@ -709,12 +695,6 @@ static inline void sys_read_stop(int rc)
 	tci.fileno = -1;
 	tci.type = TOK_READ_RET;
 	create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
-#ifdef LINKAGE_FDTRACK
-        //fprintf(stderr, "read from fd %d\n", ri->fd);
-        if (is_fd_tainted(ri->fd)) {
-            taint_add_fd2mem((u_long) ri->buf, rc, ri->fd);
-        }
-#endif
     }
 
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
@@ -857,8 +837,11 @@ static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* 
 	break;
     case F_SETOWN:
 	if (tdata->recheck_handle) {
+	    int owner_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0);
+	    printf ("[SLICE] #00000000 #push edx [SLICE_INFO] owner argument to setown\n");
 	    printf ("[SLICE] #00000000 #call fcntl64_setown_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg);
+	    printf ("[SLICE] #00000000 #pop edx [SLICE_INFO]\n");
+	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg, owner_tainted);
 	}
 	break;
     default:
@@ -866,37 +849,27 @@ static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* 
     }
 }
 
-#ifdef LINKAGE_FDTRACK
-static void sys_select_start(struct thread_data* tdata, int nfds, fd_set* readfds, fd_set* writefds, 
-			     fd_set* exceptfds, struct timeval* timeout)
+static void sys__newselect_start(struct thread_data* tdata, int nfds, fd_set* readfds, fd_set* writefds, 
+				 fd_set* exceptfds, struct timeval* timeout)
 {
     tdata->op.select_info_cache.nfds = nfds;
     tdata->op.select_info_cache.readfds = readfds;
     tdata->op.select_info_cache.writefds = writefds;
     tdata->op.select_info_cache.exceptfds = exceptfds;
     tdata->op.select_info_cache.timeout = timeout;
-}
-
-static void sys_select_stop(int rc)
-{
-    // If global_syscall_cnt == 0, then handled in previous epoch
-    if (rc != -1) {
-        // create a taint
-        struct taint_creation_info tci;
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = FILENO_SELECT;
-        tci.data = 0;
-        tci.type = TOK_SELECT;
-
-        create_fd_taints(current_thread->op.select_info_cache.nfds,
-                current_thread->op.select_info_cache.readfds,
-                &tci, tokens_fd);
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call newselect_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck__newselect (tdata->recheck_handle, nfds, readfds, writefds, exceptfds, timeout);
     }
 }
-#endif
+
+static void sys__newselect_stop(int rc)
+{
+    struct select_info* si = &current_thread->op.select_info_cache;
+    if (rc >= 0 && si->timeout) {
+	taint_syscall_memory_out ("_newselect", (char *) si->timeout, sizeof(struct timeval));
+    }
+}
 
 static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd, int flags)
 {
@@ -1286,13 +1259,6 @@ static void sys_recv_stop(int rc)
         LOG_PRINT ("Create taints from buffer sized %d at location %#lx, clock %lu\n",
 		   rc, (unsigned long) ri->buf, *ppthread_log_clock );
         create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
-
-#ifdef LINKAGE_FDTRACK
-        if (is_fd_tainted(ri->fd)) {
-            taint_fd2mem((u_long) ri->buf, rc, ri->fd);
-        }
-#endif
-
     }
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     current_thread->save_syscall_info = 0;
@@ -1604,16 +1570,16 @@ static inline void sys_geteuid32_start (struct thread_data* tdata) {
     }
 }
 
-static inline void sys_getgid32_start (struct thread_data* tdata) {
-    SYSCALL_DEBUG(stderr, "sys_getgid32_start.\n");
+static inline void sys_getgid32_start (struct thread_data* tdata) 
+{
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getgid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	recheck_getgid32 (tdata->recheck_handle);
     }
 }
 
-static inline void sys_getegid32_start (struct thread_data* tdata) {
-    SYSCALL_DEBUG(stderr, "sys_getegid32_start.\n");
+static inline void sys_getegid32_start (struct thread_data* tdata) 
+{
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getegid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	recheck_getegid32 (tdata->recheck_handle);
@@ -1633,23 +1599,32 @@ static inline void sys_setpgid_start (struct thread_data* tdata, pid_t pid, pid_
     }
 }
 
-static inline void sys_set_tid_address_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_set_tid_address_start.\n");
+static inline void sys_set_tid_address_start (struct thread_data* tdata) 
+{
 	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
 	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO] set_tid_address clock %lu\n", *ppthread_log_clock);
 }
 
-static inline void sys_set_tid_address_stop (int rc) {
-	struct taint_creation_info tci;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = -1;
-	tci.data = 0;
-	tci.type = TOK_GETPID;
-	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	LOG_PRINT ("Done with set_tid_address\n");
+static inline void sys_set_robust_list (struct thread_data* tdata, struct robust_list_head* head, size_t len) 
+{
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call set_robust_list_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_set_robust_list (tdata->recheck_handle, head, len);
+    }
+}
+
+static inline void sys_set_tid_address_stop (int rc) 
+{
+    struct taint_creation_info tci;
+    tci.rg_id = current_thread->rg_id;
+    tci.record_pid = current_thread->record_pid;
+    tci.syscall_cnt = current_thread->syscall_cnt;
+    tci.offset = 0;
+    tci.fileno = -1;
+    tci.data = 0;
+    tci.type = TOK_GETPID;
+    create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+    LOG_PRINT ("Done with set_tid_address\n");
 }
 
 static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct stat64* buf) {
@@ -1822,6 +1797,22 @@ static inline void sys_getrusage_stop (int rc) {
 	LOG_PRINT ("Done with getrusage\n");
 }
 
+static inline void sys_eventfd2_start (struct thread_data* tdata, unsigned int count, int flags) 
+{
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call eventfd2_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_eventfd2 (tdata->recheck_handle, count, flags);
+    }
+}
+
+static inline void sys_poll_start (struct thread_data* tdata, struct pollfd* fds, u_int nfds, int timeout)
+{
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call poll_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_poll (tdata->recheck_handle, fds, nfds, timeout);
+    }
+}
+
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 { 
@@ -1861,13 +1852,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_ioctl:
 	    sys_ioctl_start(tdata, (u_int) syscallarg0, (u_int) syscallarg1, (char *) syscallarg2);
             break;
-#ifdef LINKAGE_FDTRACK
-        case SYS_select:
-        case 142:
-            sys_select_start(tdata, (int) syscallarg0, (fd_set *) syscallarg1, (fd_set *) syscallarg2,
-			     (fd_set *) syscallarg3, (struct timeval *) syscallarg4);
+        case SYS__newselect:
+            sys__newselect_start(tdata, (int) syscallarg0, (fd_set *) syscallarg1, (fd_set *) syscallarg2,
+				 (fd_set *) syscallarg3, (struct timeval *) syscallarg4);
             break;
-#endif
         case SYS_socketcall:
         {
             int call = (int) syscallarg0;
@@ -1972,6 +1960,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
       	case SYS_set_tid_address:
 	    sys_set_tid_address_start (tdata);
 	    break;
+      	case SYS_set_robust_list:
+	    sys_set_robust_list (tdata, (struct robust_list_head *) syscallarg0, (size_t) syscallarg1);
+	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
 	    break;
@@ -1989,6 +1980,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_lstat64:
             sys_lstat64_start (tdata, (char*) syscallarg0, (struct stat64*) syscallarg1);
+            break;
+        case SYS_eventfd2:
+            sys_eventfd2_start (tdata, (u_int) syscallarg0, (int) syscallarg1);
+            break;
+        case SYS_poll:
+	  sys_poll_start (tdata, (struct pollfd *) syscallarg0, (u_int) syscallarg1, (int) syscallarg2);
             break;
     }
 }
@@ -2014,7 +2011,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
             break;
         case SYS_write:
         case SYS_pwrite64:
-          //  sys_write_stop(rc);
+	    //  sys_write_stop(rc);
             break;
         case SYS_writev:
             sys_writev_stop(rc);
@@ -2023,14 +2020,11 @@ void syscall_end(int sysnum, ADDRINT ret_value)
             sys_pread_stop(rc);
             break;
         case SYS_brk:
-	  //  sys_brk_stop(rc);
-      break;
-#ifdef LINKAGE_FDTRACK
-        case SYS_select:
-        case 142:
-            sys_select_stop(rc);
+	    //  sys_brk_stop(rc);
+	    break;
+        case SYS__newselect:
+            sys__newselect_stop(rc);
             break;
-#endif
         case SYS_mmap:
         case SYS_mmap2:
             sys_mmap_stop(rc);
@@ -3150,23 +3144,21 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG dest_reg, REG b
 	index_reg_value_type, index_reg,		\
 	IARG_UINT32, index_reg_u8			
 
-//only use this for MOV/MOVX  with index tool enabled
-static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg, IARG_TYPE mem_ea, uint32_t memsize) 
+// Source is memory - verify base and index regs as needed
+static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg) 
 { 
 	char* str = get_copy_of_disasm (ins);
 	SETUP_BASE_INDEX(base_reg, index_reg);
 
-        INS_InsertIfCall(ins, IPOINT_BEFORE,
-			 AFUNPTR(fw_slice_memregreg_mov),
-			 IARG_FAST_ANALYSIS_CALL,
-			 IARG_INST_PTR,
-			 IARG_PTR, str,
-			 PASS_BASE_INDEX,
-			 mem_ea, 
-			 IARG_UINT32, memsize,
-			 IARG_END);
-	
-	fw_slice_check_address (ins);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(fw_slice_memregreg_mov),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_INST_PTR,
+		       IARG_PTR, str,
+		       PASS_BASE_INDEX,
+		       IARG_MEMORYREAD_EA, 
+		       IARG_UINT32, INS_MemoryReadSize(ins),
+		       IARG_END);
 	put_copy_of_disasm (str);
 }
 
@@ -3977,10 +3969,8 @@ inline void instrument_taint_reg2mem(INS ins, REG reg, int extend) {
 	return instrument_taint_reg2mem_slice (ins, reg, extend, 1);
 }
 
-void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slice)
+void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend)
 {
-    if(fw_slice) fw_slice_src_mem (ins, 0);
-
     UINT32 regsize = REG_Size(dstreg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
     assert (memsize > 0);
@@ -4003,10 +3993,6 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend, int fw_slic
 		       IARG_UINT32, size,
 		       IARG_END);
     }
-}
-
-inline void instrument_taint_mem2reg(INS ins, REG dstreg, int extend) {
-    return instrument_taint_mem2reg_slice (ins, dstreg, extend, 1);
 }
 
 void instrument_taint_mem2mem_slice(INS ins, int extend, int fw_slice)
@@ -5057,20 +5043,6 @@ void instrument_xchg (INS ins)
     }
 }
 
-void instrument_bswap (INS ins)
-{
-    int treg;
-    assert(INS_OperandIsReg(ins, 0));
-    assert(REG_Size(INS_OperandReg(ins, 0)) == 4);
-
-    treg = translate_reg(INS_OperandReg(ins, 0));
-    INS_InsertCall(ins, IPOINT_BEFORE,
-            AFUNPTR(reverse_reg_taint),
-            IARG_UINT32, treg,
-            IARG_UINT32, 4,
-            IARG_END);
-}
-
 void instrument_cmpxchg (INS ins)
 {
 	REG srcreg = INS_OperandReg (ins, 1);
@@ -5161,8 +5133,8 @@ void instrument_mov (INS ins)
     +-------------+----------------------------+-----------------------------+
 */
 
-        fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-	instrument_taint_mem2reg_slice (ins, dst_reg, 0, 0);
+        fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
+	instrument_taint_mem2reg_slice (ins, dst_reg, 0);
     } else if(ismemwrite) {
         if(!immval) {
             //mov register to memory location
@@ -5230,6 +5202,27 @@ void instrument_mov (INS ins)
     }
 }
 
+void instrument_pinsrb (INS ins) 
+{
+    REG dstreg = INS_OperandReg(ins, 0);
+    if (INS_OperandIsMemory(ins, 1)) {
+	// Move byte from mem to specified byte of the xmm register
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+	fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
+	uint32_t imm = INS_OperandImmediate(ins, 2);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_mem2reg_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYREAD_EA,
+		       IARG_UINT32, get_reg_off (dstreg)+imm, 
+		       IARG_UINT32, 1,
+		       IARG_END);
+    } else {
+	assert (0);
+    }
+}
+
 /* 
  * Instrument a move that extends if the dst is smaller than src.
  *
@@ -5260,8 +5253,8 @@ void instrument_movx (INS ins)
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 
-        fw_slice_src_regregmem_mov (ins, base_reg, index_reg, IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
-	instrument_taint_mem2reg_slice(ins, dst_reg, 1, 0);
+        fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
+	instrument_taint_mem2reg_slice(ins, dst_reg, 1);
     } else if (op1mem && op2reg) {
         assert(INS_IsMemoryWrite(ins) == 1);
         REG src_reg = INS_OperandReg(ins, 1);
@@ -5678,7 +5671,7 @@ void instrument_leave (INS ins) {
     assert (addrsize == 4); //only care about 32bit for now
     fw_slice_src_regmem (ins, LEVEL_BASE::REG_EBP, 4, IARG_MEMORYREAD_EA, 4);
     instrument_taint_reg2reg_slice (ins, LEVEL_BASE::REG_ESP, LEVEL_BASE::REG_EBP, 0, 0);
-    instrument_taint_mem2reg_slice (ins, LEVEL_BASE::REG_EBP, 0, 0);
+    instrument_taint_mem2reg_slice (ins, LEVEL_BASE::REG_EBP, 0);
 }
 
 void instrument_addorsub(INS ins, int set_flags, int clear_flags)
@@ -6589,9 +6582,54 @@ void instrument_fpu_load (INS ins)
 		       IARG_UINT32, INS_MemoryReadSize(ins),
 		       PASS_BASE_INDEX,
 		       IARG_END);
+	put_copy_of_disasm (str);
     } else {
 	assert (INS_OperandIsReg(ins, 1));
     }
+}
+
+void instrument_cwde (INS ins) 
+{
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_reg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, LEVEL_BASE::REG_EAX,
+		   IARG_UINT32, 2,
+		   IARG_ADDRINT, 0,
+		   IARG_CONST_CONTEXT,
+		   IARG_UINT32, 0,
+		   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_mix_cwde),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+void instrument_bswap (INS ins) 
+{
+    REG reg = INS_OperandReg(ins, 0);    
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_reg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, reg,
+		   IARG_UINT32, 4,
+		   IARG_ADDRINT, 0,
+		   IARG_CONST_CONTEXT,
+		   IARG_UINT32, 0,
+		   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_bswap_offset),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, get_reg_off(reg),
+		   IARG_END);
+    put_copy_of_disasm (str);
 }
 
 void count_inst_executed (void) 
@@ -6848,9 +6886,6 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_xchg(ins);
 		slice_handled = 1;
                 break;
-            case XED_ICLASS_BSWAP:
-                instrument_bswap(ins);
-                break;
             case XED_ICLASS_CMPXCHG:
                 instrument_cmpxchg(ins);
 		slice_handled = 1;
@@ -6938,6 +6973,10 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_addorsub(ins, -1, -1);
 		slice_handled = 1;
                 break;
+	    case XED_ICLASS_PINSRB:
+		instrument_pinsrb(ins);
+		slice_handled = 1;
+		break;
             case XED_ICLASS_PSRLDQ:
                 instrument_psrldq(ins);
                 slice_handled = 1;
@@ -7258,6 +7297,14 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_cmov (ins, CF_FLAG | ZF_FLAG);
                 slice_handled = 1;
                 break;
+   	    case XED_ICLASS_CWDE:
+		instrument_cwde (ins);
+		slice_handled = 1;
+		break;
+   	    case XED_ICLASS_BSWAP:
+		instrument_bswap (ins);
+		slice_handled = 1;
+		break;
             default:
                 if (INS_IsNop(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument noop %s\n",

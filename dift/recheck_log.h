@@ -70,6 +70,7 @@ struct write_recheck {
     void* buf;
     size_t count;
 };
+/* Followed by data actually written */
 
 struct ugetrlimit_recheck {
     int resource;
@@ -172,6 +173,7 @@ struct fcntl64_getown_recheck {
 struct fcntl64_setown_recheck {
     int fd;
     long owner;
+    int is_owner_tainted;
 };
 
 struct getdents64_recheck {
@@ -181,6 +183,39 @@ struct getdents64_recheck {
     u_long arglen;
 };
 /* Followed by variable length buffer of size arglen */
+
+struct eventfd2_recheck {
+    u_int count;
+    int flags;
+};
+
+struct poll_recheck {
+    u_int nfds;
+    int timeout;
+    char* buf;
+};
+/* Followed by nfds pollfd structures/short retvals */
+
+struct newselect_recheck {
+    int nfds;
+    fd_set* preadfds;
+    fd_set* pwritefds;
+    fd_set* pexceptfds;
+    struct timeval* ptimeout;
+    u_long setsize;
+    fd_set readfds;
+    fd_set writefds;
+    fd_set exceptfds;
+    struct timeval timeout;
+    int is_timeout_tainted;
+    u_long retlen;
+};
+/* Followed by kernel retvals */
+
+struct set_robust_list_recheck {
+    struct robust_list_head* head;
+    size_t len;
+};
 
 /* Prototypes */
 struct recheck_handle;
@@ -217,7 +252,11 @@ int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd);
 int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags);
 int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg);
 int recheck_fcntl64_getown (struct recheck_handle* handle, int fd);
-int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner);
+int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner, int is_owner_tainted);
 int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count);
+int recheck_eventfd2 (struct recheck_handle* handle, u_int count, int flags);
+int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds, int timeout);
+int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, struct timeval* timeout);
+int recheck_set_robust_list (struct recheck_handle* handle, struct robust_list_head* head, size_t len);
 
 #endif

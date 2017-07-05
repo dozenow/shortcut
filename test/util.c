@@ -108,7 +108,6 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
 		       char* logdir, char* linker, char* filename,char* uniqueid, loff_t attach_index, int attach_pid
 		       , u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename)
 {
-    fprintf(stderr, "calling resume_after_ckpt\n");
     struct wakeup_ckpt_data data;
     data.pin = pin;
     data.gdb = gdb;

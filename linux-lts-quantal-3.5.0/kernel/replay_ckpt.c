@@ -1133,8 +1133,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	if (!is_thread) { 
 		
 		// restore the replay cache state (this is going to be done on per process)
-		restore_replay_cache_files (file, ppos);
-
+		restore_replay_cache_files (file, ppos, slicelib != NULL);
 
 		// Delete all the vm areas of current process 
 		// (except if there is a slice library specified - leave that)
@@ -1372,7 +1371,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (map_file) filp_close (map_file, NULL);
 			if (IS_ERR((char *) addr)) {
 				printk ("replay_full_resume_proc_from_disk: mmap error %ld\n", PTR_ERR((char *) addr));
-				if (map_file) filp_close (map_file, NULL);
 				rc = addr;
 				goto freemem;
 			}

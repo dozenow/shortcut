@@ -1827,9 +1827,9 @@ checkpoint_replay_cache_files (struct task_struct* tsk, struct file* cfile, loff
 }
 
 int
-restore_replay_cache_files (struct file* cfile, loff_t* ppos)
+restore_replay_cache_files (struct file* cfile, loff_t* ppos, int go_live)
 {
-	int fd, cnt, len, copyed, i, rc, val;
+	int fd = -1, cnt, len, copyed, i, rc, val;
 	char* buffer;
 	loff_t pos;
 
@@ -1866,10 +1866,10 @@ restore_replay_cache_files (struct file* cfile, loff_t* ppos)
 		}
 		buffer[len] = '\0';
 
-		fd = sys_open (buffer, O_RDONLY, 0);
+		if (!go_live) fd = sys_open (buffer, O_RDONLY, 0);
 		KFREE(buffer);
 
-		if (set_replay_cache_file (current->replay_thrd->rp_cache_files, val, fd) < 0) {
+		if (!go_live && set_replay_cache_file (current->replay_thrd->rp_cache_files, val, fd) < 0) {
 			printk ("restore_replay_cache_files: cannot set cache file");
 			sys_close (fd);
 		} else {
@@ -1878,8 +1878,10 @@ restore_replay_cache_files (struct file* cfile, loff_t* ppos)
 				printk ("restore_replay_cache_files: tried to read file position, got rc %d\n", copyed);
 				return copyed;
 			}
-			rc = sys_lseek(fd, pos, SEEK_SET);
-			if (rc < 0) printk ("restore_replay_cache_files: lseek to pos %Ld failed\n", pos);
+			if (!go_live) {
+				rc = sys_lseek(fd, pos, SEEK_SET);
+				if (rc < 0) printk ("restore_replay_cache_files: lseek to pos %Ld failed\n", pos);
+			}
 		}
 	}
 	return 0;
@@ -3727,6 +3729,7 @@ int fork_replay (char __user* logdir, const char __user *const __user *args,
 		sys_write(pipe_fd, str, strlen(str));
 
 		set_fs(old_fs);
+		sys_close (pipe_fd);
 	}
 
 

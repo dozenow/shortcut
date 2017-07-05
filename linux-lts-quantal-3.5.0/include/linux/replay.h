@@ -121,7 +121,7 @@ long replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* ts
 
 /* Helper functions for checkpoint/resotre */
 int checkpoint_replay_cache_files (struct task_struct* tsk, struct file* cfile, loff_t* ppos);
-int restore_replay_cache_files (struct file* cfile, loff_t* ppos);
+int restore_replay_cache_files (struct file* cfile, loff_t* ppos, int go_live);
 
 int find_sysv_mapping_by_key (int key);
 int checkpoint_ckpt_tsks_header(struct ckpt_tsk *ct, int parent_pid, int is_thread, struct file *cfile, loff_t *ppos);

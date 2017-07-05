@@ -521,8 +521,6 @@ void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, ch
 		}
 	}
 
-	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
-	
 	for (; i < REG_SIZE; ++i) {
 		set_syscall_retval_reg_value (i, taint_num);
 		++ taint_num;
@@ -537,8 +535,6 @@ void create_syscall_retval_taint_unfiltered (struct taint_creation_info *tci, in
 
 	if (outfd == -99999) return;
 
-	fprintf (stderr, "create_syscall_retval_taint taint_num %u(%x)\n", t, t);
-	
 	for (; i < REG_SIZE; ++i) {
 		set_syscall_retval_reg_value (i, taint_num);
 		++ taint_num;

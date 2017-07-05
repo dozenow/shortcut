@@ -10,11 +10,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <assert.h>
 #include <dirent.h>
+#include <poll.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
+// Note assert requires locale, which does not work with our hacked libc - don't use it */
 
 #include "../dift/recheck_log.h"
 
@@ -41,9 +42,7 @@ struct cfopened cache_files_opened[MAX_FDS];
 void recheck_start(char* filename)
 {
     int rc, i, fd;
-    int index = -64;
 
-    printf ("filename is %s, %p\n", filename, filename);
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
@@ -85,7 +84,7 @@ void recheck_start(char* filename)
 
 void handle_mismatch()
 {
-    static cnt = 0;
+    static int cnt = 0;
     cnt++;
     if (cnt < 10) sleep (3); // Just so we notice it for now
 }
@@ -93,7 +92,7 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow diverges at 0x%lx.\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n", *((u_long *) ((u_long) &i + 32)));
     abort();
 }
 
@@ -119,16 +118,18 @@ static inline void check_retval (const char* name, int expected, int actual) {
 }
 
 void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int is_cache_file, long total_size) { 
+#ifdef PRINT_VALUES
     //only verify bytes not in this range
     int pass = 1;
-#ifdef PRINT_VALUES
     LPRINT ("partial read: %d %d\n", pread->partial_read_start, pread->partial_read_end);
 #endif
     if (pread->partial_read_start > 0) { 
         if (memcmp (newdata, olddata, pread->partial_read_start)) {
             printf ("[MISMATCH] read returns different values for partial read: before start\n");
             handle_mismatch();
+#ifdef PRINT_VALUES
 	    pass = 0;
+#endif
         }
     }
     if(pread->partial_read_end > total_size) {
@@ -140,14 +141,18 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
 		    if (memcmp (newdata+pread->partial_read_end, olddata+pread->partial_read_end, total_size-pread->partial_read_end)) {
 			    printf ("[MISMATCH] read returns different values for partial read: after end\n");
 			    handle_mismatch();
+#ifdef PRINT_VALUES
 			    pass = 0;
+#endif
 		    }
 	    } else { 
 		    //for cached files, we only have the data that needs to be verified
 		    if (memcmp (newdata+pread->partial_read_end, olddata+pread->partial_read_start, total_size-pread->partial_read_end)) {
 			    printf ("[MISMATCH] read returns different values for partial read: after end\n");
 			    handle_mismatch();
+#ifdef PRINT_VALUES
 			    pass = 0;
+#endif
 		    }
 	    }
     }
@@ -210,13 +215,19 @@ void read_recheck ()
         } else {
             //read the new content that will be verified
             rc = syscall(SYS_read, pread->fd, tmpbuf, pread->count);
-            assert (rc == pread->count);
+	    if (rc != pread->count) abort();
 	    partial_read (pread, tmpbuf, (char*)pread+sizeof(*pread)+pread->readlen, 1, rc);
         }
     } else {
-	assert (pentry->retval < sizeof(tmpbuf));
-	assert ((*pread).count < sizeof(tmpbuf));
-	rc = syscall(SYS_read,(*pread).fd, tmpbuf, (*pread).count);
+	if (pentry->retval > (long) sizeof(tmpbuf)) {
+	    printf ("[ERROR] retval %ld is greater than temp buf size %d\n", pentry->retval, sizeof(tmpbuf));
+	    handle_mismatch();
+	}
+	if (pread->count > (long) sizeof(tmpbuf)) {
+	    printf ("[ERROR] count %d is greater than temp buf size %d\n", pread->count, sizeof(tmpbuf));
+	    handle_mismatch();
+	}
+	rc = syscall(SYS_read, pread->fd, tmpbuf, pread->count);
 	check_retval ("read", pentry->retval, rc);
         if (!pread->partial_read) {
 	    if (rc > 0) {
@@ -236,23 +247,32 @@ void write_recheck ()
 {
     struct recheck_entry* pentry;
     struct write_recheck* pwrite;
+    char* data;
     int rc;
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     pwrite = (struct write_recheck *) bufptr;
+    data = bufptr + sizeof(struct write_recheck);
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
     LPRINT ( "write: fd %d buf %lx count %d rc %ld\n", pwrite->fd, (u_long) pwrite->buf,
 	   pwrite->count, pentry->retval);
+    {
+	int i;
+	for (i = 0; i < pwrite->count; i++) {
+	    LPRINT ("%x ", ((char *) pwrite->buf)[i]);
+	}
+	LPRINT ("\n");
+    }
 #endif
     if (pwrite->fd == 99999) return;  // Debugging fd - ignore
     if (cache_files_opened[pwrite->fd].is_open_cache_file) {
 	printf ("[ERROR] Should not be writing to a cache fiele\n");
 	handle_mismatch();
     }
-    rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
+    rc = syscall(SYS_write, pwrite->fd, data, pwrite->count);
     check_retval ("write", pentry->retval, rc);
 }
 
@@ -278,7 +298,7 @@ void open_recheck ()
 #endif
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
     check_retval ("open", pentry->retval, rc);
-    assert (rc < MAX_FDS);
+    if (rc >= MAX_FDS) abort ();
     if (rc >= 0 && popen->has_retvals) {
 	cache_files_opened[rc].is_open_cache_file = 1;
 	cache_files_opened[rc].orv = popen->retvals;
@@ -302,7 +322,7 @@ void openat_recheck ()
 #endif
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
     check_retval ("openat", pentry->retval, rc);
-    assert (rc < MAX_FDS);
+    if  (rc >= MAX_FDS) abort ();
 }
 
 void close_recheck ()
@@ -320,7 +340,7 @@ void close_recheck ()
     LPRINT ( "close: fd %d\n", pclose->fd);
 #endif
 
-    assert (pclose->fd < MAX_FDS);
+    if (pclose->fd >= MAX_FDS) abort();
     rc = syscall(SYS_close, pclose->fd);
     cache_files_opened[pclose->fd].is_open_cache_file = 0;
     check_retval ("close", pentry->retval, rc);
@@ -614,10 +634,11 @@ void fcntl64_getown_recheck ()
     check_retval ("fcntl64 getown", pentry->retval, rc);
 }
 
-void fcntl64_setown_recheck ()
+void fcntl64_setown_recheck (long owner)
 {
     struct recheck_entry* pentry;
     struct fcntl64_setown_recheck* psetown;
+    long use_owner;
     int rc;
 
     pentry = (struct recheck_entry *) bufptr;
@@ -629,7 +650,13 @@ void fcntl64_setown_recheck ()
     LPRINT ( "fcntl64 setown: fd %d owner %lx rc %ld\n", psetown->fd, psetown->owner, pentry->retval);
 #endif
 
-    rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, psetown->owner);
+    if (psetown->is_owner_tainted) {
+	use_owner = owner; 
+    } else {
+	use_owner = psetown->owner;
+    }
+
+    rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, use_owner);
     check_retval ("fcntl64 setown", pentry->retval, rc);
 }
 
@@ -800,7 +827,6 @@ void gettimeofday_recheck () {
 void time_recheck () { 
 	struct recheck_entry* pentry;
 	struct time_recheck *pget;
-        time_t t;
 	int rc;
 
 	pentry = (struct recheck_entry *) bufptr;
@@ -890,7 +916,7 @@ void readlink_recheck ()
     struct readlink_recheck* preadlink;
     char* linkdata;
     char* path;
-    int rc, i;
+    int rc;
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
@@ -907,6 +933,7 @@ void readlink_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "readlink: buf %p size %d ", preadlink->buf, preadlink->bufsiz);
     if (pentry->retval) {
+	int i;
 	LPRINT ( "linkdata ");
 	for (i = 0; i < pentry->retval; i++) {
 	    LPRINT ( "%c", linkdata[i]);
@@ -955,7 +982,7 @@ inline void connect_or_bind_recheck (int call, char* call_name)
     struct connect_recheck* pconnect;
     u_long block[6];
     char* addr;
-    int rc, i;
+    int rc;
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
@@ -1109,12 +1136,12 @@ void ioctl_recheck ()
 	check_retval ("ioctl", pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
+#ifdef PRINT_VALUES
 	if (pioctl->cmd == 0x5413) {
 	  short* ps = (short *) &tmpbuf;
-#ifdef PRINT_VALUES
 	  LPRINT ("window size is %d %d\n", ps[0], ps[1]);
-#endif
 	}
+#endif
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
 	    char* tainted = addr;
@@ -1144,7 +1171,7 @@ void getdents64_recheck ()
     struct recheck_entry* pentry;
     struct getdents64_recheck* pgetdents64;
     char* dents;
-    int rc, i;
+    int rc;
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
@@ -1180,5 +1207,128 @@ void getdents64_recheck ()
 	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
 	}
     }
+}
+
+void eventfd2_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct eventfd2_recheck* peventfd2;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    peventfd2 = (struct eventfd2_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("eventfd2: count %u flags %x rc %ld\n", peventfd2->count, peventfd2->flags, pentry->retval);
+#endif 
+
+    rc = syscall(SYS_eventfd2, peventfd2->count, peventfd2->flags);
+    check_retval ("eventfd2", pentry->retval, rc);
+}
+
+void poll_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct poll_recheck* ppoll;
+    struct pollfd* fds;
+    struct pollfd* pollbuf = (struct pollfd *) tmpbuf;
+    short* revents;
+    int rc;
+    u_int i;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    ppoll = (struct poll_recheck *) bufptr;
+    fds = (struct pollfd *) (bufptr + sizeof (struct poll_recheck));
+    revents = (short *) (bufptr + sizeof (struct poll_recheck) + ppoll->nfds*sizeof(struct pollfd));
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("poll: buf %lx nfds %u timeout %d rc %ld", (u_long) ppoll->buf, ppoll->nfds, ppoll->timeout, pentry->retval);
+    if (pentry->retval > 0) {
+	for (i = 0; i < ppoll->nfds; i++) {
+	    LPRINT ("\tfd %d events %x revents %x", fds[i].fd, fds[i].events, revents[i]);
+	}
+    }
+    LPRINT ("\n");
+#endif 
+
+    memcpy (tmpbuf, fds, ppoll->nfds*sizeof(struct pollfd));
+    rc = syscall(SYS_poll, pollbuf, ppoll->nfds, ppoll->timeout);
+    check_retval ("poll", pentry->retval, rc);
+    if (rc > 0) {
+	for (i = 0; i < ppoll->nfds; i++) {
+	    if (pollbuf[i].revents != revents[i]) {
+		printf ("{MISMATCH] poll index %d: fd %d revents returns %x\t", i, fds[i].fd, pollbuf[i].revents);
+	    }
+	}
+    }
+}
+
+void newselect_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct newselect_recheck* pnewselect;
+    fd_set* readfds = NULL;
+    fd_set* writefds = NULL;
+    fd_set* exceptfds = NULL;
+    struct timeval* use_timeout;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pnewselect = (struct newselect_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ("newselect: nfds %d readfds %lx writefds %lx exceptfds %lx timeout %lx rc %ld", pnewselect->nfds, (u_long) pnewselect->preadfds, 
+	    (u_long) pnewselect->pwritefds, (u_long) pnewselect->pexceptfds, (u_long) pnewselect->ptimeout, pentry->retval);
+    LPRINT ("\n");
+#endif 
+
+    if (pnewselect->preadfds) readfds = &pnewselect->readfds;
+    if (pnewselect->pwritefds) readfds = &pnewselect->writefds;
+    if (pnewselect->pexceptfds) readfds = &pnewselect->exceptfds;
+    if (pnewselect->is_timeout_tainted) {
+	use_timeout = pnewselect->ptimeout;
+    } else {
+	use_timeout = &pnewselect->timeout;
+    }
+
+    rc = syscall(SYS__newselect, pnewselect->nfds, readfds, writefds, exceptfds, use_timeout);
+    check_retval ("select", pentry->retval, rc);
+    if (readfds && memcmp (&pnewselect->readfds, readfds, pnewselect->setsize)) {
+	printf ("[MISMATCH] select returns different readfds\n");
+	handle_mismatch();
+    }
+    if (writefds && memcmp (&pnewselect->writefds, writefds, pnewselect->setsize)) {
+	printf ("[MISMATCH] select returns different writefds\n");
+	handle_mismatch();
+    }
+    if (exceptfds && memcmp (&pnewselect->exceptfds, exceptfds, pnewselect->setsize)) {
+	printf ("[MISMATCH] select returns different exceptfds\n");
+	handle_mismatch();
+    }
+}
+
+void set_robust_list_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct set_robust_list_recheck* pset_robust_list;
+    int rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    pset_robust_list = (struct set_robust_list_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("set_robust_list: head %lx len %u\n", (u_long) pset_robust_list->head, pset_robust_list->len);
+#endif 
+
+    rc = syscall(SYS_set_robust_list, pset_robust_list->head, pset_robust_list->len);
+    check_retval ("set_robust_list", pentry->retval, rc);
 }
 

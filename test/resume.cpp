@@ -29,6 +29,7 @@ using namespace std;
 
 #define MAX_THREADS 128 //arbitrary... but works
 
+//#define LPRINT
 
 void print_help(const char *program) {
 	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
@@ -202,7 +203,6 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
     return 0;
 }
 
-#define LPRINT
 
 int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthread_dir)
 {
@@ -302,13 +302,12 @@ again:
 		    printf ("starts with unallocated region of size %lx\n", m.first-start);
 #endif
 		    if (end == 0xc0000000) {
+#ifdef LPRINT			
 			printf ("Stack region should grow from %lx to %lx\n", start, m.first);
-			if (m.first - start == 0x1000) {
-			    printf ("Trying to do so\n");
-			    *((int *) start) = 0;
-			} else {
-			    printf ("[BUG] Fixme - need to handle stack region\n");
-			}
+#endif
+			for (u_long stack_val = m.first-0x1000; stack_val >= start; stack_val -= 0x1000) {
+			    *((int *) stack_val) = 0; // This implicitly grows the stack (store to region below current page)
+			} 
 		    } else {
 			void* p = mmap ((void *) start, m.first-start, PROT_READ|PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 			if ((u_long) p != start) {
@@ -427,7 +426,7 @@ int main (int argc, char* argv[])
 	struct ckpt_data cd; 
 	pthread_t thread[MAX_THREADS];
 
-	fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	//fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 
 	sprintf(uniqueid,"%d",getpid()); //use the parent's pid as the uniqueid
 
@@ -542,7 +541,6 @@ int main (int argc, char* argv[])
 			record_timing = 1;
 			break;
 		case 'l':
-			printf ("set to go live.\n");
 			go_live = 1;
 			break;
 		default:
@@ -588,7 +586,7 @@ int main (int argc, char* argv[])
 	    
 		sprintf (filename, "ckpt.%d", from_ckpt);
 		sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
-		printf ("restoring from %s\n", pathname);
+		//printf ("restoring from %s\n", pathname);
 		cfd = open (pathname, O_RDONLY);
 		if (cfd < 0) {
 			perror ("open checkpoint file");
