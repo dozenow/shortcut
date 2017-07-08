@@ -4553,24 +4553,6 @@ void instrument_compare_string(INS ins, uint32_t mask)
 	}
 }
 
-//we need this function mainly because we cannot get the memory location with IPONT_AFTER insertion
-TAINTSIGN repz_execute_init (u_long dst_mem_loc, u_long src_mem_loc) { 
-    current_thread->repz_counts = 0;
-    current_thread->repz_src_mem_loc = src_mem_loc;
-    current_thread->repz_dst_mem_loc = dst_mem_loc;
-    //fprintf (stderr, "repz_execute_init %lx %lx\n", dst_mem_loc, src_mem_loc);
-}
-
-//return true when this is the last execution
-TAINTINT repz_execute_count (uint32_t flags) { 
-    int zf_set = flags & ZF_MASK;
-    current_thread->repz_counts ++;
-    //fprintf (stderr, "repz_execute_count: %u %u\n", current_thread->repz_counts, zf_set);
-    if (zf_set) 
-        return 1;
-    return 0;
-}
-
 void instrument_scan_string(INS ins, uint32_t mask)
 {
 	UINT32 opw = INS_OperandWidth(ins, 0);
@@ -4600,41 +4582,28 @@ void instrument_scan_string(INS ins, uint32_t mask)
                     IARG_ADDRINT, INS_Address(ins),
                     IARG_END);
         } else if (INS_RepnePrefix(ins)) {
-            // We have no smart way to lessen the number of
-            // instrumentation calls because we can't determine when
-            // the conditional instruction will finish.  So we just
-            // let the instruction execute and have our
-            // instrumentation be called on each iteration.  This is
-            // the simplest way of handling REP prefixed instructions, where
-            // each iteration appears as a separate instruction, and
-            // is independently instrumented.
-            fw_slice_src_stringreg (ins, 0, 1);
-            //first iteration
-            INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
-                    IARG_FIRST_REP_ITERATION,
-                    IARG_END);
-            INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR) repz_execute_init,
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_ADDRINT, 0,
-                    IARG_MEMORYREAD_EA,
-                    IARG_END);
-            //all iterations, including first one
-            INS_InsertIfCall (ins, IPOINT_AFTER, (AFUNPTR)repz_execute_count,
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_REG_VALUE, REG_EFLAGS,
-                    IARG_END);
-            INS_InsertThenCall (ins, IPOINT_AFTER, (AFUNPTR)taint_whole_regmem2flag,
-                    IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
-                    IARG_ADDRINT, 0,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, INS_RepCountRegister(ins),
-                    IARG_UINT32, 0, 
-                    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                    IARG_UINT32, size, 
-                    IARG_UINT32, INS_RepnePrefix(ins),
-                    IARG_UINT32, mask,
-                    IARG_ADDRINT, INS_Address(ins),
-                    IARG_END);
+	    char* str = get_copy_of_disasm (ins);
+	    INS_InsertCall (ins, IPOINT_BEFORE, 
+			    (AFUNPTR) fw_slice_string_scan,
+			    IARG_FAST_ANALYSIS_CALL,
+			    IARG_INST_PTR,
+			    IARG_PTR, str,
+			    IARG_MEMORYREAD_EA,
+			    IARG_REG_VALUE, REG_EFLAGS, 
+			    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_EDI,
+			    IARG_FIRST_REP_ITERATION,
+			    IARG_END);
+	    INS_InsertCall (ins, IPOINT_BEFORE, 
+			    (AFUNPTR) taint_string_scan,
+			    IARG_FAST_ANALYSIS_CALL,
+			    IARG_MEMORYREAD_EA,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
+			    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+			    IARG_FIRST_REP_ITERATION,
+			    IARG_END);
+	    put_copy_of_disasm (str);
         } else {
             fw_slice_src_stringreg (ins, 0, 0);
             INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_regmem2flag,
@@ -7798,8 +7767,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     }	
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
-    ptdata->all_mmap_regions = new std::map<u_long, struct mmap_info>();
-    ptdata->ro_mmap_regions = new std::list<struct mmap_info>();
     init_mmap_region (ptdata);
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
@@ -7966,8 +7933,6 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
-    if (tdata->all_mmap_regions) delete tdata->all_mmap_regions;
-    if (tdata->ro_mmap_regions) delete tdata->ro_mmap_regions;
 }
 
 #ifndef NO_FILE_OUTPUT

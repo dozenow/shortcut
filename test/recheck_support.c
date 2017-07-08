@@ -86,7 +86,8 @@ void handle_mismatch()
 {
     static int cnt = 0;
     cnt++;
-    if (cnt < 10) sleep (3); // Just so we notice it for now
+    //if (cnt < 10) sleep (3); // Just so we notice it for now
+    abort();
 }
 
 void handle_jump_diverge()
@@ -441,8 +442,8 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 #endif
 	/* Assume atime will be handled by tainting since it changes often */
 	((struct stat64 *) pstat64->buf)->st_ino = st.st_ino;
-	((struct stat64 *) pstat64->buf)->st_mtime = st.st_atime;
-	((struct stat64 *) pstat64->buf)->st_ctime = st.st_atime;
+	((struct stat64 *) pstat64->buf)->st_mtime = st.st_mtime;
+	((struct stat64 *) pstat64->buf)->st_ctime = st.st_ctime;
 	((struct stat64 *) pstat64->buf)->st_atime = st.st_atime;
 	if (st.st_blksize != pstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] %s blksize does not match %ld vs. recorded %ld\n", syscall_name, st.st_blksize, pstat64->retvals.st_blksize);
@@ -537,8 +538,8 @@ void fstat64_recheck ()
 #endif
 	/* Assume inode, atime, mtime, ctime will be handled by tainting since it changes often */
 	((struct stat64 *) pfstat64->buf)->st_ino = st.st_ino;
-	((struct stat64 *) pfstat64->buf)->st_mtime = st.st_atime;
-	((struct stat64 *) pfstat64->buf)->st_ctime = st.st_atime;
+	((struct stat64 *) pfstat64->buf)->st_mtime = st.st_mtime;
+	((struct stat64 *) pfstat64->buf)->st_ctime = st.st_ctime;
 	((struct stat64 *) pfstat64->buf)->st_atime = st.st_atime;
 	if (st.st_blksize != pfstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] fstat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pfstat64->retvals.st_blksize);
@@ -1257,6 +1258,11 @@ void poll_recheck ()
 
     memcpy (tmpbuf, fds, ppoll->nfds*sizeof(struct pollfd));
     rc = syscall(SYS_poll, pollbuf, ppoll->nfds, ppoll->timeout);
+    if (rc > 0) {
+	for (i = 0; i < ppoll->nfds; i++) {
+	    LPRINT ("\tfd %d events %x returns revents %x\n", pollbuf[i].fd, pollbuf[i].events, pollbuf[i].revents);
+	}
+    }
     check_retval ("poll", pentry->retval, rc);
     if (rc > 0) {
 	for (i = 0; i < ppoll->nfds; i++) {

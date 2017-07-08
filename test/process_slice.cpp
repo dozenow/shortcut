@@ -409,9 +409,8 @@ int main (int argc, char* argv[]) {
 		addrRestore.printPush();
 
 	// Stack must be aligned for use during slice
-	if (pushed%16) {
-		cout << "sub esp, " << 16-(pushed%16) << endl;
-	}
+	// Adjust for 4 byte return address pushed for call of sections (needed for large slices)
+	cout << "sub esp, " << (28-(pushed%16))%16 << endl;
 
 	println ("/*slice begins*/");
 
@@ -511,9 +510,7 @@ int main (int argc, char* argv[]) {
 		buffer.pop();
 	}
 	println ("/* restoring address and registers */");
-	if (pushed%16) {
-		cout << "add esp, " << 16-(pushed%16) << endl;
-	}
+	cout << "add esp, " << (28-(pushed%16))%16 << endl;
 
 	for (auto addrRestore = restoreAddress.rbegin(); addrRestore!=restoreAddress.rend(); ++addrRestore) {
 		addrRestore->printPop();
