@@ -58,7 +58,7 @@ TOOL_ROOTS :=
 SA_TOOL_ROOTS :=
 
 # This defines all the applications that will be run during the tests.
-APP_ROOTS := postprocess_linkage parse_outputs 
+APP_ROOTS := postprocess_linkage parse_outputs showall
 
 # This defines any additional object files that need to be compiled.
 OBJECT_ROOTS := xray_token \
