@@ -335,6 +335,8 @@ TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg,
 
 // JNF: Updated for partial taint and verification
 TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter);
+TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDRINT eflags, ADDRINT al_val, ADDRINT ecx_val, ADDRINT edi_val, uint32_t first_iter);
+TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter);
 
 // File descriptor taint-tracking
 int add_taint_fd(int fd, int cloexec);

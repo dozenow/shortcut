@@ -946,6 +946,12 @@ static inline void set_reg_value(int reg, int offset, int size, taint_t* values)
             size * sizeof(taint_t));
 }
 
+static inline void set_reg_single_value(int reg, int size, taint_t value)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    for (int i = 0; i < size; i++) shadow_reg_table[reg * REG_SIZE] = value;
+}
+
 void set_syscall_retval_reg_value (int offset, taint_t value) {
 	current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_EAX)*REG_SIZE + offset] = value;
 }
@@ -2033,6 +2039,15 @@ static inline void copy_value_to_pin_register (PIN_REGISTER* reg, uint32_t reg_v
     }
 }
 
+static inline void print_extra_move_reg_1 (ADDRINT ip, int reg, uint32_t value, uint32_t is_upper8, string prefix = "[SLICE_EXTRA]") 
+{
+    if (is_upper8) {
+	printf ("%s mov $reg(%d,-1), %u //comes with %x\n", prefix.c_str(), reg, value, ip);
+    } else {
+	printf ("%s mov $reg(%d,1), %u //comes with %x\n", prefix.c_str(), reg, value, ip);
+    }
+}
+ 
 static inline void print_extra_move_reg_4 (ADDRINT ip, int reg, uint32_t value, int tainted, string prefix = "[SLICE_EXTRA]") 
 {
     if (!tainted) {
@@ -2062,9 +2077,9 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
     switch (reg_size) {
         case 1:
             if (is_upper8)
-                printf ("%s mov $reg(%d,%d), %u //comes with %x\n", prefix.c_str(), reg, -1, *((UINT8*)(regvalue->word)), ip);
+		print_extra_move_reg_1 (ip, reg, *((UINT8*)(regvalue->word)), is_upper8);
             else
-                printf ("%s mov $reg(%d,%u), %u //comes with %x\n", prefix.c_str(), reg, reg_size, *regvalue->byte, ip);
+		print_extra_move_reg_1 (ip, reg, *regvalue->byte, is_upper8);
             break;
         case 2:
             printf ("%s mov $reg(%d,%u), %u //comes with %x\n", prefix.c_str(), reg, reg_size, *regvalue->word, ip);
@@ -2136,17 +2151,8 @@ static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint
     memset (&current_thread->shadow_reg_table[reg*REG_SIZE+reg_u8], 0, reg_size*sizeof(taint_t)); // No longer tainted because we verified it
 }
 
-//return true if this memory access is within a read-only region
-//this function is only meaningful for memory read
-static inline struct mmap_info* verify_effective_address_readonly_range (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size) 
-{ 
-    //this read comes from a read-only area
-    //we'll check if future memory access will still fall into this range
-    return is_readonly_mmap_region(current_thread, mem_loc, mem_size);
-}
-
 //operand_index is used when you have multiple memory operands in this instruction, to specify which one you want to verify
-static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str, struct mmap_info* region, u_long mem_loc, uint32_t mem_size, int operand_index = 0)
+static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str, u_long start, u_long end, u_long mem_loc, uint32_t mem_size, int operand_index = 0)
 {
     char* start_index = NULL;
     do {
@@ -2156,11 +2162,11 @@ static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str,
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards), address %lx\n", ip, mem_loc); //save flags
     printf ("[SLICE_VERIFICATION] push eax //comes with %x address %lx, %s\n", ip, mem_loc, ins_str);
     printf ("[SLICE_VERIFICATION] lea eax, %.*s  //comes with %x\n", end_index-start_index+1, start_index, ip);
-    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", region->addr, ip);
+    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", start, ip);
     //printf ("[SLICE_VERIFICATION] push eax //comes with %x, input params to index_diverge\n", ip);
     printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
     printf ("[SLICE_VERIFICATION] jb index_diverge //comes with %x\n", ip);
-    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", region->addr+region->length, ip);
+    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", end, ip);
     printf ("[SLICE_VERIFICATION] jae index_diverge //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] pop eax //comes with %x\n", ip);
@@ -2169,30 +2175,30 @@ static inline void print_readonly_range_verification (ADDRINT ip, char* ins_str,
 
 //if the region is not NULL, this function runs an ordinary verification (verify a specific value)
 //otherwise, it runs a boundary verification
-static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, struct mmap_info* region, 
+static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, bool& check_read_only_mem,
         u_long mem_loc, uint32_t mem_size, 
         int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, 
         int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
         int base_tainted, int index_tainted) 
 { 
-    if (region == NULL) { 
+    u_long start, end;
+    if (!check_read_only_mem || !is_readonly_mmap_region (mem_loc, mem_size, start, end)) {
         //if TRACK_READONLY_REGION is turned off, this branch will always be executed
         if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
         if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	check_read_only_mem = false; // Let calling function know this is not read-only memory
     } else { 
         //for read-only regions, first initialize untainted registers 
         //then verify we're still within the range boundary
         PIN_REGISTER base_value;
         PIN_REGISTER index_value;
-        if (base_reg_size > 0) 
-            copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
-        if (index_reg_size > 0)
-            copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
+        if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
+        if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
         //fprintf (stderr, "verify_register: memory %lx, %u is from a read-only region %lx, %d, ip %x\n", mem_loc, mem_size, region->addr, region->length, ip);
         //fprintf (stderr, "base tainted %d, index %d\n", base_tainted, index_tainted);
         if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
         if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
-        print_readonly_range_verification (ip, ins_str, region, mem_loc, mem_size);
+        print_readonly_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
     }
 }
 
@@ -2549,9 +2555,10 @@ TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t m
     int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
     int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    bool check_read_only_mem = false;
 
     if (base_tainted || index_tainted) { 
-	verify_base_index_registers (ip, ins_str, NULL, mem_loc, mem_size, 
+	verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size, 
 				     base_reg, base_reg_size, base_reg_value, base_reg_u8,
 				     index_reg, index_reg_size, index_reg_value, index_reg_u8,
 				     base_tainted, index_tainted);
@@ -2567,7 +2574,7 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
     int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
     int mem_tainted2 = is_mem_tainted (mem_loc, mem_size);
     int tainted4 = is_flag_tainted (flag);
-    struct mmap_info* read_only_mem = NULL;
+    bool check_read_only_mem = false;
 
     if (tainted4) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
@@ -2576,35 +2583,35 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 		get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
         if (base_tainted || index_tainted) { 
 #ifdef TRACK_READONLY_REGION	  
-            read_only_mem = verify_effective_address_readonly_range (ip, ins_str, mem_loc, mem_size);
+	    check_read_only_mem = true;
 #endif
-            verify_base_index_registers (ip, ins_str, read_only_mem, mem_loc, mem_size, 
+            verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size, 
                     base_reg, base_reg_size, base_reg_value, base_reg_u8,
                     index_reg, index_reg_size, index_reg_value, index_reg_u8,
                     base_tainted, index_tainted);
-            if (read_only_mem) fprintf (stderr, "This is the first time I see this happen. Please verify the code. inst %s\n", ins_str);
+            if (check_read_only_mem) fprintf (stderr, "This is the first time I see this happen. Please verify the code. inst %s\n", ins_str);
         }
 	if (!mem_tainted2) {
 	    print_extra_move_mem (ip, mem_loc, mem_size);
 	}
 	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, dest_reg_size, dest_reg_value, dest_reg_u8, dest_reg_tainted);
         //for read-only mem access, we cannot replace the memory operand with immediate value as we need re-calculation on slice execution
-        if (read_only_mem == NULL) print_immediate_addr (mem_loc, ip);
+        if (!check_read_only_mem) print_immediate_addr (mem_loc, ip);
     } else {
 	if (executed) {
             int address_tainted = base_tainted || index_tainted;
             if (address_tainted) {
 #ifdef TRACK_READONLY_REGION
-                read_only_mem = verify_effective_address_readonly_range (ip, ins_str, mem_loc, mem_size);
+		check_read_only_mem = true;
 #endif
-                verify_base_index_registers (ip, ins_str, read_only_mem, mem_loc, mem_size, 
+                verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size, 
                         base_reg, base_reg_size, base_reg_value, base_reg_u8,
                         index_reg, index_reg_size, index_reg_value, index_reg_u8,
                         base_tainted, index_tainted);
-                if (read_only_mem) fprintf (stderr, "This is the first time I see this happen. Please verify the code. inst %s\n", ins_str);
+                if (check_read_only_mem) fprintf (stderr, "This is the first time I see this happen. Please verify the code. inst %s\n", ins_str);
             }
             //this should be equivalent to  the condition in fw_slice_memregreg_mov 
-	    if (mem_tainted2 || (read_only_mem && address_tainted)) {
+	    if (mem_tainted2 || (check_read_only_mem && address_tainted)) {
 		char* e;
 		char* p = strstr (ins_str, "cmov");
 		assert (p);
@@ -2613,7 +2620,7 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 		printf ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d\n", 
 			base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
 	    }
-            if (!read_only_mem && mem_tainted2) print_immediate_addr (mem_loc, ip);
+            if (!check_read_only_mem && mem_tainted2) print_immediate_addr (mem_loc, ip);
 	}
 	// If flag not tainted and mov not executed, then this is a noop in the slice
     }
@@ -2629,7 +2636,7 @@ TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint3
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     int address_tainted = base_tainted || index_tainted;
-    struct mmap_info* read_only_mem = NULL;
+    bool check_read_only_mem = false;
     //If the base or index register is tainted:
     //for memory read from a non-read-only region, we printout slice if mem is tainted and then we verify the base&index registers
     //for memory read from a read-only region, we printout slice if mem/base/index is tainted, and then we verify the region boundary, and we also need to merge the taint of index/base register into the destination
@@ -2641,18 +2648,16 @@ TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint3
 
     if (address_tainted) {
 #ifdef TRACK_READONLY_REGION
-        read_only_mem = verify_effective_address_readonly_range (ip, ins_str, mem_loc, mem_size);
+	check_read_only_mem = true;
 #endif
-        verify_base_index_registers (ip, ins_str, read_only_mem, mem_loc, mem_size, 
+        verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size, 
                 base_reg, base_reg_size, base_reg_value, base_reg_u8,
                 index_reg, index_reg_size, index_reg_value, index_reg_u8,
                 base_tainted, index_tainted);
     }
 
-    if (read_only_mem) { 
-        if (address_tainted || mem_tainted) {
-            PRINT_SLICE;
-        }
+    if (check_read_only_mem) { 
+        if (address_tainted || mem_tainted) PRINT_SLICE;
     } else {
         if (mem_tainted) { 
             PRINT_SLICE;
@@ -2674,6 +2679,7 @@ TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str,
     int base_tainted = (base_reg_size > 0) ? is_reg_tainted (base_reg, base_reg_size, base_reg_u8): 0;
     int index_tainted = (index_reg_size > 0) ? is_reg_tainted (index_reg, index_reg_size, index_reg_u8): 0;
     int reg_tainted = is_reg_tainted (reg, reg_size, reg_u8);
+    bool check_read_only_mem = false;
 
     if (reg_tainted) { 
         PRINT ("regregreg_mov");
@@ -2682,7 +2688,7 @@ TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str,
                 base_reg, base_tainted, base_reg_size, reg, reg_tainted, reg_size, index_reg, index_tainted, index_reg_size, base_reg_value, *reg_value->dword, index_reg_value);
     }
     if (base_tainted || index_tainted) {
-        verify_base_index_registers (ip, ins_str, NULL, mem_loc, mem_size, 
+        verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size, 
                 base_reg, base_reg_size, base_reg_value, base_reg_u8,
                 index_reg, index_reg_size, index_reg_value, index_reg_u8,
                 base_tainted, index_tainted);
@@ -2750,6 +2756,66 @@ TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u
         }
     }
     return 0;
+}
+
+TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDRINT eflags, ADDRINT al_val, ADDRINT ecx_val, ADDRINT edi_val, uint32_t first_iter) 
+{ 
+    //only check on the first iteration
+    if (first_iter) {
+
+	assert (is_flag_tainted(DF_FLAG) == 0); // JNF: Not sure how to handle this flag?
+	assert ((eflags & DF_MASK) == 0); 
+
+	int al_tainted = is_reg_tainted (LEVEL_BASE::REG_EAX, 1, 0);
+	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, 4, 0);
+	
+	// Need to bound this by looking for a guaranteed stopping place
+	int mem_tainted = 0;
+	// if (ecx_tainted) ecx_val = 0xffffffff; This would likely let us not verify ecx */
+	u_long i;
+	for (i = 0; i < ecx_val; i++) {
+	    bool is_tainted = is_mem_tainted(mem_loc+i,1);
+	    if (is_tainted) {
+		printf ("Byte %ld tainted\n", i);
+		mem_tainted = 1;
+	    } else if (*(u_char *) (mem_loc+i) == al_val) {
+		printf ("Byte %ld is a terminator\n", i);
+		i++;
+		break; // We found a guaranteed stop here
+	    } else {
+		printf ("Byte %ld not tainted\n", i);
+	    }
+	}
+	if (mem_tainted) {
+	    for (u_long j = 0; j < i; j++) {
+		if (!is_mem_tainted(mem_loc+j,1) && !is_readonly (mem_loc+j, 1)) {
+		    // We need to move the string values to scan if they are not tainted (and not already there) 
+		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", mem_loc+j, *(u_char *) (mem_loc+j), ip);
+		    add_tainted_mem_for_final_check (mem_loc+j,1);
+		} else {
+		    printf ("Byte %ld is read only or tainted\n", j);
+		}
+	    }
+	}
+
+	// If partially tainted, need to restore for validation. If untainted, restore for instruction
+	if (al_tainted == 0 && mem_tainted) print_extra_move_reg_1 (ip, LEVEL_BASE::REG_EAX, al_val, false);
+	if (ecx_tainted == 2 || (ecx_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ECX, ecx_val, ecx_tainted);
+	if (edi_tainted == 2 || (edi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_EDI, edi_val, edi_tainted);
+
+	// Always verify registers if not untainted
+	if (al_tainted) verify_register (ip, LEVEL_BASE::REG_EAX, 1, al_val, 0);
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
+
+	// Scan string if src memory is tainted 
+	if (mem_tainted) {
+	    printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	    printf ("    [SLICE_INFO] #src_mem[%x:%d:%lu] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]\n", mem_loc, mem_tainted, i, LEVEL_BASE::REG_ECX, ecx_tainted, 4,
+		    LEVEL_BASE::REG_EAX, al_tainted, 1, LEVEL_BASE::REG_EDI, edi_tainted, 4);
+	}
+    }
 }
 
 TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter) 
@@ -3909,6 +3975,35 @@ TAINTSIGN taint_immval2dwreg(int reg)
 TAINTSIGN taint_immval2qwreg(int reg)
 {
     zero_partial_reg_until(reg, 0, 16);
+}
+
+TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter)
+{
+    if (first_iter) {
+	// Accumulate taints from memory until we are sure that we will stop the scan
+	// AL and ECX assumed to be verified/untainted here.
+	taint_t t = 0;
+	printf ("mem loc %lx\n", mem_loc);
+	printf ("size %d\n", size);
+	printf ("al value %x tainted? %d\n", al_val, is_reg_tainted(LEVEL_BASE::REG_EAX, 1, 0));
+	printf ("ecx value %x tainted? %d\n", ecx_val, is_reg_tainted(LEVEL_BASE::REG_ECX, 4, 0));
+	for (u_long i = 0; i < ecx_val; i++) {
+	    taint_t* mem_taints = get_mem_taints_internal(mem_loc+i, 1);
+	    if (mem_taints) {
+		t = merge_taints (t, mem_taints[0]);
+		printf ("mem taint for %lu is %x new taint is %x\n", i, mem_taints[0], t);
+	    }
+	    printf ("string scan: memory %lx value %x tainted? %d\n", mem_loc+i, *(u_char *) (mem_loc+i), is_mem_tainted(mem_loc+i,1));
+	    if (*(u_char *) (mem_loc+i) == al_val && !is_mem_tainted(mem_loc+i,1)) break;
+	}
+	printf ("final taint is %x\n", t);
+
+	// ECX and EDI could have different values if bytes were tainted (early stop)
+	set_reg_single_value(LEVEL_BASE::REG_ECX, 4, t);	
+	set_reg_single_value(LEVEL_BASE::REG_EDI, 4, t);	
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	set_clear_flags(&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG, 0); 
+    }
 }
 
 TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size) { 

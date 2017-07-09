@@ -875,19 +875,20 @@ int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds,
 
     check_reg_arguments ("poll", 3);
 
-    u_long size = sizeof(pchk);
-    if (res->retval > 0) size += nfds*(sizeof(struct pollfd)+sizeof(short));
+    u_long size = sizeof(pchk) + nfds*sizeof(struct pollfd);
+    if (res->retval > 0) size += nfds*sizeof(short);
     write_header_into_recheck_log (handle->recheckfd, SYS_poll, res->retval, size);
     pchk.nfds = nfds;
     pchk.timeout = timeout;
     pchk.buf = (char *) fds;
     write_data_into_recheck_log (handle->recheckfd, &pchk, sizeof(pchk));
-    if (res->retval > 0 && nfds > 0) {
+    if (nfds > 0) {
 	if (is_mem_arg_tainted ((u_long) fds, nfds*sizeof(struct pollfd))) fprintf (stderr, "[ERROR] poll fds are tainted\n");
 	write_data_into_recheck_log (handle->recheckfd, pchk.buf, nfds*sizeof(struct pollfd));
-	//printf ("poll retparams size %ld nfds %d size %d retval %ld\n", (u_long) res->retparams_size, nfds, sizeof(u_long) + nfds*sizeof(short), res->retval);
-	assert ((u_long) res->retparams_size == sizeof(u_long) + nfds*sizeof(short));
-	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), nfds*sizeof(short));
+	if (res->retval > 0) {
+	    assert ((u_long) res->retparams_size == sizeof(u_long) + nfds*sizeof(short));
+	    write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), nfds*sizeof(short));
+	}
     }
 
     return 0;

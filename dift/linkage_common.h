@@ -41,7 +41,7 @@
 #define OF_MASK 0x800
 #define DF_MASK 0x400
 
-//#define TRACK_READONLY_REGION
+#define TRACK_READONLY_REGION
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
@@ -236,8 +236,6 @@ struct thread_data {
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
-    std::map<u_long, struct mmap_info> *all_mmap_regions;
-    std::list<struct mmap_info> *ro_mmap_regions; //readonly regions
 };
 
 struct memcpy_header {
