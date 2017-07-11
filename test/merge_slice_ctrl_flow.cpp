@@ -13,7 +13,7 @@ struct block {
     size_t hash;
 };
 
-#define DEBUG 0
+#define DEBUG 1
 #define MIN3(a, b, c) ((a) < (b) ? ((a) < (c) ? (a) : (c)) : ((b) < (c) ? (b) : (c)))
 #define LEFT_COST 1
 #define DOWN_COST 1
@@ -37,12 +37,12 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
         //printf ("%d, %d length\n", length1, length2);
         for (x = 1; x < length1 + 1; ++x) {
                 matrix[x][0] = matrix[x-1][0] + 1;      
-                if (DEBUG) printf ("pos %d %d\n", x-1, block_list1[x-1].hash);
+                if (DEBUG) printf ("pos %d %u\n", x-1, block_list1[x-1].hash);
         }
         for (y = 1; y < length2 + 1; ++y) {
                 //printf ("y is %d\n", y);
                 matrix[0][y] = matrix[0][y-1] + 1;
-                if (DEBUG) printf ("pos %d %d\n", y-1, block_list2[y-1].hash);
+                if (DEBUG) printf ("pos %d %u\n", y-1, block_list2[y-1].hash);
         }
         printf ("init done.\n");
         for (x = 1; x < length1 + 1; ++x) {
@@ -60,13 +60,13 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
         while (x != 0 || y != 0) {
                 int min = MAX_DISTANCE;
                 if (x == 0) {
-                        if (DEBUG) printf ("insert at first @ %d, block_list %d\n", y-1, block_list2[y-1].hash);
+                        if (DEBUG) printf ("insert at first @ %d, block_list %u\n", y-1, block_list2[y-1].hash);
                         --y;
                         continue;
                 }
                 if (y == 0) {
                         //insert at the first array
-                        if (DEBUG) printf ("insert at second @ %d, block_list %d\n", x-1, block_list1[x-1].hash);
+                        if (DEBUG) printf ("insert at second @ %d, block_list %u\n", x-1, block_list1[x-1].hash);
                         --x;
                         continue;
                 }
@@ -74,17 +74,17 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
                 min = MIN3 (matrix[x-1][y-1], matrix[x-1][y], matrix[x][y-1]);
                 if (matrix[x-1][y-1] == min) {
                         if (matrix[x-1][y-1] != matrix[x][y]) {
-                                if (DEBUG) printf ("substitute @%d, %d, block_list %d, %d\n", x-1, y-1, block_list1[x-1].hash, block_list2[y-1].hash);
+                                if (DEBUG) printf ("substitute @%d, %d, block_list %u, %u\n", x-1, y-1, block_list1[x-1].hash, block_list2[y-1].hash);
                         }
                         --x;
                         --y;
                 } else if (matrix[x-1][y] == min) {
                         //insert at the first array
-                        if (DEBUG) printf ("insert at second @ %d, block_list %d\n", x-1, block_list1[x-1].hash);
+                        if (DEBUG) printf ("insert at second @ %d, block_list %u\n", x-1, block_list1[x-1].hash);
                         --x;
                 } else {
                         //insert at the second arry
-                        if (DEBUG) printf ("insert at first @ %d, block_list %d\n", y-1, block_list2[y-1].hash);
+                        if (DEBUG) printf ("insert at first @ %d, block_list %u\n", y-1, block_list2[y-1].hash);
                         --y;
                 }
         }
@@ -147,8 +147,10 @@ void get_slice_content (ifstream &in, list<string> &slice_content, vector<block>
 }
 
 void print_all_blocks (vector<block> &block_list) { 
+    int count = 0;
     for (auto i = block_list.begin(); i != block_list.end(); ++i) { 
-        cout<< "block from "<< i->start_line << " to " << i->end_line << " hash: "<< i->hash <<endl;
+        cout<< count << ": block from "<< i->start_line << " to " << i->end_line << " hash: "<< i->hash <<endl;
+        ++count;
     }
 }
 

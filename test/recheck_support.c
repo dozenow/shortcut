@@ -1021,7 +1021,9 @@ void getpid_recheck ()
     LPRINT ( "getpid: rc %ld\n", pentry->retval);
 #endif 
     rc = syscall(SYS_getpid);
-    check_retval ("getpid", pentry->retval, rc);
+    if (rc != pentry->retval) { 
+        printf ("[POTENTIAL MISMATCH] pid %d, expected %ld\n", rc, pentry->retval);
+    }
 }
 
 void getuid32_recheck ()
