@@ -34,7 +34,10 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
     }
 
     handle->log = parseklog_open(klog_filename);
-    if (handle->log == NULL) return NULL;
+    if (handle->log == NULL) {
+	fprintf (stderr, "Cannot open klog %s\n", klog_filename);
+	return NULL;
+    }
 
     handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (handle->recheckfd < 0) {
@@ -54,12 +57,13 @@ int close_recheck_log (struct recheck_handle* handle)
     return 0;
 }
 
-static int write_header_into_recheck_log (int recheckfd, int sysnum, long retval, int len) 
+static int write_header_into_recheck_log (int recheckfd, int sysnum, long retval, int len, u_long clock) 
 { 
     struct recheck_entry entry;
     int rc = 0;
 
     entry.sysnum = sysnum;
+    entry.clock = clock;
     entry.retval = retval;
     entry.len = len;
     
@@ -81,6 +85,17 @@ static int write_data_into_recheck_log (int recheckfd, const void* buf, int len)
     return 0;
 }
 
+static void write_taintmask_into_recheck_log (struct recheck_handle* handle, u_long mem_loc, u_long size)
+{
+    char tainted[size];
+
+    for (u_long i = 0; i < size; i++) {
+	tainted[i] = is_mem_arg_tainted (mem_loc+i, 1); // This could be more efficient
+    }
+    write_data_into_recheck_log (handle->recheckfd, tainted, size);
+    write_data_into_recheck_log (handle->recheckfd, (void *) mem_loc, size);
+}
+
 static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall) 
 {
     struct klog_result* res;
@@ -89,8 +104,8 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 	res = parseklog_get_next_psr(handle->log);
 	if (res->psr.sysnum != syscall) {  //debugging: print out all skipped syscall
 	    switch (res->psr.sysnum) {
+	    case SYS_kill:
 	    case 45:  
-	    case SYS_getpgrp: 
 	    case 91:  
 	    case 125: 
 	    case 192:
@@ -137,14 +152,14 @@ long calculate_partial_read_size (int is_cache_file, int partial_read, size_t st
 	}
 }
 
-int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end)
+int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
 {
     struct read_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_read);
     int is_cache_file = 0;
 
-    check_reg_arguments ("read", 3);
-
+    check_reg_arguments ("read", 2); // We check if count is tainted below
+    
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	rrchk.has_retvals = 1;
 	rrchk.readlen = res->retparams_size;
@@ -153,10 +168,12 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
 	rrchk.has_retvals = 0;
 	rrchk.readlen = 0;
     }
-    write_header_into_recheck_log (handle->recheckfd, SYS_read, res->retval, sizeof (struct read_recheck) + rrchk.readlen + calculate_partial_read_size(is_cache_file, partial_read, partial_read_start, partial_read_end, res->retval));
+    write_header_into_recheck_log (handle->recheckfd, SYS_read, res->retval, 
+				   sizeof (struct read_recheck) + rrchk.readlen + calculate_partial_read_size(is_cache_file, partial_read, partial_read_start, partial_read_end, res->retval), clock);
     rrchk.fd = fd;
     rrchk.buf = buf;
     rrchk.count = count;
+    rrchk.is_count_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0);
     if (partial_read) { 
 	    rrchk.partial_read = 1;
 	    rrchk.partial_read_start = partial_read_start;
@@ -177,31 +194,25 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     return 0;
 }
 
-int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count)
+int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count, u_long clock)
 {
     struct write_recheck wrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_write);
-    int i;
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck)+count);
+    write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck)+count*2, clock);
     wrchk.fd = fd;
     wrchk.buf = buf;
     wrchk.count = count;
 
     check_reg_arguments ("write", 3);
-    for (i = 0; i < res->retval; i++) {
-	if (is_mem_arg_tainted ((u_long) buf+i, 1)) { // This could be more efficient
-	    fprintf (stderr, "[ERROR] write buffer byte %d tainted\n", i);
-	}
-    }
     
     write_data_into_recheck_log (handle->recheckfd, &wrchk, sizeof(wrchk));
-    write_data_into_recheck_log (handle->recheckfd, buf, count);
+    write_taintmask_into_recheck_log (handle, (u_long ) buf, count);
 
     return 0;
 }
 
-int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode)
+int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock)
 {
     struct open_recheck orchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_open);
@@ -209,7 +220,7 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     check_reg_arguments ("open", 3);
     if (is_mem_arg_tainted ((u_long) filename, strlen(filename)+1)) fprintf (stderr, "[ERROR] open filename is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_open, res->retval, sizeof (struct open_recheck) + strlen(filename) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_open, res->retval, sizeof (struct open_recheck) + strlen(filename) + 1, clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	orchk.has_retvals = 1;
 	memcpy (&orchk.retvals, res->retparams, sizeof(orchk.retvals));
@@ -224,7 +235,7 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     return 0;
 }
 
-int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode)
+int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock)
 {
     struct openat_recheck orchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_openat);
@@ -232,7 +243,7 @@ int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, in
     check_reg_arguments ("openat", 4);
     if (is_mem_arg_tainted ((u_long) filename, strlen(filename)+1)) fprintf (stderr, "[ERROR] openat filename is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_openat, res->retval, sizeof (struct openat_recheck) + strlen(filename) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_openat, res->retval, sizeof (struct openat_recheck) + strlen(filename) + 1, clock);
     orchk.dirfd = dirfd;
     orchk.flags = flags;
     orchk.mode = mode;
@@ -242,21 +253,21 @@ int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, in
     return 0;
 }
 
-int recheck_close (struct recheck_handle* handle, int fd)
+int recheck_close (struct recheck_handle* handle, int fd, u_long clock)
 {
     struct close_recheck crchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_close);
 
     check_reg_arguments ("close", 1);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_close, res->retval, sizeof (struct close_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_close, res->retval, sizeof (struct close_recheck), clock);
     crchk.fd = fd;
     write_data_into_recheck_log (handle->recheckfd, &crchk, sizeof(crchk));
 
     return 0;
 }
 
-int recheck_access (struct recheck_handle* handle, char* pathname, int mode)
+int recheck_access (struct recheck_handle* handle, char* pathname, int mode, u_long clock)
 {
     struct access_recheck archk;
     struct klog_result *res = skip_to_syscall (handle, SYS_access);
@@ -264,7 +275,7 @@ int recheck_access (struct recheck_handle* handle, char* pathname, int mode)
     check_reg_arguments ("access", 2);
     if (is_mem_arg_tainted ((u_long) pathname, strlen(pathname)+1)) fprintf (stderr, "[ERROR] close pathname is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_access, res->retval, sizeof (struct access_recheck) + strlen(pathname) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_access, res->retval, sizeof (struct access_recheck) + strlen(pathname) + 1, clock);
     archk.mode = mode;
     write_data_into_recheck_log (handle->recheckfd, &archk, sizeof(archk));
     write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname)+1);
@@ -272,7 +283,7 @@ int recheck_access (struct recheck_handle* handle, char* pathname, int mode)
     return 0;
 }
 
-int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
+int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf, u_long clock)
 {
     struct stat64_recheck srchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_stat64);
@@ -280,7 +291,7 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     check_reg_arguments ("stat64", 2);
     if (is_mem_arg_tainted ((u_long) pathname, strlen(pathname)+1)) fprintf (stderr, "[ERROR] stat64 pathname is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_stat64, res->retval, sizeof (struct stat64_recheck) + strlen(pathname) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_stat64, res->retval, sizeof (struct stat64_recheck) + strlen(pathname) + 1, clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	srchk.has_retvals = 1;
 	memcpy (&srchk.retvals, res->retparams, sizeof(srchk.retvals));
@@ -294,7 +305,7 @@ int recheck_stat64 (struct recheck_handle* handle, char* pathname, void* buf)
     return 0;
 }
 
-int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf)
+int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf, u_long clock)
 {
     struct stat64_recheck srchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_lstat64);
@@ -302,7 +313,7 @@ int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf)
     check_reg_arguments ("lstat64", 2);
     if (is_mem_arg_tainted ((u_long) pathname, strlen(pathname)+1)) fprintf (stderr, "[ERROR] lstat64 pathname is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_lstat64, res->retval, sizeof (struct stat64_recheck) + strlen(pathname) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_lstat64, res->retval, sizeof (struct stat64_recheck) + strlen(pathname) + 1, clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	srchk.has_retvals = 1;
 	memcpy (&srchk.retvals, res->retparams, sizeof(srchk.retvals));
@@ -316,14 +327,14 @@ int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf)
     return 0;
 }
 
-int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
+int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf, u_long clock)
 {
     struct fstat64_recheck srchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fstat64);
 
     check_reg_arguments ("fstat64", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fstat64, res->retval, sizeof (struct fstat64_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fstat64, res->retval, sizeof (struct fstat64_recheck), clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	srchk.has_retvals = 1;
 	memcpy (&srchk.retvals, res->retparams, sizeof(srchk.retvals));
@@ -337,28 +348,28 @@ int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf)
     return 0;
 }
 
-int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd)
+int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd, u_long clock)
 {
     struct fcntl64_getfl_recheck fchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
 
     check_reg_arguments ("fcntl64 getfl", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getfl_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getfl_recheck), clock);
     fchk.fd = fd;
     write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
 
     return 0;
 }
 
-int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg)
+int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg, u_long clock)
 {
     struct fcntl64_getlk_recheck fchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
 
     check_reg_arguments ("fcntl64 getlk", 3);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getlk_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getlk_recheck), clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {
 	fchk.has_retvals = 1;
 	memcpy (&fchk.flock, res->retparams, sizeof(fchk.flock));
@@ -372,14 +383,14 @@ int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg)
     return 0;
 }
 
-int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags)
+int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags, u_long clock)
 {
     struct fcntl64_setfl_recheck fchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
 
     check_reg_arguments ("fcntl64 setfl", 3);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setfl_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setfl_recheck), clock);
     fchk.fd = fd;
     fchk.flags = flags;
     write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
@@ -387,28 +398,28 @@ int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags)
     return 0;
 }
 
-int recheck_fcntl64_getown (struct recheck_handle* handle, int fd)
+int recheck_fcntl64_getown (struct recheck_handle* handle, int fd, u_long clock)
 {
     struct fcntl64_getown_recheck fchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
 
     check_reg_arguments ("fcntl64 getown", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getown_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_getown_recheck), clock);
     fchk.fd = fd;
     write_data_into_recheck_log (handle->recheckfd, &fchk, sizeof(fchk));
 
     return 0;
 }
 
-int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner, int is_owner_tainted)
+int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner, int is_owner_tainted, u_long clock)
 {
     struct fcntl64_setown_recheck fchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_fcntl64);
 
     check_reg_arguments ("fcntl64 setown", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setown_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_fcntl64, res->retval, sizeof (struct fcntl64_setown_recheck), clock);
     fchk.fd = fd;
     fchk.owner = owner;
     fchk.is_owner_tainted = is_owner_tainted;
@@ -417,14 +428,14 @@ int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner, i
     return 0;
 }
 
-int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim)
+int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock)
 {
     struct ugetrlimit_recheck ugchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_ugetrlimit);
 
     check_reg_arguments ("ugetrlimit", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_ugetrlimit, res->retval, sizeof (struct ugetrlimit_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_ugetrlimit, res->retval, sizeof (struct ugetrlimit_recheck), clock);
     ugchk.resource = resource;
     memcpy (&ugchk.rlim, res->retparams, sizeof(ugchk.rlim));
     write_data_into_recheck_log (handle->recheckfd, &ugchk, sizeof(ugchk));
@@ -432,14 +443,14 @@ int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlim
     return 0;
 }
 
-int recheck_uname (struct recheck_handle* handle, struct utsname* buf)
+int recheck_uname (struct recheck_handle* handle, struct utsname* buf, u_long clock)
 {
     struct uname_recheck uchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_uname);
 
     check_reg_arguments ("uname", 1);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_uname, res->retval, sizeof (struct uname_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_uname, res->retval, sizeof (struct uname_recheck), clock);
     uchk.buf = buf;
     memcpy (&uchk.utsname, res->retparams, sizeof(uchk.utsname));
     write_data_into_recheck_log (handle->recheckfd, &uchk, sizeof(uchk));
@@ -447,7 +458,7 @@ int recheck_uname (struct recheck_handle* handle, struct utsname* buf)
     return 0;
 }
 
-int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf)
+int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf, u_long clock)
 {
     struct statfs64_recheck schk;
     struct klog_result *res = skip_to_syscall (handle, SYS_statfs64);
@@ -455,7 +466,7 @@ int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz
     check_reg_arguments ("statfs64", 3);
     if (is_mem_arg_tainted ((u_long) path, strlen(path)+1)) fprintf (stderr, "[ERROR] statfs64 path is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_statfs64, res->retval, sizeof (struct statfs64_recheck) + strlen(path) + 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_statfs64, res->retval, sizeof (struct statfs64_recheck) + strlen(path) + 1, clock);
     schk.sz = sz;
     schk.buf = buf;
     memcpy (&schk.statfs, res->retparams, sizeof(schk.statfs));
@@ -465,13 +476,13 @@ int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz
     return 0;
 }
 
-int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz) {
+int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, struct timezone* tz, u_long clock) {
     struct gettimeofday_recheck chk;
     struct klog_result* res = skip_to_syscall (handle, SYS_gettimeofday);
 
     check_reg_arguments ("gettimeofday", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck), clock);
     chk.tv_ptr = tv;
     chk.tz_ptr = tz;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
@@ -479,20 +490,21 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     return 0;
 }
 
-int recheck_time (struct recheck_handle* handle, time_t* t) {
+int recheck_time (struct recheck_handle* handle, time_t* t, u_long clock) 
+{
     struct time_recheck chk;
     struct klog_result* res = skip_to_syscall (handle, SYS_time);
 
     check_reg_arguments ("time", 1);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_time, res->retval, sizeof(struct time_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_time, res->retval, sizeof(struct time_recheck), clock);
     chk.t = t;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
     
     return 0;
 }
 
-int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit)
+int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit, u_long clock)
 {
     struct prlimit64_recheck pchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_prlimit64);
@@ -500,7 +512,7 @@ int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, s
     check_reg_arguments ("prlimit64", 4);
     if (new_limit && is_mem_arg_tainted ((u_long) new_limit, sizeof(struct rlimit64))) fprintf (stderr, "[ERROR] prlimit64 new_limit is tainted\n");
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_prlimit64, res->retval, sizeof (struct prlimit64_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_prlimit64, res->retval, sizeof (struct prlimit64_recheck), clock);
     pchk.pid = pid;
     pchk.resource = resource;
     pchk.new_limit = new_limit;
@@ -516,12 +528,12 @@ int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, s
     return 0;
 }
 
-int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted)
+int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted, u_long clock)
 {
     struct setpgid_recheck schk;
     struct klog_result *res = skip_to_syscall (handle, SYS_setpgid);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_setpgid, res->retval, sizeof (struct setpgid_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_setpgid, res->retval, sizeof (struct setpgid_recheck), clock);
     schk.pid = pid;
     schk.pgid = pgid;
     schk.is_pid_tainted = is_pid_tainted;
@@ -531,7 +543,7 @@ int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int i
     return 0;
 }
 
-int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz)
+int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz, u_long clock)
 {
     struct readlink_recheck rchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_readlink);
@@ -541,7 +553,7 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
 
     u_long size = sizeof(readlink_recheck) + strlen(path) + 1;
     if (res->retval > 0) size += res->retval;
-    write_header_into_recheck_log (handle->recheckfd, SYS_readlink, res->retval, size);
+    write_header_into_recheck_log (handle->recheckfd, SYS_readlink, res->retval, size, clock);
     rchk.buf = buf;
     rchk.bufsiz = bufsiz;
     write_data_into_recheck_log (handle->recheckfd, &rchk, sizeof(rchk));
@@ -551,14 +563,14 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
     return 0;
 }
 
-int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol)
+int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol, u_long clock)
 {
     struct socket_recheck schk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
 
     check_reg_arguments ("socket", 4);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct socket_recheck));
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct socket_recheck), clock);
     schk.domain = domain;
     schk.type = type;
     schk.protocol = protocol;
@@ -567,71 +579,78 @@ int recheck_socket (struct recheck_handle* handle, int domain, int type, int pro
     return 0;
 }
 
-int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen)
+int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen, u_long clock)
 {
     struct connect_recheck cchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
 
     check_reg_arguments ("connect/bind", 4);
-    if (is_mem_arg_tainted ((u_long) addr, addrlen)) fprintf (stderr, "[ERROR] connect/bind addr is tainted\n");
-
-    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct connect_recheck)+addrlen);
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct connect_recheck)+2*addrlen, clock);
     cchk.sockfd = sockfd;
+    cchk.addr = addr;
     cchk.addrlen = addrlen;
     write_data_into_recheck_log (handle->recheckfd, &cchk, sizeof(cchk));
-    write_data_into_recheck_log (handle->recheckfd, addr, addrlen);
+    write_taintmask_into_recheck_log (handle, (u_long ) addr, addrlen);
 
     return 0;
 }
 
-int recheck_getpid (struct recheck_handle* handle)
+int recheck_getpid (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_getpid);
-    write_header_into_recheck_log (handle->recheckfd, SYS_getpid, res->retval, 0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getpid, res->retval, 0, clock);
 
     return 0;
 }
 
-int recheck_getuid32 (struct recheck_handle* handle)
+int recheck_getpgrp (struct recheck_handle* handle, u_long clock)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_getpgrp);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getpgrp, res->retval, 0, clock);
+
+    return 0;
+}
+
+int recheck_getuid32 (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_getuid32);
-    write_header_into_recheck_log (handle->recheckfd, SYS_getuid32, res->retval, 0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getuid32, res->retval, 0, clock);
 
     return 0;
 }
 
-int recheck_geteuid32 (struct recheck_handle* handle)
+int recheck_geteuid32 (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_geteuid32);
-    write_header_into_recheck_log (handle->recheckfd, SYS_geteuid32, res->retval, 0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_geteuid32, res->retval, 0, clock);
 
     return 0;
 }
 
-int recheck_getgid32 (struct recheck_handle* handle)
+int recheck_getgid32 (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_getgid32);
-    write_header_into_recheck_log (handle->recheckfd, SYS_getgid32, res->retval, 0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getgid32, res->retval, 0, clock);
 
     return 0;
 }
 
-int recheck_getegid32 (struct recheck_handle* handle)
+int recheck_getegid32 (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_getegid32);
-    write_header_into_recheck_log (handle->recheckfd, SYS_getegid32, res->retval, 0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getegid32, res->retval, 0, clock);
 
     return 0;
 }
 
-int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence)
+int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence, u_long clock)
 {
     struct llseek_recheck rchk;
     struct klog_result *res = skip_to_syscall (handle, SYS__llseek);
 
     check_reg_arguments ("llseek", 5);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS__llseek, res->retval, sizeof(rchk));
+    write_header_into_recheck_log (handle->recheckfd, SYS__llseek, res->retval, sizeof(rchk), clock);
     rchk.fd = fd;
     rchk.offset_high = offset_high;
     rchk.offset_low = offset_low;
@@ -795,7 +814,7 @@ static inline void decode_ioctl (u_int cmd, u_int* pdir, u_int* psize)
     *psize = size;
 }
 
-int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg)
+int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg, u_long clock)
 {
     struct ioctl_recheck ichk;
     struct klog_result *res = skip_to_syscall (handle, SYS_ioctl);
@@ -805,9 +824,9 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
     /* I would trust the kernel size here */
     decode_ioctl (cmd, &ichk.dir, &ichk.size);
     if (ichk.dir == _IOC_WRITE) {
-	write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+res->retparams_size-sizeof(u_long));
+      write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+res->retparams_size-sizeof(u_long), clock);
     } else if (ichk.dir == _IOC_READ) {
-	write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+2*(ichk.size));
+      write_header_into_recheck_log (handle->recheckfd, SYS_ioctl, res->retval, sizeof(ichk)+2*(ichk.size), clock);
     }
     ichk.fd = fd;
     ichk.cmd = cmd;
@@ -822,25 +841,19 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
 	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), ichk.arglen);
     }
     if (ichk.dir == _IOC_READ && ichk.size > 0) {
-	char tainted[ichk.size];
-	u_int i;
-	for (i = 0; i < ichk.size; i++) {
-	    tainted[i] = is_mem_arg_tainted ((u_long) arg+i, 1); // This could be more efficient
-	}
-	write_data_into_recheck_log (handle->recheckfd, tainted, ichk.size);
-	write_data_into_recheck_log (handle->recheckfd, arg, ichk.size);
+	write_taintmask_into_recheck_log (handle, (u_long) arg, ichk.size);
     }
     return ichk.arglen;
 }
 
-int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count)
+int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count, u_long clock)
 {
     struct getdents64_recheck gchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_getdents64);
 
     check_reg_arguments ("getdents64", 3);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_getdents64, res->retval, sizeof(gchk)+res->retparams_size);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getdents64, res->retval, sizeof(gchk)+res->retparams_size, clock);
     gchk.fd = fd;
     gchk.buf = buf;
     gchk.count = count;
@@ -853,14 +866,14 @@ int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int 
     return 0;
 }
 
-int recheck_eventfd2 (struct recheck_handle* handle, u_int count, int flags)
+int recheck_eventfd2 (struct recheck_handle* handle, u_int count, int flags, u_long clock)
 {
     struct eventfd2_recheck echk;
     struct klog_result *res = skip_to_syscall (handle, SYS_eventfd2);
 
     check_reg_arguments ("eventfd2", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_eventfd2, res->retval, sizeof(echk));
+    write_header_into_recheck_log (handle->recheckfd, SYS_eventfd2, res->retval, sizeof(echk), clock);
     echk.count = count;
     echk.flags = flags;
     write_data_into_recheck_log (handle->recheckfd, &echk, sizeof(echk));
@@ -868,7 +881,7 @@ int recheck_eventfd2 (struct recheck_handle* handle, u_int count, int flags)
     return 0;
 }
 
-int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds, int timeout)
+int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds, int timeout, u_long clock)
 {
     struct poll_recheck pchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_poll);
@@ -877,7 +890,7 @@ int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds,
 
     u_long size = sizeof(pchk) + nfds*sizeof(struct pollfd);
     if (res->retval > 0) size += nfds*sizeof(short);
-    write_header_into_recheck_log (handle->recheckfd, SYS_poll, res->retval, size);
+    write_header_into_recheck_log (handle->recheckfd, SYS_poll, res->retval, size, clock);
     pchk.nfds = nfds;
     pchk.timeout = timeout;
     pchk.buf = (char *) fds;
@@ -894,7 +907,7 @@ int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds,
     return 0;
 }
 
-int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, struct timeval* timeout)
+int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, struct timeval* timeout, u_long clock)
 {
     struct newselect_recheck nschk;
     struct klog_result *res = skip_to_syscall (handle, SYS__newselect);
@@ -931,30 +944,43 @@ int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds
     if (exceptfds && is_mem_arg_tainted ((u_long) exceptfds, nschk.setsize)) fprintf (stderr, "[ERROR] select: exceptfds tainted\n");
     if (timeout) {
 	nschk.is_timeout_tainted = is_mem_arg_tainted ((u_long) timeout, sizeof(struct timeval));
-	if (nschk.is_timeout_tainted == 2) fprintf (stderr, "[ERROR] select: timeout partially tainted\n");
-    } else {
 	memcpy (&nschk.timeout, timeout, sizeof(struct timeval));
+	if (nschk.is_timeout_tainted == 2) fprintf (stderr, "[ERROR] select: timeout partially tainted\n");
     }
 	
     check_reg_arguments ("_newselect", 5);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS__newselect, res->retval, sizeof(nschk)+nschk.retlen);
+    write_header_into_recheck_log (handle->recheckfd, SYS__newselect, res->retval, sizeof(nschk)+nschk.retlen, clock);
     write_data_into_recheck_log (handle->recheckfd, &nschk, sizeof(nschk));
     write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), nschk.retlen);
 
     return 0;
 }
 
-int recheck_set_robust_list (struct recheck_handle* handle, struct robust_list_head* head, size_t len)
+int recheck_set_robust_list (struct recheck_handle* handle, struct robust_list_head* head, size_t len, u_long clock)
 {
     struct set_robust_list_recheck schk;
     struct klog_result *res = skip_to_syscall (handle, SYS_set_robust_list);
 
     check_reg_arguments ("set_robut_list", 2);
 
-    write_header_into_recheck_log (handle->recheckfd, SYS_set_robust_list, res->retval, sizeof(schk));
+    write_header_into_recheck_log (handle->recheckfd, SYS_set_robust_list, res->retval, sizeof(schk), clock);
     schk.head = head;
     schk.len = len;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+
+    return 0;
+}
+
+int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long clock)
+{
+    struct set_tid_address_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_set_tid_address);
+
+    check_reg_arguments ("set_tid_address", 1);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_set_tid_address, res->retval, sizeof(schk), clock);
+    schk.tidptr = tidptr;
     write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
 
     return 0;

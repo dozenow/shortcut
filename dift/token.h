@@ -33,7 +33,7 @@ extern "C" {
 #define TOK_MMAP 11
 #define TOK_GETTIMEOFDAY 12
 #define TOK_CLOCK_GETTIME 13
-#define TOK_GETPID 14
+#define TOK_RETVAL 14 /* This is more generic - I think that's OK since info is elsewhere */
 #define TOK_GETRUSAGE 15
 #define TOK_STAT_ATIME 16
 #define TOK_UNAME 17

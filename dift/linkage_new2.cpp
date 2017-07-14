@@ -98,7 +98,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 19430
+//#define EXTRA_DEBUG 0
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -115,11 +115,9 @@ int s = -1;
 }
 // #define INSTRUMENT_PRINT(x,...);
  #define PRINTX fprintf
- #define SYSCALL_DEBUG fprintf
 #else
  #define LOG_PRINT(x,...);
  #define INSTRUMENT_PRINT(x,...);
- #define SYSCALL_DEBUG(x,...);
  #define PRINTX(x,...);
 #endif
 
@@ -529,7 +527,6 @@ char* get_file_ext(char* filename){
 
 static inline void sys_open_start(struct thread_data* tdata, char* filename, int flags, int mode)
 {
-    SYSCALL_DEBUG (stderr, "open_start: filename %s, clock %lu\n", filename, *ppthread_log_clock);
     struct open_info* oi = (struct open_info *) malloc (sizeof(struct open_info));
     strncpy(oi->name, filename, OPEN_PATH_LEN);
     oi->fileno = open_file_cnt;
@@ -538,7 +535,7 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     tdata->save_syscall_info = (void *) oi;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call open_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_open (tdata->recheck_handle, filename, flags, mode);
+	recheck_open (tdata->recheck_handle, filename, flags, mode, *ppthread_log_clock);
     } 
 }
 
@@ -551,7 +548,6 @@ static inline void sys_open_stop(int rc)
 }
 
 static inline void sys_openat_start (struct thread_data* tdata, int dirfd, char* filename, int flags, int mode) {
-    SYSCALL_DEBUG (stderr, "openat_start: filename %s, clock %lu, dirfd %d\n", filename, *ppthread_log_clock, dirfd);
     struct open_info* oi = (struct open_info*) malloc (sizeof(struct open_info));
     strncpy (oi->name, filename, OPEN_PATH_LEN);
     oi->fileno = open_file_cnt ++;
@@ -560,7 +556,7 @@ static inline void sys_openat_start (struct thread_data* tdata, int dirfd, char*
     tdata->save_syscall_info = (void*) oi;
     if (tdata->recheck_handle) { 
 	printf ("[SLICE] #00000000 #call openat_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-        recheck_openat (tdata->recheck_handle, dirfd, filename, flags, mode);
+        recheck_openat (tdata->recheck_handle, dirfd, filename, flags, mode, *ppthread_log_clock);
     }
 }
 
@@ -570,12 +566,11 @@ static inline void sys_openat_stop (int rc) {
 
 static inline void sys_close_start(struct thread_data* tdata, int fd)
 {
-    SYSCALL_DEBUG (stderr, "close_start @ %lu\n", *ppthread_log_clock);
     tdata->save_syscall_info = (void *) fd;
     if (tdata->recheck_handle) {
 	if (!current_thread->ignore_flag || !(*(int *)(current_thread->ignore_flag))) {
 	    printf ("[SLICE] #00000000 #call close_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_close (tdata->recheck_handle, fd);
+	    recheck_close (tdata->recheck_handle, fd, *ppthread_log_clock);
 	} else {
 	    printf ("close occurred during ignore region of the replay code\n");
 	}
@@ -584,7 +579,6 @@ static inline void sys_close_start(struct thread_data* tdata, int fd)
 
 static inline void sys_close_stop(int rc)
 {
-    SYSCALL_DEBUG (stderr, "close_stop @ %lu\n", *ppthread_log_clock);
     int fd = (int) current_thread->save_syscall_info;
     // remove the fd from the list of open files
     if (!rc) {
@@ -592,11 +586,9 @@ static inline void sys_close_stop(int rc)
             struct open_info* oi = (struct open_info *) monitor_get_fd_data(open_fds, fd);
 	    free (oi);
             monitor_remove_fd(open_fds, fd);
-	    SYSCALL_DEBUG (stderr, "close: remove fd %d\n", fd);
         } 
 	if (monitor_has_fd(open_socks, fd)) {
 		monitor_remove_fd(open_socks, fd);
-		SYSCALL_DEBUG (stderr, "close: remove sock fd %d\n", fd);
 	}
     }
     current_thread->save_syscall_info = 0;
@@ -606,7 +598,7 @@ static inline void sys_llseek_start(struct thread_data* tdata, u_int fd, u_long 
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call llseek_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_llseek (tdata->recheck_handle, fd, offset_high, offset_low, result, whence);
+	recheck_llseek (tdata->recheck_handle, fd, offset_high, offset_low, result, whence, *ppthread_log_clock);
     }
 }
 
@@ -622,7 +614,6 @@ static inline void sys_brk_stop(int rc)
 
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-    SYSCALL_DEBUG(stderr, "sys_read_start: fd = %d, buf %x\n", fd, (unsigned int)buf);
     struct read_info* ri = &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
@@ -637,18 +628,20 @@ static inline void sys_read_stop(int rc)
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
     if (ri->recheck_handle) {
+	printf ("[SLICE] #00000000 #push edx [SLICE_INFO] count argument to read\n");
 	printf ("[SLICE] #00000000 #call read_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	printf ("[SLICE] #00000000 #pop edx [SLICE_INFO]\n");
 	if (filter_input()) {
 	    size_t start = 0;
 	    size_t end = 0;
 	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, *ppthread_log_clock);
 		add_tainted_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
 	    }
 	} else {
-             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0);
+             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
 	}
     }
 
@@ -703,7 +696,6 @@ static inline void sys_read_stop(int rc)
 
 static inline void sys_pread_start(struct thread_data* tdata, int fd, char* buf, int size)
 {
-    SYSCALL_DEBUG(stderr, "pread fd = %d\n", fd);
     struct read_info* ri = &tdata->op.read_info_cache;
     ri->fd = fd;
     ri->buf = buf;
@@ -754,7 +746,7 @@ static inline void sys_getdents64_start(struct thread_data* tdata, unsigned int 
     gdi->count = count;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getdents64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_getdents64 (tdata->recheck_handle, fd, dirp, count);
+	recheck_getdents64 (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
     }
 }
 
@@ -768,7 +760,7 @@ static inline void sys_readlink_start(struct thread_data* tdata, char* path, cha
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call readlink_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz);
+	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz, *ppthread_log_clock);
     }
 }
 
@@ -780,7 +772,7 @@ static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* 
     ii->retval_size = 0;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call ioctl_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	ii->retval_size = recheck_ioctl (tdata->recheck_handle, fd, cmd, arg);
+	ii->retval_size = recheck_ioctl (tdata->recheck_handle, fd, cmd, arg, *ppthread_log_clock);
     }
 }
 
@@ -799,6 +791,21 @@ static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_l
     add_tainted_mem_for_final_check ((u_long)buf, size);
 }
 
+static inline void taint_syscall_retval (const char* sysname)
+{
+    struct taint_creation_info tci;
+    tci.type = TOK_RETVAL;
+    tci.rg_id = current_thread->rg_id;
+    tci.record_pid = current_thread->record_pid;
+    tci.syscall_cnt = current_thread->syscall_cnt;
+    tci.offset = 0;
+    tci.fileno = 0;
+    tci.data = 0;
+    create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+    printf ("[SLICE_TAINT] %s #eax\n", sysname);
+}
+
+
 static void sys_ioctl_stop (int rc) 
 {
     struct ioctl_info* ii = &current_thread->op.ioctl_info_cache;
@@ -809,30 +816,29 @@ static void sys_ioctl_stop (int rc)
 
 static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* arg)
 {
-    printf ("fcntl64: fd %d cmd %d arg %p\n", fd, cmd, arg);
     switch (cmd) {
     case F_GETFL:
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call fcntl64_getfl_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fcntl64_getfl (tdata->recheck_handle, fd);
+	    recheck_fcntl64_getfl (tdata->recheck_handle, fd, *ppthread_log_clock);
 	}
 	break;
     case F_SETFL:
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call fcntl64_setfl_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fcntl64_setfl (tdata->recheck_handle, fd, (long) arg);
+	    recheck_fcntl64_setfl (tdata->recheck_handle, fd, (long) arg, *ppthread_log_clock);
 	}
 	break;
     case F_GETLK:
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call fcntl64_getlk_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fcntl64_getlk (tdata->recheck_handle, fd, arg);
+	    recheck_fcntl64_getlk (tdata->recheck_handle, fd, arg, *ppthread_log_clock);
 	}
 	break;
     case F_GETOWN:
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call fcntl64_getown_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fcntl64_getown (tdata->recheck_handle, fd);
+	    recheck_fcntl64_getown (tdata->recheck_handle, fd, *ppthread_log_clock);
 	}
 	break;
     case F_SETOWN:
@@ -841,7 +847,7 @@ static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* 
 	    printf ("[SLICE] #00000000 #push edx [SLICE_INFO] owner argument to setown\n");
 	    printf ("[SLICE] #00000000 #call fcntl64_setown_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	    printf ("[SLICE] #00000000 #pop edx [SLICE_INFO]\n");
-	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg, owner_tainted);
+	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg, owner_tainted, *ppthread_log_clock);
 	}
 	break;
     default:
@@ -859,7 +865,7 @@ static void sys__newselect_start(struct thread_data* tdata, int nfds, fd_set* re
     tdata->op.select_info_cache.timeout = timeout;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call newselect_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck__newselect (tdata->recheck_handle, nfds, readfds, writefds, exceptfds, timeout);
+	recheck__newselect (tdata->recheck_handle, nfds, readfds, writefds, exceptfds, timeout, *ppthread_log_clock);
     }
 }
 
@@ -888,7 +894,6 @@ static void sys_mmap_stop(int rc)
     struct mmap_info* mmi = (struct mmap_info*) current_thread->save_syscall_info;
 //    struct timeval mm_st, mm_end; 
 
-    SYSCALL_DEBUG(stderr, "mmap file fd %d rc 0x%x @ %ld %d\n", mmi->fd, rc, *ppthread_log_clock , mmi->prot & PROT_EXEC);
 #ifdef MMAP_INPUTS
     // If global_syscall_cnt == 0, then handled in previous epoch
     if (rc != -1 && (mmi->fd != -1)) {
@@ -922,7 +927,6 @@ static void sys_mmap_stop(int rc)
         }
     }
     current_thread->save_syscall_info = 0;
-    SYSCALL_DEBUG (stderr, "sys_mmap_stop done\n");
 #else
     mm_len += mmi->length;
     //if there are taints to be cleared, and we aren't a splice_output
@@ -960,7 +964,7 @@ static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf,
     struct write_info* wi = &tdata->op.write_info_cache;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call write_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_write (tdata->recheck_handle, fd, buf, count);
+	recheck_write (tdata->recheck_handle, fd, buf, count, *ppthread_log_clock);
     }
     wi->fd = fd;
     wi->buf = buf;
@@ -974,7 +978,6 @@ static inline void sys_write_stop(int rc)
     if (rc > 0) {
 	if (*ppthread_log_clock >= filter_outputs_before) {
 	    struct taint_creation_info tci;
-	    SYSCALL_DEBUG (stderr, "write_stop: sucess write of size %d\n", rc);
 	    
 	    if (monitor_has_fd(open_fds, wi->fd)) {
 		struct open_info* oi;
@@ -1010,7 +1013,6 @@ static inline void sys_write_stop(int rc)
 
 static inline void sys_writev_start(struct thread_data* tdata, int fd, struct iovec* iov, int count)
 {
-    SYSCALL_DEBUG(stderr, "sys_writev_start: fd = %d\n", fd);
     struct writev_info* wvi;
     wvi = (struct writev_info *) &tdata->op.writev_info_cache;
     wvi->fd = fd;
@@ -1075,7 +1077,7 @@ static void sys_socket_start (struct thread_data* tdata, int domain, int type, i
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call socket_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_socket (tdata->recheck_handle, domain, type, protocol);
+	recheck_socket (tdata->recheck_handle, domain, type, protocol, *ppthread_log_clock);
     }
     struct socket_info* si = (struct socket_info*) malloc(sizeof(struct socket_info));
     if (si == NULL) {
@@ -1105,7 +1107,7 @@ static void sys_connect_start(thread_data* tdata, int sockfd, struct sockaddr* a
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call connect_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_connect_or_bind (tdata->recheck_handle, sockfd, addr, addrlen);
+	recheck_connect_or_bind (tdata->recheck_handle, sockfd, addr, addrlen, *ppthread_log_clock);
     }
     if (monitor_has_fd(open_socks, sockfd)) {
         struct socket_info* si = (struct socket_info*) monitor_get_fd_data(open_socks, sockfd);
@@ -1218,7 +1220,6 @@ static void sys_recv_stop(int rc)
 {
     struct read_info* ri = (struct read_info *) &current_thread->op.read_info_cache;
     LOG_PRINT ("Pid %d syscall recv returns %d\n", PIN_GetPid(), rc);
-    SYSCALL_DEBUG (stderr, "Pid %d syscall recv returns %d\n", PIN_GetPid(), rc);
 
     // If syscall cnt = 0, then write handled in previous epoch
     if (rc > 0) {
@@ -1316,7 +1317,6 @@ static void sys_recvmsg_stop(int rc)
             tci.offset += vi->iov_len;
         }
     }
-    SYSCALL_DEBUG (stderr, "recvmsg_stop done\n");
     free(rmi);
 }
 
@@ -1345,7 +1345,6 @@ static void sys_sendmsg_stop(int rc)
     if (rc > 0) {
 	if (*ppthread_log_clock >= filter_outputs_before) {
 	    struct taint_creation_info tci;
-	    SYSCALL_DEBUG (stderr, "sendmsg_stop: sucess sendmsg of size %d\n", rc);
 	    if (monitor_has_fd(open_socks, smi->fd)) {
 		struct socket_info* si;
 		si = (struct socket_info *) monitor_get_fd_data(open_socks, smi->fd);
@@ -1370,7 +1369,6 @@ static void sys_sendmsg_stop(int rc)
 	    }
 	}
     }
-    SYSCALL_DEBUG (stderr, "sys_sendmsg_stop done\n");
     free(smi);
 }
 
@@ -1393,11 +1391,9 @@ static void sys_send_stop(int rc)
     struct write_info* si = (struct write_info *) current_thread->save_syscall_info;
     int channel_fileno = -1;
 
-    SYSCALL_DEBUG (stderr, "Pid %d syscall send %d \n", PIN_GetPid(), rc);
     if (rc > 0) {
 	if (*ppthread_log_clock >= filter_outputs_before) {
 	    struct taint_creation_info tci;
-	    SYSCALL_DEBUG (stderr, "send_stop: sucess write of size %d\n", rc);
 	    
 	    if (monitor_has_fd(open_fds, si->fd)) {
 		struct open_info* oi;
@@ -1434,7 +1430,6 @@ static void sys_send_stop(int rc)
 
 
 static inline void sys_gettimeofday_start (struct thread_data* tdata, struct timeval* tv, struct timezone *tz) {
-	SYSCALL_DEBUG(stderr, "sys_gettimeofday_start.\n");
 	LOG_PRINT ("start to handle gettimeofday, tv %p, tz %p\n", tv, tz);
 	struct gettimeofday_info* info = &tdata->op.gettimeofday_info_cache;
 	info->tv = tv;
@@ -1442,7 +1437,7 @@ static inline void sys_gettimeofday_start (struct thread_data* tdata, struct tim
 	tdata->save_syscall_info = (void*) info;
 	if (tdata->recheck_handle) {
 		printf ("[SLICE] #0000000 #call gettimeofday_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
-		recheck_gettimeofday (tdata->recheck_handle, tv, tz);
+		recheck_gettimeofday (tdata->recheck_handle, tv, tz, *ppthread_log_clock);
 	}
 }
 
@@ -1458,37 +1453,23 @@ static inline void sys_gettimeofday_stop (int rc) {
     current_thread->save_syscall_info = 0;
 }
 
-static inline void sys_time_start (struct thread_data* tdata, time_t* t) {
-	SYSCALL_DEBUG(stderr, "sys_time_start.\n");
-	tdata->save_syscall_info = (void*) t;
-	if (tdata->recheck_handle) {
-            printf ("[SLICE] #0000000 #call time_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
-            recheck_time (tdata->recheck_handle, t);
-	}
+static inline void sys_time_start (struct thread_data* tdata, time_t* t) 
+{
+    tdata->save_syscall_info = (void*) t;
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #0000000 #call time_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
+	recheck_time (tdata->recheck_handle, t, *ppthread_log_clock);
+    }
 }
 
-static inline void sys_time_stop (int rc) {
+static inline void sys_time_stop (int rc) 
+{
     time_t* t = (time_t*) current_thread->save_syscall_info;
-    if (rc != -1) {
-	struct taint_creation_info tci;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = -1;
-	tci.data = 0;
-	tci.type = TOK_TIME;
-
-	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	if (t != NULL) {
-	    taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
-	}
-    }
-    current_thread->save_syscall_info = 0;
+    taint_syscall_retval ("time");
+    if (rc >= 0 && t != NULL) taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
 }
 
 static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
-	SYSCALL_DEBUG(stderr, "sys_clock_gettime_start %p.\n", tp);
 	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
 	struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
 	info->tp = tp;
@@ -1515,58 +1496,41 @@ static inline void sys_clock_gettime_stop (int rc) {
 }
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
-    SYSCALL_DEBUG(stderr, "sys_getpid_start.\n");
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getpid_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_getpid (tdata->recheck_handle);
+	recheck_getpid (tdata->recheck_handle, *ppthread_log_clock);
     }
 }
 
-static inline void sys_getpid_stop (int rc) {
-	struct taint_creation_info tci;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = -1;
-	tci.data = 0;
-	tci.type = TOK_GETPID;
-	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	LOG_PRINT ("Done with getpid\n");
+static inline void sys_getpid_stop (int rc) 
+{
+    taint_syscall_retval ("getpid");
 }
 
-static inline void sys_getpgrp_start (struct thread_data* tdata) {
-	SYSCALL_DEBUG(stderr, "sys_getpgrp_start.\n");
-	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_getpgrp);
-	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO] sys_getpgrp clock %lu\n", *ppthread_log_clock);
+static inline void sys_getpgrp_start (struct thread_data* tdata) 
+{    
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call getpgrp_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_getpgrp (tdata->recheck_handle, *ppthread_log_clock);
+    }
 }
 
-static inline void sys_getpgrp_stop (int rc) {
-	struct taint_creation_info tci;
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = -1;
-	tci.data = 0;
-	tci.type = TOK_GETPID;
-	create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	LOG_PRINT ("Done with getpgrp\n");
+static inline void sys_getpgrp_stop (int rc) 
+{
+    taint_syscall_retval ("getpgrp");
 }
 
 static inline void sys_getuid32_start (struct thread_data* tdata) {
-    SYSCALL_DEBUG(stderr, "sys_getuid32_start.\n");
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getuid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_getuid32 (tdata->recheck_handle);
+	recheck_getuid32 (tdata->recheck_handle, *ppthread_log_clock);
     }
 }
 
 static inline void sys_geteuid32_start (struct thread_data* tdata) {
-    SYSCALL_DEBUG(stderr, "sys_geteuid32_start.\n");
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call geteuid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_geteuid32 (tdata->recheck_handle);
+	recheck_geteuid32 (tdata->recheck_handle, *ppthread_log_clock);
     }
 }
 
@@ -1574,7 +1538,7 @@ static inline void sys_getgid32_start (struct thread_data* tdata)
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getgid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_getgid32 (tdata->recheck_handle);
+	recheck_getgid32 (tdata->recheck_handle, *ppthread_log_clock);
     }
 }
 
@@ -1582,7 +1546,7 @@ static inline void sys_getegid32_start (struct thread_data* tdata)
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call getegid32_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_getegid32 (tdata->recheck_handle);
+	recheck_getegid32 (tdata->recheck_handle, *ppthread_log_clock);
     }
 }
 
@@ -1595,36 +1559,29 @@ static inline void sys_setpgid_start (struct thread_data* tdata, pid_t pid, pid_
 	printf ("[SLICE] #00000000 #call setpgid_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	printf ("[SLICE] #00000000 #pop ebx [SLICE_INFO]\n");
 	printf ("[SLICE] #00000000 #pop ecx [SLICE_INFO]\n");
-	recheck_setpgid (tdata->recheck_handle, pid, pgid, pid_tainted, pgid_tainted);
+	recheck_setpgid (tdata->recheck_handle, pid, pgid, pid_tainted, pgid_tainted, *ppthread_log_clock);
     }
 }
 
-static inline void sys_set_tid_address_start (struct thread_data* tdata) 
+static inline void sys_set_tid_address_start (struct thread_data* tdata, int* tidptr) 
 {
-	printf ("[SLICE] #00000000 #mov eax, %d [SLICE_INFO]\n", SYS_set_tid_address);
-	printf ("[SLICE] #00000000 #int 0x80 [SLICE_INFO] set_tid_address clock %lu\n", *ppthread_log_clock);
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call set_tid_address_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_set_tid_address (tdata->recheck_handle, tidptr, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_set_tid_address_stop (int rc) 
+{
+    taint_syscall_retval ("set_tid_address");
 }
 
 static inline void sys_set_robust_list (struct thread_data* tdata, struct robust_list_head* head, size_t len) 
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call set_robust_list_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_set_robust_list (tdata->recheck_handle, head, len);
+	recheck_set_robust_list (tdata->recheck_handle, head, len, *ppthread_log_clock);
     }
-}
-
-static inline void sys_set_tid_address_stop (int rc) 
-{
-    struct taint_creation_info tci;
-    tci.rg_id = current_thread->rg_id;
-    tci.record_pid = current_thread->record_pid;
-    tci.syscall_cnt = current_thread->syscall_cnt;
-    tci.offset = 0;
-    tci.fileno = -1;
-    tci.data = 0;
-    tci.type = TOK_GETPID;
-    create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-    LOG_PRINT ("Done with set_tid_address\n");
 }
 
 static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct stat64* buf) {
@@ -1633,7 +1590,7 @@ static inline void sys_fstat64_start (struct thread_data* tdata, int fd, struct 
 	fsi->buf = buf;
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call fstat64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_fstat64 (tdata->recheck_handle, fd, buf);
+	    recheck_fstat64 (tdata->recheck_handle, fd, buf, *ppthread_log_clock);
 	}
 }
 
@@ -1655,7 +1612,7 @@ static inline void sys_stat64_start (struct thread_data* tdata, char* path, stru
 	si->buf = buf;
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call stat64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_stat64 (tdata->recheck_handle, path, buf);
+	    recheck_stat64 (tdata->recheck_handle, path, buf, *ppthread_log_clock);
 	}
 }
 
@@ -1677,7 +1634,7 @@ static inline void sys_lstat64_start (struct thread_data* tdata, char* path, str
 	si->buf = buf;
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call lstat64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_lstat64 (tdata->recheck_handle, path, buf);
+	    recheck_lstat64 (tdata->recheck_handle, path, buf, *ppthread_log_clock);
 	}
 }
 
@@ -1700,7 +1657,7 @@ static inline void sys_ugetrlimit_start (struct thread_data* tdata, int resource
 	ugri->prlim = prlim;
 	if (tdata->recheck_handle) {
 	    printf ("[SLICE] #00000000 #call ugetrlimit_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim);
+	    recheck_ugetrlimit (tdata->recheck_handle, resource, prlim, *ppthread_log_clock);
 	}
 }
 
@@ -1717,7 +1674,7 @@ static inline void sys_prlimit64_start (struct thread_data* tdata, pid_t pid, in
     pri->old_limit = old_limit;
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call prlimit64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_prlimit64 (tdata->recheck_handle, pid, resource, new_limit, old_limit);
+	recheck_prlimit64 (tdata->recheck_handle, pid, resource, new_limit, old_limit, *ppthread_log_clock);
     }
 }
 
@@ -1730,12 +1687,12 @@ static inline void sys_prlimit64_stop (int rc)
 
 static inline void sys_uname_start (struct thread_data* tdata, struct utsname* buf) 
 {
-	struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
-	uni->buf = buf;
-	if (tdata->recheck_handle) {
-	    printf ("[SLICE] #00000000 #call uname_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_uname (tdata->recheck_handle, buf);
-	}
+    struct uname_info* uni = (struct uname_info*) &current_thread->op.uname_info_cache;
+    uni->buf = buf;
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call uname_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_uname (tdata->recheck_handle, buf, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_uname_stop (int rc) 
@@ -1750,12 +1707,12 @@ static inline void sys_uname_stop (int rc)
 
 static inline void sys_statfs64_start (struct thread_data* tdata, const char* path, size_t sz, struct statfs64* buf) 
 {
-	struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
-	sfi->buf = buf;
-	if (tdata->recheck_handle) {
-	    printf ("[SLICE] #00000000 #call statfs64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	    recheck_statfs64 (tdata->recheck_handle, path, sz, buf);
-	}
+    struct statfs64_info* sfi = (struct statfs64_info*) &current_thread->op.statfs64_info_cache;
+    sfi->buf = buf;
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call statfs64_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_statfs64 (tdata->recheck_handle, path, sz, buf, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_statfs64_stop (int rc) 
@@ -1771,7 +1728,6 @@ static inline void sys_statfs64_stop (int rc)
 }
 
 static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage* usage) {
-	SYSCALL_DEBUG (stderr, "sys_getrusage_start.\n");
 	LOG_PRINT ("start to handle getrusage, usage addr %p\n", usage);
 	struct getrusage_info* info = &tdata->op.getrusage_info_cache;
 	info->usage = usage;
@@ -1801,7 +1757,7 @@ static inline void sys_eventfd2_start (struct thread_data* tdata, unsigned int c
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call eventfd2_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_eventfd2 (tdata->recheck_handle, count, flags);
+	recheck_eventfd2 (tdata->recheck_handle, count, flags, *ppthread_log_clock);
     }
 }
 
@@ -1809,7 +1765,15 @@ static inline void sys_poll_start (struct thread_data* tdata, struct pollfd* fds
 {
     if (tdata->recheck_handle) {
 	printf ("[SLICE] #00000000 #call poll_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_poll (tdata->recheck_handle, fds, nfds, timeout);
+	recheck_poll (tdata->recheck_handle, fds, nfds, timeout, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_kill_start (struct thread_data* tdata, pid_t pid, int sig)
+{
+    // Since replay handles signals, we might be OK sending signal to ourselves
+    if (!(pid == current_thread->record_pid)) {
+	fprintf (stderr, "Sending signal %d to pid %d\n", sig, pid);
     }
 }
 
@@ -1861,38 +1825,30 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             int call = (int) syscallarg0;
             unsigned long *args = (unsigned long *)syscallarg1;
             tdata->socketcall = call;
-	    SYSCALL_DEBUG(stderr, "new socketcall is %d\n",call);
             switch (call) {
                 case SYS_SOCKET:
-                    SYSCALL_DEBUG(stderr, "socket_start\n");
                     sys_socket_start(tdata, (int)args[0], (int)args[1], (int)args[2]);
                     break;
                 case SYS_CONNECT:
-                    SYSCALL_DEBUG(stderr, "connect_start\n");
                     sys_connect_start(tdata, (int)args[0], (struct sockaddr *)args[1], (socklen_t)args[2]);
                     break;
                 case SYS_RECV:
                 case SYS_RECVFROM:
-                    SYSCALL_DEBUG(stderr, "recv_start\n");
                     sys_recv_start(tdata, (int)args[0], (char *)args[1], (int)args[2]);
                     break;
                 case SYS_RECVMSG:
-                    SYSCALL_DEBUG(stderr, "recvmsg_start\n");
                     sys_recvmsg_start(tdata, (int)args[0], (struct msghdr *)args[1], (int)args[2]);
                     break;
                 case SYS_SENDMSG:
-                    SYSCALL_DEBUG(stderr, "sendmsg_start\n");
                     sys_sendmsg_start(tdata, (int)args[0], (struct msghdr *)args[1], (int)args[2]);
                     break;
 	        case SYS_SEND:
-		    SYSCALL_DEBUG(stderr, "send_start\n");
                     sys_send_start(tdata, (int)args[0], (char *)args[1], (int)args[2], (int)args[3]);
 		    break;
                 case SYS_BIND:
-                    SYSCALL_DEBUG(stderr, "bind_start\n");
                     if (tdata->recheck_handle) {
                         printf ("[SLICE] #00000000 #call bind_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-                        recheck_connect_or_bind (tdata->recheck_handle, (int)args[0], (struct sockaddr*)args[1], (socklen_t)args[2]);
+                        recheck_connect_or_bind (tdata->recheck_handle, (int)args[0], (struct sockaddr*)args[1], (socklen_t)args[2], *ppthread_log_clock);
                     }
                     break;
                 default:
@@ -1958,7 +1914,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_statfs64_start (tdata, (const char *) syscallarg0, (size_t) syscallarg1, (struct statfs64 *) syscallarg2);
 	    break;
       	case SYS_set_tid_address:
-	    sys_set_tid_address_start (tdata);
+	    sys_set_tid_address_start (tdata, (int*) syscallarg0);
 	    break;
       	case SYS_set_robust_list:
 	    sys_set_robust_list (tdata, (struct robust_list_head *) syscallarg0, (size_t) syscallarg1);
@@ -1968,7 +1924,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
 	case SYS_access:
 	    if (tdata->recheck_handle) {
-		recheck_access (tdata->recheck_handle, (char *) syscallarg0, (int) syscallarg1);
+		recheck_access (tdata->recheck_handle, (char *) syscallarg0, (int) syscallarg1, *ppthread_log_clock);
 		printf ("[SLICE] #00000000 #call access_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	    }
 	    break;
@@ -1985,7 +1941,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_eventfd2_start (tdata, (u_int) syscallarg0, (int) syscallarg1);
             break;
         case SYS_poll:
-	  sys_poll_start (tdata, (struct pollfd *) syscallarg0, (u_int) syscallarg1, (int) syscallarg2);
+	    sys_poll_start (tdata, (struct pollfd *) syscallarg0, (u_int) syscallarg1, (int) syscallarg2);
+            break;
+        case SYS_kill:
+	    sys_kill_start (tdata, (pid_t) syscallarg0, (int) syscallarg1);
             break;
     }
 }
@@ -1995,7 +1954,6 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     int rc = (int) ret_value;
     switch(sysnum) {
         case SYS_clone:
-            SYSCALL_DEBUG(stderr, "%d clone done\n", PIN_GetPid());
             break;
         case SYS_open:
             sys_open_stop(rc);
@@ -6630,21 +6588,19 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
 #endif
-    printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
-    PIN_LockClient();
-    if (IMG_Valid(IMG_FindByAddress(ip))) {
+    static u_char old_val = 0;
+    if (*((u_char *) 0x8700b15) != old_val) {
+      printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
+      PIN_LockClient();
+      if (IMG_Valid(IMG_FindByAddress(ip))) {
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-    }
-    PIN_UnlockClient();
-    printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
-	    is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
-	    is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-    // If you want to debug a memory address or xmm taint, can uncomment and change this
-    static u_short old_val = 0;
-    if (*((u_short *) 0x857b6ba) != old_val) {
-	printf ("857b6ba val %u tainted? %d%d\n", *((u_short *) 0x857b6ba), is_mem_arg_tainted (0x857b6ba, 1), is_mem_arg_tainted (0x857b6ba, 1));
-	old_val = *((u_short *) 0x857b6ba);
-    }
+      }
+      PIN_UnlockClient();
+      printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
+	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
+	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
+	printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
+	old_val = *((u_char *) 0x8700b15);
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
     //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -6654,8 +6610,9 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     //for (int i = 0; i < 16; i++) {
 //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM2*REG_SIZE + i] != 0));
     //}
-    printf ("\n");
-    fflush (stdout);
+	printf ("\n");
+	fflush (stdout);
+    }
 }
 
 void debug_print (INS ins) 
@@ -7219,21 +7176,8 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                assert (INS_OperandCount(ins) == 3);
-                instrument_clear_dst (ins);
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                assert (INS_OperandCount(ins) == 4 || INS_OperandCount(ins) == 3);
-                if (INS_IsMemoryWrite(ins))
-                    instrument_taint_reg2mem (ins, INS_OperandReg(ins, 1), 1);
-                else 
-                    instrument_taint_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), 1);
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FMULP:
             case XED_ICLASS_FMUL:
             case XED_ICLASS_FADD:
@@ -7247,42 +7191,25 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FDIV:
             case XED_ICLASS_FIDIV:
             case XED_ICLASS_FDIVP:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                if (INS_IsMemoryRead(ins))
-                    instrument_taint_add_mem2reg (ins, INS_OperandReg(ins, 0), -1, -1); //FPU flags are not tainted for now
-                else 
-                    instrument_taint_add_reg2reg (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), -1, -1);
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FCOMI:
             case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
             case XED_ICLASS_FUCOMIP:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                instrument_taint_regreg2flag (ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), ZF_FLAG | PF_FLAG | CF_FLAG);
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FXCH:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                instrument_xchg (ins); //this function only supports reg2reg exchange with FPU registers  currently
-                slice_handled = 1;
-                break;
-            //TODO:currently, we ignore the FPU control word
             case XED_ICLASS_FNSTCW:
-                instrument_clear_dst (ins); 
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FLDCW:
-                //do nothing
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FISTP:
             case XED_ICLASS_FIST:
-                instrument_taint_reg2mem (ins, LEVEL_BASE::REG_ST0, 0);
-                slice_handled = 1;
-                break;
             case XED_ICLASS_FCMOVNBE:
-                instrument_cmov (ins, CF_FLAG | ZF_FLAG);
+	    case XED_ICLASS_FWAIT:
+	    case XED_ICLASS_FRNDINT:
+	    case XED_ICLASS_FSQRT:
+	    case XED_ICLASS_FABS:
+	    case XED_ICLASS_FPATAN:
+	    case XED_ICLASS_FDIVR:
+	    case XED_ICLASS_FCHS:
+                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
                 slice_handled = 1;
                 break;
    	    case XED_ICLASS_CWDE:
@@ -7747,7 +7674,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
     
-
     // TODO Use slab allocator
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
     if (ptdata == NULL) {
@@ -8382,7 +8308,6 @@ int main(int argc, char** argv)
     // Register a notification handler that is called when the application
     // forks a new process
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
-
 
 #ifndef USE_FILE
     PIN_AddForkFunction(FPOINT_AFTER_IN_PARENT, AfterForkInParent, 0);

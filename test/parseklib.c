@@ -297,7 +297,7 @@ static int read_psr_chunk(struct klogfile *log) {
 		}
 	}
 
-	ret = 0;
+	ret = count;
 
 out_free:
 	free(psrs);
@@ -365,7 +365,7 @@ struct klog_result *parseklog_get_next_psr(struct klogfile *log) {
 
 	if (log->cur_idx == log->active_num_psrs) {
 		debugf("Reading psr chunk\n");
-		if (read_psr_chunk(log)) {
+		if (read_psr_chunk(log) < 0) {
 			fprintf(stderr, "Error populating psrs, aborting\n");
 			return NULL;
 		}
@@ -380,6 +380,23 @@ struct klog_result *parseklog_get_next_psr(struct klogfile *log) {
 	}
 
 	return ret;
+}
+
+// Same as above but return NULL when end of chunk is reached
+struct klog_result *parseklog_get_next_psr_from_chunk (struct klogfile *log) 
+{
+    struct klog_result *ret = NULL;
+    
+    if (log->cur_idx == log->active_num_psrs) {
+	return (NULL);
+    }
+
+    if (log->cur_idx != log->active_num_psrs) {
+	ret = &log->active_psrs[log->cur_idx];
+	log->cur_idx++;
+    }
+    
+    return ret;
 }
 
 struct klog_result *parseklog_get_psr(struct klogfile *log, loff_t idx) {
@@ -488,11 +505,11 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 		if (apsr->flags & SR_HAS_SIGNAL) {
 			struct klog_signal *n = res->signal;
 			do {
-				write(destfd, n->raw, 172);
-			if (rc != sizeof(long)) {
+			    rc = write(destfd, n->raw, 172);
+			    if (rc != 172) {
 				fprintf(stderr, "Couldn't record raw signal\n");
 				return -1;
-			}
+			    }
 			} while (n->next);
 		}
 

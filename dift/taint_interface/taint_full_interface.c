@@ -7,16 +7,23 @@
 #include <assert.h>
 #include <glib-2.0/glib.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
 #include "../mmap_regions.h"
+
+#include <map>
+
+using namespace std;
 using namespace boost::icl;
 
 #define USE_MERGE_HASH
 #define TAINT_STATS
+#define USE_CHECK_FILE
 
 extern struct thread_data* current_thread;
 extern int splice_output;
@@ -49,6 +56,20 @@ struct slab_alloc leaf_table_alloc;
 // levels.
 GHashTable* taint_fds_table = NULL;
 GHashTable* taint_fds_cloexec = NULL;
+
+#ifdef USE_CHECK_FILE
+
+#define CHECK_TYPE_MMAP_REGION 0
+#define CHECK_TYPE_RANGE       1
+
+struct taint_check {
+    int type;
+    u_long value;
+};
+
+map<ADDRINT,taint_check> check_map;
+
+#endif
 
 #ifdef TAINT_STATS
 struct taint_stats_profile {
@@ -128,31 +149,6 @@ int is_flag_tainted (uint32_t flag) {
     }
     return tainted;
 }
-
-#ifdef DEBUGTRACE
-
-GHashTable* trace_set = NULL;
-
-static void init_trace_set ()
-{
-    if (trace_set == NULL) {
-	trace_set = g_hash_table_new (NULL, NULL);
-	g_hash_table_add (trace_set, GUINT_TO_POINTER(DEBUGTRACE));
-    }
-}
-
-void add_to_trace_set(u_long val)
-{
-    init_trace_set();
-    g_hash_table_add (trace_set, GUINT_TO_POINTER(val));
-}
-
-int is_in_trace_set(u_long val) 
-{
-    init_trace_set();
-    return g_hash_table_contains (trace_set, GUINT_TO_POINTER(val));
-}
-#endif
 
 #ifdef USE_NW
 static void 
@@ -669,11 +665,6 @@ int dump_mem_taints(int fd)
 		if (leaf[low_index] != addr) {
 		    print_value (fd, addr);
 		    print_value (fd, leaf[low_index]);
-#ifdef DEBUGTRACE
-		    if (is_in_trace_set(leaf[low_index])) {
-			printf ("addr %lx has taint value %lx\n", addr, leaf[low_index]);
-		    }
-#endif
 		}
 	    }
 	}
@@ -710,11 +701,6 @@ int dump_mem_taints_start(int fd)
 		if (leaf[low_index]) {
 		    print_value (fd, addr);
 		    print_value (fd, leaf[low_index]);
-#ifdef DEBUGTRACE
-		    if (is_in_trace_set(leaf[low_index])) {
-			printf ("addr %lx has taint value %lx\n", addr, leaf[low_index]);
-		    }
-#endif
 		}
 	    }
 	}
@@ -783,11 +769,6 @@ int dump_reg_taints (int fd, taint_t* pregs, int thread_ndx)
 	if (pregs[i] != base+i+1) {
 	    print_value (fd, base+i+1);
 	    print_value (fd, pregs[i]);
-#ifdef DEBUGTRACE
-	    if (is_in_trace_set(pregs[i])) {
-		printf ("reg %lx has taint value %lx\n", i, pregs[i]);
-	    }
-#endif
 	}
     }
 
@@ -992,6 +973,51 @@ static inline void zero_partial_reg_until (int reg, int offset, int until)
             (until - offset) * sizeof(taint_t));
 }
 
+#ifdef USE_CHECK_FILE
+static int init_check_map ()
+{
+    FILE* file = fopen ("/tmp/checks", "r");
+    while (!feof (file)) {
+	char line[256];
+	char addr[20], type[20], value[20];
+	struct taint_check tc;
+
+	if (fgets (line, sizeof(line), file) != NULL) {
+	    if (sscanf(line, "%19s %19s %19s", addr, type, value) == 3) {
+		u_long ip = strtoul(addr, NULL, 0);
+		if (ip == 0) {
+		    fprintf (stderr, "check %s: invalid address\n", line);
+		    return -1;
+		}
+		if (!strcmp(type, "rangev")) {
+		    if (!strcmp(value, "mm")) {
+			tc.type = CHECK_TYPE_MMAP_REGION;
+		    } else {
+			u_long range = strtoul (value, NULL, 0);
+			if (range == 0) {
+			    fprintf (stderr, "check %s: invalid rnage\n", line);
+			    return -1;
+			}
+			tc.type = CHECK_TYPE_RANGE;
+			tc.value = range;
+		    }
+		    check_map[ip] = tc;
+		} else { 
+		    fprintf (stderr, "check %s: invalid type\n", line);
+		    return -1;
+		}
+	    } else {
+		fprintf (stderr, "check %s: invalid format\n", line);
+		return -1;
+	    }
+	}
+    }
+    fclose (file);
+    return 0;
+}
+
+#endif
+
 void init_taint_structures (char* group_dir)
 {
     if (splice_output) {
@@ -1009,6 +1035,9 @@ void init_taint_structures (char* group_dir)
         taint_fds_table = g_hash_table_new(g_direct_hash, g_direct_equal);
         taint_fds_cloexec = g_hash_table_new(g_direct_hash, g_direct_equal);
     }
+#ifdef USE_CHECK_FILE    
+    init_check_map();
+#endif
 }
 
 int translate_reg(int reg)
@@ -1920,32 +1949,22 @@ int is_mem_arg_tainted (u_long mem_loc, uint32_t size)
     return is_mem_tainted (mem_loc, size);
 }
 
-static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) { 
-	UINT32 dst_value = 0;
-	assert (mem_loc != 0);
-        assert (mem_loc > 0x100);
-        switch (size) { 
-            case 1: {
-                        UINT8 tmp = *((UINT8*) mem_loc);
-                        dst_value = (UINT32) tmp;
-                        break;
-                    }
-            case 2: {
-                        UINT16 tmp = *((UINT16*) mem_loc);
-                        dst_value = (UINT32) tmp;
-                        break;
-                    }
-            case 4: {
-                        dst_value = *((UINT32*) mem_loc);
-                        break;
-                    }
-            default:
-                    {
-                        fprintf (stderr, "[ERROR]get_mem_value: size is %u. \n", size);
-                        return 0;
-                    }
-        }
-	return dst_value;
+// This should only be used for info msgs as it does not handle >4 byte regs
+static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) 
+{ 
+    UINT32 dst_value = -1;
+
+    if (size == 1) {
+	UINT8 tmp = *((UINT8*) mem_loc);
+	dst_value = (UINT32) tmp;
+    } else if (size == 2) {
+	UINT16 tmp = *((UINT16*) mem_loc);
+	dst_value = (UINT32) tmp;
+    } else if (size == 4) {
+	dst_value = *((UINT32*) mem_loc);
+    }
+
+    return dst_value;
 }
 
 static const char* translate_mmx (uint32_t reg)
@@ -2182,6 +2201,48 @@ static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, bool&
         int base_tainted, int index_tainted) 
 { 
     u_long start, end;
+    PIN_REGISTER base_value;
+    PIN_REGISTER index_value;
+
+#ifdef USE_CHECK_FILE
+    map<ADDRINT,taint_check>::iterator iter = check_map.find(ip);
+    if (iter != check_map.end()) {
+	if (iter->second.type == CHECK_TYPE_MMAP_REGION) {
+	    if (is_readonly_mmap_region (mem_loc, mem_size, start, end)) {
+		if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
+		if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
+		if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
+		if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
+		print_readonly_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
+	    } else {
+		fprintf (stderr, "Check file specifies mmap region, but addres not in such a region\n");
+		assert (0);
+	    }
+	} else if (iter->second.type == CHECK_TYPE_RANGE) {
+	    start = mem_loc - iter->second.value;
+	    end = mem_loc + iter->second.value;
+	    if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
+	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
+	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
+	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
+	    for (u_long i = start; i <= end; i++) {
+		if (!is_mem_tainted(i, 1)) {
+		    // Untainted - load in valid value to memory address
+		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", i, *(u_char *) i, ip);
+		    add_tainted_mem_for_final_check (i,1);  
+		}
+	    }
+	    check_read_only_mem = false; // Let calling function know this is not read-only memory
+	    print_readonly_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
+	}
+	return;
+    } else {
+        if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+        if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	check_read_only_mem = false; // Let calling function know this is not read-only memory
+    }
+#else
+
     if (!check_read_only_mem || !is_readonly_mmap_region (mem_loc, mem_size, start, end)) {
         //if TRACK_READONLY_REGION is turned off, this branch will always be executed
         if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
@@ -2190,8 +2251,6 @@ static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, bool&
     } else { 
         //for read-only regions, first initialize untainted registers 
         //then verify we're still within the range boundary
-        PIN_REGISTER base_value;
-        PIN_REGISTER index_value;
         if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
         if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
         //fprintf (stderr, "verify_register: memory %lx, %u is from a read-only region %lx, %d, ip %x\n", mem_loc, mem_size, region->addr, region->length, ip);
@@ -2200,6 +2259,7 @@ static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, bool&
         if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
         print_readonly_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
     }
+#endif
 }
 
 static void inline print_immediate_addr (u_long mem_loc, ADDRINT ip)
@@ -2777,14 +2837,10 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 	for (i = 0; i < ecx_val; i++) {
 	    bool is_tainted = is_mem_tainted(mem_loc+i,1);
 	    if (is_tainted) {
-		printf ("Byte %ld tainted\n", i);
 		mem_tainted = 1;
 	    } else if (*(u_char *) (mem_loc+i) == al_val) {
-		printf ("Byte %ld is a terminator\n", i);
 		i++;
 		break; // We found a guaranteed stop here
-	    } else {
-		printf ("Byte %ld not tainted\n", i);
 	    }
 	}
 	if (mem_tainted) {
@@ -2793,8 +2849,6 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 		    // We need to move the string values to scan if they are not tainted (and not already there) 
 		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", mem_loc+j, *(u_char *) (mem_loc+j), ip);
 		    add_tainted_mem_for_final_check (mem_loc+j,1);
-		} else {
-		    printf ("Byte %ld is read only or tainted\n", j);
 		}
 	    }
 	}
@@ -3983,20 +4037,11 @@ TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDR
 	// Accumulate taints from memory until we are sure that we will stop the scan
 	// AL and ECX assumed to be verified/untainted here.
 	taint_t t = 0;
-	printf ("mem loc %lx\n", mem_loc);
-	printf ("size %d\n", size);
-	printf ("al value %x tainted? %d\n", al_val, is_reg_tainted(LEVEL_BASE::REG_EAX, 1, 0));
-	printf ("ecx value %x tainted? %d\n", ecx_val, is_reg_tainted(LEVEL_BASE::REG_ECX, 4, 0));
 	for (u_long i = 0; i < ecx_val; i++) {
 	    taint_t* mem_taints = get_mem_taints_internal(mem_loc+i, 1);
-	    if (mem_taints) {
-		t = merge_taints (t, mem_taints[0]);
-		printf ("mem taint for %lu is %x new taint is %x\n", i, mem_taints[0], t);
-	    }
-	    printf ("string scan: memory %lx value %x tainted? %d\n", mem_loc+i, *(u_char *) (mem_loc+i), is_mem_tainted(mem_loc+i,1));
+	    if (mem_taints) t = merge_taints (t, mem_taints[0]);
 	    if (*(u_char *) (mem_loc+i) == al_val && !is_mem_tainted(mem_loc+i,1)) break;
 	}
-	printf ("final taint is %x\n", t);
 
 	// ECX and EDI could have different values if bytes were tainted (early stop)
 	set_reg_single_value(LEVEL_BASE::REG_ECX, 4, t);	

@@ -15,6 +15,10 @@ regname["7"] = "ebx"
 regname["8"] = "edx"
 regname["9"] = "ecx"
 regname["10"] = "eax"
+regname["54"] = "xmm0"
+regname["55"] = "xmm1"
+regname["56"] = "xmm2"
+regname["57"] = "xmm3"
 
 transreg = {}
 transreg["dl"] = "edx"
@@ -45,7 +49,9 @@ def findSources(target):
                 #print "look for reg", reg
                 sources[regname[reg]] = 1
             else:
-                sources[reg] = 1
+                for n in range(int(sz)):
+                    addr = ("%X" % (int(reg,16)+int(n))).lower()
+                    sources[addr] = 1
 
 def findNextBSlice(cnt):
     use_next_slice = 0
@@ -61,7 +67,7 @@ def findNextBSlice(cnt):
                     return cnt
             else:
                 if use_next_slice:
-                    del sources[addr]
+                    #del sources[addr]
                     print addrline,
                 dest = lines[cnt].split()[3].split(",")[0]
                 if dest in transreg:
@@ -72,31 +78,61 @@ def findNextBSlice(cnt):
                         del sources[dest]
                     return cnt
         elif lines[cnt][:13] == "[SLICE_TAINT]":
-            begin = int(lines[cnt].split()[-2],16)
-            end = int(lines[cnt].split()[-1],16)
-            for s in sources.keys():
-                v = int(s,16)
-                if (v >= begin and v <= end):
+            if (len(lines[cnt].split()) == 3):
+                reg = lines[cnt].split()[-1][1:]
+                if reg in sources.keys():
                     print cnt+1, lines[cnt],
-                    del sources[s]
-                    print "source for", s
+                    del sources[reg]
+                    print "source for", reg
+            else:
+                begin = int(lines[cnt].split()[-2],16)
+                end = int(lines[cnt].split()[-1],16)
+                for s in sources.keys():
+                    v = int(s,16)
+                    if (v >= begin and v <= end):
+                        print cnt+1, lines[cnt],
+                        del sources[s]
+                        print "source for", s
         elif lines[cnt][:18] == "[SLICE_ADDRESSING]":
             b = lines[cnt].find("$addr(")+8
             e = lines[cnt][b:].find(")")+b
             addr = lines[cnt][b:e]
-            if (addr in sources):
-                addrline = lines[cnt]
-                #print "addrfind", addrline,
-                while cnt > 0:
-                    cnt = cnt - 1
-                    #print "addrwalk", lines[cnt],
-                    if lines[cnt][:7] == "[SLICE]":
-                        # Address may be used as a source - check for this
-                        dest = lines[cnt].split()[3].split(",")[0]
-                        if not is_reg(dest):
-                            cnt = cnt + 1
-                            use_next_slice = True
-                        break
+            addrline = lines[cnt]
+            #print "addrfind", addrline,
+            while cnt > 0:
+                cnt = cnt - 1
+                #print "addrwalk", lines[cnt],
+                if lines[cnt][:7] == "[SLICE]":
+                    # determine size of instruction
+                    if "xmmword ptr" in lines[cnt]:
+                        opsize = 16
+                    elif "dword ptr" in lines[cnt]:
+                        opsize = 4
+                    elif "word ptr" in lines[cnt]:
+                        opsize = 2
+                    elif "byte ptr" in lines[cnt]:
+                        opsize = 1
+                    elif "#pop" in lines[cnt]:
+                        opsize = 4
+                    elif "#push" in lines[cnt]:
+                        opsize = 4
+                    else:
+                        print ">>> ", lines[cnt]
+                        die 
+                    for n in range(opsize):
+                        maddr = ("%X" % (int(addr,16)+int(n))).lower()
+                        #print "maddr: ", maddr, sources
+                        if (maddr in sources):
+                            # Address may be used as a source - check for this
+                            dest = lines[cnt].split()[3].split(",")[0]
+                            #print "dest: ", dest
+                            if not is_reg(dest):
+                                #print "use next slice"
+                                if not(is_cmp(lines[cnt].split()[2])):
+                                    del sources[maddr]
+                                use_next_slice = True
+                    cnt = cnt + 1
+                    break
 
         
 
@@ -117,5 +153,5 @@ print target,
 
 while (cnt > 0):
     findSources(lines[cnt])
-    #print sources
+    print "Source: ", sorted(sources.keys());
     cnt = findNextBSlice(cnt)

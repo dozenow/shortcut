@@ -1,6 +1,7 @@
 CC := gcc
 
 CFLAGS :=  -g
+CPPFLAGS := -g
 LDFLAGS := -Wall -Werror -g
 
 #LDLIBS := libutil.a
@@ -9,9 +10,9 @@ KERN_CONFIG := replay_headers/include/linux/replay_configs.h
 
 DEPS_DIR := .deps
 
-TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
+TARGETS=parseklog patchklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice
+	recheck_support.o preprocess_asm.class process_slice pinoutcmp
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -48,13 +49,16 @@ wparserecheck:
 parseklog: libutil.a parseklog.o parseklib.o
 	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
+patchklog: libutil.a patchklog.o parseklib.o
+	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o -o patchklog -lssl -lcrypto 
+
 rewriteklog: parseklib.o
 
 libutil.a: util.o parseklib.o
 	ar rv $@ $^
 	ranlib $@
 
-parseklib.o: $(KENREL_CONFIG)
+parseklib.o: $(KENREL_CONFIG) 
 
 reset_ndx: libutil.a
 

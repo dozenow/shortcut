@@ -348,7 +348,7 @@ struct klogfile *parseklog_open(const char *filename);
 void parseklog_close(struct klogfile *log);
 
 struct klog_result *parseklog_get_next_psr(struct klogfile *log);
-struct klog_result *parseklog_get_psr(struct klogfile *log, loff_t idx);
+struct klog_result *parseklog_get_next_psr_from_chunk (struct klogfile *log);
 
 int parseklog_read_next_chunk(struct klogfile *log);
 int parseklog_cur_chunk_size(struct klogfile *log);
