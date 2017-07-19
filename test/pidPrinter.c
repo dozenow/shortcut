@@ -18,7 +18,8 @@ int main()
 		perror("something Went Wrong when trying to get the pID!");
 	}
 	else{
-            processID = processID/1000+1234-8;//test for index divergence
+            processID = processID;//test for index divergence
+            //if (processID%2==0) processID
 		//printf("The process id is %d addr is %p\n", processID, &processID);
 		printf("The process id is %d \n", processID);
 	}

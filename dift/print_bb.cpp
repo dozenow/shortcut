@@ -12,6 +12,7 @@
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 long print_stop = 1000000;
+long print_start = 0;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
 
@@ -128,6 +129,11 @@ void syscall_after (ADDRINT ip)
     } else {
 	fprintf (stderr, "syscall_after: NULL current_thread\n");
     }
+    if (global_syscall_cnt >= print_stop) {
+        fprintf (stderr, "exit.\n");
+        try_to_exit (fd, PIN_GetPid());
+        PIN_ExitApplication(0);
+    }
 }
 
 void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
@@ -156,18 +162,20 @@ ADDRINT find_static_address(ADDRINT ip)
 
 void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
 {
-    printf ("%x   ", ip);
-    PIN_LockClient();
-    if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-    } else {
-	printf("unknown\n");
-    }
-    PIN_UnlockClient();
-    if (ip == 0xb7fe6820) {
-	    printf ("At 0xb7fe6820, eax is %x\n", PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX));
-	    ADDRINT mem = PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX);
-	    printf ("String at that location is %s\n", (char *) mem);
+    if (global_syscall_cnt >= print_start) {
+        printf ("%x   ", ip);
+        PIN_LockClient();
+        if (IMG_Valid(IMG_FindByAddress(ip))) {
+            printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+        } else {
+            printf("unknown\n");
+        }
+        PIN_UnlockClient();
+        if (ip == 0xb7fe6820) {
+            printf ("At 0xb7fe6820, eax is %x\n", PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX));
+            ADDRINT mem = PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX);
+            printf ("String at that location is %s\n", (char *) mem);
+        }
     }
 }
 

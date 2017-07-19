@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog patchklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice pinoutcmp
+	recheck_support.o preprocess_asm.class process_slice pinoutcmp merge_slice_ctrl_flow
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -29,6 +29,9 @@ preprocess_asm.class: preprocess_asm.scala
 
 process_slice: process_slice.cpp
 	g++ -g -o process_slice process_slice.cpp -std=c++0x
+
+merge_slice_ctrl_flow: merge_slice_ctrl_flow.cpp
+	g++ -g -o merge_slice_ctrl_flow merge_slice_ctrl_flow.cpp -std=c++0x
 
 launcher: libutil.a
 launcher: CFLAGS += --static -I../../eglibc-2.15/prefix/include -L../../eglibc-2.15/prefix/lib 
