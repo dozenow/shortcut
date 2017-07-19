@@ -977,6 +977,7 @@ static inline void zero_partial_reg_until (int reg, int offset, int until)
 static int init_check_map ()
 {
     FILE* file = fopen ("/tmp/checks", "r");
+    if (!file) return -ENOENT;
     while (!feof (file)) {
 	char line[256];
 	char addr[20], type[20], value[20];
@@ -2131,6 +2132,7 @@ static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t
 //TODO: handle partial taints for mem, just like registers
 static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t mem_size) { 
 	printf ("[SLICE_EXTRA] mov $addr(%lx,%u), %u  //comes with %x\n", mem_loc, mem_size, get_mem_value(mem_loc, mem_size), ip);
+	add_modified_mem_for_final_check (mem_loc,mem_size);   
 }
 
 static inline void print_extra_move_flag (ADDRINT ip, char* str, uint32_t flag) { 
@@ -2229,7 +2231,7 @@ static inline void verify_base_index_registers (ADDRINT ip, char* ins_str, bool&
 		if (!is_mem_tainted(i, 1)) {
 		    // Untainted - load in valid value to memory address
 		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", i, *(u_char *) i, ip);
-		    add_tainted_mem_for_final_check (i,1);  
+		    add_modified_mem_for_final_check (i,1);  
 		}
 	    }
 	    check_read_only_mem = false; // Let calling function know this is not read-only memory
@@ -2275,11 +2277,11 @@ TAINTSIGN fw_slice_addressing (ADDRINT ip, int base_reg, uint32_t base_reg_size,
     print_immediate_addr (mem_loc, ip);
     // let's check the memory address at the checkpoint clock
     if (is_read == 0) {//only check dst memory operand
-        add_tainted_mem_for_final_check (mem_loc, mem_size);
+        add_modified_mem_for_final_check (mem_loc, mem_size);
     }
 }
 
-void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t size) { 
+void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size) { 
     interval<unsigned long>::type mem_interval = interval<unsigned long>::closed(mem_loc, mem_loc+size-1);
     current_thread->address_taint_set->insert (mem_interval);
 }
@@ -2287,24 +2289,29 @@ void add_tainted_mem_for_final_check (u_long mem_loc, uint32_t size) {
 int fw_slice_check_final_mem_taint (taint_t* pregs) 
 { 
 	int has_mem = 0;
-	int mem_count = 0;
-        u_long mem_size_count = 0;
-        u_long tainted_size = 0;
 	int i;
        
         for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
                 iter != current_thread->address_taint_set->end(); ++iter) {
-            u_long loc = iter->lower();
-            u_long size = iter->upper() - iter->lower() + 1;
-            if (is_mem_tainted (loc, (unsigned int) size) == 0) {
-                printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", loc, size);
-                has_mem = 1;
-                tainted_size += size;
-            }
-            ++ mem_count;
-            mem_size_count += size;
+	    // We need to deal with partial taint
+	    u_long bytes_to_restore = 0;
+	    u_long addr;
+	    for (addr = iter->lower(); addr <= iter->upper(); addr++) {
+		if (is_mem_tainted (addr, 1)) {
+		    if (bytes_to_restore) {
+			printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
+			has_mem = 1;
+			bytes_to_restore = 0;
+		    }
+		} else {
+		    bytes_to_restore++;
+		}
+	    }
+	    if (bytes_to_restore) {
+		printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
+		has_mem = 1;
+	    }
         }
-	printf ("fw_slice_check_final_mem_taint: %d mem addrs are checked (size of %lu), total restore size %lu\n", mem_count, mem_size_count, tainted_size);
 
 	/* Assume 1 thread for now */
 	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
@@ -2501,7 +2508,7 @@ TAINTINT fw_slice_memreg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t reg_
 		printf ("    [SLICE_INFO] #src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %u\n", 
 				mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value (mem_loc, mem_size), *regvalue.dword);
 		if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, &regvalue, reg_u8, reg_tainted);
-		if (mem_tainted == 0) print_extra_move_mem (ip, mem_loc, mem_size);
+		if (mem_tainted == 0) print_extra_move_mem (ip, mem_loc, mem_size); // JNF: shouldn't we add to list here?
 		return 1;
 	}
 	return 0;
@@ -2721,7 +2728,7 @@ TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint3
     } else {
         if (mem_tainted) { 
             PRINT_SLICE;
-            //we need to verify the base&index registers so we can safely replace the memoray address with immediate_address
+            //we need to verify the base&index registers so we can safely replace the memory address with immediate_address
             print_immediate_addr (mem_loc, ip);
         }
     }
@@ -2848,7 +2855,7 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 		if (!is_mem_tainted(mem_loc+j,1) && !is_readonly (mem_loc+j, 1)) {
 		    // We need to move the string values to scan if they are not tainted (and not already there) 
 		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", mem_loc+j, *(u_char *) (mem_loc+j), ip);
-		    add_tainted_mem_for_final_check (mem_loc+j,1);
+		    add_modified_mem_for_final_check (mem_loc+j,1);
 		}
 	    }
 	}
@@ -2905,7 +2912,7 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 		    LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4);
 
 	    // We modified these bytes - add to hash
-	    add_tainted_mem_for_final_check (dst_mem_loc, size);
+	    add_modified_mem_for_final_check (dst_mem_loc, size);
 	}
     }
 }

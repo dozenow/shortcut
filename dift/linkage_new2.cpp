@@ -636,7 +636,7 @@ static inline void sys_read_stop(int rc)
 	    size_t end = 0;
 	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
 		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, *ppthread_log_clock);
-		add_tainted_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 	    } else {
 		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
 	    }
@@ -788,7 +788,7 @@ static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_l
     tci.data = 0;
     create_taints_from_buffer_unfiltered (buf, size, &tci, tokens_fd);
     printf ("[SLICE_TAINT] %s %lx %lx\n", sysname, (u_long)buf, (u_long)buf+size);
-    add_tainted_mem_for_final_check ((u_long)buf, size);
+    add_modified_mem_for_final_check ((u_long)buf, size);
 }
 
 static inline void taint_syscall_retval (const char* sysname)
@@ -1600,6 +1600,7 @@ static inline void sys_fstat64_stop (int rc)
     clear_mem_taints ((u_long)fsi->buf, sizeof(struct stat64));
     if (rc == 0) {
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_nlink, sizeof(fsi->buf->st_nlink));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
@@ -1622,6 +1623,7 @@ static inline void sys_stat64_stop (int rc)
 	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
 	if (rc == 0) {
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
@@ -1774,6 +1776,32 @@ static inline void sys_kill_start (struct thread_data* tdata, pid_t pid, int sig
     // Since replay handles signals, we might be OK sending signal to ourselves
     if (!(pid == current_thread->record_pid)) {
 	fprintf (stderr, "Sending signal %d to pid %d\n", sig, pid);
+    }
+}
+
+static inline void sys_futex_start (struct thread_data* tdata, int* uaddr, int op, int val, const struct timespec* timeout, int* uaddr2, int val3)
+{
+    if ((op&0x3f) == 0x1) { // Futex wait
+	// Only get this if single-threaded, in which case it is a no-op!
+	fprintf (stderr, "futex uaddr %p op %d val %d timespect %p uaddr2 %p, val3 %d\n", uaddr, op, val, timeout, uaddr2, val3);
+    }
+}
+
+static inline void sys_rt_sigaction_start (struct thread_data* tdata, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize)
+{
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call rt_sigaction_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_rt_sigaction (tdata->recheck_handle, sig, act, oact, sigsetsize, *ppthread_log_clock);
+	if (oact) clear_mem_taints ((u_long)oact, 20);
+    }
+}
+
+static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize)
+{
+    if (tdata->recheck_handle) {
+	printf ("[SLICE] #00000000 #call rt_sigprocmask_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_rt_sigprocmask (tdata->recheck_handle, how, set, oset, sigsetsize, *ppthread_log_clock);
+	if (oset) clear_mem_taints ((u_long)oset, sigsetsize);
     }
 }
 
@@ -1946,6 +1974,15 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_kill:
 	    sys_kill_start (tdata, (pid_t) syscallarg0, (int) syscallarg1);
             break;
+        case SYS_futex:
+	    sys_futex_start (tdata, (int *) syscallarg0, (int) syscallarg1, (int) syscallarg2, (struct timespec*) syscallarg3, (int *) syscallarg4, (int) syscallarg5);
+	    break;
+        case SYS_rt_sigaction:
+	    sys_rt_sigaction_start (tdata, (int) syscallarg0, (const struct sigaction *) syscallarg1, (struct sigaction *) syscallarg2, (size_t) syscallarg3);
+	    break;
+        case SYS_rt_sigprocmask:
+	    sys_rt_sigprocmask_start (tdata, (int) syscallarg0, (sigset_t *) syscallarg1, (sigset_t *) syscallarg2, (size_t) syscallarg3);
+	    break;
     }
 }
 
@@ -2127,7 +2164,7 @@ void instrument_syscall(ADDRINT syscall_num,
     }
     if (sysnum == 56) {
 	tdata->status_addr = (u_long) syscallarg0;
-	printf ("[SLICE] #00000000 #mov dword ptr [0x%lx], 3 [SLICE_INFO] reset the user-level record/replay flag", tdata->status_addr);
+	//printf ("[SLICE] #00000000 #mov dword ptr [0x%lx], 3 [SLICE_INFO] reset the user-level record/replay flag\n", tdata->status_addr);
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
 	sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
@@ -8129,7 +8166,6 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR: could not initialize Pin?\n");
         exit(-1);
     }
-
     tls_key = PIN_CreateThreadDataKey(0);
 
     // Intialize the replay device

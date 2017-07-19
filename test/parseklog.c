@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <syscall.h>
 
 #include <unistd.h>
 #include <getopt.h>
@@ -148,6 +149,27 @@ static void print_rt_sigaction(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct sigaction* sa = (struct sigaction *)res->retparams;
 		fprintf(out, "         sa handler is %lx\n", (unsigned long) sa->sa_handler);
+		fprintf(out, "         dword 2 is %lx\n", *(((u_long *) res->retparams)+1));
+		fprintf(out, "         dword 3 is %lx\n", *(((u_long *) res->retparams)+2));
+		fprintf(out, "         dword 4 is %lx\n", *(((u_long *) res->retparams)+3));
+		fprintf(out, "         dword 5 is %lx\n", *(((u_long *) res->retparams)+4));
+	}
+}
+
+static void print_rt_sigprocmask(FILE *out, struct klog_result *res) {
+	struct syscall_result *psr = &res->psr;
+	int i;
+
+	parseklog_default_print(out, res);
+
+	if (psr->flags & SR_HAS_RETPARAMS) {
+		sigset_t* s = (sigset_t *)(res->retparams + sizeof(u_long));
+		fprintf(out, "         set %llx\n", *((__u64 *) s));
+		for (i = 0; i < 64; i++) {
+			if (sigismember(s,i)) fprintf(out, "         signal %d is in set\n", i);
+		}
+	} else {
+		fprintf(out, "         no return parameters\n");
 	}
 }
 
@@ -431,6 +453,7 @@ int main(int argc, char **argv) {
 		parseklog_set_printfcn(log, print_socketcall, 102);
 		parseklog_set_printfcn(log, print_write, 146);
 		parseklog_set_printfcn(log, print_rt_sigaction, 174);
+		parseklog_set_printfcn(log, print_rt_sigprocmask, SYS_rt_sigprocmask);
 		parseklog_set_printfcn(log, print_getcwd, 182);
 		parseklog_set_printfcn(log, print_mmap, 192);
 		parseklog_set_printfcn(log, print_stat, 195);

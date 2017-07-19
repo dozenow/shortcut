@@ -126,24 +126,27 @@ void handle_mismatch()
 {
     static int cnt = 0;
     cnt++;
-    //if (cnt < 10) sleep (3); // Just so we notice it for now
+    fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf ();
+    sleep(2);
     abort();
 }
 
 void handle_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf ();
+    sleep(2);
     abort();
 }
 
 void handle_index_diverge(u_long foo)
 {
     int i;
-    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf ();
+    sleep(2);
     abort ();
 }
 
@@ -387,7 +390,7 @@ void close_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES 
-    LPRINT ("close: fd %d\n clock %lu", pclose->fd, pentry->clock);
+    LPRINT ("close: fd %d clock %lu\n", pclose->fd, pentry->clock);
 #endif
 
     if (pclose->fd >= MAX_FDS) abort();
@@ -459,10 +462,12 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	    printf ("[MISMATCH] %s mode does not match %d vs. recorded %d\n", syscall_name, st.st_mode, pstat64->retvals.st_mode);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_nlink != pstat64->retvals.st_nlink) {
 	    printf ("[MISMATCH] %s nlink does not match %d vs. recorded %d\n",syscall_name,  st.st_nlink, pstat64->retvals.st_nlink);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_uid != pstat64->retvals.st_uid) {
 	    printf ("[MISMATCH] %s uid does not match %d vs. recorded %d\n", syscall_name, st.st_uid, pstat64->retvals.st_uid);
 	    handle_mismatch();
@@ -491,10 +496,12 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 #endif
 	/* Assume atime will be handled by tainting since it changes often */
 	((struct stat64 *) pstat64->buf)->st_ino = st.st_ino;
+	((struct stat64 *) pstat64->buf)->st_nlink = st.st_nlink;
 	((struct stat64 *) pstat64->buf)->st_mtime = st.st_mtime;
 	((struct stat64 *) pstat64->buf)->st_ctime = st.st_ctime;
 	((struct stat64 *) pstat64->buf)->st_atime = st.st_atime;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
+	add_to_taintbuf (pentry, STAT64_INO, &st.st_nlink, sizeof(st.st_nlink));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
@@ -559,10 +566,12 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 mode does not match %d vs. recorded %d\n", st.st_mode, pfstat64->retvals.st_mode);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_nlink != pfstat64->retvals.st_nlink) {
 	    printf ("[MISMATCH] fstat64 nlink does not match %d vs. recorded %d\n", st.st_nlink, pfstat64->retvals.st_nlink);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_uid != pfstat64->retvals.st_uid) {
 	    printf ("[MISMATCH] fstat64 uid does not match %d vs. recorded %d\n", st.st_uid, pfstat64->retvals.st_uid);
 	    handle_mismatch();
@@ -591,10 +600,12 @@ void fstat64_recheck ()
 #endif
 	/* Assume inode, atime, mtime, ctime will be handled by tainting since it changes often */
 	((struct stat64 *) pfstat64->buf)->st_ino = st.st_ino;
+	((struct stat64 *) pfstat64->buf)->st_nlink = st.st_nlink;
 	((struct stat64 *) pfstat64->buf)->st_mtime = st.st_mtime;
 	((struct stat64 *) pfstat64->buf)->st_ctime = st.st_ctime;
 	((struct stat64 *) pfstat64->buf)->st_atime = st.st_atime;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
+	add_to_taintbuf (pentry, STAT64_INO, &st.st_nlink, sizeof(st.st_nlink));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
@@ -1432,8 +1443,99 @@ long set_tid_address_recheck ()
     LPRINT ("set_tid_address: tidptr %lx rc %ld clock %lu\n", (u_long) pset_tid_address->tidptr, pentry->retval, pentry->clock);
 #endif 
 
-    rc =  syscall(SYS_set_tid_address, pset_tid_address->tidptr); 
+    rc = syscall(SYS_set_tid_address, pset_tid_address->tidptr); 
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
     return rc;
+}
+
+void rt_sigaction_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct rt_sigaction_recheck* prt_sigaction;
+    struct sigaction* pact = NULL;
+    struct sigaction* poact = NULL;
+    char* data;
+    long rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    prt_sigaction = (struct rt_sigaction_recheck *) bufptr;
+    data = bufptr+sizeof(struct rt_sigaction_recheck);
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("rt_sigaction: sig %d act %lx oact %lx sigsetsize %d rc %ld clock %lu\n", prt_sigaction->sig, (u_long) prt_sigaction->act, (u_long) prt_sigaction->oact, prt_sigaction->sigsetsize, pentry->retval, pentry->clock);
+#endif 
+
+    if (prt_sigaction->act) pact = (struct sigaction *) data;
+    if (prt_sigaction->oact) poact = (struct sigaction *) tmpbuf;
+    rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, poact, prt_sigaction->sigsetsize); 
+    check_retval ("rt_sigaction", pentry->retval, rc);
+    if (prt_sigaction->oact) {
+	if (prt_sigaction->act) {
+	    if (memcmp (tmpbuf, data+20, 20)) {
+		u_long* pn = (u_long *) tmpbuf;
+		u_long* po = (u_long *) (data+20);
+		int i;
+		printf ("[MISMATCH] sigaction returns different values\n");
+		for (i = 0; i < 5; i++) {
+		  printf ("%lx vs. %lx (addr %p)", pn[i], po[i], &po[i]);
+		}
+		printf ("\n");
+		handle_mismatch();
+	    }
+	} else {
+	    if (memcmp (tmpbuf, data, 20)) {
+		u_long* pn = (u_long *) tmpbuf;
+		u_long* po = (u_long *) data;
+		int i;
+		printf ("[MISMATCH] sigaction returns different values (no set)\n");
+		for (i = 0; i < 5; i++) {
+		    printf ("%lx vs. %lx ", pn[i], po[i]);
+		}
+		printf ("\n");
+		handle_mismatch();
+	    }
+	}
+    }
+}
+
+void rt_sigprocmask_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct rt_sigprocmask_recheck* prt_sigprocmask;
+    sigset_t* pset = NULL;
+    sigset_t* poset = NULL;
+    char* data;
+    long rc;
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    prt_sigprocmask = (struct rt_sigprocmask_recheck *) bufptr;
+    data = bufptr+sizeof(struct rt_sigprocmask_recheck);
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
+	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock);
+#endif 
+
+    if (prt_sigprocmask->set) pset = (sigset_t *) data;
+    if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
+    rc = syscall(SYS_rt_sigprocmask, prt_sigprocmask->how, pset, poset, prt_sigprocmask->sigsetsize); 
+    check_retval ("rt_sigprocmask", pentry->retval, rc);
+    if (prt_sigprocmask->oset) {
+	if (prt_sigprocmask->set) {
+	    if (memcmp (tmpbuf, data+prt_sigprocmask->sigsetsize, prt_sigprocmask->sigsetsize)) {
+		printf ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx\n", *(__u64*)tmpbuf, *(__u64*)(data + prt_sigprocmask->sigsetsize));
+		handle_mismatch();
+	    }
+	} else {
+	    if (memcmp (tmpbuf, data, prt_sigprocmask->sigsetsize)) {
+		printf ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
+		handle_mismatch();
+	    }
+	}
+    }
 }
 

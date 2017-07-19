@@ -123,6 +123,16 @@ for line in infd:
     if line.strip() == "/* restoring address and registers */":
         write_jump_index ()
         break
+    if linecnt > 2500000 and "[ORIGINAL_SLICE]" in line:
+        write_jump_index ()
+        fcnt += 1
+        linecnt = 0
+        mainfd.write("\"call _section" + str(fcnt) + "\\n\"\n")
+        outfd = open(outputdir+"/exslice" + str(fcnt) + ".c", "w")
+        outfd.write ("asm (\n")
+        outfd.write ("\".section	.text\\n\"\n")
+        outfd.write ("\".globl _section" + str(fcnt) + "\\n\"\n")
+        outfd.write ("\"_section" + str(fcnt) +":\\n\"\n")
     if instr_jumps and " jump_diverge" in line:
         outfd.write ("\"" + "pushfd" + "\\n\"\n")
         outfd.write ("\"" + "push " + str(jcnt) + "\\n\"\n")
@@ -134,16 +144,6 @@ for line in infd:
     else:
 	outfd.write ("\"" + line.strip() + "\\n\"\n")
         linecnt += 1
-    if linecnt > 2500000 and not "[SLICE_VERIFICATION]" in line:
-        write_jump_index ()
-        fcnt += 1
-        linecnt = 0
-        mainfd.write("\"call _section" + str(fcnt) + "\\n\"\n")
-        outfd = open(outputdir+"/exslice" + str(fcnt) + ".c", "w")
-        outfd.write ("asm (\n")
-        outfd.write ("\".section	.text\\n\"\n")
-        outfd.write ("\".globl _section" + str(fcnt) + "\\n\"\n")
-        outfd.write ("\"_section" + str(fcnt) +":\\n\"\n")
         
 for line in infd:
     mainfd.write ("\"" + line.strip() + "\\n\"\n")

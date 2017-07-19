@@ -108,10 +108,7 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 	    case 45:  
 	    case 91:  
 	    case 125: 
-	    case 192:
-	    case 174: 
-	    case 175: 
-	    case 258: break; //already handled
+	    case 192: break; //already handled
 	    default:
 		fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped, start_clock %lu\n", res->psr.sysnum , res->index, res->start_clock); 
 	    }
@@ -982,6 +979,57 @@ int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long 
     write_header_into_recheck_log (handle->recheckfd, SYS_set_tid_address, res->retval, sizeof(schk), clock);
     schk.tidptr = tidptr;
     write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+
+    return 0;
+}
+
+int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize, u_long clock)
+{
+    struct rt_sigaction_recheck sachk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_rt_sigaction);
+    u_long size = sizeof(sachk);
+
+    check_reg_arguments ("rt_sigaction", 3);
+    if (act && is_mem_arg_tainted ((u_long) act, 20)) fprintf (stderr, "[ERROR] rt_sigaction input structure is tainted\n");
+
+    if (act) size += 20;
+    if (oact) size += 20;
+    write_header_into_recheck_log (handle->recheckfd, SYS_rt_sigaction, res->retval, size, clock);
+
+    sachk.sig = sig;
+    sachk.act = act;
+    sachk.oact = oact;
+    sachk.sigsetsize = sigsetsize;
+    write_data_into_recheck_log (handle->recheckfd, &sachk, sizeof(sachk));
+    if (act) write_data_into_recheck_log (handle->recheckfd, act, 20);
+    if (res->retparams_size > 0) {
+	assert (oact);
+	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams, 20);
+    }
+
+    return 0;
+}
+
+int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock)
+{
+    struct rt_sigprocmask_recheck spchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_rt_sigprocmask);
+    u_long size = sizeof(spchk);
+
+    check_reg_arguments ("rt_sigprocmask", 3);
+    if (set && is_mem_arg_tainted ((u_long) set, sigsetsize)) fprintf (stderr, "[ERROR] rt_sigprocmask input structure is tainted\n");
+
+    if (set) size += sigsetsize;
+    if (oset) size += sigsetsize;
+    write_header_into_recheck_log (handle->recheckfd, SYS_rt_sigprocmask, res->retval, size, clock);
+
+    spchk.how = how;
+    spchk.set = set;
+    spchk.oset = oset;
+    spchk.sigsetsize = sigsetsize;
+    write_data_into_recheck_log (handle->recheckfd, &spchk, sizeof(spchk));
+    if (set) write_data_into_recheck_log (handle->recheckfd, set, sigsetsize);
+    if (res->retparams_size > 0) write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), sigsetsize);
 
     return 0;
 }

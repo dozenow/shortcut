@@ -1484,11 +1484,14 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
-	copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
-	if (copied != sizeof(struct k_sigaction)*_NSIG) {
+	if (slicelib == NULL) {
+	    // Signal handlers will be restored from slice execution
+	    copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
+	    if (copied != sizeof(struct k_sigaction)*_NSIG) {
 		printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
 		rc = copied;
 		goto exit;
+	    }
 	}
 	
 	MPRINT ("replay_full_resume_proc_from_disk done\n");

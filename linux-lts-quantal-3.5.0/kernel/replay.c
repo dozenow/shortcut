@@ -120,6 +120,8 @@ int verify_debug = 0;
 //#define MPRINT(x,...)
 #define MCPRINT
 
+#define JNF_HACK
+
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
@@ -994,6 +996,10 @@ struct record_thread {
 	char recorded_filemap_valid[RECORD_FILE_SLOTS];
 #endif
 
+#ifdef JNF_HACK
+	int __user* rp_pthread_status;
+#endif
+
 	struct record_cache_files* rp_cache_files; // Info about open cache files
 	int rp_exe_flag; 		//flag for special handling of some application checkpoints
 };
@@ -1086,6 +1092,10 @@ struct replay_thread {
 
 	atomic_t ckpt_restore_done;            // finished with checkpoint restore
 	u_long rp_ckpt_pthread_block_clock; //it doesn't seem to be saved anywhere, and seems are to get; 
+
+#ifdef JNF_HACK
+	int __user* rp_pthread_status;
+#endif
 
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
@@ -2195,6 +2205,10 @@ new_record_thread (struct record_group* prg, u_long recpid, struct record_cache_
 	prp->rp_signals = NULL;
 	prp->rp_last_signal = NULL;
 
+#ifdef JNF_HACK
+	prp->rp_pthread_status = 0;
+#endif
+
 	atomic_inc(&prg->rg_record_threads);
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
@@ -2281,6 +2295,10 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 	prp->rp_pin_curthread_ptr = NULL;
 
 	prp->rp_pin_switch_before_attach = 0;
+
+#ifdef JNF_HACK
+	prp->rp_pthread_status = 0;
+#endif
 
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
@@ -7239,6 +7257,14 @@ asmlinkage long sys_pthread_full (void)
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
+#ifdef JNF_HACK
+	if (current->record_thrd) {
+		current->record_thrd->rp_pthread_status = status;
+	} else if (current->replay_thrd) {
+		current->replay_thrd->rp_pthread_status = status;
+	}
+	put_user (3, status);
+#else
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {
@@ -7246,6 +7272,7 @@ asmlinkage long sys_pthread_status (int __user * status)
 	} else {
 		put_user (3, status);
 	}
+#endif
 	return 0;
 }
 
@@ -11966,6 +11993,10 @@ record_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 	new_syscall_enter (120);
 
+#ifdef JNF_HACK
+	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
+#endif
+
 	if (!(clone_flags&CLONE_VM)) {
 		/* The intent here is to change the next pointer for the child - the easiest way to do this is to change
 		   the parent, fork, and then revert the parent */
@@ -12072,6 +12103,9 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 	prg = current->replay_thrd->rp_group;
 
+#ifdef JNF_HACK
+	if (current->record_thrd->rp_pthread_status) put_user (2, current->record_thrd->rp_pthread_status);
+#endif
 
 	if (is_pin_attached()) {
 		rc = current->replay_thrd->rp_saved_rc;
@@ -13771,6 +13805,10 @@ record_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 
 	new_syscall_enter (190);
 
+#ifdef JNF_HACK
+	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
+#endif
+
 	/* On clone, we reset the user log.  On, vfork we do not do this because the parent and child share one
            address space.  This sharing will get fixed on exec. */
 
@@ -13873,6 +13911,10 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 	long ret, rc;
 
 	// See above comment about user log
+
+#ifdef JNF_HACK
+	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
+#endif
 
 	// This is presumably necessary for PIN handling
 	MPRINT ("Pid %d replay_vfork syscall enter\n", current->pid);

@@ -224,6 +224,22 @@ struct set_tid_address_recheck {
     int* tidptr;
 };
 
+struct rt_sigaction_recheck {
+    int sig;
+    const struct sigaction* act;
+    struct sigaction* oact;
+    size_t sigsetsize;
+};
+/* Followed by contents of act and oact as applicable */
+
+struct rt_sigprocmask_recheck {
+    int how;
+    sigset_t* set;
+    sigset_t* oset;
+    size_t sigsetsize;
+};
+/* Followed by contents of act and oact as applicable */
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -267,5 +283,7 @@ int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds,
 int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds, struct timeval* timeout, u_long clock);
 int recheck_set_robust_list (struct recheck_handle* handle, struct robust_list_head* head, size_t len, u_long clock);
 int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long clock);
+int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize, u_long clock);
+int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock);
 
 #endif
