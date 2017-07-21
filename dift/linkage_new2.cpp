@@ -2827,58 +2827,37 @@ static inline void fw_slice_check_address (INS ins) {
 	}
 }
 
-static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize, int is_dst_mem) { 
-	char* str = get_copy_of_disasm (ins);
-	IARG_TYPE mem_ea = IARG_INVALID;
-        
-	if (is_dst_mem == 0) { 
-		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_reg),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_UINT32, srcreg, //no need for translate_reg
-				IARG_UINT32, src_regsize,
-				IARG_ADDRINT, 0,
-                                IARG_CONST_CONTEXT,
-				IARG_UINT32, REG_is_Upper8(srcreg),
-				IARG_END);
-	} else { 
-		if (INS_IsMemoryRead(ins)) {
-			mem_ea = IARG_MEMORYREAD_EA;
-		} else if (INS_IsMemoryWrite(ins)) {
-			mem_ea = IARG_MEMORYWRITE_EA;
-		}
+static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_reg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(srcreg), 
+		   IARG_UINT32, src_regsize,
+		   IARG_REG_CONST_REFERENCE, srcreg, 
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
 
-                if (INS_MemoryOperandCount (ins) > 0) {
-			INS_InsertIfCall(ins, IPOINT_BEFORE,
-					AFUNPTR(fw_slice_reg),
-					IARG_FAST_ANALYSIS_CALL,
-					IARG_INST_PTR,
-					IARG_PTR, str,
-                                        IARG_UINT32, srcreg, //no need for translate_reg
-					IARG_UINT32, src_regsize,
-					mem_ea,
-                                        IARG_CONST_CONTEXT,
-					IARG_UINT32, REG_is_Upper8(srcreg),
-					IARG_END);
-
-			fw_slice_check_address (ins);
-		} else 
-			INS_InsertCall(ins, IPOINT_BEFORE,
-					AFUNPTR(fw_slice_reg),
-					IARG_FAST_ANALYSIS_CALL,
-					IARG_INST_PTR,
-					IARG_PTR, str,
-                                        IARG_UINT32, srcreg, //no need for translate_reg
-					IARG_UINT32, src_regsize,
-					mem_ea,
-                                        IARG_CONST_CONTEXT,
-					IARG_UINT32, REG_is_Upper8(srcreg),
-					IARG_END);
-
-	}
-	put_copy_of_disasm (str);
+static inline void fw_slice_src_reg2mem (INS ins, REG srcreg, uint32_t src_regsize) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_reg2mem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(srcreg), 
+		   IARG_UINT32, src_regsize,
+		   IARG_REG_CONST_REFERENCE, srcreg, 
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_MEMORYWRITE_EA,
+		   IARG_END);
+    put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_mem (INS ins) 
@@ -3460,7 +3439,7 @@ void instrument_taint_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int extend,
     UINT32 dst_regsize = REG_Size(dstreg);
     UINT32 src_regsize = REG_Size(srcreg);
 
-    if (fw_slice) fw_slice_src_reg (ins, srcreg, src_regsize, 0);
+    if (fw_slice) fw_slice_src_reg (ins, srcreg, src_regsize);
 
     if (dstreg == srcreg) return;
 
@@ -3500,7 +3479,7 @@ void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
 
-    if(fw_slice) fw_slice_src_reg (ins, reg, regsize, 1);
+    if(fw_slice) fw_slice_src_reg2mem (ins, reg, regsize);
 
     if (regsize == memsize) {
         switch(regsize) {
@@ -4034,7 +4013,7 @@ inline void instrument_taint_mem2mem(INS ins, int extend) {
 void instrument_taint_mix_reg (INS ins, REG reg, int set_flags, int clear_flags)
 {
     UINT32 regsize = REG_Size(reg);
-    fw_slice_src_reg (ins, reg, regsize, 0);
+    fw_slice_src_reg (ins, reg, regsize);
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mix_reg_offset),
 		   IARG_FAST_ANALYSIS_CALL,
@@ -4754,7 +4733,7 @@ void instrument_store_string(INS ins)
 
     assert(INS_OperandIsMemory(ins, 0));
     assert(size == INS_MemoryOperandSize(ins, 0));
-    fw_slice_src_reg (ins, LEVEL_BASE::REG_EAX, size, 1);
+    fw_slice_src_reg2mem (ins, LEVEL_BASE::REG_EAX, size);
 
     if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
 	    INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
@@ -5340,7 +5319,7 @@ void instrument_rotate(INS ins)
 		REG reg = INS_OperandReg (ins, 0);
 		uint32_t regsize = REG_Size (reg);
 		if (regsize == 1) assert (REG_is_Lower8(reg));
-		fw_slice_src_reg (ins, reg, regsize, 0);
+		fw_slice_src_reg (ins, reg, regsize);
 		if (regsize == 1) {
 			// we only track taint at a byte granularily,
 			//  rotating 8 bits doesn't affect the taint
@@ -5431,7 +5410,7 @@ void instrument_lea(INS ins)
 
     if (REG_valid (index_reg) && !REG_valid(base_reg)) {
         // This is a nummeric calculation in disguise
-	fw_slice_src_reg (ins, index_reg, REG_Size(index_reg), 0);
+	fw_slice_src_reg (ins, index_reg, REG_Size(index_reg));
         INSTRUMENT_PRINT (log_f, "LEA: index reg is %d(%s) base reg invalid, dst %d(%s)\n",
                 index_reg, REG_StringShort(index_reg).c_str(),
                 dstreg, REG_StringShort(dstreg).c_str());
@@ -5462,7 +5441,7 @@ void instrument_lea(INS ins)
                 break;
         }
     } else if (!REG_valid (index_reg) && REG_valid(base_reg)) {
-	fw_slice_src_reg (ins, base_reg, REG_Size(base_reg), 0);
+	fw_slice_src_reg (ins, base_reg, REG_Size(base_reg));
         INSTRUMENT_PRINT (log_f, "LEA: base reg is %d(%s) index reg invalid, dst %d(%s)\n",
                 base_reg, REG_StringShort(base_reg).c_str(),
                 dstreg, REG_StringShort(dstreg).c_str());
@@ -5532,7 +5511,7 @@ void instrument_push(INS ins)
         REG reg = INS_OperandReg(ins, 0);
         int treg = translate_reg(reg);
 	assert(addrsize == REG_Size(reg));
-	fw_slice_src_reg (ins, reg, REG_Size(reg), 1);
+	fw_slice_src_reg2mem (ins, reg, REG_Size(reg));
         switch(addrsize) {
             case 1:
                 INS_InsertCall (ins, IPOINT_BEFORE,
@@ -5734,7 +5713,7 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
 			IARG_END);
     } else if(op1reg && op2imm){
         REG reg = INS_OperandReg(ins, 0);
-	fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
+	fw_slice_src_reg (ins, reg, REG_Size(reg));
         INSTRUMENT_PRINT(log_f, "instrument_addorsub: op1 is reg (%d) and op2 is immediate\n", reg);
 	INS_InsertCall (ins, IPOINT_BEFORE,
 			AFUNPTR(taint_reg_set_clear_flags_offset),
@@ -6094,7 +6073,7 @@ void instrument_imul(INS ins)
             } else {
                 assert (INS_OperandIsReg(ins, 1));
                 REG src_reg = INS_OperandReg(ins, 1);
-		fw_slice_src_reg (ins, src_reg, REG_Size(src_reg), 0);
+		fw_slice_src_reg (ins, src_reg, REG_Size(src_reg));
                 assert (REG_Size(dst_reg) == REG_Size(src_reg));
 		INS_InsertCall(ins, IPOINT_BEFORE,
 			       AFUNPTR(taint_reg2reg_offset),
@@ -6204,7 +6183,7 @@ void instrument_psrldq(INS ins)
     assert(INS_OperandIsImmediate(ins, 1));
     int treg = translate_reg(INS_OperandReg(ins, 0));
     int shift = INS_OperandImmediate(ins, 1);
-    fw_slice_src_reg (ins, INS_OperandReg(ins, 0), REG_Size(INS_OperandReg(ins, 0)), 0);
+    fw_slice_src_reg (ins, INS_OperandReg(ins, 0), REG_Size(INS_OperandReg(ins, 0)));
 
     INS_InsertCall(ins, IPOINT_BEFORE,
                     AFUNPTR(shift_reg_taint_right),
@@ -6225,7 +6204,7 @@ void instrument_pmovmskb(INS ins)
 
     dst_treg = translate_reg(INS_OperandReg(ins, 0));
     src_treg = translate_reg(INS_OperandReg(ins, 1));
-    fw_slice_src_reg (ins, INS_OperandReg(ins, 1), REG_Size(INS_OperandReg(ins, 1)), 0);
+    fw_slice_src_reg (ins, INS_OperandReg(ins, 1), REG_Size(INS_OperandReg(ins, 1)));
 
     INS_InsertCall(ins, IPOINT_BEFORE,
             AFUNPTR(taint_mask_reg2reg),
@@ -6296,9 +6275,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 	    REG indexreg = op1reg ? INS_OperandMemoryIndexReg(ins, 1) : INS_OperandMemoryIndexReg(ins, 0);
 	    UINT32 memsize = INS_MemoryReadSize(ins);
 	    UINT32 regsize = REG_Size(reg);
-
 	    fw_slice_src_regmem (ins, reg, regsize, IARG_MEMORYREAD_EA, memsize, basereg, indexreg);
-
 	    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
 			    IARG_FAST_ANALYSIS_CALL,
 			    IARG_MEMORYREAD_EA,
@@ -6315,9 +6292,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
         REG srcreg = INS_OperandReg(ins, 1);
 	UINT32 dstregsize = REG_Size(dstreg);
 	UINT32 srcregsize = REG_Size(srcreg);
-
 	fw_slice_src_regreg (ins, dstreg, dstregsize, srcreg, srcregsize);
-
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag_offset),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_UINT32, get_reg_off(dstreg),
@@ -6331,7 +6306,6 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
    } else if (op1mem && op2imm) {
 
 	    fw_slice_src_mem(ins);
-
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			   AFUNPTR(taint_mem2flag),
 			   IARG_FAST_ANALYSIS_CALL,
@@ -6341,21 +6315,20 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 			   IARG_UINT32, clear_mask,
 			   IARG_END);
 
-   } else if(op1reg && op2imm){
-    instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
+   } else if (op1reg && op2imm) {
+
 	    REG reg = INS_OperandReg (ins, 0);
 	    uint32_t regsize = REG_Size (reg);
-	    assert (REG_valid (reg));
-	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is reg and op2 is imm\n");
-	    fw_slice_src_reg(ins, reg, regsize, 0);
+	    fw_slice_src_reg(ins, reg, regsize);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_reg2flag),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_UINT32, translate_reg(reg), 
-			    IARG_UINT32, set_mask, 
-			    IARG_UINT32, regsize,
-                            IARG_UINT32, REG_is_Upper8(reg),
-			    IARG_END);
+			   AFUNPTR(taint_reg2flag_offset),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_UINT32, get_reg_off(reg), 
+			   IARG_UINT32, regsize,
+			   IARG_UINT32, set_mask, 
+			   IARG_UINT32, clear_mask,
+			   IARG_END);
+
     } else {
         fprintf(stderr, "unknown combination of CMP ins: %s\n", INS_Disassemble(ins).c_str());
 	assert (0);
@@ -6378,7 +6351,7 @@ void instrument_jump (INS ins, uint32_t flags) {
 }
 
 void instrument_jump_ecx (INS ins, uint32_t size) {
-	fw_slice_src_reg (ins, LEVEL_BASE::REG_ECX, size, 0);
+	fw_slice_src_reg (ins, LEVEL_BASE::REG_ECX, size);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump_ecx),
 			IARG_FAST_ANALYSIS_CALL,
 			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
@@ -6394,7 +6367,7 @@ void instrument_not (INS ins) {
 	if (op1reg) { 
 		REG reg = INS_OperandReg(ins, 0);
 		UINT32 regsize = REG_Size(reg);	
-		fw_slice_src_reg (ins, reg, regsize, 0);
+		fw_slice_src_reg (ins, reg, regsize);
 	} else if (op1mem) { 
 		fw_slice_src_mem (ins);
 	} else {
@@ -6427,7 +6400,7 @@ void instrument_incdec_neg (INS ins) {
 		fw_slice_src_mem (ins);
 	} else if (opreg) { 
 		REG reg = INS_OperandReg (ins, 0);
-		fw_slice_src_reg (ins, reg, REG_Size(reg), 0);
+		fw_slice_src_reg (ins, reg, REG_Size(reg));
 	} else {
 		assert (0);
 	}
@@ -6468,15 +6441,15 @@ void instrument_bt (INS ins) {
 	    REG reg = INS_OperandReg (ins, 0);
 	    uint32_t regsize = REG_Size (reg);
 	    assert (REG_valid (reg));
-	    fw_slice_src_reg(ins, reg, regsize, 0);
+	    fw_slice_src_reg(ins, reg, regsize);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_reg2flag),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_UINT32, reg, 
-			    IARG_UINT32, CF_FLAG, 
-			    IARG_UINT32, regsize,
-                            IARG_UINT32, REG_is_Upper8(reg),
-			    IARG_END);
+			   AFUNPTR(taint_reg2flag_offset),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_UINT32, get_reg_off(reg), 
+			   IARG_UINT32, regsize,
+			   IARG_UINT32, CF_FLAG, 
+			   IARG_UINT32, 0,
+			   IARG_END);
 	} else if (op1mem && op2imm) { 
 	    uint32_t addrsize = INS_MemoryReadSize(ins);
 	    fw_slice_src_mem(ins);
@@ -6515,7 +6488,7 @@ void instrument_bit_scan (INS ins) {
     } else {
         REG dstreg = INS_OperandReg (ins, 0);
         REG srcreg = INS_OperandReg (ins, 1);
-        fw_slice_src_reg (ins, srcreg, REG_Size(srcreg), 0);
+        fw_slice_src_reg (ins, srcreg, REG_Size(srcreg));
         assert (REG_is_Upper8(srcreg) == 0);
         INS_InsertCall (ins, IPOINT_BEFORE, 
                 AFUNPTR(taint_merge_reg2reg), 
@@ -6525,13 +6498,13 @@ void instrument_bit_scan (INS ins) {
                 IARG_UINT32, REG_Size (dstreg),
                 IARG_END);
         INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(taint_reg2flag),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_UINT32, translate_reg(srcreg),
-                IARG_UINT32, ZF_FLAG,  
-                IARG_UINT32, REG_Size(srcreg),
-                IARG_UINT32, REG_is_Upper8(srcreg),
-                IARG_END);
+		       AFUNPTR(taint_reg2flag_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_UINT32, get_reg_off(srcreg),
+		       IARG_UINT32, REG_Size(srcreg),
+		       IARG_UINT32, ZF_FLAG,  
+		       IARG_UINT32, 0,
+		       IARG_END);
     }
 }
 
@@ -6562,46 +6535,22 @@ void instrument_fpu_load (INS ins)
 
 void instrument_cwde (INS ins) 
 {
-    char* str = get_copy_of_disasm (ins);
-    INS_InsertCall(ins, IPOINT_BEFORE,
-		   AFUNPTR(fw_slice_reg),
-		   IARG_FAST_ANALYSIS_CALL,
-		   IARG_INST_PTR,
-		   IARG_PTR, str,
-		   IARG_UINT32, LEVEL_BASE::REG_EAX,
-		   IARG_UINT32, 2,
-		   IARG_ADDRINT, 0,
-		   IARG_CONST_CONTEXT,
-		   IARG_UINT32, 0,
-		   IARG_END);
+    fw_slice_src_reg (ins, LEVEL_BASE::REG_EAX, 2);
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mix_cwde),
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_END);
-    put_copy_of_disasm (str);
 }
 
 void instrument_bswap (INS ins) 
 {
     REG reg = INS_OperandReg(ins, 0);    
-    char* str = get_copy_of_disasm (ins);
-    INS_InsertCall(ins, IPOINT_BEFORE,
-		   AFUNPTR(fw_slice_reg),
-		   IARG_FAST_ANALYSIS_CALL,
-		   IARG_INST_PTR,
-		   IARG_PTR, str,
-		   IARG_UINT32, reg,
-		   IARG_UINT32, 4,
-		   IARG_ADDRINT, 0,
-		   IARG_CONST_CONTEXT,
-		   IARG_UINT32, 0,
-		   IARG_END);
+    fw_slice_src_reg (ins, reg, 4);
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_bswap_offset),
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_UINT32, get_reg_off(reg),
 		   IARG_END);
-    put_copy_of_disasm (str);
 }
 
 void count_inst_executed (void) 
