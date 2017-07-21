@@ -2584,7 +2584,6 @@ int get_record_pid()
 }
 
 void instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend);
-void instrument_taint_reg2mem(INS ins, REG srcreg, int extend);
 void instrument_taint_mem2mem(INS ins, int extend);
 
 void instrument_taint_add_reg2mem(INS ins, REG srcreg, int set_flags, int clear_flags);
@@ -3473,475 +3472,59 @@ void instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend)
 	return instrument_taint_reg2reg_slice(ins, dstreg, srcreg, extend, 1); 
 }
 
-void instrument_taint_reg2mem_slice(INS ins, REG reg, int extend, int fw_slice)
+void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 {
-    int treg = translate_reg((int)reg);
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
 
-    if(fw_slice) fw_slice_src_reg2mem (ins, reg, regsize);
-
-    if (regsize == memsize) {
-        switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_lbreg2mem),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-                } else if (REG_is_Upper8(reg)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                            AFUNPTR(taint_ubreg2mem),
-                            IARG_FAST_ANALYSIS_CALL,
-                            IARG_MEMORYWRITE_EA,
-                            IARG_UINT32, treg,
-                            IARG_END);
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_hwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_wreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 8:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_dwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 16:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_qwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-        }
-    } else if (regsize < memsize) {
-        if (extend) {
-            switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    switch(memsize) {
-                        case 2:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2hwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 4:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_lbreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2dwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 16:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_lbreg2qwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else if (REG_is_Upper8(reg)) {
-                    switch(memsize) {
-                        case 2:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2hwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 4:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2wmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 8:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2dwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        case 16:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taintx_ubreg2qwmem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-                switch(memsize) {
-                    case 4:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 8:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_hwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 4:
-                switch(memsize) {
-                    case 8:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_wreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_wreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 8:
-                switch(memsize) {
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taintx_dwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 16:
-                fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                assert(0);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-            }
-        } else {
-            switch(regsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    switch(memsize) {
-                        case 2:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2hwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 4:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 16:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_lbreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else if (REG_is_Upper8(reg)) {
-                    switch(memsize) {
-                        case 2:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2hwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 4:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 8:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        case 16:
-                            INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_ubreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                            break;
-                        default:
-                            fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                            assert(0);
-                            break;
-                    }
-                } else {
-                    fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown src reg\n");
-                    assert(0);
-                }
-                break;
-            case 2:
-                switch(memsize) {
-                    case 4:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2wmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 8:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_hwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 4:
-                switch(memsize) {
-                    case 8:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_wreg2dwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_wreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 8:
-                switch(memsize) {
-                    case 16:
-                        INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_dwreg2qwmem),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYWRITE_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                        break;
-                    default:
-                        fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                        assert(0);
-                        break;
-                }
-                break;
-            case 16:
-                fprintf(stderr, "[ERROR] Unsupported mem write size %d\n", memsize);
-                assert(0);
-                break;
-            default:
-                fprintf(stderr, "[ERROR] instrument_taint_reg2mem: unknown reg size %d\n", regsize);
-                assert(0);
-                break;
-            }
-        } 
+    if (extend && memsize > regsize) {
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_reg2mem_ext_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYWRITE_EA,
+		       IARG_UINT32, memsize,
+		       IARG_UINT32, get_reg_off(reg),
+		       IARG_UINT32, regsize,
+		       IARG_END);
     } else {
-        // regsize if greater than mem, just move the lower memsize bits
-        // of the register to memory
-        switch(memsize) {
-            case 1:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_lbreg2mem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_hwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_wreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 8:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                                    AFUNPTR(taint_dwreg2mem),
-                                    IARG_FAST_ANALYSIS_CALL,
-                                    IARG_MEMORYWRITE_EA,
-                                    IARG_UINT32, treg,
-                                    IARG_END);
-                break;
-            default:
-                INSTRUMENT_PRINT (log_f, "Instruction: %s\n", INS_Disassemble(ins).c_str());
-                INSTRUMENT_PRINT (log_f, "memsize %d, regsize %d\n", memsize, regsize);
-                assert(0);
-                break;
-        }
+	UINT32 size = (regsize < memsize) ? regsize : memsize;
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_reg2mem_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYWRITE_EA,
+		       IARG_UINT32, get_reg_off(reg),
+		       IARG_UINT32, size,
+		       IARG_END);
     }
 }
-inline void instrument_taint_reg2mem(INS ins, REG reg, int extend) {
-	return instrument_taint_reg2mem_slice (ins, reg, extend, 1);
-}
 
-void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+#define SETUP_BASE_INDEX_TAINT			\
+    UINT32 base_reg_off = 0;			\
+    UINT32 base_reg_size = 0;                   \
+    UINT32 index_reg_off = 0;                   \
+    UINT32 index_reg_size = 0;			\
+    if (REG_valid(base_reg)) {			\
+	base_reg_off = get_reg_off (base_reg);	\
+	base_reg_size = REG_Size (base_reg);	\
+    }						\
+    if (REG_valid(index_reg)) {			\
+        index_reg_off = get_reg_off (index_reg);    \
+	index_reg_size = REG_Size (index_reg); \
+    } 
+
+#define PASS_BASE_INDEX_TAINT       \
+        IARG_UINT32, base_reg_off, \
+	IARG_UINT32, base_reg_size, \
+	IARG_UINT32, index_reg_off, \
+	IARG_UINT32, index_reg_size
+
+static void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     UINT32 regsize = REG_Size(dstreg);
     UINT32 memsize = INS_MemoryReadSize(ins);
     UINT32 size = (regsize < memsize) ? regsize : memsize;
 
-    UINT32 base_reg_off = 0;
-    UINT32 base_reg_size = 0;		     
-    UINT32 index_reg_off = 0;
-    UINT32 index_reg_size = 0;
-    if (REG_valid(base_reg)) {
-	base_reg_off = get_reg_off (base_reg);
-	base_reg_size = REG_Size (base_reg);
-    } 
-    if (REG_valid(index_reg)) {
-	index_reg_off = get_reg_off (index_reg);
-	index_reg_size = REG_Size (index_reg);
-    } 
+    SETUP_BASE_INDEX_TAINT;
 
     if (extend && regsize > memsize) {
 	INS_InsertCall(ins, IPOINT_BEFORE,
@@ -3958,10 +3541,7 @@ void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_reg = L
 		       IARG_MEMORYREAD_EA,
 		       IARG_UINT32, get_reg_off (dstreg),
 		       IARG_UINT32, size,
-		       IARG_UINT32, base_reg_off,
-		       IARG_UINT32, base_reg_size,
-		       IARG_UINT32, index_reg_off,
-		       IARG_UINT32, index_reg_size,
+		       PASS_BASE_INDEX_TAINT,
 		       IARG_END);
     }
 }
@@ -4245,6 +3825,21 @@ void instrument_taint_immval2mem(INS ins)
                     break;
             }
 
+}
+
+static void instrument_taint_mem2flag (INS ins, uint32_t set_mask, uint32_t clear_mask, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_mem2flag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_MEMORYREAD_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   IARG_UINT32, set_mask, 
+		   IARG_UINT32, clear_mask,
+		   PASS_BASE_INDEX_TAINT,
+		   IARG_END);
 }
 
 void instrument_clear_dst(INS ins)
@@ -5033,22 +4628,16 @@ void instrument_mov (INS ins)
         REG dst_reg = INS_OperandReg(ins, 0);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-
 	fw_slice_src_mem (ins, base_reg, index_reg);
 	instrument_taint_mem2reg (ins, dst_reg, 0, base_reg, index_reg);
-#ifdef TRACK_READONLY_REGION
-        //here I still merge taints of index/base registers in
-        //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
-        if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, dst_reg, base_reg, -1, -1);
-        if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, dst_reg, index_reg, -1, -1);
-#endif
+
     } else if(ismemwrite) {
         if(!immval) {
             //mov register to memory location
             REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
             fw_slice_src_regregreg_mov (ins, reg, base_reg, index_reg);
-	    instrument_taint_reg2mem_slice(ins, reg, 0, 0);
+	    instrument_taint_reg2mem (ins, reg, 0);
         } else {
             //move immediate to memory location
             instrument_taint_immval2mem(ins);
@@ -5178,7 +4767,7 @@ void instrument_movx (INS ins)
         REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
         fw_slice_src_regregreg_mov (ins, src_reg, base_reg, index_reg);
-        instrument_taint_reg2mem_slice(ins, src_reg, 1, 0);
+        instrument_taint_reg2mem (ins, src_reg, 1);
     } else if (op1mem && op2mem) {
         instrument_taint_mem2mem(ins, 1);
     } else {
@@ -5483,40 +5072,10 @@ void instrument_push(INS ins)
         }
     } else if (src_reg) {
         REG reg = INS_OperandReg(ins, 0);
-        int treg = translate_reg(reg);
 	assert(addrsize == REG_Size(reg));
 	fw_slice_src_reg2mem (ins, reg, REG_Size(reg));
-        switch(addrsize) {
-            case 1:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_lbreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 2:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_hwreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall (ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_wreg2mem),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYWRITE_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            default:
-                ERROR_PRINT (stderr, "[ERROR]Unsupported reg push size\n");
-                assert(0);
-                break;
-        }
-    } else {
+	instrument_taint_reg2mem (ins, reg, 0);
+   } else {
         assert(INS_OperandIsMemory(ins, 0));
     	fw_slice_src_mem2mem (ins);
         switch(addrsize) {
@@ -6268,16 +5827,11 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 
    } else if (op1mem && op2imm) {
 
-	fw_slice_src_mem(ins, INS_OperandMemoryBaseReg(ins, 0), INS_OperandMemoryIndexReg(ins, 0));
-	INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(taint_mem2flag),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_MEMORYREAD_EA,
-		       IARG_UINT32, INS_MemoryReadSize(ins),
-		       IARG_UINT32, set_mask, 
-		       IARG_UINT32, clear_mask,
-		       IARG_END);
-	
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_mem(ins, base_reg, index_reg);
+	instrument_taint_mem2flag (ins, set_mask, clear_mask, base_reg, index_reg);
+
     } else if (op1reg && op2imm) {
 	
 	REG reg = INS_OperandReg (ins, 0);
@@ -6410,16 +5964,8 @@ void instrument_bt (INS ins) {
 			   IARG_UINT32, 0,
 			   IARG_END);
 	} else if (op1mem && op2imm) { 
-	    uint32_t addrsize = INS_MemoryReadSize(ins);
 	    fw_slice_src_mem(ins);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			   AFUNPTR(taint_mem2flag),
-			   IARG_FAST_ANALYSIS_CALL,
-			   IARG_MEMORYREAD_EA,
-			   IARG_UINT32, addrsize,
-			   IARG_UINT32, CF_FLAG, 
-			   IARG_UINT32, 0,
-			   IARG_END);
+	    instrument_taint_mem2flag (ins, CF_FLAG, 0);
 	} else { 
 		assert (0);
 	}
@@ -6436,14 +5982,7 @@ void instrument_bit_scan (INS ins) {
                 IARG_UINT32, translate_reg(dstreg),
                 IARG_UINT32, REG_Size(dstreg),
                 IARG_END);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(taint_mem2flag),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_MEMORYREAD_EA,
-		       IARG_UINT32, INS_MemoryReadSize(ins),
-		       IARG_UINT32, ZF_FLAG, 
-		       IARG_UINT32, 0,
-		       IARG_END);
+	instrument_taint_mem2flag (ins, ZF_FLAG, 0);
     } else {
         REG dstreg = INS_OperandReg (ins, 0);
         REG srcreg = INS_OperandReg (ins, 1);
