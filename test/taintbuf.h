@@ -1,9 +1,12 @@
 #define RETVAL             1
 #define RETBUF             2
 #define STAT64_INO        10
-#define STAT64_MTIME      11
-#define STAT64_CTIME      12
-#define STAT64_ATIME      13
+#define STAT64_NLINK      11
+#define STAT64_SIZE       12
+#define STAT64_MTIME      13
+#define STAT64_CTIME      14
+#define STAT64_ATIME      15
+#define STAT64_BLOCKS     16
 #define NEWSELECT_TIMEOUT 10
 #define GETTIMEOFDAY_TV   10
 #define GETTIMEOFDAY_TZ   11

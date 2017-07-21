@@ -52,6 +52,12 @@ static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result*
     if (trv->rettype == STAT64_INO) {
 	rc = read (fd, &((struct stat64 *) res->retparams)->st_ino, sizeof(((struct stat64 *) res->retparams)->st_ino));
 	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_ino));
+    } else if (trv->rettype == STAT64_NLINK) {
+	rc = read (fd, &((struct stat64 *) res->retparams)->st_nlink, sizeof(((struct stat64 *) res->retparams)->st_nlink));
+	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_nlink));
+    } else if (trv->rettype == STAT64_SIZE) {
+	rc = read (fd, &((struct stat64 *) res->retparams)->st_size, sizeof(((struct stat64 *) res->retparams)->st_size));
+	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_size));
     } else if (trv->rettype == STAT64_MTIME) {
 	rc = read (fd, &((struct stat64 *) res->retparams)->st_mtime, sizeof(((struct stat64 *) res->retparams)->st_mtime));
 	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_mtime));
@@ -61,6 +67,9 @@ static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result*
     } else if (trv->rettype == STAT64_ATIME) {
 	rc = read (fd, &((struct stat64 *) res->retparams)->st_atime, sizeof(((struct stat64 *) res->retparams)->st_atime));
 	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_atime));
+    } else if (trv->rettype == STAT64_BLOCKS) {
+	rc = read (fd, &((struct stat64 *) res->retparams)->st_blocks, sizeof(((struct stat64 *) res->retparams)->st_blocks));
+	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_blocks));
     } else {
 	assert (0);
     }

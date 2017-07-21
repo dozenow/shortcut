@@ -1601,9 +1601,11 @@ static inline void sys_fstat64_stop (int rc)
     if (rc == 0) {
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_nlink, sizeof(fsi->buf->st_nlink));
+	//taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_size, sizeof(fsi->buf->st_size));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_mtime, sizeof(fsi->buf->st_mtime));
+	//taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_blocks, sizeof(fsi->buf->st_blocks));
     }
     LOG_PRINT ("Done with fstat64.\n");
 }
@@ -1624,9 +1626,11 @@ static inline void sys_stat64_stop (int rc)
 	if (rc == 0) {
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
+	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_size, sizeof(si->buf->st_size));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
+	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_blocks, sizeof(si->buf->st_blocks));
 	}
 	LOG_PRINT ("Done with stat64.\n");
 }
@@ -2916,59 +2920,76 @@ static inline void fw_slice_src_mem (INS ins, int is_dst_mem) {
 	    }
 	    put_copy_of_disasm (str);
 }
-//the following three functions merges taints from two operands and also consider different operand sizes
-//dstreg does not necessarily mean the destination register, refer to instrument_lea
-static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize) { 
-	char* str = get_copy_of_disasm (ins);
-	if (INS_MemoryOperandCount (ins) > 0) {
-		INS_InsertIfCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_regreg),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_UINT32, dstreg,
-				IARG_UINT32, srcreg,
-				IARG_UINT32, dst_regsize,
-				IARG_UINT32, src_regsize,
-                                IARG_CONST_CONTEXT,
-				IARG_UINT32, REG_is_Upper8(dstreg),
-				IARG_UINT32, REG_is_Upper8(srcreg),
-				IARG_END);
-		fw_slice_check_address (ins);
-	} else {
-		INS_InsertCall(ins, IPOINT_BEFORE,
-				AFUNPTR(fw_slice_regreg),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_INST_PTR,
-				IARG_PTR, str,
-				IARG_UINT32, dstreg,
-				IARG_UINT32, srcreg,
-				IARG_UINT32, dst_regsize,
-				IARG_UINT32, src_regsize,
-                                IARG_CONST_CONTEXT,
-				IARG_UINT32, REG_is_Upper8(dstreg),
-				IARG_UINT32, REG_is_Upper8(srcreg),
-				IARG_END);
-	}
-	put_copy_of_disasm (str);
+
+static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsize, REG srcreg, uint32_t src_regsize) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_regreg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(dstreg),
+		   IARG_UINT32, dst_regsize,
+		   IARG_REG_CONST_REFERENCE, dstreg, 
+		   IARG_UINT32, REG_is_Upper8(dstreg),
+		   IARG_UINT32, translate_reg(srcreg),
+		   IARG_UINT32, src_regsize,
+		   IARG_REG_CONST_REFERENCE, srcreg, 
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_END);
+    put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize) { 
-	char* str = get_copy_of_disasm (ins);
-	INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memreg),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_ADDRINT, reg, 
-			IARG_UINT32, reg_size,
-                        IARG_CONST_CONTEXT,
-			IARG_UINT32, REG_is_Upper8(reg),
-			mem_ea, 
-			IARG_UINT32, memsize,
-			IARG_END);
-	fw_slice_check_address(ins);
-	put_copy_of_disasm (str);
+#define SETUP_BASE_INDEX(base_reg,index_reg) \
+    int t_base_reg = 0;			     \
+    int t_index_reg = 0;		     \
+    int base_reg_size = 0;		     \
+    int index_reg_size = 0;		     \
+    int base_reg_u8 = 0;		     \
+    int index_reg_u8 = 0;			     \
+    IARG_TYPE base_reg_value_type = IARG_UINT32;      \
+    IARG_TYPE index_reg_value_type = IARG_UINT32;     \
+    if (REG_valid(base_reg)) {			      \
+	t_base_reg = translate_reg (base_reg);	      \
+	base_reg_size = REG_Size (base_reg);	      \
+	base_reg_u8 = REG_is_Upper8 (base_reg);	      \
+	base_reg_value_type = IARG_REG_VALUE;	      \
+    }						      \
+    if (REG_valid(index_reg)) {			      \
+	t_index_reg = translate_reg (index_reg);      \
+	index_reg_size = REG_Size (index_reg);	      \
+	index_reg_u8 = REG_is_Upper8 (index_reg);     \
+	index_reg_value_type = IARG_REG_VALUE;	      \
+    }
+
+#define PASS_BASE_INDEX	 IARG_ADDRINT, t_base_reg,	\
+	IARG_UINT32, base_reg_size,			\
+	base_reg_value_type, base_reg,			\
+	IARG_UINT32, base_reg_u8,			\
+	IARG_ADDRINT, t_index_reg,			\
+	IARG_UINT32, index_reg_size,			\
+	index_reg_value_type, index_reg,		\
+	IARG_UINT32, index_reg_u8			
+
+static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID()) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_memreg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_ADDRINT, translate_reg(reg), 
+		   IARG_UINT32, reg_size,
+		   IARG_REG_CONST_REFERENCE, reg, 
+		   IARG_UINT32, REG_is_Upper8(reg),
+		   mem_ea, 
+		   IARG_UINT32, memsize,
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_flag (INS ins, uint32_t mask) { 
@@ -3108,37 +3129,6 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG dest_reg, REG b
     put_copy_of_disasm (str);
 }
 
-#define SETUP_BASE_INDEX(base_reg,index_reg) \
-    int t_base_reg = 0;			     \
-    int t_index_reg = 0;		     \
-    int base_reg_size = 0;		     \
-    int index_reg_size = 0;		     \
-    int base_reg_u8 = 0;		     \
-    int index_reg_u8 = 0;			     \
-    IARG_TYPE base_reg_value_type = IARG_UINT32;      \
-    IARG_TYPE index_reg_value_type = IARG_UINT32;     \
-    if (REG_valid(base_reg)) {			      \
-	t_base_reg = translate_reg (base_reg);	      \
-	base_reg_size = REG_Size (base_reg);	      \
-	base_reg_u8 = REG_is_Upper8 (base_reg);	      \
-	base_reg_value_type = IARG_REG_VALUE;	      \
-    }						      \
-    if (REG_valid(index_reg)) {			      \
-	t_index_reg = translate_reg (index_reg);      \
-	index_reg_size = REG_Size (index_reg);	      \
-	index_reg_u8 = REG_is_Upper8 (index_reg);     \
-	index_reg_value_type = IARG_REG_VALUE;	      \
-    }
-
-#define PASS_BASE_INDEX	 IARG_ADDRINT, t_base_reg,	\
-	IARG_UINT32, base_reg_size,			\
-	base_reg_value_type, base_reg,			\
-	IARG_UINT32, base_reg_u8,			\
-	IARG_ADDRINT, t_index_reg,			\
-	IARG_UINT32, index_reg_size,			\
-	index_reg_value_type, index_reg,		\
-	IARG_UINT32, index_reg_u8			
-
 // Source is memory - verify base and index regs as needed
 static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg) 
 { 
@@ -3170,7 +3160,7 @@ static inline void fw_slice_src_regregreg_mov (INS ins, REG reg, REG base_reg, R
 			 IARG_PTR, str,
 			 IARG_ADDRINT, translate_reg (reg), 
 			 IARG_UINT32, REG_Size (reg), 
-			 IARG_REG_REFERENCE, reg, 
+			 IARG_REG_CONST_REFERENCE, reg, 
 			 IARG_UINT32, REG_is_Upper8 (reg), 
 			 PASS_BASE_INDEX,
 			 IARG_MEMORYWRITE_EA,
@@ -4406,10 +4396,10 @@ void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
     ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
     //fprintf (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
     if (count_reg) { //for rep and repz
-    	taint_regmem2flag_with_different_size(ea_mem_loc, reg, mask, size, reg_size);
+	taint_regmem2flag (ea_mem_loc, size, reg, reg_size, mask, 0);
 	taint_add_reg2flag_offset (LEVEL_BASE::REG_ECX*REG_SIZE, 4, mask);
     } else { //no rep
-    	taint_regmem2flag_with_different_size(ea_mem_loc, reg, mask, size, reg_size);
+    	taint_regmem2flag (ea_mem_loc, size, reg, reg_size, mask, 0);
     }
 #ifdef LINKAGE_DATA_OFFSET
     //not handled
@@ -6271,78 +6261,81 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t flags) {
 
 	fw_slice_src_regmem (ins, reg, regsize, mem_ea, memsize);
 
-	if (regsize != memsize) 
-		fprintf (stderr, "TODO: instrument_taint_regmem2flag: fix regsize problem\n");
-
-	INSTRUMENT_PRINT (log_f, "instrument_taint_regmem2flag: flags %u, reg %u size %u, memsize %u\n", flags, reg, regsize, memsize);
 	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
 			IARG_FAST_ANALYSIS_CALL,
 			mem_ea,
+			IARG_UINT32, memsize,
 			IARG_UINT32, treg,
-			IARG_UINT32, flags, 
 			IARG_UINT32, regsize,
+			IARG_UINT32, flags, 
+			IARG_UINT32, 0,
 			IARG_END);
 }
 
 inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t flags) 
 {
-	int dst_treg;
-	int src_treg;
-	UINT32 dst_regsize;
-	UINT32 src_regsize;
+    fw_slice_src_regreg (ins, dst_reg, REG_Size(dst_reg), src_reg, REG_Size(src_reg));
 
-	dst_treg = translate_reg ((int) dst_reg);
-	src_treg = translate_reg ((int) src_reg);
-	dst_regsize = REG_Size(dst_reg);
-	src_regsize = REG_Size(src_reg);
-	assert (dst_regsize == src_regsize);
-	fw_slice_src_regreg (ins, dst_reg, dst_regsize, src_reg, src_regsize);
-
-	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_UINT32, dst_treg,
-			IARG_UINT32, src_treg,
-			IARG_UINT32, flags, 
-			IARG_UINT32, src_regsize,
-			IARG_END);
+    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag_offset),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_UINT32, get_reg_off(dst_reg),
+		    IARG_UINT32, REG_Size(dst_reg),	
+		    IARG_UINT32, get_reg_off(src_reg),
+		    IARG_UINT32, REG_Size(src_reg),	
+		    IARG_UINT32, flags, 
+		    IARG_UINT32, 0,
+		    IARG_END);
 }
 
 void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 {
-	//TODO: I didn't check the size of the reg here! This could be over tainting
-    int op1mem, op1reg, op2reg, op2imm, op2mem;
-    string instruction;
-    REG reg;
-    USIZE addrsize;
-
-    op1mem = INS_OperandIsMemory(ins, 0);
-    op1reg = INS_OperandIsReg(ins, 0);
-    op2reg = INS_OperandIsReg(ins, 1);
-    op2imm = INS_OperandIsImmediate(ins, 1);
-    op2mem = INS_OperandIsMemory(ins, 1);
-    instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
+    bool op1mem = INS_OperandIsMemory(ins, 0);
+    bool op1reg = INS_OperandIsReg(ins, 0);
+    bool op2reg = INS_OperandIsReg(ins, 1);
+    bool op2imm = INS_OperandIsImmediate(ins, 1);
+    bool op2mem = INS_OperandIsMemory(ins, 1);
     if((op1mem && op2reg) || (op1reg && op2mem)) { //ordering doesn't matter
-	    REG reg = (op1reg?INS_OperandReg(ins, 0):INS_OperandReg(ins,1));
-	    assert (REG_valid (reg));
-	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is register\n");
-	    addrsize = INS_MemoryReadSize(ins);
-	    assert (REG_Size(reg) == addrsize);
-	    instrument_taint_regmem2flag (ins, reg, set_mask);
+
+	    REG reg = op1reg ? INS_OperandReg(ins, 0) : INS_OperandReg(ins, 1);
+	    REG basereg = op1reg ? INS_OperandMemoryBaseReg(ins, 1) : INS_OperandMemoryBaseReg(ins, 0);
+	    REG indexreg = op1reg ? INS_OperandMemoryIndexReg(ins, 1) : INS_OperandMemoryIndexReg(ins, 0);
+	    UINT32 memsize = INS_MemoryReadSize(ins);
+	    UINT32 regsize = REG_Size(reg);
+
+	    fw_slice_src_regmem (ins, reg, regsize, IARG_MEMORYREAD_EA, memsize, basereg, indexreg);
+
+	    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
+			    IARG_FAST_ANALYSIS_CALL,
+			    IARG_MEMORYREAD_EA,
+			    IARG_UINT32, memsize,
+			    IARG_UINT32, translate_reg(reg),
+			    IARG_UINT32, regsize,
+			    IARG_UINT32, set_mask, 
+			    IARG_UINT32, clear_mask,
+			    IARG_END);
+
     } else if(op1reg && op2reg) {
-        REG dstreg;
-        dstreg = INS_OperandReg(ins, 0);
-        reg = INS_OperandReg(ins, 1);
-        INSTRUMENT_PRINT(log_f, "instrument_test: op1 and op2 of are registers %d(%s), %d(%s)\n", 
-                dstreg, REG_StringShort(dstreg).c_str(), reg, REG_StringShort(reg).c_str());
-	INSTRUMENT_PRINT (log_f, "%d EFLAGS %s, %d, %d\n", REG_EFLAGS, REG_StringShort(REG_EFLAGS).c_str(), REG_is_flags (REG_EFLAGS), REG_is_flags(dstreg));
-        if(!REG_valid(dstreg) || !REG_valid(reg)) {
-		ERROR_PRINT (stderr, "[ERROR]instrument_test: not valid registers.\n");
-            	return;
-        } 
-	assert (REG_Size(reg) == REG_Size(dstreg));
-        instrument_taint_regreg2flag (ins, dstreg, reg, set_mask);
+
+        REG dstreg = INS_OperandReg(ins, 0);
+        REG srcreg = INS_OperandReg(ins, 1);
+	UINT32 dstregsize = REG_Size(dstreg);
+	UINT32 srcregsize = REG_Size(srcreg);
+
+	fw_slice_src_regreg (ins, dstreg, dstregsize, srcreg, srcregsize);
+
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag_offset),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_UINT32, get_reg_off(dstreg),
+			IARG_UINT32, dstregsize,
+			IARG_UINT32, get_reg_off(srcreg),
+			IARG_UINT32, srcregsize,
+			IARG_UINT32, set_mask, 
+			IARG_UINT32, clear_mask,
+			IARG_END);
+
    } else if(op1mem && op2imm) {
-	    addrsize = INS_MemoryReadSize(ins);
+    instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
+	    UINT32 addrsize = INS_MemoryReadSize(ins);
 	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
 	    fw_slice_src_mem(ins, 0);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
@@ -6353,6 +6346,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 			    IARG_UINT32, addrsize,
 			    IARG_END);
    } else if(op1reg && op2imm){
+    instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
 	    REG reg = INS_OperandReg (ins, 0);
 	    uint32_t regsize = REG_Size (reg);
 	    assert (REG_valid (reg));
@@ -6366,12 +6360,9 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 			    IARG_UINT32, regsize,
                             IARG_UINT32, REG_is_Upper8(reg),
 			    IARG_END);
-    }else{
-        //if the arithmatic involves an immediate instruction the taint does
-        //not propagate...
-        string instruction;
-        instruction = INS_Disassemble(ins);
-        printf("unknown combination of CMP ins: %s\n", instruction.c_str());
+    } else {
+        fprintf(stderr, "unknown combination of CMP ins: %s\n", INS_Disassemble(ins).c_str());
+	assert (0);
     }
 }
 
