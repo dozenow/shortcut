@@ -312,7 +312,6 @@ u_long num_of_inst_executed = 0;
 
 extern void write_token_finish (int fd);
 extern void output_finish (int fd);
-void instrument_test_or_cmp(INS ins, uint32_t set_mask, uint32_t clear_mask);
 
 //In here we need to mess with stuff for if we are no longer following this process
 static int dift_done ()
@@ -6314,7 +6313,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 			    IARG_UINT32, clear_mask,
 			    IARG_END);
 
-    } else if(op1reg && op2reg) {
+    } else if (op1reg && op2reg) {
 
         REG dstreg = INS_OperandReg(ins, 0);
         REG srcreg = INS_OperandReg(ins, 1);
@@ -6333,18 +6332,19 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 			IARG_UINT32, clear_mask,
 			IARG_END);
 
-   } else if(op1mem && op2imm) {
-    instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
-	    UINT32 addrsize = INS_MemoryReadSize(ins);
-	    INSTRUMENT_PRINT (log_f, "instrument_test: op1 is mem and op2 is imm\n");
+   } else if (op1mem && op2imm) {
+
 	    fw_slice_src_mem(ins, 0);
+
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_mem2flag),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_MEMORYREAD_EA,
-			    IARG_UINT32, set_mask, 
-			    IARG_UINT32, addrsize,
-			    IARG_END);
+			   AFUNPTR(taint_mem2flag),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_MEMORYREAD_EA,
+			   IARG_UINT32, INS_MemoryReadSize(ins),
+			   IARG_UINT32, set_mask, 
+			   IARG_UINT32, clear_mask,
+			   IARG_END);
+
    } else if(op1reg && op2imm){
     instrument_clear_flag_slice (ins, clear_mask, 0); //clear mask
 	    REG reg = INS_OperandReg (ins, 0);
@@ -6485,12 +6485,13 @@ void instrument_bt (INS ins) {
 	    uint32_t addrsize = INS_MemoryReadSize(ins);
 	    fw_slice_src_mem(ins, 0);
 	    INS_InsertCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(taint_mem2flag),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_MEMORYREAD_EA,
-			    IARG_UINT32, CF_FLAG, 
-			    IARG_UINT32, addrsize,
-			    IARG_END);
+			   AFUNPTR(taint_mem2flag),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_MEMORYREAD_EA,
+			   IARG_UINT32, addrsize,
+			   IARG_UINT32, CF_FLAG, 
+			   IARG_UINT32, 0,
+			   IARG_END);
 	} else { 
 		assert (0);
 	}
@@ -6508,12 +6509,13 @@ void instrument_bit_scan (INS ins) {
                 IARG_UINT32, REG_Size(dstreg),
                 IARG_END);
         INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(taint_mem2flag),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_MEMORYREAD_EA,
-                IARG_UINT32, ZF_FLAG, 
-                IARG_UINT32, INS_MemoryReadSize(ins),
-                IARG_END);
+		       AFUNPTR(taint_mem2flag),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYREAD_EA,
+		       IARG_UINT32, INS_MemoryReadSize(ins),
+		       IARG_UINT32, ZF_FLAG, 
+		       IARG_UINT32, 0,
+		       IARG_END);
     } else {
         REG dstreg = INS_OperandReg (ins, 0);
         REG srcreg = INS_OperandReg (ins, 1);
