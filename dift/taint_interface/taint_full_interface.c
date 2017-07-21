@@ -2362,28 +2362,27 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
     return valuebuf;
 }
 
-//source operand is mem
-TAINTINT fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc) { 
-	int tainted = is_mem_tainted (mem_loc, size);
-
-	if (tainted) {
-		PRINT("mem\n");
-		if (ip < 10000){
-			fprintf (stderr, "ip %x, inst %p\n", ip, ins_str);
-			return 1;
-			//assert (0);
-		}
-		printf ("[SLICE] #%x #%s\t", ip, ins_str);
-		if (dst_mem_loc != 0)
-			printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", mem_loc, tainted, size, dst_mem_loc, 0, size, get_mem_value (mem_loc, size), get_mem_value (dst_mem_loc, size));
-		else { 
-			printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, tainted, size, get_mem_value (mem_loc, size));
-		}
-		return 1;
-	}
-	return 0;
+TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size) 
+{ 
+    int tainted = is_mem_tainted (mem_loc, size);
+    if (tainted) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, tainted, size, get_mem_value (mem_loc, size));
+	print_immediate_addr (mem_loc, ip);
+    }
 }
 
+TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc, uint32_t dst_size) 
+{ 
+    int tainted = is_mem_tainted (mem_loc, size);
+    if (tainted) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", mem_loc, tainted, size, dst_mem_loc, 0, dst_size, get_mem_value (mem_loc, size), get_mem_value (dst_mem_loc, dst_size));
+	print_immediate_addr (mem_loc, ip);
+	if (mem_loc != dst_mem_loc || size != dst_size) print_immediate_addr (dst_mem_loc, ip);
+	add_modified_mem_for_final_check (dst_mem_loc, dst_size);
+    }
+}
 
 //source operand is reg, dst_mem_loc is the dst memory location (could be null if two operands are both regs);
 TAINTINT fw_slice_reg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t size, u_long dst_mem_loc, const CONTEXT* ctx, uint32_t reg_u8) 
