@@ -2585,10 +2585,8 @@ int get_record_pid()
 
 void instrument_taint_reg2reg(INS ins, REG dstreg, REG srcreg, int extend);
 void instrument_taint_reg2mem(INS ins, REG srcreg, int extend);
-void instrument_taint_mem2reg(INS ins, REG dstreg, int extend);
 void instrument_taint_mem2mem(INS ins, int extend);
 
-void instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags);
 void instrument_taint_add_reg2mem(INS ins, REG srcreg, int set_flags, int clear_flags);
 void instrument_taint_add_mem2reg(INS ins, REG dstreg, int set_flags, int clear_flags);
 void instrument_taint_add_mem2mem(INS ins);
@@ -3926,12 +3924,24 @@ inline void instrument_taint_reg2mem(INS ins, REG reg, int extend) {
 	return instrument_taint_reg2mem_slice (ins, reg, extend, 1);
 }
 
-void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend)
+void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     UINT32 regsize = REG_Size(dstreg);
-    UINT32 memsize = INS_MemoryWriteSize(ins);
-    assert (memsize > 0);
+    UINT32 memsize = INS_MemoryReadSize(ins);
     UINT32 size = (regsize < memsize) ? regsize : memsize;
+
+    UINT32 base_reg_off = 0;
+    UINT32 base_reg_size = 0;		     
+    UINT32 index_reg_off = 0;
+    UINT32 index_reg_size = 0;
+    if (REG_valid(base_reg)) {
+	base_reg_off = get_reg_off (base_reg);
+	base_reg_size = REG_Size (base_reg);
+    } 
+    if (REG_valid(index_reg)) {
+	index_reg_off = get_reg_off (index_reg);
+	index_reg_size = REG_Size (index_reg);
+    } 
 
     if (extend && regsize > memsize) {
 	INS_InsertCall(ins, IPOINT_BEFORE,
@@ -3948,6 +3958,10 @@ void instrument_taint_mem2reg_slice(INS ins, REG dstreg, int extend)
 		       IARG_MEMORYREAD_EA,
 		       IARG_UINT32, get_reg_off (dstreg),
 		       IARG_UINT32, size,
+		       IARG_UINT32, base_reg_off,
+		       IARG_UINT32, base_reg_size,
+		       IARG_UINT32, index_reg_off,
+		       IARG_UINT32, index_reg_size,
 		       IARG_END);
     }
 }
@@ -4094,30 +4108,21 @@ void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags, int clear_fl
 		    IARG_END);
 }
 
-void instrument_taint_add_reg2reg_slice(INS ins, REG dstreg, REG srcreg, int fw_slice, int set_flags, int clear_flags)
+void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 dst_regsize = REG_Size(dstreg);
     UINT32 src_regsize = REG_Size(srcreg);
-
-    if(fw_slice) fw_slice_src_regreg (ins, dstreg, dst_regsize, srcreg, src_regsize);
-
-    UINT32 dst_reg_off = get_reg_off(dstreg);
-    UINT32 src_reg_off = get_reg_off(srcreg);
     UINT32 size = (dst_regsize < src_regsize) ? dst_regsize : src_regsize;
 
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_add_reg2reg_offset),
 		   IARG_FAST_ANALYSIS_CALL,
-		   IARG_UINT32, dst_reg_off,
-		   IARG_UINT32, src_reg_off,
+		   IARG_UINT32, get_reg_off(dstreg),
+		   IARG_UINT32, get_reg_off(srcreg),
 		   IARG_UINT32, size,
 		   IARG_UINT32, set_flags, 
 		   IARG_UINT32, clear_flags,
 		   IARG_END);
-}
-
-inline void instrument_taint_add_reg2reg(INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags) {
-    return instrument_taint_add_reg2reg_slice (ins, dstreg, srcreg, 1, set_flags, clear_flags);
 }
 
 static void instrument_taint_add_reg2esp (INS ins, REG srcreg, int set_flags, int clear_flags)
@@ -4788,24 +4793,11 @@ void instrument_load_string(INS ins)
          * */
 
 	// JNF - I don't get this, but these are equivalent to what was here before
-	INS_InsertCall (ins, IPOINT_BEFORE,
-			(AFUNPTR)taint_mem2reg_offset,
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_MEMORYREAD_EA,
-                        IARG_UINT32, get_reg_off(LEVEL_BASE::REG_EAX),
-			IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-			IARG_END);
+	instrument_taint_mem2reg (ins, LEVEL_BASE::REG_EAX, 0);
     } else {
         /* Ugh we don't know the address until runtime, so this is the
          * best we can do at instrumentation time. */
-
-	INS_InsertCall (ins, IPOINT_BEFORE,
-			(AFUNPTR)taint_mem2reg_offset,
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_MEMORYREAD_EA,
-                        IARG_UINT32, get_reg_off(LEVEL_BASE::REG_EAX),
-			IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-			IARG_END);
+	instrument_taint_mem2reg (ins, LEVEL_BASE::REG_EAX, 0);
     }
 }
 
@@ -5037,35 +5029,18 @@ void instrument_mov (INS ins)
 
     //2 (src) operand is memory...destination must be a register
     if(ismemread) {
-        // REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-        // REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-        // ADDRDELTA displacement = INS_MemoryDisplacement(ins);
-
-        assert(INS_IsMemoryRead(ins) == 1);
 
         REG dst_reg = INS_OperandReg(ins, 0);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-		//addressing mode: base+index+offset
-/*
-   +-------------+----------------------------+-----------------------------+
-    | Mode        | Intel                      | AT&T                        |
-    +-------------+----------------------------+-----------------------------+
-    | Immediate   | MOV EAX, [0100]            | movl           0x0100, %eax |
-    | Register    | MOV EAX, [ESI]             | movl           (%esi), %eax |
-    | Reg + Off   | MOV EAX, [EBP-8]           | movl         -8(%ebp), %eax |
-    | R*W + Off   | MOV EAX, [EBX*4 + 0100]    | movl   0x100(,%ebx,4), %eax |
-    | B + R*W + O | MOV EAX, [EDX + EBX*4 + 8] | movl 0x8(%edx,%ebx,4), %eax |
-    +-------------+----------------------------+-----------------------------+
-*/
 
-        fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
-	instrument_taint_mem2reg_slice (ins, dst_reg, 0);
+	fw_slice_src_mem (ins, base_reg, index_reg);
+	instrument_taint_mem2reg (ins, dst_reg, 0, base_reg, index_reg);
 #ifdef TRACK_READONLY_REGION
         //here I still merge taints of index/base registers in
         //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
-        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, base_reg, 0, -1, -1);
-        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, index_reg, 0, -1, -1);
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, dst_reg, base_reg, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, dst_reg, index_reg, -1, -1);
 #endif
     } else if(ismemwrite) {
         if(!immval) {
@@ -5149,6 +5124,10 @@ void instrument_pinsrb (INS ins)
 		       IARG_MEMORYREAD_EA,
 		       IARG_UINT32, get_reg_off (dstreg)+imm, 
 		       IARG_UINT32, 1,
+		       IARG_UINT32, 0,
+		       IARG_UINT32, 0,
+		       IARG_UINT32, 0,
+		       IARG_UINT32, 0,
 		       IARG_END);
     } else {
 	assert (0);
@@ -5186,12 +5165,12 @@ void instrument_movx (INS ins)
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 
         fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
-	instrument_taint_mem2reg_slice(ins, dst_reg, 1);
+	instrument_taint_mem2reg (ins, dst_reg, 1);
 #ifdef TRACK_READONLY_REGION
         //here I still merge taints of index/base registers in
         //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
-        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, base_reg, 0, -1, -1);
-        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, dst_reg, index_reg, 0, -1, -1);
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, dst_reg, base_reg, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, dst_reg, index_reg, -1, -1);
 #endif
     } else if (op1mem && op2reg) {
         assert(INS_IsMemoryWrite(ins) == 1);
@@ -5276,8 +5255,8 @@ void instrument_cmov(INS ins, uint32_t mask)
 #ifdef TRACK_READONLY_REGION
         //here I still merge taints of index/base registers in
         //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
-        if (REG_valid(base_reg)) instrument_taint_add_reg2reg_slice (ins, reg, base_reg, 0, -1, -1);
-        if (REG_valid(index_reg)) instrument_taint_add_reg2reg_slice (ins, reg, index_reg, 0, -1, -1);
+        if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, reg, base_reg, -1, -1);
+        if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, reg, index_reg, -1, -1);
 #endif
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
@@ -5382,20 +5361,13 @@ void instrument_shift(INS ins)
 	    } else {
 		printf ("Probably incorrect shift: %s\n", INS_Disassemble(ins).c_str());
 		assert (0);
-		if (INS_OperandIsReg(ins, 0)) {
-		    instrument_taint_add_reg2reg(ins, INS_OperandReg(ins, 0),
-						 INS_OperandReg(ins, 2), -1, -1);
-		} 
-		if(INS_OperandIsReg(ins, 1)) {
-		    instrument_taint_add_reg2reg(ins, INS_OperandReg(ins, 1),
-						 INS_OperandReg(ins, 2), -1, -1);
-		} else if (INS_OperandIsMemory(ins, 1)) {
-		    instrument_taint_add_reg2mem(ins, INS_OperandReg(ins, 2), -1, -1);
-		}
 	    }
         } else {
             if (INS_OperandIsReg(ins, 0) && INS_OperandIsReg(ins, 1)) {
-                instrument_taint_add_reg2reg(ins, INS_OperandReg(ins, 0), INS_OperandReg(ins, 1), -1, -1);
+		REG reg1 = INS_OperandReg(ins, 0);
+		REG reg2 = INS_OperandReg(ins, 1);
+		fw_slice_src_regreg (ins, reg1, REG_Size(reg1), reg2, REG_Size(reg2));
+                instrument_taint_add_reg2reg (ins, reg1, reg2, -1, -1);
 	    } else {
 		printf ("Unhanded shift: %s\n", INS_Disassemble(ins).c_str());
 		assert (0);
@@ -5602,13 +5574,7 @@ void instrument_pop(INS ins)
     } else if (INS_OperandIsReg(ins, 0)) {
     	fw_slice_src_mem (ins);
         REG reg = INS_OperandReg(ins, 0);
-	INS_InsertCall (ins, IPOINT_BEFORE,
-			AFUNPTR(taint_mem2reg_offset),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_MEMORYREAD_EA,
-			IARG_UINT32, get_reg_off(reg),
-			IARG_UINT32, REG_Size(reg),
-			IARG_END);
+	instrument_taint_mem2reg (ins, reg, 0);
     }
     //I think we should clear the source mem for POP, since that memory address is not freed
     // JNF: I think not
@@ -5620,7 +5586,7 @@ void instrument_leave (INS ins) {
     assert (addrsize == 4); //only care about 32bit for now
     fw_slice_src_regmem (ins, LEVEL_BASE::REG_EBP, 4, IARG_MEMORYREAD_EA, 4);
     instrument_taint_reg2reg_slice (ins, LEVEL_BASE::REG_ESP, LEVEL_BASE::REG_EBP, 0, 0);
-    instrument_taint_mem2reg_slice (ins, LEVEL_BASE::REG_EBP, 0);
+    instrument_taint_mem2reg (ins, LEVEL_BASE::REG_EBP, 0);
 }
 
 void instrument_addorsub(INS ins, int set_flags, int clear_flags)
@@ -5698,6 +5664,7 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
 		// Special case: don't taint esp - instead verify other register is the same
 		instrument_taint_add_reg2esp(ins, reg, set_flags, clear_flags);
 	    } else {
+		fw_slice_src_regreg (ins, dstreg, REG_Size(dstreg), reg, REG_Size(reg));
 		instrument_taint_add_reg2reg(ins, dstreg, reg, set_flags, clear_flags);
 	    }
         }
@@ -6065,13 +6032,7 @@ void instrument_imul(INS ins)
                 UINT32 addrsize = INS_MemoryReadSize(ins);
                 assert (addrsize == REG_Size(dst_reg));
 		fw_slice_src_mem (ins);
-		INS_InsertCall(ins, IPOINT_BEFORE,
-			       AFUNPTR(taint_mem2reg_offset),
-			       IARG_FAST_ANALYSIS_CALL,
-			       IARG_MEMORYREAD_EA,
-			       IARG_UINT32, get_reg_off(dst_reg),
-			       IARG_UINT32, addrsize,
-			       IARG_END);
+		instrument_taint_mem2reg (ins, dst_reg, 0);
             } else {
                 assert (INS_OperandIsReg(ins, 1));
                 REG src_reg = INS_OperandReg(ins, 1);
