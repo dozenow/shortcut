@@ -2353,12 +2353,24 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
     return valuebuf;
 }
 
-TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size) 
+#define VERIFY_BASE_INDEX						\
+    int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
+    int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
+    bool check_read_only_mem = false; \
+    if (base_tainted || index_tainted) { \
+	verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size,  \
+				     base_reg, base_reg_size, base_reg_value, base_reg_u8, \
+				     index_reg, index_reg_size, index_reg_value, index_reg_u8, \
+				     base_tainted, index_tainted); \
+    }
+
+TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
-    int tainted = is_mem_tainted (mem_loc, size);
+    VERIFY_BASE_INDEX;
+    int tainted = is_mem_tainted (mem_loc, mem_size);
     if (tainted) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, tainted, size, get_mem_value (mem_loc, size));
+	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, tainted, mem_size, get_mem_value (mem_loc, mem_size));
 	print_immediate_addr (mem_loc, ip);
     }
 }
@@ -2481,17 +2493,6 @@ TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_rea
 	}
 	return 0;
 }
-
-#define VERIFY_BASE_INDEX						\
-    int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
-    int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
-    bool check_read_only_mem = false; \
-    if (base_tainted || index_tainted) { \
-	verify_base_index_registers (ip, ins_str, check_read_only_mem, mem_loc, mem_size,  \
-				     base_reg, base_reg_size, base_reg_value, base_reg_u8, \
-				     index_reg, index_reg_size, index_reg_value, index_reg_u8, \
-				     base_tainted, index_tainted); \
-    }
 
 TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const PIN_REGISTER* reg_value, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 

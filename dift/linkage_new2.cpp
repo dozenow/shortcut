@@ -2827,6 +2827,37 @@ static inline void fw_slice_check_address (INS ins) {
 	}
 }
 
+#define SETUP_BASE_INDEX(base_reg,index_reg) \
+    int t_base_reg = 0;			     \
+    int t_index_reg = 0;		     \
+    int base_reg_size = 0;		     \
+    int index_reg_size = 0;		     \
+    int base_reg_u8 = 0;		     \
+    int index_reg_u8 = 0;			     \
+    IARG_TYPE base_reg_value_type = IARG_UINT32;      \
+    IARG_TYPE index_reg_value_type = IARG_UINT32;     \
+    if (REG_valid(base_reg)) {			      \
+	t_base_reg = translate_reg (base_reg);	      \
+	base_reg_size = REG_Size (base_reg);	      \
+	base_reg_u8 = REG_is_Upper8 (base_reg);	      \
+	base_reg_value_type = IARG_REG_VALUE;	      \
+    }						      \
+    if (REG_valid(index_reg)) {			      \
+	t_index_reg = translate_reg (index_reg);      \
+	index_reg_size = REG_Size (index_reg);	      \
+	index_reg_u8 = REG_is_Upper8 (index_reg);     \
+	index_reg_value_type = IARG_REG_VALUE;	      \
+    }
+
+#define PASS_BASE_INDEX	 IARG_ADDRINT, t_base_reg,	\
+	IARG_UINT32, base_reg_size,			\
+	base_reg_value_type, base_reg,			\
+	IARG_UINT32, base_reg_u8,			\
+	IARG_ADDRINT, t_index_reg,			\
+	IARG_UINT32, index_reg_size,			\
+	index_reg_value_type, index_reg,		\
+	IARG_UINT32, index_reg_u8			
+
 static inline void fw_slice_src_reg (INS ins, REG srcreg, uint32_t src_regsize) 
 { 
     char* str = get_copy_of_disasm (ins);
@@ -2860,9 +2891,10 @@ static inline void fw_slice_src_reg2mem (INS ins, REG srcreg, uint32_t src_regsi
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_mem (INS ins) 
+static inline void fw_slice_src_mem (INS ins, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())  
 {
     char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(fw_slice_mem),
 		   IARG_FAST_ANALYSIS_CALL,
@@ -2870,6 +2902,7 @@ static inline void fw_slice_src_mem (INS ins)
 		   IARG_PTR, str,
 		   IARG_MEMORYREAD_EA,
 		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   PASS_BASE_INDEX,
 		   IARG_END);
     put_copy_of_disasm (str);
 }
@@ -2909,37 +2942,6 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, uint32_t dst_regsiz
 		   IARG_END);
     put_copy_of_disasm (str);
 }
-
-#define SETUP_BASE_INDEX(base_reg,index_reg) \
-    int t_base_reg = 0;			     \
-    int t_index_reg = 0;		     \
-    int base_reg_size = 0;		     \
-    int index_reg_size = 0;		     \
-    int base_reg_u8 = 0;		     \
-    int index_reg_u8 = 0;			     \
-    IARG_TYPE base_reg_value_type = IARG_UINT32;      \
-    IARG_TYPE index_reg_value_type = IARG_UINT32;     \
-    if (REG_valid(base_reg)) {			      \
-	t_base_reg = translate_reg (base_reg);	      \
-	base_reg_size = REG_Size (base_reg);	      \
-	base_reg_u8 = REG_is_Upper8 (base_reg);	      \
-	base_reg_value_type = IARG_REG_VALUE;	      \
-    }						      \
-    if (REG_valid(index_reg)) {			      \
-	t_index_reg = translate_reg (index_reg);      \
-	index_reg_size = REG_Size (index_reg);	      \
-	index_reg_u8 = REG_is_Upper8 (index_reg);     \
-	index_reg_value_type = IARG_REG_VALUE;	      \
-    }
-
-#define PASS_BASE_INDEX	 IARG_ADDRINT, t_base_reg,	\
-	IARG_UINT32, base_reg_size,			\
-	base_reg_value_type, base_reg,			\
-	IARG_UINT32, base_reg_u8,			\
-	IARG_ADDRINT, t_index_reg,			\
-	IARG_UINT32, index_reg_size,			\
-	index_reg_value_type, index_reg,		\
-	IARG_UINT32, index_reg_u8			
 
 static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID()) 
 { 
@@ -6305,38 +6307,34 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 
    } else if (op1mem && op2imm) {
 
-	    fw_slice_src_mem(ins);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			   AFUNPTR(taint_mem2flag),
-			   IARG_FAST_ANALYSIS_CALL,
-			   IARG_MEMORYREAD_EA,
-			   IARG_UINT32, INS_MemoryReadSize(ins),
-			   IARG_UINT32, set_mask, 
-			   IARG_UINT32, clear_mask,
+	fw_slice_src_mem(ins, INS_OperandMemoryBaseReg(ins, 0), INS_OperandMemoryIndexReg(ins, 0));
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_mem2flag),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYREAD_EA,
+		       IARG_UINT32, INS_MemoryReadSize(ins),
+		       IARG_UINT32, set_mask, 
+		       IARG_UINT32, clear_mask,
+		       IARG_END);
+	
+    } else if (op1reg && op2imm) {
+	
+	REG reg = INS_OperandReg (ins, 0);
+	uint32_t regsize = REG_Size (reg);
+	fw_slice_src_reg(ins, reg, regsize);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_reg2flag_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_UINT32, get_reg_off(reg), 
+		       IARG_UINT32, regsize,
+		       IARG_UINT32, set_mask, 
+		       IARG_UINT32, clear_mask,
 			   IARG_END);
-
-   } else if (op1reg && op2imm) {
-
-	    REG reg = INS_OperandReg (ins, 0);
-	    uint32_t regsize = REG_Size (reg);
-	    fw_slice_src_reg(ins, reg, regsize);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			   AFUNPTR(taint_reg2flag_offset),
-			   IARG_FAST_ANALYSIS_CALL,
-			   IARG_UINT32, get_reg_off(reg), 
-			   IARG_UINT32, regsize,
-			   IARG_UINT32, set_mask, 
-			   IARG_UINT32, clear_mask,
-			   IARG_END);
-
+	
     } else {
         fprintf(stderr, "unknown combination of CMP ins: %s\n", INS_Disassemble(ins).c_str());
 	assert (0);
     }
-}
-
-TAINTSIGN instrument_unhandled_inst (ADDRINT ip) {
-	fprintf (stderr, "unhanded inst %x\n", ip);
 }
 
 void instrument_jump (INS ins, uint32_t flags) {
@@ -7225,12 +7223,6 @@ void instruction_instrumentation(INS ins, void *v)
                 }
                 ERROR_PRINT(stderr, "[NOOP] ERROR: instruction %s is not instrumented, address: %#x\n",
                         INS_Disassemble(ins).c_str(), (unsigned)INS_Address(ins));
-		/*INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(instrument_unhandled_inst),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_ADDRINT, INS_Address(ins),
-			IARG_END);*/
-                // XXX This printing may cause a deadlock in Pin!
-                // print_static_address(log_f, INS_Address(ins));
                 break;
         }
     }
