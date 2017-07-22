@@ -483,17 +483,6 @@ void create_taints_from_buffer_unfiltered(void* buf, int size,
     write_tokens_info(outfd, start, tci, size);
 }
 
-void create_fd_taints(int nfds, fd_set* fds, struct taint_creation_info* tci,
-        int outfd)
-{
-    //void out the untracked process
-    if (outfd == -99999) { 
-	return;
-    }
-    taint_t t = create_and_taint_fdset(nfds, fds);
-    write_tokens_info(outfd, t, tci, 1);
-}
-
 void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, char* channel_name) {
 	taint_t t =  taint_num;
 	int i = 0;

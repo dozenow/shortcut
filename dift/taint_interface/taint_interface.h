@@ -66,7 +66,7 @@ void shift_reg_taint_right(int reg, int shift);
 
 // interface for different taint transfers
 TAINTSIGN taint_mem2reg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
-TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, int reg_off, uint32_t size);
+TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 
 TAINTSIGN taint_regreg2flag_offset (uint32_t dst_reg_off, uint32_t dst_reg_size, uint32_t src_reg_off, uint32_t src_reg_size, uint32_t set_flags, uint32_t clear_flags);
 
@@ -135,11 +135,6 @@ TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, 
 TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
 				  int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
 				  u_long mem_loc, uint32_t mem_size);
-TAINTINT fw_slice_regregreg_mov (ADDRINT ip, char* ins_str, 
-        int reg, uint32_t reg_size, const PIN_REGISTER* regv_value, uint32_t reg_u8,
-        int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-        int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
-        u_long mem_loc, uint32_t mem_size);
 TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, uint32_t reg1_value, uint32_t reg1_u8, 
 		int reg2, uint32_t reg2_size, uint32_t reg2_value, uint32_t reg2_u8,
 		int reg3, uint32_t reg3_size, uint32_t reg3_value, uint32_t reg3_u8, u_long mem_loc, uint32_t mem_size);
@@ -259,14 +254,6 @@ TAINTSIGN taint_immvalqw2mem (u_long mem_loc);
 // immval2mem add
 TAINTSIGN taint_clear_reg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags);
 
-// immval2reg
-TAINTSIGN taint_immval2lbreg(int reg);
-TAINTSIGN taint_immval2ubreg(int reg);
-TAINTSIGN taint_immval2hwreg(int reg);
-TAINTSIGN taint_immval2wreg(int reg);
-TAINTSIGN taint_immval2dwreg(int reg);
-TAINTSIGN taint_immval2qwreg(int reg);
-
 // call
 TAINTSIGN taint_call_near (u_long esp);
 TAINTSIGN taint_call_far (u_long esp);
@@ -294,21 +281,6 @@ TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg,
 TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter);
 TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDRINT eflags, ADDRINT al_val, ADDRINT ecx_val, ADDRINT edi_val, uint32_t first_iter);
 TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter);
-
-// File descriptor taint-tracking
-int add_taint_fd(int fd, int cloexec);
-taint_t create_and_taint_fdset(int nfds, fd_set* fds);
-int remove_taint_fd(int fd);
-int remove_cloexec_taint_fds(void);
-int is_fd_tainted(int fd);
-void taint_mem2fd(u_long mem_loc, int fd);
-/* Merge taints from mem_loc to mem_loc + size into one fd taint */
-void taint_mem2fd_size(u_long mem_loc, uint32_t size, int fd);
-void taint_reg2fd(int reg, int fd);
-void taint_add_mem2fd(u_long mem_loc, int fd);
-void taint_add_reg2fd(int reg, int fd);
-void taint_fd2mem(u_long mem_loc, uint32_t size, int fd);
-void taint_add_fd2mem(u_long mem_loc, uint32_t size, int fd);
 
 /* So that we can check if syscall args are tainted */
 int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8);
