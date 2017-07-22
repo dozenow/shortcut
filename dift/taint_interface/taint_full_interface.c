@@ -2400,6 +2400,12 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
 						     base_tainted, index_tainted); \
     }
 
+#define VERIFY_BASE_INDEX_WRITE						\
+    int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
+    int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
+    if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8); \
+    if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX;
@@ -2434,16 +2440,17 @@ TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const
     }
 }
 
-TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long dst_mem_loc) 
+TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 {
+    VERIFY_BASE_INDEX_WRITE;
     int tainted = is_reg_tainted (reg, size, reg_u8);
-    
+
     if (tainted) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	printf ("    [SLICE_INFO] #src_reg[%d:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s, dst_mem_value %u\n", reg, tainted, size, dst_mem_loc, size, print_regval(tmpbuf, regvalue, size), get_mem_value (dst_mem_loc, size));
+	printf ("    [SLICE_INFO] #src_reg[%d:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s, dst_mem_value %u\n", reg, tainted, size, mem_loc, mem_size, print_regval(tmpbuf, regvalue, size), get_mem_value (mem_loc, mem_size));
 	if (tainted != 1) print_extra_move_reg (ip, reg, size, regvalue, reg_u8, tainted);
-	print_immediate_addr (dst_mem_loc, ip);
-	add_modified_mem_for_final_check (dst_mem_loc, size);
+	print_immediate_addr (mem_loc, ip);
+	add_modified_mem_for_final_check (mem_loc, mem_size);
     }
 }
 
