@@ -1161,7 +1161,7 @@ static inline void taint_mem2reg(u_long mem_loc, int reg, uint32_t size)
     }
 }
 
-TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags)
+TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size)
 {
     unsigned i = 0;
     uint32_t offset = 0;
@@ -1169,6 +1169,7 @@ TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, 
     taint_t t = 0;
 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size, index_reg_off, index_reg_size);
     while (offset < size) {
         taint_t* mem_taints = NULL;
         uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
@@ -1182,7 +1183,11 @@ TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, 
         offset += count;
         mem_offset += count;
     }
-
+ 
+    if (bi_taint) {
+	for (uint32_t i = 0; i < size; i++) shadow_reg_table[reg_off+i] = merge_taints(shadow_reg_table[reg_off+i], bi_taint);
+	t = merge_taints(t, bi_taint);
+    }
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
@@ -2372,7 +2377,7 @@ TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip,
 //#define PRINT(x) fprintf(stderr, x)
 #define PRINT(x)
 
-char tmpbuf[20], tmpbuf2[20]; // Ugly hack that works because only one thread runs at a time 
+char tmpbuf[20], tmpbuf2[20], tmpbuf3[20]; // Ugly hack that works because only one thread runs at a time 
 inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_t reg_size)
 {
     switch (reg_size) {
@@ -2472,36 +2477,21 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_
     }
 }
 
-
-TAINTINT fw_slice_regregreg (ADDRINT ip, char* ins_str, int orig_dst_reg, int orig_src_reg, int orig_count_reg, 
-		uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, 
-                const CONTEXT* ctx,
-		uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8) { 
-        int dst_reg = translate_reg (orig_dst_reg);
-        int src_reg = translate_reg (orig_src_reg);
-        int count_reg = translate_reg (orig_count_reg);
-        PIN_REGISTER dst_regvalue;
-        PIN_REGISTER src_regvalue;
-        PIN_REGISTER count_regvalue;
-	int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
-	int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
-	int tainted3 = is_reg_tainted (count_reg, count_regsize, count_reg_u8);
-
-	if (tainted1 || tainted2 || tainted3) {
-		PRINT ("regregreg\n");
-                PIN_GetContextRegval(ctx, REG(orig_dst_reg), (UINT8*)&dst_regvalue);
-                PIN_GetContextRegval(ctx, REG(orig_src_reg), (UINT8*)&src_regvalue);
-                PIN_GetContextRegval(ctx, REG(orig_count_reg), (UINT8*)&count_regvalue);
-
-		printf ("[SLICE] #%x #%s\t", ip, ins_str);
-		printf ("    [SLICE_INFO] #src_regregreg[%d:%d:%u,%d:%d:%u,%d:%d:%u] #dst_reg_value %u, src_reg_value %u, count_reg_value %u\n", 
-				dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, count_reg, tainted3, count_regsize, *dst_regvalue.dword, *src_regvalue.dword, *count_regvalue.dword);
-		if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
-		if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
-		if (tainted3 != 1) print_extra_move_reg (ip, count_reg, count_regsize, &count_regvalue, count_reg_u8, tainted3);
-		return 1;
-	}
-	return 0;
+TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, const PIN_REGISTER* dst_regvalue,
+			      const PIN_REGISTER* src_regvalue, const PIN_REGISTER* count_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8)
+{
+    int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
+    int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
+    int tainted3 = is_reg_tainted (count_reg, count_regsize, count_reg_u8);
+    if (tainted1 || tainted2 || tainted3) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_regregreg[%d:%d:%u,%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s, count_reg_value %s\n", 
+		dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, count_reg, tainted3, count_regsize, print_regval(tmpbuf, dst_regvalue, dst_regsize), print_regval(tmpbuf2, src_regvalue, src_regsize),
+		print_regval(tmpbuf3, count_regvalue, count_regsize));
+	if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, dst_regvalue, dst_reg_u8, tainted1);
+	if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, src_regvalue, src_reg_u8, tainted2);
+	if (tainted3 != 1) print_extra_move_reg (ip, count_reg, count_regsize, count_regvalue, count_reg_u8, tainted3);
+    }
 }
 
 TAINTINT fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_readsize, uint32_t mem_writesize) { 
@@ -2614,45 +2604,27 @@ TAINTINT fw_slice_memregregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t re
 }
 
 //only used for cmov
-TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int orig_dst_reg, uint32_t size, const CONTEXT* ctx, uint32_t dest_reg_u8, int orig_src_reg, 
+TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t size, const PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int src_reg, const PIN_REGISTER* src_reg_value,
 				    uint32_t src_reg_u8, uint32_t flag, BOOL executed) 
 { 
-    int dest_reg = translate_reg (orig_dst_reg);
-    int src_reg = translate_reg (orig_src_reg);
     int dest_reg_tainted = is_reg_tainted (dest_reg, size, dest_reg_u8);
     int src_reg_tainted = is_reg_tainted (src_reg, size, src_reg_u8);
     int flag_tainted = is_flag_tainted (flag);
-    int src_value = 0, dest_value = 0;
-    PIN_REGISTER dest_reg_value, src_reg_value;
-    if (flag_tainted || (executed && src_reg_tainted)) {
-        PIN_GetContextRegval (ctx, REG(orig_dst_reg), (UINT8*) &dest_reg_value);
-        PIN_GetContextRegval (ctx, REG(orig_src_reg), (UINT8*) &src_reg_value);
-        if (size == 4) {
-            dest_value = *dest_reg_value.dword;
-            src_value = *src_reg_value.dword;
-        } else {
-            dest_value = *dest_reg_value.word;
-            src_value = *src_reg_value.word;
-        }
-    }
-    
     if (flag_tainted) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	printf ("    [SLICE_INFO] #src_regregflag[%d:%d:%u,%d:%d:%u,FM%x:%d:4] #dest_value %u, src_value %u, executed %d\n", 
-		dest_reg, dest_reg_tainted, size, src_reg, src_reg_tainted, size, flag, flag_tainted, dest_value, src_value, executed);
-	if (src_reg_tainted != 1) print_extra_move_reg (ip, src_reg, size, &src_reg_value, src_reg_u8, src_reg_tainted);
-	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, size, &dest_reg_value, dest_reg_u8, dest_reg_tainted);
+	printf ("    [SLICE_INFO] #src_regregflag[%d:%d:%u,%d:%d:%u,FM%x:%d:4] #dest_value %s, src_value %s, executed %d\n", 
+		dest_reg, dest_reg_tainted, size, src_reg, src_reg_tainted, size, flag, flag_tainted, print_regval(tmpbuf, dest_reg_value, size), print_regval(tmpbuf2, src_reg_value, size), executed);
+	if (src_reg_tainted != 1) print_extra_move_reg (ip, src_reg, size, src_reg_value, src_reg_u8, src_reg_tainted);
+	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, size, dest_reg_value, dest_reg_u8, dest_reg_tainted);
     } else {
-	if (executed) {
-	    if (src_reg_tainted) {
-		char* e;
-		char* p = strstr (ins_str, "cmov");
-		assert (p);
-		for (e = p; !isspace(*e); e++);
-		printf ("[SLICE] #%x #%.*smov%s\t", ip, (int)((u_long)p-(u_long)ins_str), ins_str, e);
-		printf ("    [SLICE_INFO] #src_regregflag[%d:%d:%u,%d:%d:%u,FM%x:%d:4] #dest_value %u, src_value %u, executed %d\n", 
-			dest_reg, dest_reg_tainted, size, src_reg, src_reg_tainted, size, flag, flag_tainted, dest_value, src_value, executed);
-	    }
+	if (executed && src_reg_tainted) {
+	    char* e;
+	    char* p = strstr (ins_str, "cmov");
+	    assert (p);
+	    for (e = p; !isspace(*e); e++);
+	    printf ("[SLICE] #%x #%.*smov%s\t", ip, (int)((u_long)p-(u_long)ins_str), ins_str, e);
+	    printf ("    [SLICE_INFO] #src_regregflag[%d:%d:%u,%d:%d:%u,FM%x:%d:4] #dest_value %s, src_value %s, executed %d\n", 
+		    dest_reg, dest_reg_tainted, size, src_reg, src_reg_tainted, size, flag, flag_tainted, print_regval(tmpbuf, dest_reg_value, size), print_regval(tmpbuf2, src_reg_value, size), executed);
 	}
 	// If flag not tainted and mov not executed, then this is a noop in the slice
     }
@@ -2744,15 +2716,22 @@ TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint3
     if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
-TAINTINT fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) {
-	int tainted = is_flag_tainted (mask);
-	if (tainted) {
-		PRINT ("flag\n");
-		printf ("[SLICE] #%x #%s\t", ip, ins_str);
-		printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d\n", mask, (int) taken);
-		return 1;
-	}
-	return 0;
+TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) 
+{
+    if (is_flag_tainted (mask)) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d\n", mask, (int) taken);
+    }
+}
+
+TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t mem_size) 
+{
+    if (is_flag_tainted (mask)) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #dst_mem[%lx:0:%u]\n", mask, mem_loc, mem_size);
+	print_immediate_addr (mem_loc, ip);
+	add_modified_mem_for_final_check (mem_loc, mem_size);
+    }
 }
 
 TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t orig_src_reg, uint32_t size, const CONTEXT* ctx, int32_t reg_u8) { 
