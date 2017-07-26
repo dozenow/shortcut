@@ -2209,9 +2209,6 @@ static ADDRINT returnArg (BOOL arg)
     return arg;
 }
 
-TAINTSIGN do_nothing () { 
-}
-
 static inline char* get_copy_of_disasm (INS ins) { 
 	const char* tmp = INS_Disassemble (ins).c_str();
 	char* str = NULL;
@@ -2223,209 +2220,6 @@ static inline char* get_copy_of_disasm (INS ins) {
 }
 static inline void put_copy_of_disasm (char* str) { 
 	//TODO memory leak
-}
-
-static inline void fw_slice_check_address (INS ins) { 
-	UINT32 count = INS_OperandCount (ins);
-	UINT32 i = 0;
-	int has_mem_operand = 0;
-	int memory_read_count = 0;
-	if (INS_MemoryOperandCount(ins) == 1) {
-		for (; i<count; ++i) { 
-			if (INS_OperandIsMemory(ins, i)) { 
-				IARG_TYPE mem_ea = IARG_INVALID;
-				UINT32 memsize = 0;
-				if (INS_IsMemoryRead(ins)) {
-					if (memory_read_count == 1) {//this is the second read
-						mem_ea = IARG_MEMORYREAD2_EA,
-						memsize = INS_MemoryOperandSize(ins, 1);
-					} else {
-						mem_ea = IARG_MEMORYREAD_EA;
-						memsize = INS_MemoryReadSize(ins);
-                                                ++ memory_read_count;
-					}
-				} else if (INS_IsMemoryWrite(ins)) {
-					mem_ea = IARG_MEMORYWRITE_EA;
-					memsize = INS_MemoryWriteSize(ins);
-				}
-
-				REG base_reg = INS_OperandMemoryBaseReg(ins, i);			
-				REG index_reg = INS_OperandMemoryIndexReg(ins, i);			
-				if (REG_valid (base_reg) && REG_valid(index_reg)) {
-					INS_InsertThenCall(ins, IPOINT_BEFORE,
-							AFUNPTR(fw_slice_addressing),
-							IARG_FAST_ANALYSIS_CALL,
-							IARG_INST_PTR,
-							IARG_UINT32, translate_reg (base_reg),
-							IARG_UINT32, REG_Size(base_reg),
-							IARG_REG_VALUE, base_reg,
-							IARG_UINT32, REG_is_Upper8(base_reg),
-							IARG_UINT32, translate_reg(index_reg),
-							IARG_UINT32, REG_Size(index_reg),
-							IARG_REG_VALUE, index_reg,
-							IARG_UINT32, REG_is_Upper8(index_reg),
-							mem_ea,
-							IARG_UINT32, memsize, 
-							IARG_UINT32, INS_IsMemoryRead(ins),
-							IARG_END);
-					has_mem_operand = 1;
-				} else if (REG_valid (base_reg) && !REG_valid (index_reg)) {
-					INS_InsertThenCall(ins, IPOINT_BEFORE,
-							AFUNPTR(fw_slice_addressing),
-							IARG_FAST_ANALYSIS_CALL,
-							IARG_INST_PTR,
-							IARG_UINT32, translate_reg (base_reg),
-							IARG_UINT32, REG_Size(base_reg),
-							IARG_REG_VALUE, base_reg,
-							IARG_UINT32, REG_is_Upper8(base_reg),
-							IARG_UINT32, 0,
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0,
-							mem_ea,
-							IARG_UINT32, memsize, 
-							IARG_UINT32, INS_IsMemoryRead(ins),
-							IARG_END);
-					has_mem_operand = 1;
-				} else if (!REG_valid (base_reg) && !REG_valid (index_reg)) {
-					INS_InsertThenCall(ins, IPOINT_BEFORE,
-							AFUNPTR(fw_slice_addressing),
-							IARG_FAST_ANALYSIS_CALL,
-							IARG_INST_PTR,
-							IARG_UINT32, 0,
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0,
-							IARG_UINT32, 0,
-							IARG_UINT32, 0,
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0, 
-							mem_ea,
-							IARG_UINT32, memsize, 
-							IARG_UINT32, INS_IsMemoryRead(ins),
-							IARG_END);
-					has_mem_operand = 1;
-				} else if (!REG_valid (base_reg) && REG_valid (index_reg)) {
-					INS_InsertThenCall(ins, IPOINT_BEFORE,
-							AFUNPTR(fw_slice_addressing),
-							IARG_FAST_ANALYSIS_CALL,
-							IARG_INST_PTR,
-							IARG_UINT32, 0,
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0, 
-							IARG_UINT32, 0, 
-							IARG_UINT32, translate_reg (index_reg),
-							IARG_UINT32, REG_Size(index_reg),
-							IARG_REG_VALUE, index_reg,
-							IARG_UINT32, REG_is_Upper8(index_reg),
-							mem_ea,
-							IARG_UINT32, memsize, 
-							IARG_UINT32, INS_IsMemoryRead(ins),
-							IARG_END);
-					has_mem_operand = 1;
-				} else {
-					fprintf (stderr, "[ERROR] unrecognized mem addr %s\n", INS_Disassemble(ins).c_str());
-					assert (0);
-				}
-			}
-		}
-	} else if (INS_MemoryOperandCount (ins) == 2) {
-		REG base_reg[2];
-		REG index_reg[2];
-		uint32_t base_reg_size[2] = {0};
-		uint32_t index_reg_size[2] = {0};
-		IARG_TYPE base_type[2] = {IARG_INVALID, IARG_INVALID};
-		IARG_TYPE index_type[2] = {IARG_INVALID, IARG_INVALID};
-		int base_value[2] = {0};
-		int index_value[2] = {0};
-		uint32_t index = 0;
-		uint32_t is_read[2] = {0,0};
-		IARG_TYPE mem_type[2];
-		UINT32 memsize[2];
-		if (INS_MemoryOperandIsWritten(ins, 0)) {
-			mem_type[0] = IARG_MEMORYWRITE_EA;
-			is_read[0] = 0;
-		} else if(INS_MemoryOperandIsRead(ins, 0)) {
-			mem_type[0] = IARG_MEMORYREAD_EA;
-			is_read[0] = 1;
-                        ++ memory_read_count;
-		} else 
-			assert (0);
-		if (INS_MemoryOperandIsWritten(ins, 1)) {
-			mem_type[1] = IARG_MEMORYWRITE_EA;
-			is_read[0] = 0;
-		} else if(INS_MemoryOperandIsRead(ins, 1)) {
-                        if (memory_read_count == 1) 
-                            mem_type[1] = IARG_MEMORYREAD2_EA;
-                        else
-                            mem_type[1] = IARG_MEMORYREAD_EA;
-			is_read[0] = 1;
-		} else 
-			assert (0);
-		memsize[0] = INS_MemoryOperandSize (ins, 0);
-		memsize[1] = INS_MemoryOperandSize (ins, 1);
-
-		for (i=0; i<count; ++i) { 
-			if (INS_OperandIsMemory(ins, i)) { 
-				base_reg[index] = INS_OperandMemoryBaseReg(ins, i);			
-				index_reg[index] = INS_OperandMemoryIndexReg(ins, i);			
-				if (REG_valid (base_reg[index])) {
-					base_reg_size[index] = REG_Size(base_reg[index]);
-					base_type[index] = IARG_REG_VALUE;
-					base_value[index] = base_reg[index];
-				} else { 
-					base_reg_size[index] = 0;
-					base_type[index] = IARG_UINT32;
-					base_value[index] = 0;
-				}
-				if (REG_valid (index_reg[index])) {
-					index_reg_size[index] = REG_Size (index_reg[index]);
-					index_type[index] = IARG_REG_VALUE;
-					index_value[index] = index_reg[index];
-				} else { 
-					index_reg_size[index] = 0;
-					index_type[index] = IARG_UINT32;
-					index_value[index] = 0;
-				}
-				++index;
-			}
-		}
-		INS_InsertThenCall(ins, IPOINT_BEFORE, AFUNPTR(fw_slice_addressing_check_two),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_INST_PTR,
-				IARG_UINT32, translate_reg(base_reg[0]),
-				IARG_UINT32, base_reg_size[0],
-				base_type[0], base_value[0],
-				IARG_UINT32, REG_is_Upper8(base_reg[0]),
-				IARG_UINT32, translate_reg(index_reg[0]),
-				IARG_UINT32, index_reg_size[0],
-				index_type[0], index_value[0],
-				IARG_UINT32, REG_is_Upper8(index_reg[0]),
-				mem_type[0],
-				IARG_UINT32, memsize[0],
-				IARG_UINT32, is_read[0],
-				IARG_UINT32, translate_reg(base_reg[1]),
-				IARG_UINT32, base_reg_size[1],
-				base_type[1], base_value[1],
-				IARG_UINT32, REG_is_Upper8(base_reg[1]),
-				IARG_UINT32, translate_reg(index_reg[1]),
-				IARG_UINT32, index_reg_size[1],
-				index_type[1], index_value[1],
-				IARG_UINT32, REG_is_Upper8(index_reg[1]),
-				mem_type[1],
-				IARG_UINT32, memsize[0],
-				IARG_UINT32, is_read[1],
-				IARG_END);
-		has_mem_operand = 1;
-	} else 
-		assert (0);
-	if (has_mem_operand == 0) { 
-		fprintf (stderr, "[ERROR] unrecognized mem operands %s, operand count %d\n", INS_Disassemble(ins).c_str(), count);
-		INS_InsertThenCall (ins, IPOINT_BEFORE, 
-				AFUNPTR(do_nothing),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_END);
-	}
 }
 
 #define SETUP_BASE_INDEX(base_reg,index_reg) \
@@ -2619,26 +2413,28 @@ static inline void fw_slice_src_regregreg (INS ins, REG dstreg, REG srcreg, REG 
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize) { 
-	char* str = get_copy_of_disasm (ins);
-	INS_InsertIfCall(ins, IPOINT_BEFORE,
-			AFUNPTR(fw_slice_memregreg),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_INST_PTR,
-			IARG_PTR, str,
-			IARG_ADDRINT, translate_reg (reg1), 
-			IARG_UINT32, reg1_size,
-			IARG_REG_VALUE, reg1, 
-			IARG_UINT32, REG_is_Upper8(reg1),
-			IARG_ADDRINT, translate_reg (reg2), 
-			IARG_UINT32, reg2_size,
-			IARG_REG_VALUE, reg2, 
-			IARG_UINT32, REG_is_Upper8(reg2),
-			mem_ea, 
-			IARG_UINT32, memsize,
-			IARG_END);
-	fw_slice_check_address (ins);
-	put_copy_of_disasm (str);
+static inline void fw_slice_src_regregmem (INS ins, REG reg1, uint32_t reg1_size, REG reg2, uint32_t reg2_size, IARG_TYPE mem_ea, uint32_t memsize, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID()) 
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_memregreg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_ADDRINT, translate_reg (reg1), 
+		   IARG_UINT32, reg1_size,
+		   IARG_REG_CONST_REFERENCE, reg1, 
+		   IARG_UINT32, REG_is_Upper8(reg1),
+		   IARG_ADDRINT, translate_reg (reg2), 
+		   IARG_UINT32, reg2_size,
+		   IARG_REG_CONST_REFERENCE, reg2, 
+		   IARG_UINT32, REG_is_Upper8(reg2),
+		   mem_ea, 
+		   IARG_UINT32, memsize,
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
 }
 
 //only use this for CMOV  with index tool enabled
@@ -2729,269 +2525,6 @@ static inline void fw_slice_src_regflag_cmov (INS ins, uint32_t mask, REG dst, R
 }
 
 static ADDRINT computeEA(ADDRINT firstEA, UINT eflags, UINT32 count, UINT32 op_size);
-
-//it depends on not only the source string, but also ECX (count); 
-//it also depends on esi and edi probably for the index tool
-//TODO: it should also depend on DF_FLAG
-//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
-TAINTINT fw_slice_string_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem, uint32_t first_iter) { 
-	//only check on the first iteration
-    if (first_iter) {
-        int size = (int) (counts*op_size);
-        int tainted = 0;
-        if (!size) return 0;
-        ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
-        //fprintf (stderr, "fw_slice_string_internal %s src_mem_loc %x eflags %x counts %xop_size  %x dst_mem %lx ea_src %x\n", inst_str, src_mem_loc, eflags, counts, op_size, dst_mem, ea_src_mem_loc);
-	if (count_reg) { //count_reg is set only with REP prefix
-		assert (count_reg == 9); //should always be ecx, otherwise, add the support
-		tainted = fw_slice_memreg_imm_value (ip, inst_str, count_reg, 4, counts, 0, ea_src_mem_loc, size);
-	} else{ 
-	    fw_slice_mem2mem (ip, inst_str, ea_src_mem_loc, size, dst_mem, size);
-	}
-	//assert for DF_FLAG
-	assert (is_flag_tainted(DF_FLAG) == 0);
-        return tainted;
-    }
-    return 0;
-}
-
-//TODO: depends on DF_FLAG
-//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
-TAINTINT fw_slice_stringstring_internal (ADDRINT ip, char* inst_str, ADDRINT src_mem_loc, ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, u_long dst_mem_loc, uint32_t first_iter) { 
-	//only check on the first iteration
-    if (first_iter) {
-        int size = (int) (counts*op_size);
-        int tainted = 0;
-        if (!size) return 0;
-        ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
-	ADDRINT ea_dst_mem_loc = computeEA (dst_mem_loc, eflags, counts, op_size);
-	if (count_reg) { //count_reg is set only with REP prefix
-		assert (count_reg == 9); //should always be ecx, otherwise, add the support
-		tainted = fw_slice_memmemreg_imm_value (ip, inst_str, ea_src_mem_loc, ea_dst_mem_loc, size, size, count_reg, 4, counts, 0);
-	} else{ 
-		tainted = fw_slice_memmem (ip, inst_str, ea_src_mem_loc, ea_dst_mem_loc, size, size);
-	}
-	//assert for DF_FLAG
-	assert (is_flag_tainted(DF_FLAG) == 0);
-        return tainted;
-    }
-    return 0;
-}
-
-TAINTINT fw_slice_stringreg_internal (ADDRINT ip, char* inst_str, 
-        ADDRINT src_mem_loc, ADDRINT eflags, 
-        uint32_t count_reg, ADDRINT counts, UINT32 op_size, 
-        uint32_t reg, uint32_t reg_size, uint32_t is_upper8, uint32_t reg_value, 
-        uint32_t first_iter, uint32_t is_rep, uint32_t is_repz) { 
-    //for rep, only check on the first iteration
-    //but for repz, check on the final iternation, when we know the exact number of iterations
-    if ((is_rep && first_iter) ||  (is_repz && (eflags & ZF_MASK))) {
-        //for repz, we cannot infer the actual number of executions from the count register
-        if (is_repz) { 
-            src_mem_loc = current_thread->repz_src_mem_loc;
-            counts = current_thread->repz_counts;
-            counts ++; //IMPORTANT: this function get called before repz_execute_count, we add 1 here
-        }
-        //fprintf (stderr, "fw_slice_stringrep_internal %s, is_rep %u repz %u, counts %u, zf_flag %u\n", inst_str, is_rep, is_repz, counts, eflags & ZF_MASK);
-        int size = (int) (counts*op_size);
-        int tainted = 0;
-        if (!size) return 0;
-        ADDRINT ea_src_mem_loc = computeEA (src_mem_loc, eflags, counts, op_size);
-	if (count_reg) { //count_reg is set only with REP prefix
-		assert (count_reg == 9); //should always be ecx, otherwise, add the support
-		tainted = fw_slice_memregreg (ip, inst_str, count_reg, 4, counts, 0, reg, reg_size, reg_value, is_upper8, ea_src_mem_loc, size);
-	} else{ 
-		tainted = fw_slice_memreg_imm_value (ip, inst_str, reg, reg_size, reg_value, is_upper8, ea_src_mem_loc, size);
-	}
-	//assert for DF_FLAG
-	assert (is_flag_tainted(DF_FLAG) == 0);
-        return tainted;
-    }
-    return 0;
-}
-
-
-static inline void fw_slice_src_string (INS ins, int rep, uint32_t is_dst_mem) { 
-    char* str = get_copy_of_disasm (ins);
-    if (rep) {
-        if (is_dst_mem) 
-            //we only print the slice once on the first iteration of rep
-            //and also call taint_rep
-            INS_InsertIfCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(fw_slice_string_internal),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_INST_PTR,
-                    IARG_PTR, str,
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
-                    IARG_REG_VALUE, INS_RepCountRegister (ins),
-                    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-                    IARG_MEMORYWRITE_EA,
-                    IARG_FIRST_REP_ITERATION,
-                    IARG_END);
-        else 
-            INS_InsertIfCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(fw_slice_string_internal),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_INST_PTR,
-                    IARG_PTR, str,
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
-                    IARG_REG_VALUE, INS_RepCountRegister (ins),
-                    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-                    IARG_UINT32, 0, 
-                    IARG_FIRST_REP_ITERATION,
-                    IARG_END);
-    } else {
-        if (is_dst_mem)  
-            INS_InsertIfCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(fw_slice_string_internal),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_INST_PTR,
-                    IARG_PTR, str,
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, 0,
-                    IARG_UINT32, 1,
-                    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-                    IARG_MEMORYWRITE_EA,
-                    IARG_UINT32, 0,
-                    IARG_END);
-
-        else
-            INS_InsertIfCall(ins, IPOINT_BEFORE,
-                    AFUNPTR(fw_slice_string_internal),
-                    IARG_FAST_ANALYSIS_CALL,
-                    IARG_INST_PTR,
-                    IARG_PTR, str,
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, 0,
-                    IARG_UINT32, 1,
-                    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-                    IARG_UINT32, 0, 
-                    IARG_UINT32, 0,
-                    IARG_END);
-    }
-    fw_slice_check_address (ins);
-    put_copy_of_disasm (str);
-}
-
-static inline void fw_slice_src_stringstring (INS ins, int rep) { 
-    char* str = get_copy_of_disasm (ins);
-    if (rep) {
-	    //we only print the slice once on the first iteration of rep
-	    //and also call taint_rep
-	    INS_InsertIfCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_stringstring_internal),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
-			    IARG_REG_VALUE, INS_RepCountRegister (ins),
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_MEMORYREAD2_EA, 
-			    IARG_FIRST_REP_ITERATION,
-			    IARG_END);
-    } else {
-	    INS_InsertIfCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_stringstring_internal),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_UINT32, 0,
-			    IARG_UINT32, 1,
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_MEMORYREAD2_EA, 
-			    IARG_UINT32, 0,
-			    IARG_END);
-
-    }
-    fw_slice_check_address (ins);
-    put_copy_of_disasm (str);
-}
-
-static inline void fw_slice_src_stringreg (INS ins, int rep, int repz) { 
-    char* str = get_copy_of_disasm (ins);
-    if (rep) {
-	    //we only print the slice once on the first iteration of rep
-	    //and also call taint_rep
-	    INS_InsertIfCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_stringreg_internal),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
-			    IARG_REG_VALUE, INS_RepCountRegister (ins),
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, LEVEL_BASE::REG_EAX, 
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, 0, //can't be ah
-			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
-			    IARG_FIRST_REP_ITERATION,
-                            IARG_UINT32, rep,
-                            IARG_UINT32, repz,
-			    IARG_END);
-    } else if (repz) {
-	    //we only print the slice once on the first iteration of rep
-	    //and also call taint_rep
-	    INS_InsertIfCall(ins, IPOINT_AFTER,
-			    AFUNPTR(fw_slice_stringreg_internal),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-                            IARG_ADDRINT, 0,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_UINT32, translate_reg(INS_RepCountRegister (ins)),
-			    IARG_REG_VALUE, INS_RepCountRegister (ins),
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, LEVEL_BASE::REG_EAX, 
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, 0, //can't be ah
-			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
-			    IARG_FIRST_REP_ITERATION,
-                            IARG_UINT32, rep,
-                            IARG_UINT32, repz,
-			    IARG_END);
-    } else {
-	    INS_InsertIfCall(ins, IPOINT_BEFORE,
-			    AFUNPTR(fw_slice_stringreg_internal),
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_UINT32, 0,
-			    IARG_UINT32, 1,
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, LEVEL_BASE::REG_EAX, 
-			    IARG_UINT32, INS_MemoryOperandSize (ins,0),
-			    IARG_UINT32, 0, //can't be ah
-			    IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
-			    IARG_UINT32, 0,
-			    IARG_UINT32, 0,
-			    IARG_UINT32, 0,
-			    IARG_END);
-
-    }
-    if (!repz) 
-        fw_slice_check_address (ins);
-    else {
-        INS_InsertThenCall (ins, IPOINT_AFTER, (AFUNPTR)fw_slice_addressing_repz,
-                IARG_INST_PTR,
-                IARG_UINT32, INS_MemoryOperandSize (ins,0),
-                IARG_END);
-    }
-    put_copy_of_disasm (str);
-}
 
 static UINT32 get_reg_off (REG reg)
 {
@@ -3431,92 +2964,6 @@ static inline ADDRINT computeEA(ADDRINT firstEA, UINT eflags,
     return firstEA;
 }
 
-//TODO: the index tool doesn't merge taints from esi and edi
-void taint_whole_mem2mem(ADDRINT ip, ADDRINT src_mem_loc, ADDRINT dst_mem_loc,
-                         ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, uint32_t check_zf)
-{
-    int size = (int)(counts * op_size);
-    if (!size) return;
-    assert (size > 0);
-    ADDRINT ea_src_mem_loc = computeEA(src_mem_loc, eflags, counts, op_size);
-    ADDRINT ea_dst_mem_loc = computeEA(dst_mem_loc, eflags, counts, op_size);
-    //fprintf (stderr, "taint_whole_mem2mem: src %x (%x), dst %x (%x), size %u\n", src_mem_loc, ea_src_mem_loc, dst_mem_loc, ea_dst_mem_loc, op_size);
-    if (count_reg) {
-	    assert (count_reg == 9); //ecx
-	    taint_mem2mem(ea_src_mem_loc, ea_dst_mem_loc, size);
-	    taint_add_reg2mem_offset (ea_dst_mem_loc, LEVEL_BASE::REG_ECX*REG_SIZE, 4, 0, 0);
-    } else { 
-	    taint_mem2mem(ea_src_mem_loc, ea_dst_mem_loc, size);
-    }
-#ifdef LINKAGE_DATA_OFFSET
-    //not handled
-    //we may need to taint esi and edi probably in this case
-    if (is_reg_arg_tainted (LEVEL_BASE::REG_ESI, 4, 0) || is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
-	    fprintf (stderr, "[NOT handled] index tool for move_string\n");
-#endif
-    taint_string_operation (ip);
-    if (check_zf) taint_rep (ZF_FLAG, ip);
-}
-
-void taint_whole_memmem2flag(ADDRINT mem_loc1, ADDRINT mem_loc2,
-                         ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, uint32_t check_zf, uint32_t mask, ADDRINT ip)
-{
-    int size = (int)(counts * op_size);
-    if (!size) return;
-    assert (size > 0);
-    ADDRINT ea_mem_loc1 = computeEA(mem_loc1, eflags, counts, op_size);
-    ADDRINT ea_mem_loc2 = computeEA(mem_loc2, eflags, counts, op_size);
-
-    if (count_reg) {
-	    assert (count_reg == 9); //ecx
-	    taint_memmem2flag(ea_mem_loc1, ea_mem_loc2, mask, size);
-	    taint_add_reg2flag_offset (LEVEL_BASE::REG_ECX*REG_SIZE, 4, mask);
-    } else { 
-	    taint_memmem2flag(ea_mem_loc1, ea_mem_loc2, mask, size);
-    }
-#ifdef LINKAGE_DATA_OFFSET
-    //not handled
-    //we may need to taint esi and edi probably in this case
-    if (is_reg_arg_tainted (LEVEL_BASE::REG_ESI, 4, 0) || is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
-	    fprintf (stderr, "[NOT handled] index tool for compare_string\n");
-#endif
-    taint_string_operation (ip);
-    if (check_zf) taint_rep (ZF_FLAG, ip);
-}
-
-void taint_whole_regmem2flag(uint32_t reg, ADDRINT mem_loc,
-                         ADDRINT eflags, uint32_t count_reg, ADDRINT counts, UINT32 op_size, UINT32 reg_size, uint32_t check_zf, uint32_t mask, ADDRINT ip)
-{
-    //for repz, we cannot infer the actual number of executions from the count register
-    //otherwise, we'll overtaint
-    if (check_zf) { 
-        mem_loc = current_thread->repz_src_mem_loc;
-        counts = current_thread->repz_counts;
-    }
-    int size = (int)(counts * op_size);
-    if (size <= 0) { 
-	    if (size < 0)
-	    	fprintf (stderr, "taint_whole_regmem2flag : size < 0, size %d, counts %d, op_size %u\n", size, (int) counts, op_size);
-	    return;
-    }
-    ADDRINT ea_mem_loc = computeEA(mem_loc, eflags, counts, op_size);
-    //fprintf (stderr, "taint_whole_regmem2flag: size %d, ip %x, ea_mem %x , original %x, char %s\n", size, ip, ea_mem_loc, mem_loc, (char*) mem_loc);
-    if (count_reg) { //for rep and repz
-	taint_regmem2flag (ea_mem_loc, size, reg, reg_size, mask, 0);
-	taint_add_reg2flag_offset (LEVEL_BASE::REG_ECX*REG_SIZE, 4, mask);
-    } else { //no rep
-    	taint_regmem2flag (ea_mem_loc, size, reg, reg_size, mask, 0);
-    }
-#ifdef LINKAGE_DATA_OFFSET
-    //not handled
-    //we may need to taint edi probably in this case
-    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0))
-	    fprintf (stderr, "[NOT handled] index tool for scan_string\n");
-#endif
-    taint_string_operation (ip);
-    if (check_zf) taint_rep(ZF_FLAG, ip);
-}
-
 void taint_whole_reg2mem(ADDRINT ip, ADDRINT dst_mem_loc,
 			   uint32_t reg,
 			   uint32_t reg_size,
@@ -3543,11 +2990,10 @@ void taint_whole_reg2mem(ADDRINT ip, ADDRINT dst_mem_loc,
     if (check_zf) taint_rep(ZF_FLAG, ip);
 }
 
-//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_move_string(INS ins)
 {
-    if (INS_RepPrefix(ins)) {
-	char* str = get_copy_of_disasm (ins);
+    char* str = get_copy_of_disasm (ins); 
+    if (INS_HasRealRep(ins)) {
 	INS_InsertCall(ins, IPOINT_BEFORE,
 		       AFUNPTR(fw_slice_string_move),
 		       IARG_FAST_ANALYSIS_CALL,
@@ -3562,154 +3008,115 @@ void instrument_move_string(INS ins)
 		       IARG_UINT32, INS_MemoryOperandSize (ins,0),
 		       IARG_FIRST_REP_ITERATION,
 		       IARG_END);
-	put_copy_of_disasm (str);
-	INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(taint_mem2mem),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_MEMORYREAD_EA, 
-		       IARG_MEMORYWRITE_EA, 
-		       IARG_UINT32, INS_MemoryOperandSize(ins,0),
-		       IARG_END);
-    } else if (INS_RepnePrefix(ins)) {
-	// This seems wrong - please verify - JNF
-        fw_slice_src_string(ins, 1, 1);
-        INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
-                IARG_FIRST_REP_ITERATION,
-                IARG_END);
-	INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_mem2mem,
-			IARG_ADDRINT, INS_Address(ins),
+	INS_InsertCall (ins, IPOINT_BEFORE, 
+			AFUNPTR(taint_string_move),
+			IARG_FAST_ANALYSIS_CALL,
 			IARG_MEMORYREAD_EA,
 			IARG_MEMORYWRITE_EA,
-			IARG_REG_VALUE, REG_EFLAGS,
-			IARG_UINT32, INS_RepCountRegister(ins),
-			IARG_REG_VALUE, INS_RepCountRegister(ins),
-			IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-			IARG_UINT32, INS_RepnePrefix(ins),
+			IARG_UINT32, INS_MemoryOperandSize (ins,0),
+			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+			IARG_FIRST_REP_ITERATION,
 			IARG_END);
     } else {
-	// This seems wrong - please verify - JNF
-	fw_slice_src_string (ins, 0, 1);
-	INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_mem2mem,
-			IARG_ADDRINT, INS_Address(ins),
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(fw_slice_string_move),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_INST_PTR,
+		       IARG_PTR, str,
+		       IARG_MEMORYREAD_EA,
+		       IARG_MEMORYWRITE_EA,
+		       IARG_REG_VALUE, REG_EFLAGS, 
+		       IARG_UINT32, 1,
+		       IARG_REG_VALUE, LEVEL_BASE::REG_EDI,
+		       IARG_REG_VALUE, LEVEL_BASE::REG_ESI,
+		       IARG_UINT32, INS_MemoryOperandSize (ins,0),
+		       IARG_UINT32, 1,
+		       IARG_END);
+	INS_InsertCall (ins, IPOINT_BEFORE, 
+			AFUNPTR(taint_string_move),
+			IARG_FAST_ANALYSIS_CALL,
 			IARG_MEMORYREAD_EA,
 			IARG_MEMORYWRITE_EA,
-			IARG_REG_VALUE, REG_EFLAGS,
-			IARG_UINT32, 0,
+			IARG_UINT32, INS_MemoryOperandSize (ins,0),
 			IARG_UINT32, 1,
-			IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-			IARG_UINT32, INS_RepnePrefix(ins),
+			IARG_UINT32, 1,
 			IARG_END);
     }
+    put_copy_of_disasm (str);
 }
 
-//TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
 void instrument_compare_string(INS ins, uint32_t mask)
 {
-	UINT32 opw = INS_OperandWidth(ins, 0);
-	UINT32 size = opw / 8;
+    UINT32 size = INS_OperandWidth(ins, 0) / 8;
+    char* str = get_copy_of_disasm (ins); 
 
-	assert(size == INS_MemoryOperandSize(ins, 0));
-	INSTRUMENT_PRINT (log_f, "instrument_cmps: size %u\n", size);
+    assert (size == 1);
+    assert (INS_RepPrefix(ins));
 
-	if (INS_RepPrefix(ins) || INS_RepnePrefix(ins)) {
-		fw_slice_src_stringstring (ins, 1);
-		INS_InsertIfCall (ins, IPOINT_BEFORE, (AFUNPTR)returnArg,
-				IARG_FIRST_REP_ITERATION,
-				IARG_END);
-		INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_memmem2flag,
-				IARG_MEMORYREAD_EA,
-				IARG_MEMORYREAD2_EA,
-				IARG_REG_VALUE, REG_EFLAGS, 
-				IARG_UINT32, INS_RepCountRegister(ins),
-				IARG_REG_VALUE, INS_RepCountRegister(ins),
-				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-				IARG_UINT32, INS_RepnePrefix(ins),
-				IARG_UINT32, mask,
-				IARG_ADDRINT, INS_Address(ins),
-				IARG_END);
-	} else {
-		fw_slice_src_stringstring (ins, 0);
-		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_memmem2flag,
-				IARG_MEMORYREAD_EA,
-				IARG_MEMORYREAD2_EA,
-				IARG_REG_VALUE, REG_EFLAGS, 
-				IARG_UINT32, 0, 
-				IARG_UINT32, 1,
-				IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-				IARG_UINT32, INS_RepnePrefix(ins),
-				IARG_UINT32, mask,
-				IARG_ADDRINT, INS_Address(ins),
-				IARG_END);
-
-	}
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_string_compare),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_MEMORYREAD_EA,
+		   IARG_MEMORYREAD2_EA,
+		   IARG_REG_VALUE, REG_EFLAGS, 
+		   IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+		   IARG_REG_VALUE, LEVEL_BASE::REG_EDI,
+		   IARG_REG_VALUE, LEVEL_BASE::REG_ESI,
+		   IARG_UINT32, INS_MemoryOperandSize (ins,0),
+		   IARG_FIRST_REP_ITERATION,
+		   IARG_END);
+    INS_InsertCall (ins, IPOINT_BEFORE, 
+		    AFUNPTR(taint_string_compare),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_MEMORYREAD_EA,
+		    IARG_MEMORYREAD2_EA,
+		    IARG_UINT32, INS_MemoryOperandSize (ins,0),
+		    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+		    IARG_FIRST_REP_ITERATION,
+		    IARG_END);
 }
 
 void instrument_scan_string(INS ins, uint32_t mask)
 {
-	UINT32 opw = INS_OperandWidth(ins, 0);
-	UINT32 size = opw / 8;
+    UINT32 opw = INS_OperandWidth(ins, 0);
+    UINT32 size = opw / 8;
+    assert (size == 1);  // Need to handle more general sizes
+    assert(size == INS_MemoryOperandSize(ins, 0));
 
-	assert(size == INS_MemoryOperandSize(ins, 0));
+    assert (INS_HasRealRep(ins));
+    UINT32 rep_type = REP_TYPE_E;
+    if (INS_RepPrefix(ins)) {
+	rep_type = REP_TYPE;
+    } else if (INS_RepnePrefix(ins)) {
+	rep_type = REP_TYPE_NE;
+    }
 
-	if (INS_RepPrefix(ins)) {
-            // The number of iterations is determined solely by the count register value,
-            // therefore we can log all we need at the start of each REP "loop", and skip the
-            // instrumentation on all the other iterations of the REP prefixed operation. Simply use
-            // IF/THEN instrumentation which tests IARG_FIRST_REP_ITERATION.
-            fw_slice_src_stringreg (ins, 1, 0);
-            INS_InsertIfCall (ins, IPOINT_AFTER, (AFUNPTR)returnArg,
-                    IARG_FIRST_REP_ITERATION,
-                    IARG_END);
-            INS_InsertThenCall (ins, IPOINT_AFTER, (AFUNPTR)taint_whole_regmem2flag,
-                    IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, INS_RepCountRegister(ins),
-                    IARG_REG_VALUE, INS_RepCountRegister(ins),
-                    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                    IARG_UINT32, size, 
-                    IARG_UINT32, INS_RepnePrefix(ins),
-                    IARG_UINT32, mask,
-                    IARG_ADDRINT, INS_Address(ins),
-                    IARG_END);
-        } else if (INS_RepnePrefix(ins)) {
-	    char* str = get_copy_of_disasm (ins);
-	    INS_InsertCall (ins, IPOINT_BEFORE, 
-			    (AFUNPTR) fw_slice_string_scan,
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_INST_PTR,
-			    IARG_PTR, str,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, REG_EFLAGS, 
-			    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_EDI,
-			    IARG_FIRST_REP_ITERATION,
-			    IARG_END);
-	    INS_InsertCall (ins, IPOINT_BEFORE, 
-			    (AFUNPTR) taint_string_scan,
-			    IARG_FAST_ANALYSIS_CALL,
-			    IARG_MEMORYREAD_EA,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
-			    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
-			    IARG_FIRST_REP_ITERATION,
-			    IARG_END);
-	    put_copy_of_disasm (str);
-        } else {
-            fw_slice_src_stringreg (ins, 0, 0);
-            INS_InsertThenCall (ins, IPOINT_BEFORE, (AFUNPTR)taint_whole_regmem2flag,
-                    IARG_UINT32, translate_reg(LEVEL_BASE::REG_EAX),
-                    IARG_MEMORYREAD_EA,
-                    IARG_REG_VALUE, REG_EFLAGS, 
-                    IARG_UINT32, 0,
-                    IARG_UINT32, 1,
-                    IARG_UINT32, INS_MemoryOperandSize(ins, 0),
-                    IARG_UINT32, size, 
-                    IARG_UINT32, INS_RepnePrefix(ins),
-                    IARG_UINT32, mask,
-                    IARG_ADDRINT, INS_Address(ins),
-                    IARG_END);
-        }
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall (ins, IPOINT_BEFORE, 
+		    (AFUNPTR) fw_slice_string_scan,
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_INST_PTR,
+		    IARG_PTR, str,
+		    IARG_MEMORYREAD_EA,
+		    IARG_REG_VALUE, REG_EFLAGS, 
+		    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
+		    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+		    IARG_REG_VALUE, LEVEL_BASE::REG_EDI,
+		    IARG_FIRST_REP_ITERATION,
+		    IARG_UINT32, rep_type,
+		    IARG_END);
+    INS_InsertCall (ins, IPOINT_BEFORE, 
+		    (AFUNPTR) taint_string_scan,
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_MEMORYREAD_EA,
+		    IARG_REG_VALUE, LEVEL_BASE::REG_AL,
+		    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+		    IARG_FIRST_REP_ITERATION,
+		    IARG_UINT32, rep_type,
+		    IARG_END);
+    put_copy_of_disasm (str);
 }
 
 TAINTSIGN pcmpestri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, PIN_REGISTER* reg1content, u_long mem_loc2, uint32_t size1, uint32_t size2) { 
