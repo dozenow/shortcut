@@ -11,6 +11,7 @@
 #include <boost/icl/interval_set.hpp>
 #include <list>
 #include <map>
+#include <stack>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -45,6 +46,10 @@
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
+
+struct flag_taints {
+    taint_t t[REG_SIZE];
+};
 
 #define OPEN_PATH_LEN 256
 struct open_info {
@@ -225,7 +230,8 @@ struct thread_data {
     int socketcall;
     int syscall_handled;            // flag to indicate if a syscall is handled at the glibc wrapper instead
     taint_t shadow_reg_table[NUM_REGS * REG_SIZE];
-    taint_t saved_flag_taints[REG_SIZE]; //for pushfd and popfd
+    std::stack<struct flag_taints>* saved_flag_taints;
+    //taint_t saved_flag_taints[REG_SIZE]; //for pushfd and popfd
    
     uint32_t repz_counts;
     u_long repz_src_mem_loc;

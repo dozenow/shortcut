@@ -1498,16 +1498,6 @@ TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size) {
     }
 }
 
-TAINTSIGN taint_merge_mem2reg (u_long mem_loc, int dst_reg, uint32_t size) { 
-    taint_t t = merge_mem_taints (mem_loc, size);
-    uint32_t i = 0;
-    assert (size != 1);
-
-    for (; i<size; ++i) { 
-        current_thread->shadow_reg_table[dst_reg*REG_SIZE+i] = t;
-    }
-}
-
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size) { 
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 	uint32_t i = 0;
@@ -3087,7 +3077,6 @@ TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_
     for (i = 0; i < dst_size; i++) {
 	shadow_reg_table[dst_off + i] = t;
     }
-
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
@@ -3106,16 +3095,29 @@ TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off,
     for (i = 0; i < dst_size; i++) {
 	shadow_reg_table[dst_off + i] = t;
     }
-
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
-TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags) 
+TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size) 
 { 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size, index_reg_off, index_reg_size);
     taint_t t = merge_mem_taints (mem_loc, size);
+    t = merge_taints (t, bi_taint);
     set_cmem_taints_one (mem_loc, size, t);
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags); 
+}
+
+TAINTSIGN taint_mix_mem2reg (u_long mem_loc, uint32_t size, int dst_off, uint32_t dst_size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size) 
+{ 
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size, index_reg_off, index_reg_size);
+    taint_t t = merge_mem_taints (mem_loc, size);
+    t = merge_taints (t, bi_taint);
+    for (uint32_t i = 0; i < dst_size; i++) {
+	shadow_reg_table[dst_off + i] = t;
+    }
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
 TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_off, uint32_t reg_size, uint32_t set_flags, uint32_t clear_flags) 
@@ -3680,26 +3682,22 @@ TAINTSIGN taint_string_store (u_long dst_mem_loc, uint32_t op_size, ADDRINT ecx_
     }
 }
 
-TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size) { 
+TAINTSIGN taint_pushfd (u_long mem_loc, uint32_t size) 
+{
     taint_t* t = &current_thread->shadow_reg_table[LEVEL_BASE::REG_EFLAGS*REG_SIZE];
-    //currently, we only handle 7 flags, and these occupy only 2 actual bytes in the EFLAG register
     taint_t first_byte = merge_flag_taints (CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG);
     taint_t second_byte = merge_flag_taints (OF_FLAG|DF_FLAG);
-
-    //save taints
-    memcpy (current_thread->saved_flag_taints, t, REG_SIZE);
-
+    current_thread->saved_flag_taints->push(*(struct flag_taints *) t);  // Use auxillary structure as we want to preserve individual flag taints
     set_cmem_taints_one (mem_loc, 1, first_byte);
     set_cmem_taints_one (mem_loc + 1, 1, second_byte);
     clear_cmem_taints (mem_loc + 2, size - 2);
 }
 
-TAINTSIGN taint_popfd (u_long mem_loc, uint32_t size) { 
+TAINTSIGN taint_popfd (u_long mem_loc, uint32_t size) 
+{ 
     taint_t* t = &current_thread->shadow_reg_table[LEVEL_BASE::REG_EFLAGS*REG_SIZE];
-    //recover taints
-    memcpy (t, current_thread->saved_flag_taints, REG_SIZE);
-    //clear the memory address
-    clear_cmem_taints (mem_loc, size);
+    *(flag_taints *) t = current_thread->saved_flag_taints->top();
+    current_thread->saved_flag_taints->pop();
 }
 
 TAINTSIGN taint_palignr_mem2dwreg(int reg, u_long mem_loc, int imm)

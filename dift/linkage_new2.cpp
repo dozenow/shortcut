@@ -2289,7 +2289,7 @@ static inline void fw_slice_src_reg2mem (INS ins, REG srcreg, uint32_t src_regsi
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_mem (INS ins, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())  
+static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)  
 {
     char* str = get_copy_of_disasm (ins);
     SETUP_BASE_INDEX(base_reg, index_reg);
@@ -2695,7 +2695,7 @@ void instrument_taint_mem2mem (INS ins, int extend)
 
 // Mix values in register: implies partial taint -> full taint
 // Example: shr eax, 5
-void instrument_taint_mix_reg (INS ins, REG reg, int set_flags, int clear_flags)
+static inline void instrument_taint_mix_reg (INS ins, REG reg, int set_flags, int clear_flags)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mix_reg_offset),
@@ -2707,7 +2707,7 @@ void instrument_taint_mix_reg (INS ins, REG reg, int set_flags, int clear_flags)
 		   IARG_END);
 }
 
-void instrument_taint_mix_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
+static inline void instrument_taint_mix_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mix_reg2reg_offset),
@@ -2721,27 +2721,25 @@ void instrument_taint_mix_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flag
 		   IARG_END);
 }
 
-void instrument_taint_mix_regreg2reg (INS ins, REG dstreg, REG srcreg1, REG srcreg2, int set_flags, int clear_flags)
+static inline void instrument_taint_mix_regreg2reg (INS ins, REG dstreg, REG srcreg1, REG srcreg2, int set_flags, int clear_flags)
 {
-    UINT32 dstregsize = REG_Size(dstreg);
-    UINT32 srcreg1size = REG_Size(srcreg1);
-    UINT32 srcreg2size = REG_Size(srcreg2);
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mix_regreg2reg_offset),
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_UINT32, get_reg_off(dstreg),
-		   IARG_UINT32, dstregsize,
+		   IARG_UINT32, REG_Size(dstreg),
 		   IARG_UINT32, get_reg_off(srcreg1),
-		   IARG_UINT32, srcreg1size,
+		   IARG_UINT32, REG_Size(srcreg1),
 		   IARG_UINT32, get_reg_off(srcreg2),
-		   IARG_UINT32, srcreg2size,
+		   IARG_UINT32, REG_Size(srcreg2),
 		   IARG_UINT32, set_flags, 
 		   IARG_UINT32, clear_flags,
 		   IARG_END);
 }
 
-void instrument_taint_mix_mem (INS ins, int set_flags, int clear_flags) 
+static inline void instrument_taint_mix_mem (INS ins, int set_flags, int clear_flags, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 { 
+    SETUP_BASE_INDEX_TAINT;
     INS_InsertCall (ins, IPOINT_BEFORE,
 		    AFUNPTR (taint_mix_mem),
 		    IARG_FAST_ANALYSIS_CALL,
@@ -2749,10 +2747,27 @@ void instrument_taint_mix_mem (INS ins, int set_flags, int clear_flags)
 		    IARG_UINT32, INS_MemoryWriteSize(ins),
 		    IARG_UINT32, set_flags, 
 		    IARG_UINT32, clear_flags,
+		    PASS_BASE_INDEX_TAINT,
 		    IARG_END);
 }
 
-void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags, int clear_flags) 
+static inline void instrument_taint_mix_mem2reg (INS ins, REG dstreg, int set_flags, int clear_flags, REG base_reg, REG index_reg)
+{ 
+    SETUP_BASE_INDEX_TAINT;
+    INS_InsertCall (ins, IPOINT_BEFORE,
+		    AFUNPTR (taint_mix_mem2reg),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_MEMORYREAD_EA,
+		    IARG_UINT32, INS_MemoryReadSize(ins),
+		    IARG_UINT32, get_reg_off(dstreg),
+		    IARG_UINT32, REG_Size(dstreg),
+		    IARG_UINT32, set_flags, 
+		    IARG_UINT32, clear_flags,
+		    PASS_BASE_INDEX_TAINT,
+		    IARG_END);
+}
+
+static inline void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags, int clear_flags) 
 { 
     INS_InsertCall (ins, IPOINT_BEFORE,
 		    AFUNPTR (taint_mix_reg2mem_offset),
@@ -2766,7 +2781,7 @@ void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags, int clear_fl
 		    IARG_END);
 }
 
-void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
+static inline void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 dst_regsize = REG_Size(dstreg);
     UINT32 src_regsize = REG_Size(srcreg);
@@ -3710,7 +3725,7 @@ void instrument_rotate(INS ins)
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
 	if (op2imm) {
 	    fw_slice_src_mem (ins, base_reg, index_reg);
-	    instrument_taint_mix_mem (ins, set_flags, clear_flags);
+	    instrument_taint_mix_mem (ins, set_flags, clear_flags, base_reg, index_reg);
 	} else {
 	    REG reg = INS_OperandReg (ins, 1);
 	    fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYWRITE_EA, size, base_reg, index_reg);
@@ -3912,13 +3927,10 @@ void instrument_pop(INS ins)
                 break;
         }
     } else if (INS_OperandIsReg(ins, 0)) {
-    	fw_slice_src_mem (ins);
+    	fw_slice_src_mem (ins, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
         REG reg = INS_OperandReg(ins, 0);
-	instrument_taint_mem2reg (ins, reg, 0);
+	instrument_taint_mem2reg (ins, reg, 0, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
     }
-    //I think we should clear the source mem for POP, since that memory address is not freed
-    // JNF: I think not
-    instrument_clear_mem_src (ins);
 }
 
 void instrument_leave (INS ins) { 
@@ -4299,39 +4311,27 @@ void instrument_imul(INS ins)
 			   IARG_UINT32, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG,
 			   IARG_END);
         }
-    } else if (count == 2) {
-        //xdou: I don't think this will happen? 
-        fprintf (stderr, "[BUG] imul with 2 operands??\n");
-        assert (0);
-    }else if (count == 4) {
-        //format1: imul r/m32 (EDX:EAX = EAX*r/m32), same as mul
-        //format2: imul r32, r/m32, imm32 (r32=r/m32*imm32),  taint src to dst
-        /*int i = 0;
-        for (; i<4; ++i) { 
-            fprintf (stderr, "[INFO]imul %d %d %d %d, reg (%d)\n", INS_OperandIsReg (ins, i), INS_OperandIsMemory(ins, i), INS_OperandIsImmediate(ins, i), INS_OperandIsImplicit(ins, i), INS_OperandReg(ins, i));
-        }
-        fprintf (stderr, "[INFO] imul %s\n", INS_Disassemble(ins).c_str());*/
+    } else if (count == 4) {
         if (INS_OperandIsImmediate (ins, 2)) {
-            //format 2
-            assert (INS_OperandIsReg(ins, 0));
             REG dst_reg = INS_OperandReg(ins, 0);
-
-            if (INS_IsMemoryRead(ins)) {
-                UINT32 addrsize = INS_MemoryReadSize(ins);
-                assert (addrsize == REG_Size(dst_reg));
-		fw_slice_src_mem (ins);
-		instrument_taint_mem2reg (ins, dst_reg, 0);
+            if (INS_IsMemoryRead(ins)) {	
+		//format: imul r32, m32, imm32 (r32=m32*imm32)
+		REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+		REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+		fw_slice_src_mem (ins, base_reg, index_reg);
+		instrument_taint_mem2reg (ins, dst_reg, 0, base_reg, index_reg);
             } else {
-                assert (INS_OperandIsReg(ins, 1));
+		//format: imul r32, r32, imm32 (dstreg=srcreg*imm32)
                 REG src_reg = INS_OperandReg(ins, 1);
 		fw_slice_src_reg (ins, src_reg);
-                assert (REG_Size(dst_reg) == REG_Size(src_reg));
 		instrument_taint_reg2reg (ins, dst_reg, src_reg, 0);
             }
         } else { 
-            //format 1
+	    //format: imul r/m32 (EDX:EAX = EAX*r/m32), same as mul
             instrument_mul (ins);
         }
+    } else {
+	assert (0);
     }
 }
 
@@ -4550,7 +4550,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
-	fw_slice_src_mem(ins, base_reg, index_reg);
+	fw_slice_src_mem (ins, base_reg, index_reg);
 	instrument_taint_mem2flag (ins, set_mask, clear_mask, base_reg, index_reg);
 
     } else if (op1reg && op2imm) {
@@ -4594,30 +4594,31 @@ void instrument_jump_ecx (INS ins) {
 			IARG_END);
 }
 
-void instrument_not (INS ins) { 
-	int op1reg = INS_OperandIsReg (ins, 0);	
-	int op1mem = INS_OperandIsMemory (ins, 0);
-	if (op1reg) { 
-		REG reg = INS_OperandReg(ins, 0);
-		fw_slice_src_reg (ins, reg);
-	} else if (op1mem) { 
-		fw_slice_src_mem (ins);
-	} else {
-		assert (0);
-	}
+void instrument_not (INS ins) 
+{ 
+    if (INS_OperandIsReg (ins, 0)) { 
+	REG reg = INS_OperandReg(ins, 0);
+	fw_slice_src_reg (ins, reg);
+    } else { 
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_mem (ins, base_reg, index_reg);
+	// Don't handle range verifications for writes yet */
+    } 
 }
 
-void instrument_incdec_neg (INS ins) {
-	int opmem = INS_OperandIsMemory (ins, 0);
-	int opreg = INS_OperandIsReg (ins, 0);
-	if (opmem) { 
-		fw_slice_src_mem (ins);
-	} else if (opreg) { 
-		REG reg = INS_OperandReg (ins, 0);
-		fw_slice_src_reg (ins, reg);
-	} else {
-		assert (0);
-	}
+void instrument_incdec_neg (INS ins, int set_flags, int clear_flags) 
+{
+    if (INS_OperandIsMemory (ins, 0)) { 
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_mem (ins, base_reg, index_reg);
+	instrument_taint_mix_mem (ins, set_flags, clear_flags, base_reg, index_reg);
+    } else {
+	REG reg = INS_OperandReg(ins, 0);
+	fw_slice_src_reg (ins, reg);
+	instrument_taint_mix_reg (ins, reg, set_flags, clear_flags);
+    } 
 }
 
 void instrument_set (INS ins, uint32_t mask) 
@@ -4666,45 +4667,27 @@ void instrument_bt (INS ins) {
 			   IARG_UINT32, 0,
 			   IARG_END);
 	} else if (op1mem && op2imm) { 
-	    fw_slice_src_mem(ins);
-	    instrument_taint_mem2flag (ins, CF_FLAG, 0);
+	    REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	    REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	    fw_slice_src_mem (ins, base_reg, index_reg);
+	    instrument_taint_mem2flag (ins, CF_FLAG, 0, base_reg, index_reg);
 	} else { 
 		assert (0);
 	}
 }
 
-void instrument_bit_scan (INS ins) { 
-    if (INS_IsMemoryRead(ins)) {  //mem to reg
-        REG dstreg = INS_OperandReg(ins, 0);
-        fw_slice_src_mem (ins);
-        INS_InsertCall (ins, IPOINT_BEFORE, 
-                AFUNPTR(taint_merge_mem2reg),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_MEMORYREAD_EA, 
-                IARG_UINT32, translate_reg(dstreg),
-                IARG_UINT32, REG_Size(dstreg),
-                IARG_END);
-	instrument_taint_mem2flag (ins, ZF_FLAG, 0);
+void instrument_bit_scan (INS ins) 
+{ 
+    REG dstreg = INS_OperandReg(ins, 0);
+    if (INS_IsMemoryRead(ins)) {
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+        fw_slice_src_mem (ins, base_reg, index_reg);
+	instrument_taint_mix_mem2reg (ins, dstreg, ZF_FLAG, 0, base_reg, index_reg);
     } else {
-        REG dstreg = INS_OperandReg (ins, 0);
         REG srcreg = INS_OperandReg (ins, 1);
         fw_slice_src_reg (ins, srcreg);
-        assert (REG_is_Upper8(srcreg) == 0);
-        INS_InsertCall (ins, IPOINT_BEFORE, 
-                AFUNPTR(taint_merge_reg2reg), 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_UINT32, translate_reg (dstreg),
-                IARG_UINT32, translate_reg (srcreg),
-                IARG_UINT32, REG_Size (dstreg),
-                IARG_END);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(taint_reg2flag_offset),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_UINT32, get_reg_off(srcreg),
-		       IARG_UINT32, REG_Size(srcreg),
-		       IARG_UINT32, ZF_FLAG,  
-		       IARG_UINT32, 0,
-		       IARG_END);
+	instrument_taint_mix_reg2reg (ins, dstreg, srcreg, ZF_FLAG, 0);
     }
 }
 
@@ -5128,17 +5111,13 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_INC:
             case XED_ICLASS_DEC:
-            case XED_ICLASS_NEG:
-		//TODO : control flow
-                // flags affected: all but CF
-		instrument_incdec_neg (ins);
+		instrument_incdec_neg (ins, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
 		slice_handled = 1;
                 break;
-            /*case XED_ICLASS_RCL:
-            case XED_ICLASS_RCR:
-                instrument_rotate(ins);
-                // flags affected: CF, OF
-                break;*/
+            case XED_ICLASS_NEG:
+		instrument_incdec_neg (ins, CF_FLAG|OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
+		slice_handled = 1;
+                break;
             case XED_ICLASS_ROL:
 	    case XED_ICLASS_ROR:
 		instrument_rotate (ins);
@@ -5316,7 +5295,7 @@ void instruction_instrumentation(INS ins, void *v)
                 slice_handled = 1;
                 break;
             case XED_ICLASS_POPFD:
-                fw_slice_src_mem (ins);
+                fw_slice_src_mem (ins, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
                 INS_InsertCall (ins, IPOINT_BEFORE, 
                         AFUNPTR(taint_popfd), 
                         IARG_FAST_ANALYSIS_CALL, 
@@ -5825,6 +5804,8 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     }	
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
+    ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
+
     init_mmap_region (ptdata);
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 

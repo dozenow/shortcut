@@ -83,7 +83,6 @@ TAINTSIGN taint_flag2mem (u_long mem_loc, uint32_t mask, uint32_t size);
 TAINTSIGN taint_flag2reg (uint32_t reg, uint32_t mask, uint32_t size);
 TAINTSIGN taint_regflag2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_memflag2reg (uint32_t mask, uint32_t dst_reg, u_long mem_loc, uint32_t size);
-TAINTSIGN taint_merge_mem2reg (u_long mem_loc, int dst_reg, uint32_t size);
 TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size);
  
 TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
@@ -133,7 +132,8 @@ TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, uint32_t set_flags, 
 TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, uint32_t set_flags, uint32_t clear_flags);
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 
 				       uint32_t set_flags, uint32_t clear_flags);
-TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags);
+TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
+TAINTSIGN taint_mix_mem2reg (u_long mem_loc, uint32_t size, int dst_reg_off, uint32_t dst_size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_off, uint32_t reg_size, uint32_t set_flags, uint32_t clear_flags);
 
 TAINTSIGN taint_bswap_offset (int reg_off);
