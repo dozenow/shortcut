@@ -89,30 +89,11 @@ TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip);
-TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip);
-TAINTSIGN taint_string_operation (ADDRINT ip);
-TAINTSIGN taint_rotate_mem (u_long mem_loc, uint32_t size, int is_count_reg);
-TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) ;
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
 
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
-
-#if 0
-TAINTSIGN fw_slice_addressing (ADDRINT ip, 
-		int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-		int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
-		u_long mem_loc, uint32_t mem_size, uint32_t is_read);
-TAINTSIGN fw_slice_addressing_repz (ADDRINT ip, uint32_t op_size);
-TAINTSIGN fw_slice_addressing_check_two (ADDRINT ip, 
-		int base_reg1, uint32_t base_reg_size1, uint32_t base_reg_value1, uint32_t base_reg1_u8, 
-		int index_reg1, uint32_t index_reg_size1, uint32_t index_reg_value1, uint32_t index_reg1_u8, 
-		u_long mem_loc1,uint32_t mem_size1, uint32_t is_read1, 
-		int base_reg2, uint32_t base_reg_size2, uint32_t base_reg_value2, uint32_t base_reg2_u8, 
-		int index_reg2, uint32_t index_reg_size2, uint32_t index_reg_value2, uint32_t index_reg2_u8,
-		u_long mem_loc2, uint32_t mem_size2, uint32_t is_read2);
-#endif
 
 int fw_slice_check_final_mem_taint (taint_t* pregs);
 TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8);
@@ -284,9 +265,11 @@ TAINTSIGN taint_cmov_reg2reg (uint32_t mask, uint32_t dst_reg, uint32_t src_reg,
 TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, ADDRINT dst_mem_loc, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter);
 TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDRINT eflags, ADDRINT al_val, ADDRINT ecx_val, ADDRINT edi_val, uint32_t first_iter, UINT32 rep_type);
 TAINTSIGN fw_slice_string_compare (ADDRINT ip, char* ins_str, ADDRINT mem_loc1, ADDRINT mem_loc2, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter);
+TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc, ADDRINT eflags, const PIN_REGISTER* eax_val, ADDRINT ecx_val, ADDRINT edi_val, UINT32 op_size, uint32_t first_iter);
 TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter, uint32_t rep_type);
 TAINTSIGN taint_string_move (u_long src_mem_loc, u_long dst_mem_loc, uint32_t op_size, ADDRINT ecx_val, uint32_t first_iter);
 TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, uint32_t size, ADDRINT ecx_val, uint32_t first_iter);
+TAINTSIGN taint_string_store (u_long dst_mem_loc, uint32_t op_size, ADDRINT ecx_val, uint32_t first_iter);
 
 /* So that we can check if syscall args are tainted */
 int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8);

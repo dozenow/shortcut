@@ -1676,115 +1676,6 @@ TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip) {
 	}
 }
 
-//these instructinos depends on DF_FLAG to eihter incrment or decrement esi and edi
-//we regard these to be output for now (something probably hard to handle
-TAINTSIGN taint_string_operation (ADDRINT ip) {
-	taint_t t = 0;
-	struct taint_creation_info tci;
-
-	//DF_FLAG
-	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
-
-	tci.type = TAINT_DATA_INST;
-	tci.record_pid = current_thread->record_pid;
-	tci.rg_id = current_thread->rg_id;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = 0;
-	tci.data = ip;
-
-	if (t != 0) {
-		output_jump_result (ip, t, &tci, outfd);
-	}
-}
-
-TAINTSIGN taint_scas (ADDRINT ip) {
-	taint_t t = 0;
-	struct taint_creation_info tci;
-
-	//DF_FLAG
-	t = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE + DF_INDEX];
-
-	tci.type = TAINT_DATA_INST;
-	tci.record_pid = current_thread->record_pid;
-	tci.rg_id = current_thread->rg_id;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = 0;
-	tci.data = ip;
-
-	if (t != 0) {
-		output_jump_result (ip, t, &tci, outfd);
-	}
-}
-
-//repz will taint ecx
-TAINTSIGN taint_rep (uint32_t flags, ADDRINT ip) {
-	int i = 0;
-	taint_t t = 0;
-	struct taint_creation_info tci;
-
-	//merge taints from all flags we care
-	//REPZ only cares about ZF, but REPZ CMPS cares about ZF and DF, so it's specific to instructions
-        t = merge_flag_taints (flags);
-	//fprintf (stderr, "taint_rep: ip %#x flags %x, tainted  %x\n", ip, flags, t);
-	//merge counter register; also taint the counter register
-	for (i = 0; i<4; ++i) { 
-		t = merge_taints (current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE + i], t);
-	}
-	t = merge_reg_taints (LEVEL_BASE::REG_ECX, 4, 0);
-	for (i = 0; i<4; ++i) { //this is because old ecx value can affect the final state of ecx
-		current_thread->shadow_reg_table[translate_reg(LEVEL_BASE::REG_ECX)*REG_SIZE+i] = t;
-	}
-
-	tci.type = TAINT_DATA_INST;
-	tci.record_pid = current_thread->record_pid;
-	tci.rg_id = current_thread->rg_id;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = 0;
-	tci.data = ip;
-
-	if (t != 0) {
-		output_jump_result (ip, t, &tci, outfd);
-	}
-}
-
-
-TAINTSIGN taint_rotate_reg (int dstreg, uint32_t size, int is_count_reg) { 
-	taint_t result = 0;
-	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-	if (is_count_reg) { 
-		//CL is the count register
-		int count_reg = translate_reg(LEVEL_BASE::REG_ECX);
-		//merge all taints from dstreg
-		taint_t dst_taint = merge_reg_taints (dstreg, size, 0);
-		result = merge_taints (dst_taint, shadow_reg_table[count_reg*REG_SIZE]);
-	} else { 
-                if (size == 1) fprintf (stderr, "[POTENTIAL BUG]taint_rotate_reg: merge_reg_taints needs upper8 support.\n");
-		result = merge_reg_taints (dstreg, size, 0);
-	}
-	uint32_t i = 0;
-	//set taints
-	for (; i<size; ++i) { 
-		shadow_reg_table[dstreg*REG_SIZE+i] = result;
-	}
-}
-
-TAINTSIGN taint_rotate_mem (u_long mem_loc, uint32_t size, int is_count_reg) { 
-	taint_t result = 0;
-	if (is_count_reg) { 
-		int count_reg = translate_reg(LEVEL_BASE::REG_ECX);
-		taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-		//merge all taints from dst mem loc
-		taint_t dst_taint = merge_mem_taints (mem_loc, size);
-		result = merge_taints (dst_taint, shadow_reg_table[count_reg*REG_SIZE]);
-	} else { 
-		result = merge_mem_taints (mem_loc, size);
-	}
-	set_cmem_taints_one (mem_loc, size, result);
-}
-
 //the first param should be the value in AL/AX/EAX
 //dst_value is only used when dst_reg is valid and mem_loc is 0
 TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) { 
@@ -1881,13 +1772,6 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
         }
 	clear_mem_taints (mem_loc+reg_size, mem_size-reg_size);
     }
-}
-
-void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t total_size) {
-	uint32_t i = 0;
-	for (; i<total_size; i+=reg_size) { 
-	    taint_reg2mem_offset (mem_loc+i, reg*REG_SIZE, reg_size);
-	}
 }
 
 // Returns 2 for partial taint now.  Calling functions must handle this.
@@ -2857,6 +2741,38 @@ TAINTSIGN fw_slice_string_compare (ADDRINT ip, char* ins_str, ADDRINT mem_loc1, 
     }
 }
 
+TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc, ADDRINT eflags, const PIN_REGISTER* eax_val, ADDRINT ecx_val, ADDRINT edi_val, UINT32 op_size, uint32_t first_iter) 
+{ 
+    //only check on the first iteration
+    if (first_iter) {
+
+        int size = (int) (ecx_val*op_size);
+        if (!size) return; 
+
+	assert (is_flag_tainted(DF_FLAG) == 0); // JNF: Not sure how to handle this flag?
+	assert ((eflags & DF_MASK) == 0); 
+
+	int eax_tainted = is_reg_tainted (LEVEL_BASE::REG_EAX, op_size, 0);
+	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, op_size, 0);
+	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, op_size, 0);
+
+	// If partially tainted, need to restore for validation. If untainted, restore for instruction
+	if (eax_tainted != 1) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
+
+	// Always verify ecx and edi if not untainted
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
+
+	if (eax_tainted) {
+	    printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	    printf ("    [SLICE_INFO] #src_reg[%d:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d]\n", LEVEL_BASE::REG_EAX, eax_tainted, op_size, LEVEL_BASE::REG_ECX, ecx_tainted, 4, LEVEL_BASE::REG_EDI, edi_tainted, 4);
+
+	    // We modified these bytes - add to hash
+	    add_modified_mem_for_final_check (dst_mem_loc, size);
+	}
+    }
+}
+
 TAINTSIGN taint_add_reg2flag_offset (int reg_off, uint32_t size, uint32_t flag) { 
     unsigned i;
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
@@ -3736,6 +3652,31 @@ TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, uint32_t size,
 	set_reg_single_value(LEVEL_BASE::REG_ESI, 4, t);	
 	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
 	set_clear_flags(&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG, 0); 
+    }
+}
+
+TAINTSIGN taint_string_store (u_long dst_mem_loc, uint32_t op_size, ADDRINT ecx_val, uint32_t first_iter)
+{
+    if (first_iter) {
+
+        uint32_t size = ecx_val*op_size;
+        if (!size) return; 
+
+	// ECX, EDI assumed to be verified/untainted here.
+	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+	taint_t t = 0;
+	for (uint32_t i = 0; i < op_size; i++) {
+	    t = merge_taints (t, shadow_reg_table[LEVEL_BASE::REG_EAX*REG_SIZE+i]);
+	}
+	if (t == 0) {
+	    clear_mem_taints (dst_mem_loc, size);
+	} else {
+	    uint32_t offset = 0;
+	    while (offset < size) {
+		uint32_t count = set_cmem_taints_one(dst_mem_loc+offset, size-offset, t);
+		offset += count;
+	    }
+	}
     }
 }
 
