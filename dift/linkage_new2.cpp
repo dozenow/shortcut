@@ -3238,7 +3238,6 @@ void instrument_xchg (INS ins)
 {
     int op1reg = INS_OperandIsReg(ins, 0);
     int op2reg = INS_OperandIsReg(ins, 1);
-
     if (op1reg && op2reg) {
         REG reg1 = INS_OperandReg(ins, 0);
         REG reg2 = INS_OperandReg(ins, 1);
@@ -3266,30 +3265,34 @@ void instrument_xchg (INS ins)
 
 void instrument_cmpxchg (INS ins)
 {
-	REG srcreg = INS_OperandReg (ins, 1);
-	uint32_t size = REG_Size (srcreg);
-	
-	if (INS_IsMemoryRead(ins) || INS_IsMemoryWrite(ins)) { 
-		//EAX with size can also represent AX/AL
-		fw_slice_src_regmem (ins, LEVEL_BASE::REG_EAX, size, IARG_MEMORYREAD_EA, size);
-		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_mem),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_REG_VALUE, srcreg,
-				IARG_MEMORYREAD_EA,
-				IARG_UINT32, translate_reg(srcreg),
-				IARG_UINT32, size,
-				IARG_END);
-	} else { 
-		REG dstreg = INS_OperandReg (ins, 0);
-		fw_slice_src_regreg (ins, dstreg, LEVEL_BASE::REG_EAX);
-		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_reg),
-				IARG_FAST_ANALYSIS_CALL,
-				IARG_REG_VALUE, dstreg,
-				IARG_UINT32, translate_reg(dstreg),
-				IARG_UINT32, translate_reg(srcreg),
-				IARG_UINT32, size,
-				IARG_END);
-	}
+    int op1reg = INS_OperandIsReg(ins, 0);
+    REG srcreg = INS_OperandReg (ins, 1);
+    REG cmpreg = INS_OperandReg (ins, 2);
+    uint32_t size = REG_Size (srcreg);
+
+    if (op1reg) {
+	REG dstreg = INS_OperandReg (ins, 0);
+	fw_slice_src_regregreg (ins, dstreg, srcreg, cmpreg);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_reg),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_REG_VALUE, cmpreg,
+			IARG_REG_VALUE, dstreg,
+			IARG_UINT32, translate_reg(dstreg),
+			IARG_UINT32, translate_reg(srcreg),
+			IARG_UINT32, size,
+			IARG_END);
+    } else {
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_regregmem (ins, cmpreg, size, srcreg, size, IARG_MEMORYREAD_EA, size, base_reg, index_reg);
+	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_cmpxchg_mem),
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_REG_VALUE, cmpreg,
+			IARG_MEMORYREAD_EA,
+			IARG_UINT32, translate_reg(srcreg),
+			IARG_UINT32, size,
+			IARG_END);
+    }
 }
 
 void instrument_mov (INS ins) 

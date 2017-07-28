@@ -1582,63 +1582,68 @@ TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip) {
 	}
 }
 
-//the first param should be the value in AL/AX/EAX
-//dst_value is only used when dst_reg is valid and mem_loc is 0
-TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) { 
-	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-	int eax_reg = translate_reg (LEVEL_BASE::REG_EAX);
-	uint32_t mask = ZF_FLAG|CF_FLAG|PF_FLAG|AF_FLAG|SF_FLAG|OF_FLAG;
-	//read from mem
-	//first get the dst_value
-	uint32_t dst_value = get_mem_value (mem_loc, size);	
-	if (eax_value == dst_value) { 
-		//load src_reg to mem
-		taint_reg2mem_offset (mem_loc, src_reg*REG_SIZE, size);
-	} else { 
-		//load mem to EAX/AX/AL
-		//set_reg_value (translate_reg(LEVEL_BASE::REG_EAX), 0, size, );
-		taint_mem2reg (mem_loc, eax_reg, size);
-	}
-	uint32_t i = 0;
-	//set ZF_FLAG
-	//compare AL.. with mem_loc
-	taint_t flag_taint = 0;
-	taint_t mem_taints = merge_mem_taints (mem_loc, size);
-	taint_t reg_taints = merge_reg_taints (eax_reg, size, 0);//won't be AH
-	flag_taint = merge_taints (mem_taints, reg_taints);
-	for (; i<NUM_FLAGS; ++i)  {
-		if (mask && (1<<i)) {
-			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = flag_taint;
-			break;
+TAINTSIGN taint_cmpxchg_mem (ADDRINT cmp_value, u_long mem_loc, int src_reg, uint32_t size) 
+{ 
+    int cmp_reg = LEVEL_BASE::REG_EAX;    
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+    taint_t reg_taints = merge_reg_taints (cmp_reg, size, 0);
+    taint_t mem_taints = merge_mem_taints (mem_loc, size);
+    taint_t t = merge_taints(reg_taints, mem_taints);
+    taint_t tflags = t; 
+    if (t) {
+	for (uint32_t i = 0; i < size; i++) {
+	    taint_t merged_taint = merge_taints(t,shadow_reg_table[src_reg*REG_SIZE+i]);
+	    shadow_reg_table[cmp_reg*REG_SIZE+i] = merged_taint;
+            set_mem_taints(mem_loc + i, 1, &merged_taint);
+	    tflags = merge_taints(tflags, shadow_reg_table[src_reg*REG_SIZE+i]);
+	} 
+    } else {
+	ADDRINT dst_value = get_mem_value (mem_loc, size);
+	if (cmp_value == dst_value) {
+	    for (uint32_t i = 0; i < size; i++) {
+		if (shadow_reg_table[src_reg*REG_SIZE+i]) {
+		    set_mem_taints(mem_loc + i, 1, &shadow_reg_table[src_reg*REG_SIZE+i]);
 		}
+		tflags = merge_taints(tflags, shadow_reg_table[src_reg*REG_SIZE+i]);
+	    } 
+	} else {
+	    for (uint32_t i = 0; i < size; i++) {
+		shadow_reg_table[cmp_reg*REG_SIZE+i] = 0; // Destination must be untainted to get here
+	    } 
 	}
+    }
+
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, ZF_FLAG, 0);	
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], tflags, CF_FLAG|PF_FLAG|AF_FLAG|SF_FLAG|OF_FLAG, 0);	
 }
 
-TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size) { 
-	taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-	int eax_reg = translate_reg (LEVEL_BASE::REG_EAX);
-	uint32_t mask = ZF_FLAG|CF_FLAG|PF_FLAG|AF_FLAG|SF_FLAG|OF_FLAG;
-	if (eax_value == dst_value) {
-		//load str_reg to dst_reg
-		taint_reg2reg (dst_reg, src_reg, size);
-	} else { 
-		//load dst_reg to AX..
-		taint_reg2reg (dst_reg, translate_reg(LEVEL_BASE::REG_EAX), size);
-	}
-	uint32_t i = 0;
-	//set ZF_FLAG
-	//compare AL.. with dst_reg
-	taint_t flag_taint = 0;
-        if (size == 1) fprintf (stderr, "[POTENTIAL BUG]taint_cmpxchg_reg: merge_reg_taints needs upper8 support.\n");
-	taint_t dst_taints = merge_reg_taints (dst_reg, size, 0);
-	taint_t eax_taints = merge_reg_taints (eax_reg, size, 0);
-	flag_taint = merge_taints (dst_taints, eax_taints);
-	for (; i<NUM_FLAGS; ++i)  {
-		if (mask && (1<<i)) {
-			shadow_reg_table[REG_EFLAGS*REG_SIZE + i] = flag_taint;
-			break;
-		}
-	}
+TAINTSIGN taint_cmpxchg_reg (ADDRINT cmp_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size) 
+{ 
+    int cmp_reg = LEVEL_BASE::REG_EAX;
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t t1 = merge_reg_taints(cmp_reg, size, 0);
+    taint_t t2 = merge_reg_taints(dst_reg, size, 0);
+    taint_t t = merge_taints(t1, t2);
+    taint_t tflags = t; 
+    if (t) {
+	for (uint32_t i = 0; i < size; i++) {
+	    shadow_reg_table[cmp_reg*REG_SIZE+i] = shadow_reg_table[dst_reg*REG_SIZE+i] = merge_taints(t,shadow_reg_table[src_reg*REG_SIZE+i]);
+	    tflags = merge_taints(tflags, shadow_reg_table[src_reg*REG_SIZE+i]);
+	} 
+    } else if (cmp_value == dst_value) {
+	for (uint32_t i = 0; i < size; i++) {
+	    shadow_reg_table[dst_reg*REG_SIZE+i] = shadow_reg_table[src_reg*REG_SIZE+i];
+	    tflags = merge_taints(tflags, shadow_reg_table[src_reg*REG_SIZE+i]);
+	} 
+    } else {
+	for (uint32_t i = 0; i < size; i++) {
+	    shadow_reg_table[cmp_reg*REG_SIZE+i] = 0; // Destination must be untainted to get here
+	} 
+    }
+
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, ZF_FLAG, 0);	
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], tflags, CF_FLAG|PF_FLAG|AF_FLAG|SF_FLAG|OF_FLAG, 0);	
 }
 
 TAINTSIGN taint_reg2mem_offset (u_long mem_loc, uint32_t reg_off, uint32_t size)

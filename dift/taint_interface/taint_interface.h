@@ -88,8 +88,8 @@ TAINTSIGN taint_merge_reg2reg (int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_regflag2mem (uint32_t mask, u_long mem_loc, uint32_t src_reg, uint32_t size);
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip);
 TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip);
-TAINTSIGN taint_cmpxchg_reg (ADDRINT eax_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
-TAINTSIGN taint_cmpxchg_mem (ADDRINT eax_value, u_long mem_loc, int src_reg, uint32_t size) ;
+TAINTSIGN taint_cmpxchg_reg (ADDRINT cmp_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
+TAINTSIGN taint_cmpxchg_mem (ADDRINT cmp_value, u_long mem_loc, int src_reg, uint32_t size);
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
 
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
@@ -133,14 +133,6 @@ TAINTSIGN taint_bswap_offset (int reg_off);
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 
 TAINTSIGN taint_xchg_memreg (u_long mem_loc, uint32_t reg_off, uint32_t size);
-#if 0
-TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg);
-TAINTSIGN taint_xchg_bmem2ubreg (u_long mem_loc, int reg);
-TAINTSIGN taint_xchg_hwmem2hwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_xchg_wmem2wreg (u_long mem_loc, int reg);
-TAINTSIGN taint_xchg_dwmem2dwreg (u_long mem_loc, int reg);
-TAINTSIGN taint_xchg_qwmem2qwreg( u_long mem_loc, int reg);
-#endif
 
 // reg2mem
 TAINTSIGN taint_reg2mem_offset (u_long mem_loc, uint32_t reg_off, uint32_t size);
