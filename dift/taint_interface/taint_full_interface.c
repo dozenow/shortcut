@@ -1214,111 +1214,27 @@ static inline int is_reg_zero_offset(uint32_t reg_off, uint32_t size)
     return 1;
 }
 
-TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg)
+TAINTSIGN taint_xchg_memreg (u_long mem_loc, uint32_t reg_off, uint32_t size)
 {
-    taint_t tmp;
-    taint_t* mem_taints;
-    TAINT_START("taint_xchg_bmem2lbreg");
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[reg * REG_SIZE];
-    mem_taints = get_mem_taints_internal(mem_loc, 1);
-    if (mem_taints) {
-        shadow_reg_table[reg * REG_SIZE] = mem_taints[0];
-    } else {
-        shadow_reg_table[reg * REG_SIZE] = 0;
-    }
-    set_cmem_taints(mem_loc, 1, &tmp);
-}
+    uint32_t offset = 0;
+    u_long mem_offset = mem_loc;
 
-TAINTSIGN taint_xchg_bmem2ubreg (u_long mem_loc, int reg)
-{
-    taint_t tmp;
-    taint_t* mem_taints;
-    TAINT_START("taint_xchg_bmem2ubreg");
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    tmp = shadow_reg_table[reg * REG_SIZE + 1];
-    mem_taints = get_mem_taints_internal(mem_loc, 1);
-    if (mem_taints) {
-        shadow_reg_table[reg * REG_SIZE + 1] = mem_taints[0];
-    } else {
-        shadow_reg_table[reg * REG_SIZE + 1] = 0;
-    }
-    set_cmem_taints(mem_loc, 1, &tmp);
-}
-
-static inline void taint_xchg_mem2reg (u_long mem_loc, int reg, int size)
-{
-    int i;
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    taint_t tmp[size];
-
-    // This can be optimized, we can optimize it need be
-    for (i = 0; i < size; i++) {
-        taint_t* mem_taints;
-        mem_taints = get_mem_taints_internal(mem_loc + i, 1);
-        if (mem_taints) {
-            tmp[i] = mem_taints[0];
-        } else {
-            tmp[i] = 0;
+    while (offset < size) {
+        taint_t* mem_taints = NULL;
+        uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
+	for (uint32_t i = 0; i < count; i++) {
+	    if (!mem_taints) {
+		shadow_reg_table[reg_off+offset+i] = 0;
+	    } else {
+		taint_t tmp = shadow_reg_table[reg_off+offset+i];
+		shadow_reg_table[reg_off+offset+i] = mem_taints[i];
+		mem_taints[i] = tmp;
+	    }
         }
+        offset += count;
+        mem_offset += count;
     }
-
-    // TODO remove this conditional
-    if (is_reg_zero(reg, size)) {
-        int offset = 0;
-        u_long mem_offset = mem_loc;
-
-        while (offset < size) {
-            uint32_t count = clear_cmem_taints(mem_offset, size - offset);
-            offset += count;
-            mem_offset += count;
-        }
-    } else {
-        int offset = 0;
-        u_long mem_offset = mem_loc;
-
-        while (offset < size) {
-            uint32_t count = set_cmem_taints(mem_offset, size - offset,
-					     &shadow_reg_table[reg * REG_SIZE + offset]);
-            offset += count;
-            mem_offset += count;
-        }
-    }
-
-    // now set the register taints
-    memcpy(&shadow_reg_table[reg * REG_SIZE], &tmp, size * sizeof(taint_t));
-}
-
-TAINTSIGN taint_xchg_hwmem2hwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_xchg_hwmem2hwreg");
-    taint_xchg_mem2reg(mem_loc, reg, 2);
-}
-
-TAINTSIGN taint_xchg_wmem2wreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_xchg_hwmem2hwreg");
-    taint_xchg_mem2reg(mem_loc, reg, 4);
-}
-
-TAINTSIGN taint_xchg_dwmem2dwreg (u_long mem_loc, int reg)
-{
-    TAINT_START("taint_xchg_hwmem2hwreg");
-    taint_xchg_mem2reg(mem_loc, reg, 8);
-}
-
-TAINTSIGN taint_xchg_qwmem2qwreg( u_long mem_loc, int reg)
-{
-    TAINT_START("taint_xchg_hwmem2hwreg");
-    taint_xchg_mem2reg(mem_loc, reg, 16);
-}
-
-//control flow stuff
-
-//DEPRECATED
-void inline clear_flag_reg () {
-	taint_t* reg_table = current_thread->shadow_reg_table;
-	memset (&reg_table[REG_EFLAGS], 0, REG_SIZE*sizeof(taint_t));
 }
 
 inline taint_t merge_mem_taints (u_long mem_loc, uint32_t size) 
@@ -2932,13 +2848,12 @@ TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_of
 }
 
 
-TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size) { 
-    //fprintf (stderr, "taint_xchg_reg2reg_offset:dst_off %d, src_off %d, size %u\n", dst_reg_off, src_reg_off, size);
+TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size) 
+{ 
     taint_t tmp[REG_SIZE];
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy((char*)&tmp, &shadow_reg_table[dst_reg_off], size * sizeof(taint_t));
-    memcpy(&shadow_reg_table[dst_reg_off],
-            &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
     memcpy(&shadow_reg_table[src_reg_off], (char*)&tmp, size * sizeof(taint_t));
 }
 

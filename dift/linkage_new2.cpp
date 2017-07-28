@@ -3236,160 +3236,31 @@ void instrument_pcmpistri (INS ins) {
 
 void instrument_xchg (INS ins)
 {
-    int op1mem, op2mem, op1reg, op2reg;
-    op1mem = INS_OperandIsMemory(ins, 0);
-    op2mem = INS_OperandIsMemory(ins, 1);
-    op1reg = INS_OperandIsReg(ins, 0);
-    op2reg = INS_OperandIsReg(ins, 1);
+    int op1reg = INS_OperandIsReg(ins, 0);
+    int op2reg = INS_OperandIsReg(ins, 1);
 
     if (op1reg && op2reg) {
-        REG reg1, reg2;
-
-        reg1 = INS_OperandReg(ins, 0);
-        reg2 = INS_OperandReg(ins, 1);
-        INSTRUMENT_PRINT(log_f, "op1 and op2 of xchg are registers: %u %u\n", reg1, reg2);
-        if(!REG_valid(reg1) || !REG_valid(reg2)) {
-            return;
-        }
-        assert(REG_Size(reg1) == REG_Size(reg2));
-        UINT32 regsize1 = REG_Size(reg1);
+        REG reg1 = INS_OperandReg(ins, 0);
+        REG reg2 = INS_OperandReg(ins, 1);
 	fw_slice_src_regreg (ins, reg1, reg2);
-        if(reg1 == reg2) return;
-        UINT32 reg1_off = get_reg_off (reg1);
-        UINT32 reg2_off = get_reg_off (reg2);
-
         INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_xchg_reg2reg_offset),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_UINT32, reg1_off,
-                IARG_UINT32, reg2_off,
-                IARG_UINT32, regsize1,
-                IARG_END);
-    } else if (op1reg && op2mem) {
-        REG reg;
-        int treg;
-        UINT32 addrsize;
-
-        addrsize = INS_MemoryReadSize(ins);
-        reg = INS_OperandReg(ins, 0);
-        treg = translate_reg(reg);
-        if (!REG_valid(reg)) {
-            return;
-        }
-        assert(addrsize == REG_Size(reg));
-	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYWRITE_EA, addrsize);
-
-        switch(addrsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_xchg_bmem2lbreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYREAD_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                } else {
-                    assert(REG_is_Upper8(reg));
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_xchg_bmem2ubreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYREAD_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                }
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_hwmem2hwreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_wmem2wreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 8:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_dwmem2dwreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            default:
-                assert(0);
-                break;
-        }
-    } else if (op1mem && op2reg) {
-        REG reg;
-        int treg;
-        UINT32 addrsize;
-
-        addrsize = INS_MemoryReadSize(ins);
-        reg = INS_OperandReg(ins, 1);
-        treg = translate_reg(reg);
-        if (!REG_valid(reg)) {
-            return;
-        }
-        assert(addrsize == REG_Size(reg));
-	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYWRITE_EA, addrsize);
-
-        // Note: xchg mem2reg and reg2mem are the same
-        switch(addrsize) {
-            case 1:
-                if (REG_is_Lower8(reg)) {
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_xchg_bmem2lbreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYREAD_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                } else {
-                    assert(REG_is_Upper8(reg));
-                    INS_InsertCall(ins, IPOINT_BEFORE,
-                                AFUNPTR(taint_xchg_bmem2ubreg),
-                                IARG_FAST_ANALYSIS_CALL,
-                                IARG_MEMORYREAD_EA,
-                                IARG_UINT32, treg,
-                                IARG_END);
-                }
-                break;
-            case 2:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_hwmem2hwreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 4:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_wmem2wreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            case 8:
-                INS_InsertCall(ins, IPOINT_BEFORE,
-                        AFUNPTR(taint_xchg_dwmem2dwreg),
-                        IARG_FAST_ANALYSIS_CALL,
-                        IARG_MEMORYREAD_EA,
-                        IARG_UINT32, treg,
-                        IARG_END);
-                break;
-            default:
-                assert(0);
-                break;
-        }
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_UINT32, get_reg_off(reg1),
+			IARG_UINT32, get_reg_off(reg2),
+			IARG_UINT32, REG_Size(reg1),
+			IARG_END);
     } else {
-        ERROR_PRINT (stderr, "Unknown combination of xchg\n");
-        assert(0);
+	REG reg = op1reg ? INS_OperandReg(ins, 0) : INS_OperandReg(ins, 1);
+        REG base_reg = op1reg ? INS_OperandMemoryBaseReg(ins, 1) : INS_OperandMemoryBaseReg(ins, 0);
+        REG index_reg = op1reg ? INS_OperandMemoryIndexReg(ins, 1) : INS_OperandMemoryIndexReg(ins, 0);
+        UINT32 addrsize = INS_MemoryReadSize(ins);
+	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYWRITE_EA, addrsize, base_reg, index_reg);
+	INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(taint_xchg_memreg),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_MEMORYREAD_EA,
+		       IARG_UINT32, get_reg_off(reg),
+		       IARG_UINT32, addrsize,
+		       IARG_END);
     }
 }
 
@@ -3426,16 +3297,16 @@ void instrument_mov (INS ins)
     if (INS_IsMemoryRead(ins)) {
 	// (src) operand is memory...destination must be a register
         REG dst_reg = INS_OperandReg(ins, 0);
-        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
 	fw_slice_src_mem (ins, base_reg, index_reg);
 	instrument_taint_mem2reg (ins, dst_reg, 0, base_reg, index_reg);
     } else if(INS_IsMemoryWrite(ins)) {
         if(INS_OperandIsReg(ins, 1)) {
             //mov register to memory location
 	    REG reg = INS_OperandReg(ins, 1);
-            REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+            REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
 	    fw_slice_src_reg2mem (ins, reg, REG_Size(reg), base_reg, index_reg);
 	    instrument_taint_reg2mem (ins, reg, 0);
         } else {

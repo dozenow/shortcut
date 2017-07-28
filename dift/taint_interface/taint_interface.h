@@ -132,13 +132,15 @@ TAINTSIGN taint_bswap_offset (int reg_off);
 // mem2reg add
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 
-// mem2reg xchg
+TAINTSIGN taint_xchg_memreg (u_long mem_loc, uint32_t reg_off, uint32_t size);
+#if 0
 TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg);
 TAINTSIGN taint_xchg_bmem2ubreg (u_long mem_loc, int reg);
 TAINTSIGN taint_xchg_hwmem2hwreg (u_long mem_loc, int reg);
 TAINTSIGN taint_xchg_wmem2wreg (u_long mem_loc, int reg);
 TAINTSIGN taint_xchg_dwmem2dwreg (u_long mem_loc, int reg);
 TAINTSIGN taint_xchg_qwmem2qwreg( u_long mem_loc, int reg);
+#endif
 
 // reg2mem
 TAINTSIGN taint_reg2mem_offset (u_long mem_loc, uint32_t reg_off, uint32_t size);
