@@ -2486,25 +2486,6 @@ static inline void fw_slice_src_regregmemflag_cmov (INS ins, REG dest_reg, REG b
     put_copy_of_disasm (str);
 }
 
-// Source is memory - verify base and index regs as needed
-static inline void fw_slice_src_regregmem_mov (INS ins, REG base_reg, REG index_reg) 
-{ 
-	char* str = get_copy_of_disasm (ins);
-	SETUP_BASE_INDEX(base_reg, index_reg);
-
-        INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(fw_slice_memregreg_mov),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_INST_PTR,
-		       IARG_PTR, str,
-		       PASS_BASE_INDEX,
-		       IARG_MEMORYREAD_EA, 
-		       IARG_UINT32, INS_MemoryReadSize(ins),
-		       IARG_END);
-
-	put_copy_of_disasm (str);
-}
-
 static inline void fw_slice_src_regflag_cmov (INS ins, uint32_t mask, REG dst, REG src, uint32_t size) 
 {
     char* str = get_copy_of_disasm (ins);
@@ -3483,7 +3464,8 @@ void instrument_pinsrb (INS ins)
 	// Move byte from mem to specified byte of the xmm register
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
         REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-	fw_slice_src_regregmem_mov (ins, base_reg, index_reg);
+	SETUP_BASE_INDEX_TAINT;
+	fw_slice_src_mem (ins, base_reg, index_reg);
 	uint32_t imm = INS_OperandImmediate(ins, 2);
 	INS_InsertCall(ins, IPOINT_BEFORE,
 		       AFUNPTR(taint_mem2reg_offset),
@@ -3491,10 +3473,7 @@ void instrument_pinsrb (INS ins)
 		       IARG_MEMORYREAD_EA,
 		       IARG_UINT32, get_reg_off (dstreg)+imm, 
 		       IARG_UINT32, 1,
-		       IARG_UINT32, 0,
-		       IARG_UINT32, 0,
-		       IARG_UINT32, 0,
-		       IARG_UINT32, 0,
+		       PASS_BASE_INDEX_TAINT,
 		       IARG_END);
     } else {
 	assert (0);
@@ -4139,27 +4118,14 @@ void instrument_imul(INS ins)
     INSTRUMENT_PRINT (log_f, "num operands is %d\n", count);
     if (count == 3) {
         //format: imul r32, r/m32  (r32 = r32*r/m32)
-        // taint_add src to dst
-        assert (INS_OperandIsReg(ins, 0));
         REG dst_reg = INS_OperandReg(ins, 0);
         if (INS_IsMemoryRead(ins)) {
-            assert (REG_Size(dst_reg) == INS_MemoryReadSize(ins));
 	    fw_slice_src_regmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins));
 	    instrument_taint_add_mem2reg (ins, dst_reg, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG);
         } else {
-            assert (INS_OperandIsReg(ins, 1));
             REG src_reg = INS_OperandReg(ins, 1);
-            assert (REG_Size(dst_reg) == REG_Size(src_reg));
 	    fw_slice_src_regreg (ins, dst_reg, src_reg);
-	    INS_InsertCall(ins, IPOINT_BEFORE,
-			   AFUNPTR(taint_add_reg2reg_offset),
-			   IARG_FAST_ANALYSIS_CALL,
-			   IARG_UINT32, get_reg_off(dst_reg),
-			   IARG_UINT32, get_reg_off(src_reg),
-			   IARG_UINT32, REG_Size(dst_reg),
-			   IARG_UINT32, CF_FLAG|OF_FLAG,
-			   IARG_UINT32, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG,
-			   IARG_END);
+	    instrument_taint_add_reg2reg (ins, dst_reg, src_reg, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG);
         }
     } else if (count == 4) {
         if (INS_OperandIsImmediate (ins, 2)) {

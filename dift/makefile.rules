@@ -18,7 +18,6 @@ GLIB_INCLUDES=-I/usr/include/glib-2.0 -I/usr/lib/i386-linux-gnu/glib-2.0/include
 GLIB_LIB= -lglib-2.0
 TOOL_CXXFLAGS += $(GLIB_INCLUDES) -I$(SDEV)
 TAINT_BACK_OBJS=$(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(TAINTS_OBJ)taint_byte_creation$(OBJ_SUFFIX) $(TAINTS_OBJ)maputil$(OBJ_SUFFIX) $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) 
-TAINT_FORWARD_OBJS=$(TAINTS_OBJ)taint_forward_interface$(OBJ_SUFFIX) $(TAINTS_OBJ)taint_forward_creation$(OBJ_SUFFIX) 
 TAINT_OBJS=$(OBJDIR)xray_token$(OBJ_SUFFIX) $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX) $(OBJDIR)recheck_log$(OBJ_SUFFIX) $(SDEV)/parseklib$(OBJ_SUFFIX) 
 APP_CC=gcc
 
@@ -64,9 +63,7 @@ APP_ROOTS := postprocess_linkage parse_outputs showall
 OBJECT_ROOTS := xray_token \
 		taint_byte_creation \
 		taint_full_interface \
-		taint_forward_interface \
 		xray_slab_alloc \
-		taint_forward_creation \
 		maputil \
                 mmap_regions \
 		recheck_log 
@@ -120,12 +117,6 @@ $(OBJDIR)mmap_regions$(OBJ_SUFFIX): mmap_regions.h mmap_regions.cpp linkage_comm
 
 $(OBJDIR)taint_full_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_interface.h taint_nw.h mmap_regions.h mmap_regions.cpp linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
-
-$(OBJDIR)taint_forward_creation$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_forward_creation.c $(TAINTS_INTERFACE)/taint_creation.h
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_forward_creation$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_forward_creation.c
-
-$(OBJDIR)taint_forward_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_forward_interface.c $(TAINTS_INTERFACE)/taint_interface.h
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_forward_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_forward_interface.c
 
 $(OBJDIR)linkage_new2$(OBJ_SUFFIX): linkage_new2.cpp xray_slab_alloc.c xray_slab_alloc.h mmap_regions.h mmap_regions.cpp $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c taint_nw.h linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<

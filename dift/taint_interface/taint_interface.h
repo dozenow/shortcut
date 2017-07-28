@@ -95,34 +95,25 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
 
 int fw_slice_check_final_mem_taint (taint_t* pregs);
+
 TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8);
 TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize, const PIN_REGISTER* dst_regvalue, uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const PIN_REGISTER* src_regvalue, uint32_t src_reg_u8);
-
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS);
-TAINTINT fw_slice_memmem (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_read_size, uint32_t mem_write_size);
-
 TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t reg_size, const PIN_REGISTER* reg_value, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
-TAINTINT fw_slice_memreg_imm_value (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, uint32_t regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size);
 TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, const PIN_REGISTER* reg1_value, uint32_t reg1_u8, 
 			      int reg2, uint32_t reg2_size, const PIN_REGISTER* reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken);
 TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t mem_size);
 TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, const PIN_REGISTER* dst_regvalue,
 			      const PIN_REGISTER* src_regvalue, const PIN_REGISTER* count_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);
-TAINTINT fw_slice_regflag (ADDRINT ip, char* ins_str, uint32_t mask, uint32_t orig_src_reg, uint32_t size, const CONTEXT* ctx, int32_t reg_u8);
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val);
 TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u_long mem_loc2, uint32_t reg1_size, uint32_t mem_size, char* reg1_val);
 TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int dst_reg, uint32_t size, const PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, int src_reg, const PIN_REGISTER* src_reg_value,
 				    uint32_t src_reg_u8, uint32_t flag, BOOL executed);
 TAINTSIGN fw_slice_memregregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uint32_t dest_reg_size, PIN_REGISTER* dest_reg_value, uint32_t dest_reg_u8, BASE_INDEX_ARGS,
 				       u_long mem_loc, uint32_t mem_size, uint32_t flag, BOOL executed);
-TAINTSIGN fw_slice_memregreg_mov (ADDRINT ip, char* ins_str, int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8,
-				  int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8, 
-				  u_long mem_loc, uint32_t mem_size);
-  //TAINTINT fw_slice_memmemreg_imm_value (ADDRINT ip, char* ins_str, u_long mem_read, u_long mem_write, uint32_t mem_readsize, uint32_t mem_writesize, 
-  //		int reg, uint32_t reg_size, uint32_t regvalue, uint32_t reg_u8);
 TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
@@ -140,7 +131,6 @@ TAINTSIGN taint_bswap_offset (int reg_off);
 
 // mem2reg add
 TAINTSIGN taint_add_mem2reg_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
-  //TAINTSIGN taint_add_reg2flag_offset (int reg_off, uint32_t size, uint32_t flag);
 
 // mem2reg xchg
 TAINTSIGN taint_xchg_bmem2lbreg (u_long mem_loc, int reg);
@@ -156,27 +146,10 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
 
 // reg2mem add
 TAINTSIGN taint_add_reg2mem_offset (u_long mem_loc, int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags);
-void taint_rep_reg2mem (u_long mem_loc, int reg, uint32_t reg_size, uint32_t total_size);
 
 // reg2reg
 TAINTSIGN taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size);
 TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t size);
-
-// reg2reg extend
-TAINTSIGN taintx_lbreg2wreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_lbreg2hwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_lbreg2dwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_lbreg2qwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_ubreg2hwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_ubreg2wreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_ubreg2dwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_ubreg2qwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_hwreg2wreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_hwreg2dwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_hwreg2qwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_wreg2dwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_wreg2qwreg (int dst_reg, int src_reg);
-TAINTSIGN taintx_dwreg2qwreg (int dst_reg, int src_reg);
 
 // reg2reg add
 TAINTSIGN taint_add_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags);
@@ -189,18 +162,6 @@ TAINTSIGN taint_mask_reg2reg (int dst_reg, int src_reg);
 
 // mem2mem
 TAINTSIGN taint_mem2mem (u_long src_loc, u_long dst_loc, uint32_t size);
-TAINTSIGN taint_mem2mem_b (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_mem2mem_hw (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_mem2mem_w (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_mem2mem_dw (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_mem2mem_qw (u_long src_loc, u_long dst_loc);
-
-// mem2mem add
-TAINTSIGN taint_add_mem2mem_b (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_add_mem2mem_hw (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_add_mem2mem_w (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_add_mem2mem_dw (u_long src_loc, u_long dst_loc);
-TAINTSIGN taint_add_mem2mem_qw (u_long src_loc, u_long dst_loc);
 
 // 3-way operations (for supporting instructions like mul and div)
 TAINTSIGN taint_add2_bmemlbreg_hwreg (u_long mem_loc, int src_reg, int dst_reg);
