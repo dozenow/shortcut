@@ -187,7 +187,7 @@ int main (int argc, char* argv[]) {
     for (auto iter = result_block.begin(); iter != result_block.end(); ++iter) { 
         if (last_direction == -1) last_direction = iter->direction;
         if (iter->direction == SUBSTITUTE) { 
-            cerr << "Haven't tested substitution of blocks." <<endl;
+            cerr << "[TODO] Haven't tested substitution of blocks." <<endl;
         }
     }
     int retval = (last_direction == INSERT_FIRST?2:1);
@@ -201,19 +201,20 @@ int main (int argc, char* argv[]) {
     memset (&last_diverge2, 0, sizeof(struct block));
     
     for (int i = result_block.size() - 1; i >= 0; --i) { 
-        if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1)) {
-            if (last_diverge1.clock != 0) {
+        if (DEBUG) printf ("result %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
+        if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1) || !CHECK_BLOCK_INDEX(result_block[i].block2, last_diverge2)) {
+            if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
                 printf ("Merged right before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge2.clock, last_diverge2.index);
             }
             printf ("Diverge before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
             memcpy (&last_diverge2, &result_block[i].block2, sizeof(struct block));
-            if (result_block[i].direction != INSERT_FIRST) last_diverge1.index ++;
-            if (result_block[i].direction != INSERT_SECOND) last_diverge2.index ++;
         }
+        if (result_block[i].direction != INSERT_FIRST) last_diverge1.index ++;
+        if (result_block[i].direction != INSERT_SECOND) last_diverge2.index ++;
         //output << "[CTRL_INFO] " << result_blockresult_block[i].index << ":" << result_block[i].clock << std::hex << ", 0x" << result_block[i].bb_addr << std::dec << endl;
     }
-    if (last_diverge1.clock != 0) { 
+    if (last_diverge1.clock != 0 || last_diverge2.clock != 0) { 
         printf ("Merged right before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge2.clock, last_diverge2.index);
     }
 
