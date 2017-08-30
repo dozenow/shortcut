@@ -33,7 +33,7 @@ APP_CC=gcc
 # defining the test name twice (once in TOOL_ROOTS and again in TEST_ROOTS).
 # Tests defined here should not be defined in TOOL_ROOTS and TEST_ROOTS.
 TEST_TOOL_ROOTS := linkage_offset \
-		print_bb
+		print_bb ctrl_flow_bb_trace
 
 # This defines the tests to be run that were not already defined in TEST_TOOL_ROOTS.
 TEST_ROOTS :=
@@ -143,6 +143,12 @@ $(OBJDIR)print_bb$(OBJ_SUFFIX): print_bb.cpp
 	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
 
 $(OBJDIR)print_bb$(PINTOOL_SUFFIX): $(OBJDIR)print_bb$(OBJ_SUFFIX)
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
+
+$(OBJDIR)ctrl_flow_bb_trace$(OBJ_SUFFIX): ctrl_flow_bb_trace.cpp 
+	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
+
+$(OBJDIR)ctrl_flow_bb_trace$(PINTOOL_SUFFIX): $(OBJDIR)ctrl_flow_bb_trace$(OBJ_SUFFIX)
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
 
 

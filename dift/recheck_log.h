@@ -2,6 +2,8 @@
 #define __RECHECK_LOG_H__
 
 #include "../test/parseklib.h"
+#include <sys/utsname.h>
+#include <poll.h>
 
 /* Generic entry header */
 struct recheck_entry { 

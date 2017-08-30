@@ -20,14 +20,22 @@ int main (int argc, char* argv[])
     pid_t cpid, mpid;
     int fd, rc, status, i;
     int attach_gdb = 0;
+    int args_index = 1;
+    char* attach_offset = NULL; //the position(clock_value) where we start to attach pin
 
     if (argc < 2) {
-	fprintf (stderr, "format: runpintool <replay dir> <tool> [args]\n");
+	fprintf (stderr, "format: runpintool [--attach_offset==<pid,syscall_start_clock>] <replay dir> <tool> [args passed to pin tool]\n");
 	return -1;
     }
 
-    dirname = argv[1];
-    pintool = argv[2];
+    if (argc >=4 && !strncmp (argv[args_index], "--attach_offset=", 15)) { 
+        printf ("Pin will run after %s\n", argv[args_index]);
+        attach_offset = argv[args_index];
+        ++ args_index;
+    }
+
+    dirname = argv[args_index++];
+    pintool = argv[args_index++];
 
     fd = open ("/dev/spec0", O_RDWR);
     if (fd < 0) {
@@ -37,7 +45,7 @@ int main (int argc, char* argv[])
 
     cpid = fork ();
     if (cpid == 0) {
-	rc = execl("./resume", "resume", "-p", dirname, "--pthread", "../eglibc-2.15/prefix/lib", NULL);
+	rc = execl("./resume", "resume", "-p", dirname, "--pthread", "../eglibc-2.15/prefix/lib", attach_offset, NULL);
 	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     } 
@@ -62,7 +70,7 @@ int main (int argc, char* argv[])
         }
 	args[argcnt++] = "-t";
 	args[argcnt++] = pintool;
-	for (i = 3; i < argc; i++) {
+	for (i = args_index; i < argc; i++) {
 	    args[argcnt++] = argv[i];
 	}
 	args[argcnt++] = NULL;
