@@ -504,11 +504,9 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	//((struct stat64 *) pstat64->buf)->st_blocks = st.st_blocks;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
 	add_to_taintbuf (pentry, STAT64_NLINK, &st.st_nlink, sizeof(st.st_nlink));
-	//add_to_taintbuf (pentry, STAT64_SIZE, &st.st_size, sizeof(st.st_size));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
-	//add_to_taintbuf (pentry, STAT64_BLOCKS, &st.st_blocks, sizeof(st.st_blocks));
 	if (st.st_blksize != pstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] %s blksize does not match %ld vs. recorded %ld\n", syscall_name, st.st_blksize, pstat64->retvals.st_blksize);
 	    handle_mismatch();
@@ -611,12 +609,10 @@ void fstat64_recheck ()
 	((struct stat64 *) pfstat64->buf)->st_atime = st.st_atime;
 	//((struct stat64 *) pfstat64->buf)->st_blocks = st.st_blocks;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
-	add_to_taintbuf (pentry, STAT64_INO, &st.st_nlink, sizeof(st.st_nlink));
-	//add_to_taintbuf (pentry, STAT64_INO, &st.st_size, sizeof(st.st_size));
+	add_to_taintbuf (pentry, STAT64_NLINK, &st.st_nlink, sizeof(st.st_nlink));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
-	//add_to_taintbuf (pentry, STAT64_INO, &st.st_blocks, sizeof(st.st_blocks));
 	if (st.st_blksize != pfstat64->retvals.st_blksize) {
 	    printf ("[MISMATCH] fstat64 blksize does not match %ld vs. recorded %ld\n", st.st_blksize, pfstat64->retvals.st_blksize);
 	    handle_mismatch();
