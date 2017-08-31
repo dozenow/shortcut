@@ -2739,7 +2739,7 @@ TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc,
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, op_size, 0);
 
 	// If partially tainted, need to restore for validation. If untainted, restore for instruction
-	if (eax_tainted != 1) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
+	if (eax_tainted == 2) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
 
 	// Always verify ecx and edi if not untainted
 	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
