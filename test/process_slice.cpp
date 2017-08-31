@@ -123,21 +123,22 @@ vector<string> split(string str, char delimiter) {
 }
 
 string cleanupSliceLine (string s) { 
-	size_t index = s.find("[SLICE_INFO]");
-	if (index == string::npos) {
-		cerr << s << endl;
-		assert (0);
-	}
-	vector<string> strs = split (s.substr(0, index), '#');
-	if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
-		strs[2] = strs[2].substr (0, strs[2].find("dword"));
-	} else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
-		int index = strs[2].find("scas");
-		strs[2] = strs[2].substr (0, strs[2].find(" ", index));
-	} else if (strs[2].find("lea ") != string::npos) {
-		strs[2].erase (strs[2].find (" ptr "), 4);	
-	}
-	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
+    if (s == "") return s;
+    size_t index = s.find("[SLICE_INFO]");
+    if (index == string::npos) {
+        cerr << "cannot find SLICE_INFO: " << s << endl;
+        assert (0);
+    }
+    vector<string> strs = split (s.substr(0, index), '#');
+    if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
+        strs[2] = strs[2].substr (0, strs[2].find("dword"));
+    } else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
+        int index = strs[2].find("scas");
+        strs[2] = strs[2].substr (0, strs[2].find(" ", index));
+    } else if (strs[2].find("lea ") != string::npos) {
+        strs[2].erase (strs[2].find (" ptr "), 4);	
+    }
+    return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
 }
 
 string cleanupExtraline (string s) {
@@ -239,7 +240,10 @@ string replaceMem (string s, string instStr) {
 	if (addrIndex != string::npos) {
 		//replace the mem operand in this line
 		//copy the original slice code's addressing mode
-		assert (instStr.find (" ptr " ) != string::npos);
+		if (instStr.find (" ptr " ) == string::npos) {
+                    cerr << "error line: " <<s <<endl;
+                    assert (0);
+                }
 		//I haven't handled the case where more than one operand is mem
 		assert (instStr.find (" ptr " ) == instStr.rfind(" ptr "));
 		assert (instStr.find ("[SLICE]") == 0);
@@ -264,6 +268,7 @@ AddrToRestore parseRestoreAddress (string s) {
 	size_t index = s.find(":");
 	assert (index != string::npos);
 	vector<string> strs = split (s.substr(index + 2), ',');
+        assert (strs.size() >= 3);
 	return AddrToRestore (strs[0], atoi(strs[1].c_str() + 1), atoi(strs[2].c_str() + 1));
 }
 
@@ -384,6 +389,7 @@ int main (int argc, char* argv[]) {
 	}
 	//printerr (lastLine);
 	buffer.push(make_pair(SLICE, lastLine));
+	if (totalRestoreSize >= 65536) fprintf (stderr, "Total restore size: %d\n", totalRestoreSize);
 	assert (totalRestoreSize < 65536); //currently we only allocated 65536 bytes for this restore stack
 
 

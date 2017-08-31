@@ -12,6 +12,8 @@
 #include <list>
 #include <map>
 #include <stack>
+#include <queue>
+#include <set>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -43,6 +45,7 @@
 #define DF_MASK 0x400
 
 #define TRACK_READONLY_REGION
+#define TRACK_CTRL_FLOW_DIVERGE
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
@@ -189,6 +192,14 @@ struct getdents64_info {
     u_int count;
 };
 
+struct ctrl_flow_info { 
+    uint64_t count;
+    std::queue<u_long> *diverge_index;
+    std::set<uint32_t> *block_instrumented;
+    uint32_t bbl_addr;
+    long ctrl_file_pos;
+};
+
 // Per-thread data structure
 struct thread_data {
     int                      threadid;
@@ -242,6 +253,7 @@ struct thread_data {
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
+    struct ctrl_flow_info ctrl_flow_info;
 };
 
 struct memcpy_header {

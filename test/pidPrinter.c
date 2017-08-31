@@ -18,10 +18,22 @@ int main()
 		perror("something Went Wrong when trying to get the pID!");
 	}
 	else{
-            processID = processID;//test for index divergence
-            //if (processID%2==0) processID
+            /*int tmp = processID;
+            if (processID%2==0) 
+                processID=processID*10;
+            else {
+                processID -= 1;
+                processID=processID*9;
+            }*/
+            char tmp[32];
+            struct stat stat;
+            int test = processID%2*processID*2 + processID;
+            //itoa (test,tmp, 2);
+
 		//printf("The process id is %d addr is %p\n", processID, &processID);
-		printf("The process id is %d \n", processID);
+            sprintf(tmp, "%d", processID);
+            //fstat (1, &stat);
+            printf ("The process id is %s, int address %p, string address %p\n", tmp, &processID, tmp);
 	}
 	
 
