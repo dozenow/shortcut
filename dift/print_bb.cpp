@@ -11,8 +11,9 @@
 #include <iostream>
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
-long print_stop = 1000000;
+u_long print_stop = 1000000;
 long print_start = 0;
+u_long* ppthread_log_clock = NULL;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
 
@@ -129,7 +130,8 @@ void syscall_after (ADDRINT ip)
     } else {
 	fprintf (stderr, "syscall_after: NULL current_thread\n");
     }
-    if (global_syscall_cnt >= print_stop) {
+    //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
+    if (*ppthread_log_clock >= print_stop) { 
         fprintf (stderr, "exit.\n");
         try_to_exit (fd, PIN_GetPid());
         PIN_ExitApplication(0);
@@ -332,6 +334,9 @@ int main(int argc, char** argv)
 
     print_stop = atoi(KnobPrintStop.Value().c_str());
     
+    // Try to map the log clock for this epoch
+    ppthread_log_clock = map_shared_clock(fd);
+
     PIN_AddThreadStartFunction(thread_start, 0);
     PIN_AddThreadFiniFunction(thread_fini, 0);
     PIN_AddFollowChildProcessFunction(follow_child, argv);

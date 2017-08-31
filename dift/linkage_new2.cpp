@@ -140,6 +140,8 @@ u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
+bool ctrl_flow_generate_taint_set = false;
+bool ctrl_flow_generate_slice = false;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -209,6 +211,12 @@ KNOB<unsigned int> KnobRecheckGroup(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
     "pintool", "group_dir", "",
     "the directory for the output files");
+KNOB<bool> KnobCtrlFlowGenerateTaintSet(KNOB_MODE_WRITEONCE, 
+        "pintool", "ctrl_flow_g_taint_set", "", 
+        "generate taint set for extra blocks");
+KNOB<bool> KnobCtrlFlowGenerateSlice(KNOB_MODE_WRITEONCE, 
+        "pintool", "ctrl_flow_g_slice", "", 
+        "generate slice using taint set");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -2305,6 +2313,23 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
     put_copy_of_disasm (str);
 }
 
+//If we move an imm value to an memory address, we still need to verify the base and index registers if they're tainted. Therefore, at least the verifications need to be in the slice
+static inline void fw_slice_src_dst_mem (INS ins, REG base_reg, REG index_reg)  
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_mem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_MEMORYWRITE_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static inline void fw_slice_src_mem2mem (INS ins, REG base_reg, REG index_reg) 
 {
     char* str = get_copy_of_disasm (ins);
@@ -3284,6 +3309,10 @@ void instrument_mov (INS ins)
 	    instrument_taint_reg2mem (ins, reg, 0);
         } else {
             //move immediate to memory location
+            REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+            REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+            //verification for base&index
+            fw_slice_src_dst_mem (ins, base_reg, index_reg);
             instrument_taint_immval2mem(ins);
         }
     } else {
@@ -4340,8 +4369,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
 #endif
-    static u_char old_val = 0;
-    if (*((u_char *) 0x8700b15) != old_val) {
+    //static u_char old_val = 0;
+    //if (*((u_char *) 0x8700b15) != old_val) {
       printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
       PIN_LockClient();
       if (IMG_Valid(IMG_FindByAddress(ip))) {
@@ -4351,8 +4380,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-	printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
-	old_val = *((u_char *) 0x8700b15);
+	//printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
+	//old_val = *((u_char *) 0x8700b15);
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
     //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -4364,7 +4393,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     //}
 	printf ("\n");
 	fflush (stdout);
-    }
+    //}
 }
 
 void debug_print (INS ins) 
@@ -5007,6 +5036,40 @@ void instruction_instrumentation(INS ins, void *v)
 	
 }
 
+//assume the first operand is always the destination operand
+void instrument_print_inst_dest (INS ins) 
+{ 
+    if (INS_IsBranchOrCall(ins)) return; //ignore jumps/rets
+    if (INS_IsMemoryWrite(ins)) {
+        if (INS_OperandIsMemory (ins, 0) == false) {
+            fprintf (stderr, "[TODO] %s doesn't not have memory operand.\n", INS_Disassemble (ins).c_str());
+            //safe for push
+        }
+        INS_InsertCall (ins, IPOINT_BEFORE, 
+            AFUNPTR(print_inst_dest_mem), 
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_INST_PTR, 
+            IARG_MEMORYWRITE_EA, 
+            IARG_UINT32, INS_MemoryWriteSize(ins),
+            IARG_END);
+    } else { 
+        if (INS_OperandCount(ins) == 0 || !INS_OperandIsReg(ins, 0)) { 
+            fprintf (stderr, "[TODO] inst has no dest reg %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
+            return;
+        }
+        REG reg = INS_OperandReg (ins, 0);
+        INS_InsertCall (ins, IPOINT_BEFORE, 
+            AFUNPTR(print_inst_dest_reg),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_INST_PTR,
+            IARG_UINT32, translate_reg(reg),
+            IARG_UINT32, REG_Size(reg),
+            IARG_UINT32, REG_is_Upper8 (reg),
+            IARG_REG_REFERENCE, reg,
+            IARG_END);
+    }
+}
+
 void trace_instrumentation(TRACE trace, void* v)
 {
     struct timeval tv_end, tv_start;
@@ -5015,7 +5078,27 @@ void trace_instrumentation(TRACE trace, void* v)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after_redo, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+        INS tail = BBL_InsTail (bbl);
+        INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR, 
+                IARG_BRANCH_TAKEN,
+                IARG_CONST_CONTEXT,
+                IARG_END);
+        INS head = BBL_InsHead (bbl);
+        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_UINT32, BBL_Address (bbl), 
+                IARG_END);
+#endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+            if (current_thread->ctrl_flow_info.block_instrumented->find(BBL_Address(bbl)) != current_thread->ctrl_flow_info.block_instrumented->end()) {
+                instrument_print_inst_dest (ins);
+            }
+#endif
 	    instruction_instrumentation (ins, NULL);
 	}
     }
@@ -5380,6 +5463,36 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 }
 #endif
 
+void init_ctrl_flow_info (struct thread_data* ptdata)
+{
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+   char line[256];
+   ptdata->ctrl_flow_info.diverge_index = new std::queue<unsigned long>();
+   ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.count = 0;
+   ptdata->ctrl_flow_info.ctrl_file_pos = 0;
+
+   if (ctrl_flow_generate_taint_set || ctrl_flow_generate_slice) {
+       FILE* file = fopen ("/tmp/ctrl_flow_instrument", "r");
+       if (file == NULL) { 
+           fprintf (stderr, "init_ctrl_flow_info: cannot open file /tmp/ctrl_flow_instrument\n");
+           return;
+       }
+       while (fgets (line, 255, file)) { 
+           unsigned long block_index, block_addr;
+           if (strncmp (line, "[CTRL_INFO]", 11)) { 
+               fprintf (stderr, "init_ctrl_flow_info: cannot parse line %s\n", line);
+               continue;
+           }
+           sscanf (line, "[CTRL_INFO] %lu,%lx", &block_index, &block_addr);
+           ptdata->ctrl_flow_info.diverge_index->push (block_index);
+           ptdata->ctrl_flow_info.block_instrumented->insert (block_addr);
+       }
+       fclose (file);
+   }
+#endif
+}
+
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
@@ -5404,6 +5517,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
+    init_ctrl_flow_info (ptdata);
 
     init_mmap_region (ptdata);
     int thread_ndx;
@@ -5561,6 +5675,8 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
+    if (tdata->ctrl_flow_info.diverge_index) delete tdata->ctrl_flow_info.diverge_index;
+    if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
 }
 
 #ifndef NO_FILE_OUTPUT
@@ -5685,6 +5801,9 @@ int main(int argc, char** argv)
     if (checkpoint_clock == 0) 
 	    checkpoint_clock = UINT_MAX;
     recheck_group = KnobRecheckGroup.Value();
+    ctrl_flow_generate_taint_set = KnobCtrlFlowGenerateTaintSet.Value();
+    ctrl_flow_generate_slice = KnobCtrlFlowGenerateSlice.Value();
+    if (ctrl_flow_generate_slice) ctrl_flow_generate_taint_set = true;
 
     fork_flags_index = 0;   
 

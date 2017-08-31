@@ -91,6 +91,11 @@ TAINTSIGN taint_jump_ecx (ADDRINT regvalue, uint32_t size, ADDRINT ip);
 TAINTSIGN taint_cmpxchg_reg (ADDRINT cmp_value, UINT32 dst_value, int dst_reg, int src_reg, uint32_t size);
 TAINTSIGN taint_cmpxchg_mem (ADDRINT cmp_value, u_long mem_loc, int src_reg, uint32_t size);
 TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
+TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, uint32_t size, uint32_t is_upper8, PIN_REGISTER* regvalue);
+TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size);
+TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start);
+TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx);
+extern struct thread_data* current_thread;
 
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
 
