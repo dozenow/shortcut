@@ -196,6 +196,8 @@ struct ctrl_flow_info {
     uint64_t count;
     std::queue<u_long> *diverge_index;
     std::set<uint32_t> *block_instrumented;
+    std::set<uint32_t> *store_set_reg;
+    std::set<uint32_t> *store_set_mem;
     uint32_t bbl_addr;
     long ctrl_file_pos;
 };

@@ -5039,34 +5039,48 @@ void instruction_instrumentation(INS ins, void *v)
 //assume the first operand is always the destination operand
 void instrument_print_inst_dest (INS ins) 
 { 
-    if (INS_IsBranchOrCall(ins)) return; //ignore jumps/rets
-    if (INS_IsMemoryWrite(ins)) {
-        if (INS_OperandIsMemory (ins, 0) == false) {
-            fprintf (stderr, "[TODO] %s doesn't not have memory operand.\n", INS_Disassemble (ins).c_str());
-            //safe for push
+    uint32_t operand_count = INS_OperandCount (ins);
+    fprintf (stderr, "[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
+    for (uint32_t i = 0; i<operand_count; ++i) { 
+        if (INS_OperandWritten (ins, i)) { 
+            bool implicit = INS_OperandIsImplicit (ins, i);
+            if (INS_OperandIsReg (ins, i)) {
+                REG reg = INS_OperandReg (ins, i);
+                assert (REG_valid(reg));
+                if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
+                    //ignore ip register
+                    fprintf (stderr, "      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                } else if (reg == LEVEL_BASE::REG_EFLAGS) {
+                    //as the eflag reg is almost certainly modified by some instruction in a basic block (which the jump at the bb exit probably uses), I'll always put eflags in the store set
+                    //so it's safe to ignore it here
+                    fprintf (stderr, "      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                } else { 
+                    fprintf (stderr, "      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    INS_InsertCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR(print_inst_dest_reg),
+                            IARG_FAST_ANALYSIS_CALL,
+                            IARG_INST_PTR,
+                            IARG_UINT32, reg, //I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're done twice for certain bytes in one register
+                            IARG_REG_REFERENCE, reg,
+                            IARG_END);
+                }
+            } else if (INS_OperandIsMemory (ins, i)) { 
+                fprintf (stderr, "      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
+                REG base_reg = INS_OperandMemoryBaseReg(ins, i);
+                REG index_reg = INS_OperandMemoryIndexReg(ins, i);
+                SETUP_BASE_INDEX (base_reg, index_reg);
+                INS_InsertCall (ins, IPOINT_BEFORE, 
+                        AFUNPTR(print_inst_dest_mem), 
+                        IARG_FAST_ANALYSIS_CALL,
+                        IARG_INST_PTR, 
+                        IARG_MEMORYWRITE_EA, 
+                        IARG_UINT32, INS_MemoryWriteSize(ins),
+                        PASS_BASE_INDEX,
+                        IARG_END);
+            } else { 
+                assert (0);
+            }
         }
-        INS_InsertCall (ins, IPOINT_BEFORE, 
-            AFUNPTR(print_inst_dest_mem), 
-            IARG_FAST_ANALYSIS_CALL,
-            IARG_INST_PTR, 
-            IARG_MEMORYWRITE_EA, 
-            IARG_UINT32, INS_MemoryWriteSize(ins),
-            IARG_END);
-    } else { 
-        if (INS_OperandCount(ins) == 0 || !INS_OperandIsReg(ins, 0)) { 
-            fprintf (stderr, "[TODO] inst has no dest reg %x, %s\n", INS_Address (ins), INS_Disassemble(ins).c_str());
-            return;
-        }
-        REG reg = INS_OperandReg (ins, 0);
-        INS_InsertCall (ins, IPOINT_BEFORE, 
-            AFUNPTR(print_inst_dest_reg),
-            IARG_FAST_ANALYSIS_CALL,
-            IARG_INST_PTR,
-            IARG_UINT32, translate_reg(reg),
-            IARG_UINT32, REG_Size(reg),
-            IARG_UINT32, REG_is_Upper8 (reg),
-            IARG_REG_REFERENCE, reg,
-            IARG_END);
     }
 }
 
@@ -5471,6 +5485,8 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.count = 0;
    ptdata->ctrl_flow_info.ctrl_file_pos = 0;
+   ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.store_set_mem = new std::set<uint32_t> ();
 
    if (ctrl_flow_generate_taint_set || ctrl_flow_generate_slice) {
        FILE* file = fopen ("/tmp/ctrl_flow_instrument", "r");
@@ -5491,6 +5507,10 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
        fclose (file);
    }
 #endif
+   ptdata->ctrl_flow_info.diverge_index->push (17025);
+   ptdata->ctrl_flow_info.diverge_index->push (17055);
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);
 }
 
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
@@ -5677,6 +5697,8 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->address_taint_set) delete tdata->address_taint_set;
     if (tdata->ctrl_flow_info.diverge_index) delete tdata->ctrl_flow_info.diverge_index;
     if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
+    if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
+    if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
 }
 
 #ifndef NO_FILE_OUTPUT

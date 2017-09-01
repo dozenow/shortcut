@@ -207,9 +207,9 @@ int main (int argc, char* argv[]) {
         if (DEBUG) printf ("result %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
         if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1) || !CHECK_BLOCK_INDEX(result_block[i].block2, last_diverge2)) {
             if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
-                printf ("Merged right before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge2.clock, last_diverge2.index);
+                printf ("Merged right before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge1.bb_addr, last_diverge2.clock, last_diverge2.index, last_diverge2.bb_addr);
             }
-            printf ("Diverge before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
+            printf ("Diverge before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block1.bb_addr, result_block[i].block2.clock, result_block[i].block2.index, result_block[i].block2.bb_addr);
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
             memcpy (&last_diverge2, &result_block[i].block2, sizeof(struct block));
         }

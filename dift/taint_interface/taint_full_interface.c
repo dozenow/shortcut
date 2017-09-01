@@ -2181,28 +2181,26 @@ int fw_slice_check_final_mem_taint (taint_t* pregs)
 	return has_mem;
 }
 
-TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size) 
+TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        int tainted = is_mem_tainted (mem_loc, size);
-        /*if (tainted != 1) {
-            fprintf (stderr , "print_inst_dest_mem: partially or not tainted mem?\n");
-        }*/
-        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %llu, tainted %d\n", ip, mem_loc, size, current_thread->ctrl_flow_info.count, tainted);
+        fprintf (stderr, "[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %llu, \n", ip, mem_loc, size, current_thread->ctrl_flow_info.count);
+
+        int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
+        int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
+        if (base_tainted || index_tainted) {
+            //we cannot handle memory write with tainted base/index regs that happens in a diverged branch
+            assert (0);
+        }
+        current_thread->ctrl_flow_info.store_set_mem->insert (mem_loc);
     }
 }
 
-TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, uint32_t size, uint32_t is_upper8, PIN_REGISTER* regvalue) 
+TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        int tainted = is_reg_tainted (reg, size, is_upper8);
-        /*if (tainted != 1) {
-            fprintf (stderr, "print_inst_dest_reg: partially or not tainted reg %d, size %u\n", reg, size);
-            print_extra_move_reg (ip, reg, size, regvalue, is_upper8, tainted);
-        }*/
-        int reg_off = reg*REG_SIZE;
-        if (is_upper8) reg_off ++;
-        printf ("[CONTROL_FLOW_REG] ip %x reg_off(%d,%d), index %llu, reg(%d,%u,%u,%d), value(%x)\n", ip, reg_off, size, current_thread->ctrl_flow_info.count, reg, size, is_upper8, tainted, *regvalue->dword);
+        fprintf (stderr, "[CONTROL_FLOW_REG] ip %x reg %d @ %llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.count, *regvalue->dword);
+        current_thread->ctrl_flow_info.store_set_reg->insert (reg);
     }
 }
 
