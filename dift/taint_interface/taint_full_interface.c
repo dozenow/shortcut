@@ -2181,6 +2181,42 @@ int fw_slice_check_final_mem_taint (taint_t* pregs)
 	return has_mem;
 }
 
+inline void ctrl_flow_checkpoint (const CONTEXT* ctx)
+{
+    PIN_SaveContext (ctx, &current_thread->ctrl_flow_info.ckpt_context);
+    //save taints for regs
+    //mem taints will be tracked by print_inst_dest_mem
+    memcpy (current_thread->ctrl_flow_info.ckpt_reg_table, current_thread->shadow_reg_table, sizeof (taint_t)*NUM_REGS*REG_SIZE);
+    current_thread->ctrl_flow_info.ckpt_flag_taints = new std::stack<struct flag_taints> (*current_thread->saved_flag_taints);
+    current_thread->ctrl_flow_info.ckpt_clock = *ppthread_log_clock;
+}
+
+inline void ctrl_flow_rollback () 
+{
+    printf ("[CTRL_FLOW] Start to rollback: index %llu\n", current_thread->ctrl_flow_info.count);
+    assert (*ppthread_log_clock == current_thread->ctrl_flow_info.ckpt_clock);
+
+    //restore reg taints
+    memcpy (current_thread->shadow_reg_table, current_thread->ctrl_flow_info.ckpt_reg_table, sizeof(taint_t)*NUM_REGS*REG_SIZE);
+    if (current_thread->saved_flag_taints != NULL)
+        delete current_thread->saved_flag_taints;
+    current_thread->saved_flag_taints = current_thread->ctrl_flow_info.ckpt_flag_taints;
+    printf ("[CTRL_FLOW] registers are restored. \n");
+
+    //restore mem taints
+    map<u_long, taint_t> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
+    for (auto i = mem_map->begin(); i != mem_map->end(); ++i) { 
+        set_cmem_taints_one (i->first, 1, i->second);
+        printf ("[CTRL_FLOW] restore mem %lx\n", i->first);
+    }
+    mem_map->clear();
+
+    PIN_ExecuteAt (&current_thread->ctrl_flow_info.ckpt_context);
+
+    fprintf (stderr, "[BUG] should never return here.\n");
+}
+
+//This function should always be called before the actual taint function
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
@@ -2192,7 +2228,25 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
             //we cannot handle memory write with tainted base/index regs that happens in a diverged branch
             assert (0);
         }
-        current_thread->ctrl_flow_info.store_set_mem->insert (mem_loc);
+        map<u_long, taint_t> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
+        uint32_t offset = 0;
+        //also store the original taint value for this mem address
+        while (offset < size) {
+            taint_t *mem_taints = NULL;
+            uint32_t count = get_cmem_taints_internal (mem_loc + offset, size-offset, &mem_taints);
+            if (!mem_taints) { 
+                for (uint32_t i = 0; i<count; ++i) { 
+                    if (mem_map->find (mem_loc + offset + i) == mem_map->end())
+                        (*mem_map)[mem_loc + offset + i] = 0;
+                }
+            } else { 
+                for (uint32_t i = 0; i<count; ++i) { 
+                    if (mem_map->find (mem_loc + offset + i) == mem_map->end())
+                        (*mem_map)[mem_loc + offset + i] = mem_taints[i];
+                }
+            }
+            offset += count;
+        }
     }
 }
 
@@ -2208,23 +2262,28 @@ extern bool ctrl_flow_generate_slice;
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx) 
 { 
     //TODO: change fliename
+    //TODO: assert if we're still in the same clock value
     string filename = "/tmp/ctrl";
     if (current_thread->ctrl_flow_info.count+1 == current_thread->ctrl_flow_info.diverge_index->front()) {
-        printf ("[CTRL_FLOW] before the divergence.\n");
+        printf ("[CTRL_FLOW] before the divergence, index %llu\n", current_thread->ctrl_flow_info.count);
+        //checkpoint the current state and we need to roll back later
+        ctrl_flow_checkpoint (ctx);
+
         //Now we need to initialize all untainted registers and memory addresses, since we'll force to taint them to handle control flow divergence in the following step
         taint_ctrl_flow_the_other_branch (filename.c_str(), ip, ctx, 0);
     }
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        if (ctrl_flow_generate_slice) {
+        //if (ctrl_flow_generate_slice) {
             printf ("taint_ctrl_flow_the_other_branch: taint from this jump.\n");
             current_thread->ctrl_flow_info.diverge_index->pop();
             //We'll force to taint some registers and addresses in /tmp/ctrl file to handle control flow divergence
             //Of course, initialization is necessary for those reg/mem that is originally untainted
             taint_ctrl_flow_the_other_branch (filename.c_str(), ip, ctx, 1);
-            printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x\n", taken, ip);
+            printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x, index %llu\n", taken, ip, current_thread->ctrl_flow_info.count);
             fflush (stdout);
-        }
-    }
+            ctrl_flow_rollback ();
+        //}
+    } 
     ++ current_thread->ctrl_flow_info.count;
 }
 

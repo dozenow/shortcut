@@ -5060,7 +5060,7 @@ void instrument_print_inst_dest (INS ins)
                             AFUNPTR(print_inst_dest_reg),
                             IARG_FAST_ANALYSIS_CALL,
                             IARG_INST_PTR,
-                            IARG_UINT32, reg, //I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're done twice for certain bytes in one register
+                            IARG_UINT32, reg, //I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're restored twice for certain bytes in one register
                             IARG_REG_REFERENCE, reg,
                             IARG_END);
                 }
@@ -5486,7 +5486,7 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.count = 0;
    ptdata->ctrl_flow_info.ctrl_file_pos = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.store_set_mem = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, taint_t> ();
 
    if (ctrl_flow_generate_taint_set || ctrl_flow_generate_slice) {
        FILE* file = fopen ("/tmp/ctrl_flow_instrument", "r");
