@@ -5508,10 +5508,10 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
        fclose (file);
    }
 #endif
-   ptdata->ctrl_flow_info.diverge_index->push (17025);
+   /*ptdata->ctrl_flow_info.diverge_index->push (17025);
    ptdata->ctrl_flow_info.diverge_index->push (17055);
    ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);*/
 }
 
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
