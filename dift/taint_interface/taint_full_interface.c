@@ -137,7 +137,6 @@ static void taint_reg2reg (int dst_reg, int src_reg, uint32_t size);
 static UINT32 get_mem_value (u_long mem_loc, uint32_t size);
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size);
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8);
-static void taint_ctrl_flow_the_other_branch (const char* filename, ADDRINT ip, const CONTEXT* ctx, int taint);
 int is_flag_tainted (uint32_t flag) {
     int i = 0;	
     int tainted = 0;
@@ -1696,7 +1695,8 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
 }
 
 // Returns 2 for partial taint now.  Calling functions must handle this.
-static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) { 
+static inline int is_reg_tainted_internal (int reg, uint32_t size, uint32_t is_upper8, taint_t* reg_table)
+{ 
     int tainted = 0;
     uint32_t i = 0;
     uint32_t end = size;
@@ -1705,7 +1705,7 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
 	end = size + i;
     }
     for (; i<end; ++i) { 
-	if (current_thread->shadow_reg_table[reg*REG_SIZE + i] != 0) {
+	if (reg_table[reg*REG_SIZE + i] != 0) {
 	    if (i && !is_upper8) {
 		return 2; // Partially tainted: first bytes were untainted
 	    } else {
@@ -1716,13 +1716,18 @@ static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) {
     }
     if (tainted) {
 	for (++i; i<end; ++i) {
-	    if (current_thread->shadow_reg_table[reg*REG_SIZE + i] == 0) {
+	    if (reg_table[reg*REG_SIZE + i] == 0) {
 		tainted = 2;
 		break;
 	    }
 	}
     }
     return tainted;
+}
+
+static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8) 
+{ 
+    return is_reg_tainted_internal (reg, size, is_upper8, current_thread->shadow_reg_table);
 }
 
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size) { 
@@ -1942,7 +1947,6 @@ static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t
     print_extra_move_reg (ip, reg, reg_size, &value, is_upper8, tainted);
 }
 
-//TODO: handle partial taints for mem, just like registers
 static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t mem_size, int tainted, string prefix="[SLICE_EXTRA]") 
 { 
     if (tainted == 2) {
@@ -2181,6 +2185,95 @@ int fw_slice_check_final_mem_taint (taint_t* pregs)
 	return has_mem;
 }
 
+TAINTSIGN ctrl_flow_init_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t* reg_table) 
+{
+    int treg = translate_reg (reg);
+    int size = REG_Size (reg);
+    int is_upper8 = REG_is_Upper8 (reg);
+    //we need to get the taint information from the checkpoint before the divergence
+    int tainted = is_reg_tainted_internal (treg, size, is_upper8, reg_table);
+    if (tainted != 1) { 
+        PIN_REGISTER regvalue;
+        PIN_GetContextRegval(ctx, reg, (UINT8*)&regvalue);
+        print_extra_move_reg (0x0000, treg, size, &regvalue, is_upper8, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
+    }
+}
+
+//for handling control flow diverges
+TAINTSIGN ctrl_flow_taint_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t ctrl_flow_taint)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    uint32_t i = 0;
+    uint32_t size = REG_Size (reg);
+
+    int treg = translate_reg((int)reg);
+    UINT32 reg_offset = treg * REG_SIZE;
+    if (REG_is_Upper8(reg)) reg_offset += 1;
+
+    //before we actual taint the register, we need to init if it's originally not tainted
+    ctrl_flow_init_reg (ip, reg, ctx, shadow_reg_table);
+    for (; i<size; ++i) {
+        shadow_reg_table[reg_offset + i] = merge_taints (shadow_reg_table[reg_offset+i], ctrl_flow_taint);
+    }
+}
+
+//one bye at a time, so we don't have the problem of partial taints
+TAINTSIGN ctrl_flow_init_mem_one_byte (ADDRINT ip, u_long mem_loc, taint_t taint, char origin_value)
+{
+   if (taint == 0) { 
+        //a special ip for easy identification
+	printf ("[SLICE_VERIFICATION] mov $addr(%lx,%u), %u //comes with %x\n", mem_loc, 1, (UINT8) origin_value, 0x0000);
+	add_modified_mem_for_final_check (mem_loc, 1);   
+   }
+}
+
+TAINTSIGN ctrl_flow_taint_mem (u_long mem_loc, uint32_t size, taint_t ctrl_flow_taint)
+{
+    int tainted = is_mem_tainted (mem_loc, size);
+    if (tainted != 1) { 
+        print_extra_move_mem (0x0000, mem_loc, size, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
+    }
+
+    uint32_t offset = 0;
+    u_long mem_offset = mem_loc;
+
+    uint32_t i = 0;
+    while (offset < size) {
+        taint_t* mem_taints = NULL;
+        uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
+        if (mem_taints) {
+            for (i = 0; i < count; i++) {
+		mem_taints[i] = merge_taints(ctrl_flow_taint, mem_taints[i]);
+            }
+        } else {
+            int ret = set_cmem_taints_one (mem_offset, count, ctrl_flow_taint);
+            assert (ret == (int)size);
+        }
+        offset += count;
+        mem_offset += count;
+    }
+}
+
+static void init_ctrl_flow_the_other_branch (ADDRINT ip)
+{
+    for (auto i: *(current_thread->ctrl_flow_info.store_set_reg)) {
+        ctrl_flow_init_reg (ip, REG(i), &current_thread->ctrl_flow_info.ckpt_context, current_thread->ctrl_flow_info.ckpt_reg_table);
+    }
+    for (auto i: *(current_thread->ctrl_flow_info.store_set_mem)) { 
+        ctrl_flow_init_mem_one_byte (ip, i.first, i.second.taint, i.second.value);
+    }
+}
+
+static void taint_ctrl_flow_the_other_branch (ADDRINT ip, const CONTEXT* ctx, taint_t ctrl_flow_taint) 
+{ 
+    for (auto i: *(current_thread->ctrl_flow_info.store_set_reg)) {
+        ctrl_flow_taint_reg (ip, REG(i), ctx, ctrl_flow_taint);
+    }
+    for (auto i: *(current_thread->ctrl_flow_info.store_set_mem)) { 
+        ctrl_flow_taint_mem (i.first, 1, ctrl_flow_taint);
+    }
+}
+
 inline void ctrl_flow_checkpoint (const CONTEXT* ctx)
 {
     PIN_SaveContext (ctx, &current_thread->ctrl_flow_info.ckpt_context);
@@ -2204,9 +2297,9 @@ inline void ctrl_flow_rollback ()
     printf ("[CTRL_FLOW] registers are restored. \n");
 
     //restore mem taints
-    map<u_long, taint_t> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
+    map<u_long, struct ctrl_flow_origin_value> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
     for (auto i = mem_map->begin(); i != mem_map->end(); ++i) { 
-        set_cmem_taints_one (i->first, 1, i->second);
+        set_cmem_taints_one (i->first, 1, i->second.taint);
         printf ("[CTRL_FLOW] restore mem %lx\n", i->first);
     }
     mem_map->clear();
@@ -2220,7 +2313,7 @@ inline void ctrl_flow_rollback ()
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        fprintf (stderr, "[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %llu, \n", ip, mem_loc, size, current_thread->ctrl_flow_info.count);
+        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.count, *((char*) mem_loc));
 
         int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
         int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
@@ -2228,7 +2321,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
             //we cannot handle memory write with tainted base/index regs that happens in a diverged branch
             assert (0);
         }
-        map<u_long, taint_t> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
+        map<u_long, struct ctrl_flow_origin_value> *mem_map = current_thread->ctrl_flow_info.store_set_mem;
         uint32_t offset = 0;
         //also store the original taint value for this mem address
         while (offset < size) {
@@ -2236,13 +2329,17 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
             uint32_t count = get_cmem_taints_internal (mem_loc + offset, size-offset, &mem_taints);
             if (!mem_taints) { 
                 for (uint32_t i = 0; i<count; ++i) { 
-                    if (mem_map->find (mem_loc + offset + i) == mem_map->end())
-                        (*mem_map)[mem_loc + offset + i] = 0;
+                    if (mem_map->find (mem_loc + offset + i) == mem_map->end()) {
+                        (*mem_map)[mem_loc + offset + i].taint = 0;
+                        (*mem_map)[mem_loc + offset + i].value = *((char*) mem_loc);
+                    }
                 }
             } else { 
                 for (uint32_t i = 0; i<count; ++i) { 
-                    if (mem_map->find (mem_loc + offset + i) == mem_map->end())
-                        (*mem_map)[mem_loc + offset + i] = mem_taints[i];
+                    if (mem_map->find (mem_loc + offset + i) == mem_map->end()) {
+                        (*mem_map)[mem_loc + offset + i].taint = mem_taints[i];
+                        (*mem_map)[mem_loc + offset + i].value = *((char*) mem_loc);
+                    }
                 }
             }
             offset += count;
@@ -2252,8 +2349,9 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
 
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
+    //we don't need save the original value and taint for regs since we checkpoint all of them
     if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        fprintf (stderr, "[CONTROL_FLOW_REG] ip %x reg %d @ %llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.count, *regvalue->dword);
+        printf ("[CONTROL_FLOW_REG] ip %x reg %d @ %llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.count, *regvalue->dword);
         current_thread->ctrl_flow_info.store_set_reg->insert (reg);
     }
 }
@@ -2261,30 +2359,41 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
 extern bool ctrl_flow_generate_slice;
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx) 
 { 
-    //TODO: change fliename
-    //TODO: assert if we're still in the same clock value
-    string filename = "/tmp/ctrl";
+    //TODO: assert if we're still in the same clock value on merge point
+
+    //diverge point
     if (current_thread->ctrl_flow_info.count+1 == current_thread->ctrl_flow_info.diverge_index->front()) {
         printf ("[CTRL_FLOW] before the divergence, index %llu\n", current_thread->ctrl_flow_info.count);
-        //checkpoint the current state and we need to roll back later
+        //checkpoint the current state and we may need to roll back later
+        //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
         ctrl_flow_checkpoint (ctx);
-
-        //Now we need to initialize all untainted registers and memory addresses, since we'll force to taint them to handle control flow divergence in the following step
-        taint_ctrl_flow_the_other_branch (filename.c_str(), ip, ctx, 0);
+        //dup2 (2, 1);
+        //put EFLAGS in the store set since it's very likely to be changed by some instruction
+        current_thread->ctrl_flow_info.store_set_reg->insert (LEVEL_BASE::REG_EFLAGS); 
     }
-    if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        //if (ctrl_flow_generate_slice) {
-            printf ("taint_ctrl_flow_the_other_branch: taint from this jump.\n");
+
+    //TODO: either rollback on merge point or just reset the ckpt and mem_map 
+    if (current_thread->ctrl_flow_info.is_rollback == false) {
+        //TODO: change this to actual merge point
+        //merge point without rollback
+        if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
+            printf ("[CTRL_FLOW] taint_ctrl_flow_the_other_branch: merge before this jump.\n");
+            printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x, index %llu\n", taken, ip, current_thread->ctrl_flow_info.count);
             current_thread->ctrl_flow_info.diverge_index->pop();
             //We'll force to taint some registers and addresses in /tmp/ctrl file to handle control flow divergence
             //Of course, initialization is necessary for those reg/mem that is originally untainted
-            taint_ctrl_flow_the_other_branch (filename.c_str(), ip, ctx, 1);
-            printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x, index %llu\n", taken, ip, current_thread->ctrl_flow_info.count);
+            //TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
+            taint_ctrl_flow_the_other_branch (ip, ctx, 1);
+            printf ("[CTRL_FLOW] initialization of original reg/mem values\n");
+            init_ctrl_flow_the_other_branch (ip);
+            printf ("[CTRL_FLOW] initialization of original reg/mem values done\n");
+
             fflush (stdout);
-            ctrl_flow_rollback ();
-        //}
-    } 
-    ++ current_thread->ctrl_flow_info.count;
+        } 
+        ++ current_thread->ctrl_flow_info.count;
+    } else { 
+        assert (0); //TODO
+    }
 }
 
 TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start) 
@@ -2638,92 +2747,6 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	    add_modified_mem_for_final_check (dst_mem_loc, size);
 	}
     }
-}
-
-//for handling control flow diverges
-TAINTSIGN taint_reg_ctrl_flow (ADDRINT ip, int reg_off, uint32_t size, const CONTEXT* ctx, int taint)
-{
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    //TODO: set the taint to a meaningful value
-    taint_t t = 1;
-    uint32_t i = 0;
-    //TODO: handle more cases, especially for upper 8
-    assert (size == 4);
-    int tainted = is_reg_tainted (reg_off/REG_SIZE, size, 0);
-    if (tainted != 1) { 
-        PIN_REGISTER regvalue;
-        PIN_GetContextRegval(ctx, REG(reg_off/REG_SIZE), (UINT8*)&regvalue);
-        print_extra_move_reg (0x0000, reg_off/REG_SIZE, size, &regvalue, 0, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
-    }
-    if (taint) {
-        for (; i<size; ++i) {
-            shadow_reg_table[reg_off + i] = merge_taints (shadow_reg_table[reg_off+i], t);
-        }
-    }
-}
-
-TAINTSIGN taint_mem_ctrl_flow (u_long mem_loc, uint32_t size, int taint)
-{
-    taint_t t = 1;
-    //TODO: merge the taints
-    int tainted = is_mem_tainted (mem_loc, size);
-    if (tainted != 1) { 
-        tainted = 2; //well, this foces to initialize the mem one by one
-        print_extra_move_mem (0x0000, mem_loc, size, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
-    }
-    if (taint) { 
-        int ret = set_cmem_taints_one(mem_loc, size, t);
-        assert (ret == (int)size);
-    }
-}
-
-static void taint_ctrl_flow_the_other_branch (const char* filename, ADDRINT ip, const CONTEXT* ctx, int taint) 
-{ 
-    FILE* file = fopen (filename, "r"); 
-    char line[256];
-    long last_index = -1;
-    if (file == NULL) { 
-        fprintf (stderr, "cannot open %s, rc %d\n", filename, -errno);
-        return;
-    }
-    if (fseek (file, current_thread->ctrl_flow_info.ctrl_file_pos, SEEK_SET) < 0) {
-        fprintf (stderr, "cannot fseek file %s, pos %ld\n", filename, current_thread->ctrl_flow_info.ctrl_file_pos);
-        return;
-    }
-
-    while (fgets(line, 255, file)) {
-        char* pos = strstr (line, "index");
-        if (pos == NULL) continue;
-        long block_index = strtol (pos + 5, NULL, 10);
-        if (last_index == -1) last_index = block_index;
-        //fprintf (stderr, "lastindex %ld, block_index %ld\n", last_index, block_index);
-        if (last_index != block_index) { 
-            //we've reached the ctrl flow info for the next block
-            current_thread->ctrl_flow_info.ctrl_file_pos = ftell (file) - strlen(line) - 1;
-            break;
-        }
-        if (strncmp (line, "[CONTROL_FLOW_REG]", 18) == 0) { 
-           char* start = strchr(line, '(');
-           int reg_off, size, reg;
-           uint32_t reg_size, is_upper8;
-           sscanf (start, "(%d,%d)", &reg_off, &size);
-           start = strstr (line, "reg(");
-           sscanf (start, "reg(%d,%u,%u,", &reg, &reg_size, &is_upper8);
-           fprintf (stderr, "taint regoff %d, %d\n", reg_off, size);
-           taint_reg_ctrl_flow (ip, reg_off, size, ctx, taint);
-        } else if (strncmp (line, "[CONTROL_FLOW_MEM]", 18) == 0) { 
-           char* start = strchr(line, '(');
-           u_long mem_loc;
-           int size;
-           sscanf (start, "(0x%lx,%d)", &mem_loc, &size);
-           fprintf (stderr, "taint mem %lx, %d\n", mem_loc, size);
-           taint_mem_ctrl_flow (mem_loc, size, taint);
-        } else {
-            assert (0);
-        }
-    }
-
-    fclose (file);
 }
 
 TAINTSIGN fw_slice_string_compare (ADDRINT ip, char* ins_str, ADDRINT mem_loc1, ADDRINT mem_loc2, ADDRINT eflags, ADDRINT ecx_val, ADDRINT edi_val, ADDRINT esi_val, UINT32 op_size, uint32_t first_iter) 

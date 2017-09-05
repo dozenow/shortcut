@@ -193,16 +193,23 @@ struct getdents64_info {
     u_int count;
 };
 
+//store the original taint and value for the mem address
+struct ctrl_flow_origin_value { 
+    taint_t taint;
+    char value;
+};
+
 struct ctrl_flow_info { 
     uint64_t count;
     std::queue<u_long> *diverge_index;
     std::set<uint32_t> *block_instrumented;
     std::set<uint32_t> *store_set_reg;
-    std::map<u_long, taint_t> *store_set_mem; //for memory, we also store the original taint value for this memory location, which is used laster for rolling back
+    std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
     uint32_t bbl_addr;
     long ctrl_file_pos;
 
     //checkpoint and rollback
+    bool is_rollback;
     CONTEXT ckpt_context;
     u_long ckpt_clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations
     // reg taints and flag taints; mem taints is stored in store_set_mem

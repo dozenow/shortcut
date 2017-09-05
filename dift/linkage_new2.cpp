@@ -5486,7 +5486,8 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.count = 0;
    ptdata->ctrl_flow_info.ctrl_file_pos = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, taint_t> ();
+   ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
+   ptdata->ctrl_flow_info.is_rollback = false;
 
    if (ctrl_flow_generate_taint_set || ctrl_flow_generate_slice) {
        FILE* file = fopen ("/tmp/ctrl_flow_instrument", "r");
