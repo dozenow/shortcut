@@ -1,3 +1,6 @@
+#ifndef __TAINTBUF_H__
+#define __TAINTBUF_H__
+
 #define RETVAL             1
 #define RETBUF             2
 #define STAT64_INO        10
@@ -24,3 +27,14 @@ struct taint_retval {
 };
 /* Followed by size bytes */
 
+#define DIVERGE_MISMATCH 0
+#define DIVERGE_JUMP     1
+#define DIVERGE_INDEX    2
+
+struct taintbuf_hdr {
+    u_long diverge_type;
+    u_long diverge_ndx;
+    u_long last_clock;
+};
+
+#endif

@@ -972,9 +972,9 @@ static inline void zero_partial_reg_until (int reg, int offset, int until)
 }
 
 #ifdef USE_CHECK_FILE
-static int init_check_map ()
+static int init_check_map (const char* check_filename)
 {
-    FILE* file = fopen ("/tmp/checks", "r");
+    FILE* file = fopen (check_filename, "r");
     if (!file) return -ENOENT;
     while (!feof (file)) {
 	char line[256];
@@ -1017,7 +1017,7 @@ static int init_check_map ()
 
 #endif
 
-void init_taint_structures (char* group_dir)
+void init_taint_structures (char* group_dir, const char* check_filename)
 {
     if (splice_output) {
 	taint_num = 0xc0000001;
@@ -1035,7 +1035,7 @@ void init_taint_structures (char* group_dir)
         taint_fds_cloexec = g_hash_table_new(g_direct_hash, g_direct_equal);
     }
 #ifdef USE_CHECK_FILE    
-    init_check_map();
+    init_check_map(check_filename);
 #endif
 }
 

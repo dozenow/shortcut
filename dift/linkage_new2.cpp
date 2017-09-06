@@ -140,6 +140,7 @@ u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
+const char* check_filename = "/tmp/checks";
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -209,6 +210,9 @@ KNOB<unsigned int> KnobRecheckGroup(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
     "pintool", "group_dir", "",
     "the directory for the output files");
+KNOB<string> KnobCheckFilename(KNOB_MODE_WRITEONCE, 
+    "pintool", "chk", "",
+    "a file with allowed control and data flow divergences");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -553,6 +557,7 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
     ri->fd = fd;
     ri->buf = buf;
     ri->size = size;
+    ri->clock = *ppthread_log_clock;
     ri->recheck_handle = tdata->recheck_handle;
     tdata->save_syscall_info = (void *) ri;
 }
@@ -570,13 +575,13 @@ static inline void sys_read_stop(int rc)
 	    size_t start = 0;
 	    size_t end = 0;
 	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, *ppthread_log_clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, ri->clock);
 		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
 	    }
 	} else {
-             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
+             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
 	}
     }
 
@@ -5685,6 +5690,7 @@ int main(int argc, char** argv)
     if (checkpoint_clock == 0) 
 	    checkpoint_clock = UINT_MAX;
     recheck_group = KnobRecheckGroup.Value();
+    check_filename = KnobCheckFilename.Value().c_str();
 
     fork_flags_index = 0;   
 
@@ -5760,7 +5766,7 @@ int main(int argc, char** argv)
 
 #endif
 
-    init_taint_structures(group_directory);
+    init_taint_structures(group_directory, check_filename);
 
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(dev_fd);

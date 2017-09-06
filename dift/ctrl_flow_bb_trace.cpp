@@ -10,10 +10,20 @@
 #include <sys/time.h>
 #include <iostream>
 
+using namespace std;
+
+/* Globals */
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 unsigned long print_stop = 100000000;
+unsigned int inst_start = 0;
+int child = 0;
+int fd; // File descriptor for the replay device
+TLS_KEY tls_key; // Key for accessing TLS. 
+bool tracing = false;  // Are we tracing right now?
+string subroutine;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "1000000000", "clock to stop");
+KNOB<unsigned int> KnobInstStart(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "start at this instruction");
 
 u_long* ppthread_log_clock = NULL; //clock value
 
@@ -32,11 +42,6 @@ struct thread_data {
     u_long ignore_flag;
     struct ctrl_flow_info  ctrl_flow_info;
 };
-
-int child = 0;
-
-int fd; // File descriptor for the replay device
-TLS_KEY tls_key; // Key for accessing TLS. 
 
 int get_record_pid(void);
 
@@ -131,7 +136,7 @@ void set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallar
     if (tdata) {
 	int sysnum = (int) syscall_num;
 	
-	printf ("%lu Pid %d, tid %d, (record pid %d), %d: syscall num is %d\n", *ppthread_log_clock, PIN_GetPid(), PIN_GetTid(), tdata->record_pid, tdata->syscall_cnt, (int) syscall_num);
+	//printf ("%lu Pid %d, tid %d, (record pid %d), %d: syscall num is %d\n", *ppthread_log_clock, PIN_GetPid(), PIN_GetTid(), tdata->record_pid, tdata->syscall_cnt, (int) syscall_num);
 
 	if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
 	    check_clock_before_syscall (fd, (int) syscall_num);
@@ -187,7 +192,7 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
-void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
+static void trace_bbl (ADDRINT ip)
 {
     printf ("[BB]0x%x, #%llu,%lu (clock)   ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
     PIN_LockClient();
@@ -200,19 +205,19 @@ void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
 }
 
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
-TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx) 
+TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken) 
 { 
-    trace_bbl (current_thread->ctrl_flow_info.bbl_addr, ctx);
-    ++ current_thread->ctrl_flow_info.count;
-    if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
-        current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
-        current_thread->ctrl_flow_info.count = 0;
+    if (!tracing && ip == inst_start) {
+	printf ("[START] bb trace at instruction 0x%x\n", inst_start);
+	tracing = 1;
+	subroutine = "";
     }
 }
 
 TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start) 
 {
-    current_thread->ctrl_flow_info.bbl_addr = bbl_start;
+    if (tracing && subroutine == "") trace_bbl(bbl_start);
+    ++ current_thread->ctrl_flow_info.count;
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
         current_thread->ctrl_flow_info.count = 0;
@@ -226,30 +231,29 @@ void track_trace(TRACE trace, void* data)
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS tail = BBL_InsTail (bbl);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR, 
-                IARG_BRANCH_TAKEN,
-                IARG_CONST_CONTEXT,
-                IARG_END);
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR, 
+			IARG_BRANCH_TAKEN,
+			IARG_END);
+	/* Syscall ends a basic block */
+	if (INS_IsSyscall(tail)) {
+	    INS_InsertCall(tail, IPOINT_BEFORE, AFUNPTR(set_address_one), 
+			   IARG_SYSCALL_NUMBER, 
+			   IARG_SYSARG_VALUE, 0, 
+			   IARG_SYSARG_VALUE, 1,
+			   IARG_SYSARG_VALUE, 2,
+			   IARG_SYSARG_VALUE, 3,
+			   IARG_SYSARG_VALUE, 4,
+			   IARG_SYSARG_VALUE, 5,
+			   IARG_END);
+	}
+
         INS head = BBL_InsHead (bbl);
         INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
-                IARG_END);
-	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
-	    if(INS_IsSyscall(ins)) {
-		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
-			       IARG_SYSCALL_NUMBER, 
-			       IARG_SYSARG_VALUE, 0, 
-			       IARG_SYSARG_VALUE, 1,
-			       IARG_SYSARG_VALUE, 2,
-			       IARG_SYSARG_VALUE, 3,
-			       IARG_SYSARG_VALUE, 4,
-			       IARG_SYSARG_VALUE, 5,
-			       IARG_END);
-	    }
-	}
+			IARG_FAST_ANALYSIS_CALL, 
+			IARG_INST_PTR, 
+			IARG_UINT32, BBL_Address (bbl), 
+			IARG_END);
     }
 }
 
@@ -284,12 +288,31 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
 
 void before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0)
 {
-    printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+    if (tracing) {
+	if (inst_start) {
+	    if (subroutine == "") {
+		//printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+		subroutine = (char *) name;
+	    }
+	}
+    }
 }
 
 void after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT ret)
 {
-    printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+    if (tracing) {
+	if (inst_start) {
+	    if (subroutine != "") {
+		if (subroutine == (char *) name) {
+		    //printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+		    subroutine = "";
+		}
+	    } else {
+		printf("[END] bbl trace - function return\n");
+		tracing = 0;
+	    }
+	}
+    }
 }
 
 void routine (RTN rtn, VOID *v)
@@ -338,7 +361,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->ctrl_flow_info.count = 0;
     ptdata->ctrl_flow_info.bbl_addr = 0;
     ptdata->ctrl_flow_info.last_clock = 0;
-    //   get_record_group_id(dev_fd, &(ptdata->rg_id));
 
     PIN_SetThreadData (tls_key, ptdata, threadid);
 
@@ -385,7 +407,11 @@ int main(int argc, char** argv)
     // Obtain a key for TLS storage
     tls_key = PIN_CreateThreadDataKey(0);
 
+    // Read in knob parameters
     print_stop = atoi(KnobPrintStop.Value().c_str());
+    inst_start = KnobInstStart.Value();
+    if (inst_start == 0) tracing = true;  // Tracing all the time
+
     ppthread_log_clock = map_shared_clock(fd);
     
     PIN_AddThreadStartFunction(thread_start, 0);

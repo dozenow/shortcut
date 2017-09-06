@@ -32,6 +32,7 @@ int logfd;
 
 char buf[1024*1024];
 char tmpbuf[1024*1024];
+char taintbuf_filename[256];
 char* bufptr = buf;
 
 struct cfopened {
@@ -44,6 +45,7 @@ struct cfopened cache_files_opened[MAX_FDS];
 
 char taintbuf[1024*1024];
 long taintndx = 0;
+u_long last_clock = 0;
 
 static void add_to_taintbuf (struct recheck_entry* pentry, short rettype, void* values, u_long size)
 {
@@ -61,15 +63,27 @@ static void add_to_taintbuf (struct recheck_entry* pentry, short rettype, void* 
     taintndx += size;
 }
 
-static int dump_taintbuf ()
+static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
 {
-    int fd = open ("/tmp/taintbuf", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    struct taintbuf_hdr hdr;
+    long rc;
+
+    int fd = open (taintbuf_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open taint buffer file\n");
 	return fd;
     }
-    
-    long rc = write (fd, taintbuf, taintndx);
+
+    hdr.diverge_type = diverge_type;
+    hdr.diverge_ndx = diverge_ndx;
+    hdr.last_clock = last_clock;
+    rc = write (fd, &hdr, sizeof(hdr));
+    if (rc != sizeof(hdr)) {
+	fprintf (stderr, "Tried to write %d byte header to taint buffer file, rc=%ld\n", sizeof(hdr), rc);
+	return -1;
+    }
+
+    rc = write (fd, taintbuf, taintndx);
     if (rc != taintndx) {
 	fprintf (stderr, "Tried to write %ld bytes to taint buffer file, rc=%ld\n", taintndx, rc);
 	return -1;
@@ -99,6 +113,17 @@ void recheck_start(char* filename)
 	cache_files_opened[i].is_open_cache_file = 0;
     }
 
+    // Put taintbuf in same file as recheck
+    strcpy(taintbuf_filename, filename);
+    for (i = strlen(taintbuf_filename)-1; i >= 0; i--) {
+	if (taintbuf_filename[i] == '/') {
+	    taintbuf_filename[i+1] = '\0';
+	    break;
+	}
+    }
+    strcat (taintbuf_filename, "taintbuf");
+    printf ("taintbuf is: %s\n", taintbuf_filename);
+
 #ifdef PRINT_VALUES
 #ifdef PRINT_TO_LOG
     fd = open ("/tmp/slice_log", O_RDWR|O_CREAT|O_TRUNC, 0644);
@@ -127,7 +152,7 @@ void handle_mismatch()
     static int cnt = 0;
     cnt++;
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
-    dump_taintbuf ();
+    dump_taintbuf (DIVERGE_MISMATCH, 0);
     sleep(2);
     abort();
 }
@@ -136,7 +161,7 @@ void handle_jump_diverge()
 {
     int i;
     fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
-    dump_taintbuf ();
+    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort();
 }
@@ -145,7 +170,7 @@ void handle_index_diverge(u_long foo)
 {
     int i;
     fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n\n\n", *((u_long *) ((u_long) &i + 32)));
-    dump_taintbuf ();
+    dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort ();
 }
@@ -164,7 +189,7 @@ static inline void check_retval (const char* name, int expected, int actual) {
     }
 }
 
-void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int is_cache_file, long total_size) { 
+void partial_read (struct recheck_entry* pentry, struct read_recheck* pread, char* newdata, char* olddata, int is_cache_file, long total_size) { 
 #ifdef PRINT_VALUES
     //only verify bytes not in this range
     int pass = 1;
@@ -205,6 +230,7 @@ void partial_read (struct read_recheck* pread, char* newdata, char* olddata, int
     }
     //copy other bytes to the actual address
     memcpy (pread->buf+pread->partial_read_start, newdata+pread->partial_read_start, pread->partial_read_end-pread->partial_read_start);
+    add_to_taintbuf (pentry, RETBUF, newdata, total_size);
 #ifdef PRINT_VALUES
     if (pass) {
 	LPRINT ("partial_read: pass.\n");
@@ -224,6 +250,7 @@ void read_recheck (size_t count)
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pread = (struct read_recheck *) bufptr;
     char* readData = bufptr+sizeof(*pread);
     bufptr += pentry->len;
@@ -248,6 +275,7 @@ void read_recheck (size_t count)
 
     if (is_cache_file && pentry->retval >= 0) {
 	struct stat64 st;
+	LPRINT ("Cache file\n");
 	if (!cache_files_opened[pread->fd].is_open_cache_file) {
 	    printf ("[BUG] cache file should be opened but it is not\n");
 	    handle_mismatch();
@@ -264,14 +292,17 @@ void read_recheck (size_t count)
                     handle_mismatch();
                 }
             } else {
-                printf ("[BUG] - file times mismatch but counld check actual file content to see if it still matches\n");
+                printf ("[BUG] - read file times mismatch but counld check actual file content to see if it still matches\n");
                 handle_mismatch();
             }
         } else {
             //read the new content that will be verified
             rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
-	    if (rc != use_count) abort();
-	    partial_read (pread, tmpbuf, (char*)pread+sizeof(*pread)+pread->readlen, 1, rc);
+	    if (rc != pentry->retval) {
+		printf ("[ERROR] retval %d instead of %ld for partial read\n", rc, pentry->retval);
+		handle_mismatch();
+	    }
+	    partial_read (pentry, pread, tmpbuf, (char*)pread+sizeof(*pread)+pread->readlen, 1, rc);
         }
     } else {
 	if (pentry->retval > (long) sizeof(tmpbuf)) {
@@ -293,7 +324,7 @@ void read_recheck (size_t count)
 		}
 	    }
         } else {
-            partial_read (pread, tmpbuf, readData, 0, rc);
+	    partial_read (pentry, pread, tmpbuf, readData, 0, rc);
 	}
     }
 }
@@ -307,6 +338,7 @@ void write_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pwrite = (struct write_recheck *) bufptr;
     data = bufptr + sizeof(struct write_recheck);
     bufptr += pentry->len;
@@ -337,6 +369,7 @@ void open_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     popen = (struct open_recheck *) bufptr;
     char* fileName = bufptr+sizeof(struct open_recheck);
     bufptr += pentry->len;
@@ -366,6 +399,7 @@ void openat_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     popen = (struct openat_recheck *) bufptr;
     char* fileName = bufptr+sizeof(struct openat_recheck);
     bufptr += pentry->len;
@@ -386,6 +420,7 @@ void close_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pclose = (struct close_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -407,6 +442,7 @@ void access_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     paccess = (struct access_recheck *) bufptr;
     char* accessName = bufptr+sizeof(*paccess);
     bufptr += pentry->len;
@@ -428,6 +464,7 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pstat64 = (struct stat64_recheck *) bufptr;
     char* pathName = bufptr+sizeof(struct stat64_recheck);
     bufptr += pentry->len;
@@ -535,6 +572,7 @@ void fstat64_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pfstat64 = (struct fstat64_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -632,6 +670,7 @@ void fcntl64_getfl_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pgetfl = (struct fcntl64_getfl_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -651,6 +690,7 @@ void fcntl64_setfl_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     psetfl = (struct fcntl64_setfl_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -671,6 +711,7 @@ void fcntl64_getlk_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pgetlk = (struct fcntl64_getlk_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -696,6 +737,7 @@ void fcntl64_getown_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pgetown = (struct fcntl64_getown_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -716,6 +758,7 @@ void fcntl64_setown_recheck (long owner)
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     psetown = (struct fcntl64_setown_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -742,6 +785,7 @@ void ugetrlimit_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pugetrlimit = (struct ugetrlimit_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -766,6 +810,7 @@ void uname_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     puname = (struct uname_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -811,6 +856,7 @@ void statfs64_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pstatfs64 = (struct statfs64_recheck *) bufptr;
     char* path = bufptr+sizeof(struct statfs64_recheck);
     bufptr += pentry->len;
@@ -864,31 +910,32 @@ void statfs64_recheck ()
 }
 
 void gettimeofday_recheck () { 
-	struct recheck_entry* pentry;
-	struct gettimeofday_recheck *pget;
-	struct timeval tv;
-	struct timezone tz;
-	int rc;
-
-	pentry = (struct recheck_entry *) bufptr;
-	bufptr += sizeof(struct recheck_entry);
-	pget = (struct gettimeofday_recheck *) bufptr;
-	bufptr += pentry->len;
-
+    struct recheck_entry* pentry;
+    struct gettimeofday_recheck *pget;
+    struct timeval tv;
+    struct timezone tz;
+    int rc;
+    
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pget = (struct gettimeofday_recheck *) bufptr;
+    bufptr += pentry->len;
+    
 #ifdef PRINT_VALUES
-	LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
+    LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
 #endif
-	rc = syscall (SYS_gettimeofday, &tv, &tz);
-	check_retval ("gettimeofday", pentry->retval, rc);
-
-	if (pget->tv_ptr) { 
-		memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
+    rc = syscall (SYS_gettimeofday, &tv, &tz);
+    check_retval ("gettimeofday", pentry->retval, rc);
+    
+    if (pget->tv_ptr) { 
+	memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
 		add_to_taintbuf (pentry, GETTIMEOFDAY_TV, &tv, sizeof(struct timeval));
-	}
-	if (pget->tz_ptr) { 
-		memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
-		add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
-	}
+    }
+    if (pget->tz_ptr) { 
+	memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
+	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
+    }
 }
 
 long time_recheck () { 
@@ -898,6 +945,7 @@ long time_recheck () {
     
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pget = (struct time_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -920,6 +968,7 @@ void prlimit64_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     prlimit = (struct prlimit64_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -957,6 +1006,7 @@ void setpgid_recheck (int pid, int pgid)
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     psetpgid = (struct setpgid_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -989,6 +1039,7 @@ void readlink_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     preadlink = (struct readlink_recheck *) bufptr;
     if (pentry->retval > 0) {
 	linkdata = bufptr+sizeof(struct readlink_recheck);
@@ -1030,6 +1081,7 @@ void socket_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     psocket = (struct socket_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -1063,6 +1115,7 @@ inline void connect_or_bind_recheck (int call, char* call_name)
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pconnect = (struct connect_recheck *) bufptr;
     addr = bufptr+sizeof(struct connect_recheck);
     bufptr += pentry->len;
@@ -1092,6 +1145,7 @@ long getpid_recheck ()
     long rc;
     struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "getpid: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1106,6 +1160,7 @@ long getpgrp_recheck ()
     long rc;
     struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ("getpgrp: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1122,6 +1177,7 @@ void getuid32_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "getuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1137,6 +1193,7 @@ void geteuid32_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "geteuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1152,6 +1209,7 @@ void getgid32_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "getgid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1167,6 +1225,7 @@ void getegid32_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "getegid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
@@ -1184,6 +1243,7 @@ void llseek_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pllseek = (struct llseek_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -1213,6 +1273,7 @@ void ioctl_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pioctl = (struct ioctl_recheck *) bufptr;
     addr = bufptr+sizeof(struct ioctl_recheck);
     bufptr += pentry->len;
@@ -1266,6 +1327,7 @@ void getdents64_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pgetdents64 = (struct getdents64_recheck *) bufptr;
     if (pgetdents64->arglen > 0) {
 	dents = bufptr+sizeof(struct getdents64_recheck);
@@ -1308,6 +1370,7 @@ void eventfd2_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     peventfd2 = (struct eventfd2_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -1331,6 +1394,7 @@ void poll_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     ppoll = (struct poll_recheck *) bufptr;
     fds = (struct pollfd *) (bufptr + sizeof (struct poll_recheck));
     revents = (short *) (bufptr + sizeof (struct poll_recheck) + ppoll->nfds*sizeof(struct pollfd));
@@ -1375,6 +1439,7 @@ void newselect_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pnewselect = (struct newselect_recheck *) bufptr;
     bufptr += pentry->len;
 
@@ -1421,6 +1486,7 @@ void set_robust_list_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pset_robust_list = (struct set_robust_list_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -1440,6 +1506,7 @@ long set_tid_address_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     pset_tid_address = (struct set_tid_address_recheck *) bufptr;
     bufptr += pentry->len;
     
@@ -1463,6 +1530,7 @@ void rt_sigaction_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     prt_sigaction = (struct rt_sigaction_recheck *) bufptr;
     data = bufptr+sizeof(struct rt_sigaction_recheck);
     bufptr += pentry->len;
@@ -1515,6 +1583,7 @@ void rt_sigprocmask_recheck ()
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
     prt_sigprocmask = (struct rt_sigprocmask_recheck *) bufptr;
     data = bufptr+sizeof(struct rt_sigprocmask_recheck);
     bufptr += pentry->len;

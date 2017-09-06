@@ -1529,7 +1529,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 #define STACK_SIZE      65536
 #define RECHECK_FILE_NAME_LEN 64
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid) 
+long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1579,7 +1579,11 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 	}
 
 	//now push parameters to the stack
-	snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
+	if (recheck_filename) {
+		strcpy (recheck_log_name, recheck_filename);
+	} else {
+		snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
+	}
 	
 	regs->sp -= RECHECK_FILE_NAME_LEN;
 	regs->bp = regs->sp;

@@ -58,8 +58,8 @@ wparserecheck:
 parseklog: libutil.a parseklog.o parseklib.o
 	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
-patchklog: libutil.a patchklog.o parseklib.o
-	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o -o patchklog -lssl -lcrypto 
+patchklog: libutil.a patchklog.o parseklib.o libutil.a
+	g++ $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o libutil.a -o patchklog -lssl -lcrypto 
 
 rewriteklog: parseklib.o
 

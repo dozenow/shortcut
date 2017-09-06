@@ -42,7 +42,7 @@ int translate_reg(int reg);
 /* Init all structures required to for tainting.
  * Call this first before calling any taint function
  * */
-void init_taint_structures(char* group_dir);
+void init_taint_structures(char* group_dir, const char* check_filename);
 
 /* Any sort of cleanup goes here */
 void taint_fini(void);

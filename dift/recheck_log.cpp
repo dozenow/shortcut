@@ -25,7 +25,7 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
     char recheck_filename[512];
 
     sprintf (klog_filename, "/replay_logdb/rec_%lu/klog.id.%d", record_grp, record_pid);
-    sprintf (recheck_filename, "/tmp/recheck.%d", record_pid);
+    sprintf (recheck_filename, "/replay_logdb/rec_%lu/recheck", record_grp);
 
     struct recheck_handle* handle = (struct recheck_handle *) malloc(sizeof(struct recheck_handle));
     if (handle == NULL) {

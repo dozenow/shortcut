@@ -106,7 +106,7 @@ int resume (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap,
 
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename,char* uniqueid, loff_t attach_index, int attach_pid
-		       , u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename)
+		       , u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename, char* recheck_filename)
 {
     struct wakeup_ckpt_data data;
     data.pin = pin;
@@ -124,6 +124,7 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
     data.fake_calls = fake_calls;
     data.go_live = go_live;
     data.slice_filename = slice_filename;
+    data.recheck_filename = recheck_filename;
     return ioctl (fd_spec, SPECI_CKPT_RESUME, &data);    
 
 }
