@@ -189,7 +189,7 @@ ADDRINT find_static_address(ADDRINT ip)
 
 void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
 {
-    printf ("[BB]0x%x, #%llu,%lu (clock)   ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+    printf ("[BB]0x%x, #%llu,%lu (clock)  %d  ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
         printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));

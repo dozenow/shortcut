@@ -207,12 +207,23 @@ struct ctrl_flow_block_index {
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
 #define IS_BLOCK_INDEX_GREATER_OR_EQUAL(x,y) ((x.clock >= y.clock && x.index >= y.index))
 #define IS_BLOCK_INDEX_LESS_OR_EQUAL(x,y) ((x.clock <= y.clock && x.index <= y.index))
+#define CTRL_FLOW_BLOCK_TYPE_DIVERGENCE 1
+#define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT 2
+#define CTRL_FLOW_BLOCK_TYPE_MERGE      3
+
+struct ctrl_flow_param {
+    int type;
+    u_long clock;
+    uint64_t index;
+    uint32_t ip;
+    int pid;
+};
 
 struct ctrl_flow_info { 
-    struct ctrl_flow_block_index block_index;
-    std::queue<struct ctrl_flow_block_index> *diverge_point;
-    std::queue<struct ctrl_flow_block_index> *merge_point;
-    std::set<uint32_t> *block_instrumented;
+    struct ctrl_flow_block_index block_index;  //current block index
+    std::queue<struct ctrl_flow_block_index> *diverge_point; //index for all divergences
+    std::queue<struct ctrl_flow_block_index> *merge_point;  //index for all merge points, corresponding to the diverege point
+    std::set<uint32_t> *block_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
     bool change_jump;

@@ -247,6 +247,7 @@ extern int dump_reg_taints (int fd, taint_t* pregs, int thread_ndx);
 extern int dump_mem_taints_start (int fd);
 extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
+extern vector<struct ctrl_flow_param> ctrl_flow_params;
 
 FILE* slice_f;
 
@@ -5492,18 +5493,24 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.is_rollback = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
-   struct ctrl_flow_block_index index;
-   index.clock = 62;
-   index.index = 219;
-   ptdata->ctrl_flow_info.diverge_point->push (index);
-   index.index = 220;
-   ptdata->ctrl_flow_info.merge_point->push (index);
-   index.index = 249;
-   ptdata->ctrl_flow_info.diverge_point->push (index);
-   index.index = 250;
-   ptdata->ctrl_flow_info.merge_point->push (index);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);
+   for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
+       struct ctrl_flow_param i = *iter;
+       if (i.pid == ptdata->record_pid) {
+           if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
+               struct ctrl_flow_block_index index;
+               index.clock = i.clock;
+               index.index = i.index;
+               ptdata->ctrl_flow_info.diverge_point->push (index);
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
+               struct ctrl_flow_block_index index;
+               index.clock = i.clock;
+               index.index = i.index;
+               ptdata->ctrl_flow_info.merge_point->push (index);
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
+               ptdata->ctrl_flow_info.block_instrumented->insert (i.ip);
+           }
+       }
+   }
 }
 
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)

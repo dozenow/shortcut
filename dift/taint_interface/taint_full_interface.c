@@ -70,6 +70,7 @@ struct taint_check {
 };
 
 map<ADDRINT,taint_check> check_map;
+vector<struct ctrl_flow_param> ctrl_flow_params;
 
 #endif
 
@@ -980,11 +981,11 @@ static int init_check_map ()
     if (!file) return -ENOENT;
     while (!feof (file)) {
 	char line[256];
-	char addr[20], type[20], value[20];
+	char addr[64], type[64], value[64];
 	struct taint_check tc;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
-	    if (sscanf(line, "%19s %19s %21s", addr, type, value) == 3) {
+	    if (sscanf(line, "%63s %63s %63s", addr, type, value) == 3) {
 		u_long ip = strtoul(addr, NULL, 0);
 		if (ip == 0) {
 		    fprintf (stderr, "check %s: invalid address\n", line);
@@ -1010,6 +1011,24 @@ static int init_check_map ()
                     tc.value = start_addr;
                     tc.size = size;
                     check_map[ip] = tc;
+                } else if (!strcmp(type, "ctrl_diverge")) {
+                    struct ctrl_flow_param param;
+                    param.type = CTRL_FLOW_BLOCK_TYPE_DIVERGENCE;
+                    sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
+                    param.ip = ip;
+                    ctrl_flow_params.push_back(param);
+                } else if (!strcmp(type, "ctrl_merge")) {
+                    struct ctrl_flow_param param;
+                    param.type = CTRL_FLOW_BLOCK_TYPE_MERGE;
+                    sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
+                    param.ip = ip;
+                    ctrl_flow_params.push_back(param);
+                } else if (!strcmp (type, "ctrl_block_instrument")) {
+                    struct ctrl_flow_param param;
+                    param.type = CTRL_FLOW_BLOCK_TYPE_INSTRUMENT;
+                    sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
+                    param.ip = ip;
+                    ctrl_flow_params.push_back(param);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type\n", line);
 		    return -1;
@@ -2317,7 +2336,8 @@ inline void ctrl_flow_rollback ()
 //This function should always be called before the actual taint function
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
-    if (IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
+    if (current_thread->ctrl_flow_info.merge_point->empty() == false &&
+        IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
             IS_BLOCK_INDEX_LESS_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) {
 
         printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *((char*) mem_loc));
@@ -2357,7 +2377,8 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
     //we don't need save the original value and taint for regs since we checkpoint all of them
-    if (IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
+    if (current_thread->ctrl_flow_info.merge_point->empty() == false &&
+        IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
             IS_BLOCK_INDEX_LESS_OR_EQUAL (current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) {
         printf ("[CONTROL_FLOW_REG] ip %x reg %d @ %lu_%llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *regvalue->dword);
         current_thread->ctrl_flow_info.store_set_reg->insert (reg);
@@ -2371,7 +2392,8 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, cons
     struct ctrl_flow_block_index index;
     memcpy (&index, &current_thread->ctrl_flow_info.block_index, sizeof(index));
     ++ index.index;
-    if (IS_BLOCK_INDEX_EQUAL(index, current_thread->ctrl_flow_info.diverge_point->front())) {
+    if (current_thread->ctrl_flow_info.diverge_point->empty() == false &&
+        IS_BLOCK_INDEX_EQUAL(index, current_thread->ctrl_flow_info.diverge_point->front())) {
         printf ("[CTRL_FLOW] before the divergence, index %lu_%llu\n", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
         //checkpoint the current state and we may need to roll back later
         //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
@@ -2399,14 +2421,18 @@ TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTE
 {
     //TODO: either rollback on merge point or just reset the ckpt and mem_map 
     if (current_thread->ctrl_flow_info.is_rollback == false) {
-        //TODO: change this to actual merge point
         //merge point without rollback
-        if (current_thread->ctrl_flow_info.block_index.index - 1 == current_thread->ctrl_flow_info.merge_point->front().index &&
+        if (current_thread->ctrl_flow_info.merge_point->empty() == false &&
+                current_thread->ctrl_flow_info.block_index.index == current_thread->ctrl_flow_info.merge_point->front().index &&
                 current_thread->ctrl_flow_info.block_index.clock == current_thread->ctrl_flow_info.merge_point->front().clock) {
-            assert (*ppthread_log_clock == current_thread->ctrl_flow_info.ckpt_clock); //we don't want to cross syscalls; but it may be safe to cross pthread operations?
+            if (*ppthread_log_clock != current_thread->ctrl_flow_info.ckpt_clock) //we don't want to cross syscalls; but it may be safe to cross pthread operations?
+            {
+                fprintf (stderr, "control flow divergence cross replay clocks? %lu, %lu\n", *ppthread_log_clock, current_thread->ctrl_flow_info.ckpt_clock);
+                assert (0);
+            }
             char label_prefix[32];
-            sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index - 1);
-            printf ("[CTRL_FLOW] taint_ctrl_flow_branch: merge before this jump.\n");
+            sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
+            printf ("[CTRL_FLOW] taint_ctrl_flow_branch: merge before this block.\n");
             printf ("[CTRL_FLOW] found an expected control flow block, ip %x, index %llu\n", ip, current_thread->ctrl_flow_info.block_index.index);
             current_thread->ctrl_flow_info.merge_point->pop();
             current_thread->ctrl_flow_info.diverge_point->pop();
