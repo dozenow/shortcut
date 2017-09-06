@@ -97,7 +97,7 @@ extern struct thread_data* current_thread;
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
 TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start);
-TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx);
+TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
 int fw_slice_check_final_mem_taint (taint_t* pregs);
 

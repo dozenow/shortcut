@@ -2195,7 +2195,7 @@ TAINTSIGN ctrl_flow_init_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t* 
     if (tainted != 1) { 
         PIN_REGISTER regvalue;
         PIN_GetContextRegval(ctx, reg, (UINT8*)&regvalue);
-        print_extra_move_reg (0x0000, treg, size, &regvalue, is_upper8, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
+        print_extra_move_reg (0x0000, treg, size, &regvalue, is_upper8, tainted, "[SLICE_CTRL_FLOW]"); //a special ip for easy identification
     }
 }
 
@@ -2222,7 +2222,7 @@ TAINTSIGN ctrl_flow_init_mem_one_byte (ADDRINT ip, u_long mem_loc, taint_t taint
 {
    if (taint == 0) { 
         //a special ip for easy identification
-	printf ("[SLICE_VERIFICATION] mov $addr(%lx,%u), %u //comes with %x\n", mem_loc, 1, (UINT8) origin_value, 0x0000);
+	printf ("[SLICE_CTRL_FLOW] mov byte ptr[0x%lx], %u //comes with %x\n", mem_loc, (UINT8) origin_value, 0x0000);
 	add_modified_mem_for_final_check (mem_loc, 1);   
    }
 }
@@ -2231,7 +2231,7 @@ TAINTSIGN ctrl_flow_taint_mem (u_long mem_loc, uint32_t size, taint_t ctrl_flow_
 {
     int tainted = is_mem_tainted (mem_loc, size);
     if (tainted != 1) { 
-        print_extra_move_mem (0x0000, mem_loc, size, tainted, "[SLICE_VERIFICATION]"); //a special ip for easy identification
+        print_extra_move_mem (0x0000, mem_loc, size, tainted, "[SLICE_CTRL_FLOW]"); //a special ip for easy identification
     }
 
     uint32_t offset = 0;
@@ -2259,6 +2259,8 @@ static void init_ctrl_flow_the_other_branch (ADDRINT ip)
     for (auto i: *(current_thread->ctrl_flow_info.store_set_reg)) {
         ctrl_flow_init_reg (ip, REG(i), &current_thread->ctrl_flow_info.ckpt_context, current_thread->ctrl_flow_info.ckpt_reg_table);
     }
+    //always restore EFLAGS TODO
+    print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(current_thread->ctrl_flow_info.store_set_mem)) { 
         ctrl_flow_init_mem_one_byte (ip, i.first, i.second.taint, i.second.value);
     }
@@ -2269,6 +2271,8 @@ static void taint_ctrl_flow_the_other_branch (ADDRINT ip, const CONTEXT* ctx, ta
     for (auto i: *(current_thread->ctrl_flow_info.store_set_reg)) {
         ctrl_flow_taint_reg (ip, REG(i), ctx, ctrl_flow_taint);
     }
+    //always restore EFLAGS TODO
+    print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(current_thread->ctrl_flow_info.store_set_mem)) { 
         ctrl_flow_taint_mem (i.first, 1, ctrl_flow_taint);
     }
@@ -2357,7 +2361,7 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
 }
 
 extern bool ctrl_flow_generate_slice;
-TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx) 
+TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx) 
 { 
     //TODO: assert if we're still in the same clock value on merge point
 
@@ -2368,8 +2372,14 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx)
         //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
         ctrl_flow_checkpoint (ctx);
         //dup2 (2, 1);
-        //put EFLAGS in the store set since it's very likely to be changed by some instruction
-        current_thread->ctrl_flow_info.store_set_reg->insert (LEVEL_BASE::REG_EFLAGS); 
+        current_thread->ctrl_flow_info.change_jump = true;
+        if (ins_str[0] != 'j') { 
+            fprintf (stderr, "unrecognized basic block exit instruction. currently assume it's always jump instruction %s \n", ins_str);
+            assert (0);
+        } else if (strncmp (ins_str, "jecx", 4) == 0) {
+            fprintf (stderr, "jecx not implemented for control flow divergence. \n");
+            assert (0);
+        }
     }
 
     //TODO: either rollback on merge point or just reset the ckpt and mem_map 
@@ -2377,6 +2387,8 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx)
         //TODO: change this to actual merge point
         //merge point without rollback
         if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
+            char label_prefix[32];
+            sprintf (label_prefix, "b_%llu", current_thread->ctrl_flow_info.count);
             printf ("[CTRL_FLOW] taint_ctrl_flow_the_other_branch: merge before this jump.\n");
             printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x, index %llu\n", taken, ip, current_thread->ctrl_flow_info.count);
             current_thread->ctrl_flow_info.diverge_index->pop();
@@ -2384,10 +2396,13 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx)
             //Of course, initialization is necessary for those reg/mem that is originally untainted
             //TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
             taint_ctrl_flow_the_other_branch (ip, ctx, 1);
+            printf ("[SLICE] #%x #jmp %s_this_branch_end\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_that_branch_start:\t [SLICE_INFO] \n", ip, label_prefix);
             printf ("[CTRL_FLOW] initialization of original reg/mem values\n");
             init_ctrl_flow_the_other_branch (ip);
             printf ("[CTRL_FLOW] initialization of original reg/mem values done\n");
-
+            printf ("[SLICE] #%x #%s_this_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_that_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
             fflush (stdout);
         } 
         ++ current_thread->ctrl_flow_info.count;
@@ -2592,8 +2607,24 @@ TAINTSIGN fw_slice_regmemflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
 TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken) 
 {
     if (is_flag_tainted (mask)) {
-	printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d\n", mask, (int) taken);
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+        if (current_thread->ctrl_flow_info.change_jump) { 
+            char changed_inst[64] = {0};
+            char* start = strchr (ins_str, ' ');
+            memcpy (changed_inst, ins_str, start-ins_str);
+            current_thread->ctrl_flow_info.change_jump = false;
+            printf ("[SLICE] #%x #%s b_%llu_that_branch_start\t", ip, changed_inst, current_thread->ctrl_flow_info.count);
+            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d block_index %llu\n", mask, (int) taken, current_thread->ctrl_flow_info.count);
+
+        } else {
+#endif
+            printf ("[SLICE] #%x #%s\t", ip, ins_str);
+            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d \n", mask, (int) taken);
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+        }
+#endif 
+    } else { 
+        assert (current_thread->ctrl_flow_info.change_jump == false); //we diverge at a non-tainted jump??
     }
 }
 

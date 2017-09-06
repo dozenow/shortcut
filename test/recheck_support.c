@@ -129,7 +129,7 @@ void handle_mismatch()
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf ();
     sleep(2);
-    abort();
+    //abort();
 }
 
 void handle_jump_diverge()

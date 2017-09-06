@@ -59,7 +59,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 252
+//#define EXTRA_DEBUG 344
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -140,8 +140,8 @@ u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
-bool ctrl_flow_generate_taint_set = false;
-bool ctrl_flow_generate_slice = false;
+bool ctrl_flow_generate_taint_set = false;  //TODO remove
+bool ctrl_flow_generate_slice = false;  //TODO remove
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -5094,9 +5094,11 @@ void trace_instrumentation(TRACE trace, void* v)
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
         INS tail = BBL_InsTail (bbl);
+        char* str = get_copy_of_disasm (tail);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR, 
+                IARG_PTR, str, 
                 IARG_BRANCH_TAKEN,
                 IARG_CONST_CONTEXT,
                 IARG_END);
@@ -5106,6 +5108,7 @@ void trace_instrumentation(TRACE trace, void* v)
                 IARG_INST_PTR, 
                 IARG_UINT32, BBL_Address (bbl), 
                 IARG_END);
+        put_copy_of_disasm (str);
 #endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
@@ -5479,35 +5482,14 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 
 void init_ctrl_flow_info (struct thread_data* ptdata)
 {
-#ifdef TRACK_CTRL_FLOW_DIVERGE
-   char line[256];
    ptdata->ctrl_flow_info.diverge_index = new std::queue<unsigned long>();
    ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.count = 0;
-   ptdata->ctrl_flow_info.ctrl_file_pos = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
    ptdata->ctrl_flow_info.is_rollback = false;
+   ptdata->ctrl_flow_info.change_jump = false;
 
-   if (ctrl_flow_generate_taint_set || ctrl_flow_generate_slice) {
-       FILE* file = fopen ("/tmp/ctrl_flow_instrument", "r");
-       if (file == NULL) { 
-           fprintf (stderr, "init_ctrl_flow_info: cannot open file /tmp/ctrl_flow_instrument\n");
-           return;
-       }
-       while (fgets (line, 255, file)) { 
-           unsigned long block_index, block_addr;
-           if (strncmp (line, "[CTRL_INFO]", 11)) { 
-               fprintf (stderr, "init_ctrl_flow_info: cannot parse line %s\n", line);
-               continue;
-           }
-           sscanf (line, "[CTRL_INFO] %lu,%lx", &block_index, &block_addr);
-           ptdata->ctrl_flow_info.diverge_index->push (block_index);
-           ptdata->ctrl_flow_info.block_instrumented->insert (block_addr);
-       }
-       fclose (file);
-   }
-#endif
    /*ptdata->ctrl_flow_info.diverge_index->push (17025);
    ptdata->ctrl_flow_info.diverge_index->push (17055);
    ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
@@ -5517,6 +5499,7 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
+    fprintf (stderr, "in thread_start %d\n", threadid);
     
     // TODO Use slab allocator
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));

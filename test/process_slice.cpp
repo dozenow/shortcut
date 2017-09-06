@@ -84,6 +84,7 @@ map<string, string> regMap = {
 	{"(10,2)" , "ax"},
 	{"(10,1)" , "al"},
 	{"(10,-1)" , "ah"},
+	{"(17,4)" , "eflag"},
 	{"(54,16)" , "xmm0"},
 	{"(55,16)" , "xmm1"},
 	{"(56,16)" , "xmm2"},
@@ -202,15 +203,20 @@ string rewriteInst (string s) {
 		if (s.find ("branch_taken 1") != string::npos) {
 			//if the original branch is taken, then we jump to error if not taken as before
 			string tmp = s.replace (index + 1, inst.length(), jumpMap(inst));
-			spaceIndex = s.find (" ", s.find("#j"));
-			return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        if (s.find ("block_index") == string::npos) {
+                                spaceIndex = s.find (" ", s.find("#j"));
+                                return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        } else 
+                                return tmp;
 		} else if (s.find ("branch_taken 0") != string::npos) 
-			return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        if (s.find ("block_index") == string::npos)
+			        return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        else 
+                                return s;
 		else if (inst.compare("jecxz") == 0) {
 			return s.replace(spaceIndex + 1, address.length(), "not handled");
 		} else {
-			cout << "jump instruction? " + s << endl;
-			assert (0);
+			cerr << "jump instruction? " + s << endl;
 		}
 	}
 	return s;
@@ -295,7 +301,7 @@ inline int getLineType (string line) {
 		return SLICE_EXTRA;
 	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
 		return SLICE_ADDRESSING;
-	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
+	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0 || line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) //well, it's the same to handle control flow divergence initialization
 		return SLICE_VERIFICATION;
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
