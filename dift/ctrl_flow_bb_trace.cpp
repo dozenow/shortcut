@@ -213,10 +213,6 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken, const CONTEXT* ctx)
 TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start) 
 {
     current_thread->ctrl_flow_info.bbl_addr = bbl_start;
-    if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
-        current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
-        current_thread->ctrl_flow_info.count = 0;
-    }
 }
 
 void track_trace(TRACE trace, void* data)

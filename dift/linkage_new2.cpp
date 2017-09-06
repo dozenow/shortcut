@@ -5107,6 +5107,7 @@ void trace_instrumentation(TRACE trace, void* v)
                 IARG_FAST_ANALYSIS_CALL, 
                 IARG_INST_PTR, 
                 IARG_UINT32, BBL_Address (bbl), 
+                IARG_CONST_CONTEXT,
                 IARG_END);
         put_copy_of_disasm (str);
 #endif
@@ -5482,18 +5483,27 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 
 void init_ctrl_flow_info (struct thread_data* ptdata)
 {
-   ptdata->ctrl_flow_info.diverge_index = new std::queue<unsigned long>();
+   ptdata->ctrl_flow_info.diverge_point = new std::queue<struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.merge_point = new std::queue<struct ctrl_flow_block_index>();
    ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.count = 0;
+   memset (&ptdata->ctrl_flow_info.block_index, 0, sizeof(struct ctrl_flow_block_index));
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
    ptdata->ctrl_flow_info.is_rollback = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
-   /*ptdata->ctrl_flow_info.diverge_index->push (17025);
-   ptdata->ctrl_flow_info.diverge_index->push (17055);
+   struct ctrl_flow_block_index index;
+   index.clock = 62;
+   index.index = 219;
+   ptdata->ctrl_flow_info.diverge_point->push (index);
+   index.index = 220;
+   ptdata->ctrl_flow_info.merge_point->push (index);
+   index.index = 249;
+   ptdata->ctrl_flow_info.diverge_point->push (index);
+   index.index = 250;
+   ptdata->ctrl_flow_info.merge_point->push (index);
    ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);*/
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);
 }
 
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
@@ -5679,7 +5689,8 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
-    if (tdata->ctrl_flow_info.diverge_index) delete tdata->ctrl_flow_info.diverge_index;
+    if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
+    if (tdata->ctrl_flow_info.merge_point) delete tdata->ctrl_flow_info.merge_point;
     if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
     if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
     if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;

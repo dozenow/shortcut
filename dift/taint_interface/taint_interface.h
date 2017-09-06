@@ -96,7 +96,7 @@ extern struct thread_data* current_thread;
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
-TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start);
+TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
 int fw_slice_check_final_mem_taint (taint_t* pregs);

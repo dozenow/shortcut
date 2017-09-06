@@ -160,6 +160,12 @@ void print_all_blocks (vector<block> &block_list) {
     }
 }
 
+inline void print_block_info (char* info, int size, struct block block)
+{
+    memset (info, 0, size);
+    sprintf (info, "%lu,%llu,0x%x", block.clock, block.index, block.bb_addr);
+}
+
 int main (int argc, char* argv[]) { 
     string output_filename = "/tmp/ctrl_flow_instrument";
     if (argc != 3) {
@@ -192,33 +198,68 @@ int main (int argc, char* argv[]) {
         if (iter->direction == SUBSTITUTE) { 
             cerr << "[TODO] Haven't tested substitution of blocks." <<endl;
         }
+        if (last_direction != iter->direction && last_direction != SUBSTITUTE) {
+            cerr << "Well, it seems each execution has some extra blocks, which is not tested yet." << endl;
+        }
     }
     int retval = (last_direction == INSERT_FIRST?2:1);
+    
+    if (retval == 1) 
+        cout << "choose first execution as the base. " <<endl;
+    else if (retval == 2)
+        cout << "choose second execution as the base. " <<endl;
+    else 
+        assert (0);
 
     //figure out the merge point
     u_long diverge_clock = 0;
     uint64_t diverge_index = 0;
     struct block last_diverge1;
     struct block last_diverge2;
+    char message1[256];
+    char message2[256];
     memset (&last_diverge1, 0, sizeof(struct block));
     memset (&last_diverge2, 0, sizeof(struct block));
     
     for (int i = result_block.size() - 1; i >= 0; --i) { 
-        if (DEBUG) printf ("result %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
         if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1) || !CHECK_BLOCK_INDEX(result_block[i].block2, last_diverge2)) {
             if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
-                printf ("Merged right before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge1.bb_addr, last_diverge2.clock, last_diverge2.index, last_diverge2.bb_addr);
+                print_block_info (message1, 256, last_diverge1);
+                print_block_info (message2, 256, last_diverge2);
+                printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
+                if (retval == 1) 
+                        output << "merge " << message1 << endl;
+                else 
+                        output << "merge " << message2 << endl;
             }
-            printf ("Diverge before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block1.bb_addr, result_block[i].block2.clock, result_block[i].block2.index, result_block[i].block2.bb_addr);
+            print_block_info (message1, 256, result_block[i].block1);
+            print_block_info (message2, 256, result_block[i].block2);
+            printf ("Diverge before %s @FIRST, %s @SECOND. \n", message1, message2);
+            if (retval == 1) 
+                output << "diverge " << message1 << endl;
+            else 
+                output << "diverge " << message2 << endl;
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
             memcpy (&last_diverge2, &result_block[i].block2, sizeof(struct block));
         }
         if (result_block[i].direction != INSERT_FIRST) last_diverge1.index ++;
         if (result_block[i].direction != INSERT_SECOND) last_diverge2.index ++;
-        //output << "[CTRL_INFO] " << result_blockresult_block[i].index << ":" << result_block[i].clock << std::hex << ", 0x" << result_block[i].bb_addr << std::dec << endl;
+        print_block_info (message1, 256, result_block[i].block1);
+        print_block_info (message2, 256, result_block[i].block2);
+        if (retval == 1) 
+            output << "block_instrument " << message1 << endl;
+        else 
+            output << "block_instrument " << message2 << endl;
     }
     if (last_diverge1.clock != 0 || last_diverge2.clock != 0) { 
-        printf ("Merged right before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge2.clock, last_diverge2.index);
+        print_block_info (message1, 256, last_diverge1);
+        print_block_info (message2, 256, last_diverge2);
+        printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
+        if (retval == 1) 
+            output << "merge " << message1 << endl;
+        else 
+            output << "merge " << message2 << endl;
+
     }
 
     cout << "=======" << endl;

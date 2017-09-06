@@ -2222,22 +2222,23 @@ TAINTSIGN ctrl_flow_init_mem_one_byte (ADDRINT ip, u_long mem_loc, taint_t taint
 {
    if (taint == 0) { 
         //a special ip for easy identification
-	printf ("[SLICE_CTRL_FLOW] mov byte ptr[0x%lx], %u //comes with %x\n", mem_loc, (UINT8) origin_value, 0x0000);
+	printf ("[SLICE_CTRL_FLOW] mov byte ptr [0x%lx], %u //comes with %x\n", mem_loc, (UINT8) origin_value, 0x0000);
 	add_modified_mem_for_final_check (mem_loc, 1);   
    }
 }
 
 TAINTSIGN ctrl_flow_taint_mem (u_long mem_loc, uint32_t size, taint_t ctrl_flow_taint)
 {
-    int tainted = is_mem_tainted (mem_loc, size);
-    if (tainted != 1) { 
-        print_extra_move_mem (0x0000, mem_loc, size, tainted, "[SLICE_CTRL_FLOW]"); //a special ip for easy identification
+    uint32_t i = 0;
+    for (; i<size; ++i) { 
+        int tainted = is_mem_tainted (mem_loc + i, 1);
+        ctrl_flow_init_mem_one_byte (0x0000, mem_loc + i, tainted, get_mem_value(mem_loc + 1, 1));
     }
-
+    
     uint32_t offset = 0;
     u_long mem_offset = mem_loc;
 
-    uint32_t i = 0;
+    i = 0;
     while (offset < size) {
         taint_t* mem_taints = NULL;
         uint32_t count = get_cmem_taints_internal(mem_offset, size - offset, &mem_taints);
@@ -2266,7 +2267,7 @@ static void init_ctrl_flow_the_other_branch (ADDRINT ip)
     }
 }
 
-static void taint_ctrl_flow_the_other_branch (ADDRINT ip, const CONTEXT* ctx, taint_t ctrl_flow_taint) 
+static void taint_ctrl_flow_branch (ADDRINT ip, const CONTEXT* ctx, taint_t ctrl_flow_taint) 
 { 
     for (auto i: *(current_thread->ctrl_flow_info.store_set_reg)) {
         ctrl_flow_taint_reg (ip, REG(i), ctx, ctrl_flow_taint);
@@ -2290,7 +2291,7 @@ inline void ctrl_flow_checkpoint (const CONTEXT* ctx)
 
 inline void ctrl_flow_rollback () 
 {
-    printf ("[CTRL_FLOW] Start to rollback: index %llu\n", current_thread->ctrl_flow_info.count);
+    printf ("[CTRL_FLOW] Start to rollback: index %lu,%llu\n", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
     assert (*ppthread_log_clock == current_thread->ctrl_flow_info.ckpt_clock);
 
     //restore reg taints
@@ -2316,8 +2317,10 @@ inline void ctrl_flow_rollback ()
 //This function should always be called before the actual taint function
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
-    if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.count, *((char*) mem_loc));
+    if (IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
+            IS_BLOCK_INDEX_LESS_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) {
+
+        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *((char*) mem_loc));
 
         int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
         int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
@@ -2354,8 +2357,9 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
     //we don't need save the original value and taint for regs since we checkpoint all of them
-    if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
-        printf ("[CONTROL_FLOW_REG] ip %x reg %d @ %llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.count, *regvalue->dword);
+    if (IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
+            IS_BLOCK_INDEX_LESS_OR_EQUAL (current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) {
+        printf ("[CONTROL_FLOW_REG] ip %x reg %d @ %lu_%llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *regvalue->dword);
         current_thread->ctrl_flow_info.store_set_reg->insert (reg);
     }
 }
@@ -2363,11 +2367,12 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
 extern bool ctrl_flow_generate_slice;
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx) 
 { 
-    //TODO: assert if we're still in the same clock value on merge point
-
     //diverge point
-    if (current_thread->ctrl_flow_info.count+1 == current_thread->ctrl_flow_info.diverge_index->front()) {
-        printf ("[CTRL_FLOW] before the divergence, index %llu\n", current_thread->ctrl_flow_info.count);
+    struct ctrl_flow_block_index index;
+    memcpy (&index, &current_thread->ctrl_flow_info.block_index, sizeof(index));
+    ++ index.index;
+    if (IS_BLOCK_INDEX_EQUAL(index, current_thread->ctrl_flow_info.diverge_point->front())) {
+        printf ("[CTRL_FLOW] before the divergence, index %lu_%llu\n", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
         //checkpoint the current state and we may need to roll back later
         //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
         ctrl_flow_checkpoint (ctx);
@@ -2381,21 +2386,34 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, cons
             assert (0);
         }
     }
+    if (current_thread->ctrl_flow_info.is_rollback == false) {
+        ++ current_thread->ctrl_flow_info.block_index.index;
+        if (*ppthread_log_clock != current_thread->ctrl_flow_info.block_index.clock) {
+            current_thread->ctrl_flow_info.block_index.clock = *ppthread_log_clock;
+            current_thread->ctrl_flow_info.block_index.index = 0;
+        }
+    }
+}
 
+TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTEXT* ctx) 
+{
     //TODO: either rollback on merge point or just reset the ckpt and mem_map 
     if (current_thread->ctrl_flow_info.is_rollback == false) {
         //TODO: change this to actual merge point
         //merge point without rollback
-        if (current_thread->ctrl_flow_info.count == current_thread->ctrl_flow_info.diverge_index->front()) {
+        if (current_thread->ctrl_flow_info.block_index.index - 1 == current_thread->ctrl_flow_info.merge_point->front().index &&
+                current_thread->ctrl_flow_info.block_index.clock == current_thread->ctrl_flow_info.merge_point->front().clock) {
+            assert (*ppthread_log_clock == current_thread->ctrl_flow_info.ckpt_clock); //we don't want to cross syscalls; but it may be safe to cross pthread operations?
             char label_prefix[32];
-            sprintf (label_prefix, "b_%llu", current_thread->ctrl_flow_info.count);
-            printf ("[CTRL_FLOW] taint_ctrl_flow_the_other_branch: merge before this jump.\n");
-            printf ("[CTRL_FLOW] found an expected control flow block, taken %d, ip %x, index %llu\n", taken, ip, current_thread->ctrl_flow_info.count);
-            current_thread->ctrl_flow_info.diverge_index->pop();
+            sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index - 1);
+            printf ("[CTRL_FLOW] taint_ctrl_flow_branch: merge before this jump.\n");
+            printf ("[CTRL_FLOW] found an expected control flow block, ip %x, index %llu\n", ip, current_thread->ctrl_flow_info.block_index.index);
+            current_thread->ctrl_flow_info.merge_point->pop();
+            current_thread->ctrl_flow_info.diverge_point->pop();
             //We'll force to taint some registers and addresses in /tmp/ctrl file to handle control flow divergence
             //Of course, initialization is necessary for those reg/mem that is originally untainted
             //TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
-            taint_ctrl_flow_the_other_branch (ip, ctx, 1);
+            taint_ctrl_flow_branch (ip, ctx, 1);
             printf ("[SLICE] #%x #jmp %s_this_branch_end\t [SLICE_INFO] \n", ip, label_prefix);
             printf ("[SLICE] #%x #%s_that_branch_start:\t [SLICE_INFO] \n", ip, label_prefix);
             printf ("[CTRL_FLOW] initialization of original reg/mem values\n");
@@ -2405,15 +2423,9 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, cons
             printf ("[SLICE] #%x #%s_that_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
             fflush (stdout);
         } 
-        ++ current_thread->ctrl_flow_info.count;
     } else { 
         assert (0); //TODO
     }
-}
-
-TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start) 
-{
-    current_thread->ctrl_flow_info.bbl_addr = bbl_start;
 }
 
 //#define PRINT(x) fprintf(stderr, x)
@@ -2613,8 +2625,8 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken)
             char* start = strchr (ins_str, ' ');
             memcpy (changed_inst, ins_str, start-ins_str);
             current_thread->ctrl_flow_info.change_jump = false;
-            printf ("[SLICE] #%x #%s b_%llu_that_branch_start\t", ip, changed_inst, current_thread->ctrl_flow_info.count);
-            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d block_index %llu\n", mask, (int) taken, current_thread->ctrl_flow_info.count);
+            printf ("[SLICE] #%x #%s b_%lu_%llu_that_branch_start\t", ip, changed_inst, current_thread->ctrl_flow_info.merge_point->front().clock, current_thread->ctrl_flow_info.merge_point->front().index);
+            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d block_index %llu\n", mask, (int) taken, current_thread->ctrl_flow_info.block_index.index);
 
         } else {
 #endif
