@@ -59,7 +59,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 0
+//#define EXTRA_DEBUG 344
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -141,6 +141,8 @@ map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
+bool ctrl_flow_generate_taint_set = false;  //TODO remove
+bool ctrl_flow_generate_slice = false;  //TODO remove
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -213,6 +215,12 @@ KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobCheckFilename(KNOB_MODE_WRITEONCE, 
     "pintool", "chk", "",
     "a file with allowed control and data flow divergences");
+KNOB<bool> KnobCtrlFlowGenerateTaintSet(KNOB_MODE_WRITEONCE, 
+        "pintool", "ctrl_flow_g_taint_set", "", 
+        "generate taint set for extra blocks");
+KNOB<bool> KnobCtrlFlowGenerateSlice(KNOB_MODE_WRITEONCE, 
+        "pintool", "ctrl_flow_g_slice", "", 
+        "generate slice using taint set");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -2310,6 +2318,25 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
     put_copy_of_disasm (str);
 }
 
+//If we move an imm value to an memory address, we still need to verify the base and index registers if they're tainted. Therefore, at least the verifications need to be in the slice
+// JNF: xxx - This is probably wrong because fw_slice_mem is for memory being read from, not written to.  I think we'll need a new fw_slice_xxx function in taint_full_interface.c for this.  Also naming convention
+// would be fw_slice_2mem (I believe)
+static inline void fw_slice_src_dst_mem (INS ins, REG base_reg, REG index_reg)  
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_mem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_MEMORYWRITE_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static inline void fw_slice_src_mem2mem (INS ins, REG base_reg, REG index_reg) 
 {
     char* str = get_copy_of_disasm (ins);
@@ -3289,6 +3316,10 @@ void instrument_mov (INS ins)
 	    instrument_taint_reg2mem (ins, reg, 0);
         } else {
             //move immediate to memory location
+            REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+            REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+            //verification for base&index
+            fw_slice_src_dst_mem (ins, base_reg, index_reg);
             instrument_taint_immval2mem(ins);
         }
     } else {
@@ -4345,8 +4376,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
 #endif
-    static u_char old_val = 0;
-    if (*((u_char *) 0x8700b15) != old_val) {
+    //static u_char old_val = 0;
+    //if (*((u_char *) 0x8700b15) != old_val) {
       printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
       PIN_LockClient();
       if (IMG_Valid(IMG_FindByAddress(ip))) {
@@ -4356,8 +4387,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-	printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
-	old_val = *((u_char *) 0x8700b15);
+	//printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
+	//old_val = *((u_char *) 0x8700b15);
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
     //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -4369,7 +4400,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     //}
 	printf ("\n");
 	fflush (stdout);
-    }
+    //}
 }
 
 void debug_print (INS ins) 
@@ -5012,6 +5043,54 @@ void instruction_instrumentation(INS ins, void *v)
 	
 }
 
+//assume the first operand is always the destination operand
+void instrument_print_inst_dest (INS ins) 
+{ 
+    uint32_t operand_count = INS_OperandCount (ins);
+    fprintf (stderr, "[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
+    for (uint32_t i = 0; i<operand_count; ++i) { 
+        if (INS_OperandWritten (ins, i)) { 
+            bool implicit = INS_OperandIsImplicit (ins, i);
+            if (INS_OperandIsReg (ins, i)) {
+                REG reg = INS_OperandReg (ins, i);
+                assert (REG_valid(reg));
+                if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
+                    //ignore ip register
+                    fprintf (stderr, "      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                } else if (reg == LEVEL_BASE::REG_EFLAGS) {
+                    //as the eflag reg is almost certainly modified by some instruction in a basic block (which the jump at the bb exit probably uses), I'll always put eflags in the store set
+                    //so it's safe to ignore it here
+                    fprintf (stderr, "      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                } else { 
+                    fprintf (stderr, "      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    INS_InsertCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR(print_inst_dest_reg),
+                            IARG_FAST_ANALYSIS_CALL,
+                            IARG_INST_PTR,
+                            IARG_UINT32, reg, //I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're restored twice for certain bytes in one register
+                            IARG_REG_REFERENCE, reg,
+                            IARG_END);
+                }
+            } else if (INS_OperandIsMemory (ins, i)) { 
+                fprintf (stderr, "      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
+                REG base_reg = INS_OperandMemoryBaseReg(ins, i);
+                REG index_reg = INS_OperandMemoryIndexReg(ins, i);
+                SETUP_BASE_INDEX (base_reg, index_reg);
+                INS_InsertCall (ins, IPOINT_BEFORE, 
+                        AFUNPTR(print_inst_dest_mem), 
+                        IARG_FAST_ANALYSIS_CALL,
+                        IARG_INST_PTR, 
+                        IARG_MEMORYWRITE_EA, 
+                        IARG_UINT32, INS_MemoryWriteSize(ins),
+                        PASS_BASE_INDEX,
+                        IARG_END);
+            } else { 
+                assert (0);
+            }
+        }
+    }
+}
+
 void trace_instrumentation(TRACE trace, void* v)
 {
     struct timeval tv_end, tv_start;
@@ -5020,7 +5099,31 @@ void trace_instrumentation(TRACE trace, void* v)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after_redo, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+        INS tail = BBL_InsTail (bbl);
+        char* str = get_copy_of_disasm (tail);
+        INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR, 
+                IARG_PTR, str, 
+                IARG_BRANCH_TAKEN,
+                IARG_CONST_CONTEXT,
+                IARG_END);
+        INS head = BBL_InsHead (bbl);
+        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_UINT32, BBL_Address (bbl), 
+                IARG_END);
+        put_copy_of_disasm (str);
+#endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#ifdef TRACK_CTRL_FLOW_DIVERGE
+	    // JNF: xxx this assumes that we know all blocks involved in a divergence before we run the slice generator (I think this is reasonable but it will impact the design of the bb tool)
+            if (current_thread->ctrl_flow_info.block_instrumented->find(BBL_Address(bbl)) != current_thread->ctrl_flow_info.block_instrumented->end()) {
+                instrument_print_inst_dest (ins);
+            }
+#endif
 	    instruction_instrumentation (ins, NULL);
 	}
     }
@@ -5385,9 +5488,26 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 }
 #endif
 
+void init_ctrl_flow_info (struct thread_data* ptdata)
+{
+   ptdata->ctrl_flow_info.diverge_index = new std::queue<unsigned long>();
+   ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.count = 0;
+   ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
+   ptdata->ctrl_flow_info.is_rollback = false;
+   ptdata->ctrl_flow_info.change_jump = false;
+
+   /*ptdata->ctrl_flow_info.diverge_index->push (17025);
+   ptdata->ctrl_flow_info.diverge_index->push (17055);
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
+   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);*/
+}
+
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
+    fprintf (stderr, "in thread_start %d\n", threadid);
     
     // TODO Use slab allocator
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
@@ -5409,6 +5529,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
+    init_ctrl_flow_info (ptdata);
 
     init_mmap_region (ptdata);
     int thread_ndx;
@@ -5566,6 +5687,11 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
+    // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
+    if (tdata->ctrl_flow_info.diverge_index) delete tdata->ctrl_flow_info.diverge_index;
+    if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
+    if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
+    if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
 }
 
 #ifndef NO_FILE_OUTPUT
@@ -5691,6 +5817,9 @@ int main(int argc, char** argv)
 	    checkpoint_clock = UINT_MAX;
     recheck_group = KnobRecheckGroup.Value();
     check_filename = KnobCheckFilename.Value().c_str();
+    ctrl_flow_generate_taint_set = KnobCtrlFlowGenerateTaintSet.Value();
+    ctrl_flow_generate_slice = KnobCtrlFlowGenerateSlice.Value();
+    if (ctrl_flow_generate_slice) ctrl_flow_generate_taint_set = true;
 
     fork_flags_index = 0;   
 

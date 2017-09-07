@@ -1,6 +1,7 @@
 #ifndef LINKAGE_COMMON_H
 #define LINKAGE_COMMON_H
 
+#include "pin.H"
 #include <stdint.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
@@ -12,6 +13,8 @@
 #include <list>
 #include <map>
 #include <stack>
+#include <queue>
+#include <set>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -42,7 +45,8 @@
 #define OF_MASK 0x800
 #define DF_MASK 0x400
 
-#define TRACK_READONLY_REGION
+#define TRACK_READONLY_REGION 
+//#define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
@@ -190,7 +194,33 @@ struct getdents64_info {
     u_int count;
 };
 
+//store the original taint and value for the mem address
+struct ctrl_flow_origin_value { 
+    taint_t taint;
+    char value;
+};
+
+struct ctrl_flow_info { 
+    uint64_t count;
+    std::queue<u_long> *diverge_index;
+    std::set<uint32_t> *block_instrumented;
+    std::set<uint32_t> *store_set_reg;
+    std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+    uint32_t bbl_addr;
+    bool change_jump;
+
+    //checkpoint and rollback
+    bool is_rollback;
+    CONTEXT ckpt_context;
+    u_long ckpt_clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations
+    // reg taints and flag taints; mem taints is stored in store_set_mem
+    // other stuff in thread_data don't need to be checkpointed. Otherwise, add it here
+    taint_t ckpt_reg_table[NUM_REGS * REG_SIZE];
+    std::stack<struct flag_taints>* ckpt_flag_taints;
+};
+
 // Per-thread data structure
+// Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
 struct thread_data {
     int                      threadid;
     // This stuff only used for replay
@@ -243,6 +273,7 @@ struct thread_data {
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
+    struct ctrl_flow_info ctrl_flow_info;
 };
 
 struct memcpy_header {

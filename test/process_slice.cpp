@@ -84,6 +84,7 @@ map<string, string> regMap = {
 	{"(10,2)" , "ax"},
 	{"(10,1)" , "al"},
 	{"(10,-1)" , "ah"},
+	{"(17,4)" , "eflag"},
 	{"(54,16)" , "xmm0"},
 	{"(55,16)" , "xmm1"},
 	{"(56,16)" , "xmm2"},
@@ -123,21 +124,22 @@ vector<string> split(string str, char delimiter) {
 }
 
 string cleanupSliceLine (string s) { 
-	size_t index = s.find("[SLICE_INFO]");
-	if (index == string::npos) {
-		cerr << s << endl;
-		assert (0);
-	}
-	vector<string> strs = split (s.substr(0, index), '#');
-	if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
-		strs[2] = strs[2].substr (0, strs[2].find("dword"));
-	} else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
-		int index = strs[2].find("scas");
-		strs[2] = strs[2].substr (0, strs[2].find(" ", index));
-	} else if (strs[2].find("lea ") != string::npos) {
-		strs[2].erase (strs[2].find (" ptr "), 4);	
-	}
-	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
+    if (s == "") return s;
+    size_t index = s.find("[SLICE_INFO]");
+    if (index == string::npos) {
+        cerr << "cannot find SLICE_INFO: " << s << endl;
+        assert (0);
+    }
+    vector<string> strs = split (s.substr(0, index), '#');
+    if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
+        strs[2] = strs[2].substr (0, strs[2].find("dword"));
+    } else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
+        int index = strs[2].find("scas");
+        strs[2] = strs[2].substr (0, strs[2].find(" ", index));
+    } else if (strs[2].find("lea ") != string::npos) {
+        strs[2].erase (strs[2].find (" ptr "), 4);	
+    }
+    return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
 }
 
 string cleanupExtraline (string s) {
@@ -201,15 +203,20 @@ string rewriteInst (string s) {
 		if (s.find ("branch_taken 1") != string::npos) {
 			//if the original branch is taken, then we jump to error if not taken as before
 			string tmp = s.replace (index + 1, inst.length(), jumpMap(inst));
-			spaceIndex = s.find (" ", s.find("#j"));
-			return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        if (s.find ("block_index") == string::npos) {
+                                spaceIndex = s.find (" ", s.find("#j"));
+                                return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        } else 
+                                return tmp;
 		} else if (s.find ("branch_taken 0") != string::npos) 
-			return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        if (s.find ("block_index") == string::npos)
+			        return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        else 
+                                return s;
 		else if (inst.compare("jecxz") == 0) {
 			return s.replace(spaceIndex + 1, address.length(), "not handled");
 		} else {
-			cout << "jump instruction? " + s << endl;
-			assert (0);
+			cerr << "jump instruction? " + s << endl;
 		}
 	}
 	return s;
@@ -239,7 +246,10 @@ string replaceMem (string s, string instStr) {
 	if (addrIndex != string::npos) {
 		//replace the mem operand in this line
 		//copy the original slice code's addressing mode
-		assert (instStr.find (" ptr " ) != string::npos);
+		if (instStr.find (" ptr " ) == string::npos) {
+                    cerr << "error line: " <<s <<endl;
+                    assert (0);
+                }
 		//I haven't handled the case where more than one operand is mem
 		assert (instStr.find (" ptr " ) == instStr.rfind(" ptr "));
 		assert (instStr.find ("[SLICE]") == 0);
@@ -264,6 +274,7 @@ AddrToRestore parseRestoreAddress (string s) {
 	size_t index = s.find(":");
 	assert (index != string::npos);
 	vector<string> strs = split (s.substr(index + 2), ',');
+        assert (strs.size() >= 3);
 	return AddrToRestore (strs[0], atoi(strs[1].c_str() + 1), atoi(strs[2].c_str() + 1));
 }
 
@@ -290,7 +301,7 @@ inline int getLineType (string line) {
 		return SLICE_EXTRA;
 	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
 		return SLICE_ADDRESSING;
-	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
+	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0 || line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) //well, it's the same to handle control flow divergence initialization
 		return SLICE_VERIFICATION;
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
@@ -384,6 +395,7 @@ int main (int argc, char* argv[]) {
 	}
 	//printerr (lastLine);
 	buffer.push(make_pair(SLICE, lastLine));
+	if (totalRestoreSize >= 65536) fprintf (stderr, "Total restore size: %d\n", totalRestoreSize);
 	assert (totalRestoreSize < 65536); //currently we only allocated 65536 bytes for this restore stack
 
 

@@ -115,7 +115,7 @@ $(OBJDIR)mmap_regions$(OBJ_SUFFIX): mmap_regions.h mmap_regions.cpp linkage_comm
 	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror -O2 -c -o $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) $(GLIB_INCLUDES) mmap_regions.cpp 
 
 $(OBJDIR)taint_full_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_interface.h taint_nw.h mmap_regions.h mmap_regions.cpp linkage_common.h
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
+	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
 
 $(OBJDIR)linkage_new2$(OBJ_SUFFIX): linkage_new2.cpp xray_slab_alloc.c xray_slab_alloc.h mmap_regions.h mmap_regions.cpp $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c taint_nw.h linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<

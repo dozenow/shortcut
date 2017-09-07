@@ -82,19 +82,20 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
         while (x != 0 || y != 0) {
                 int min = MAX_DISTANCE;
                 if (x == 0) {
-                    uint32_t addr = 0;
-                    cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
-                         << "clock (" << block_list2[y-1].clock << ")" 
-                         << "index (" << block_list2[y-1].index << ")" << endl;
+                    if (DEBUG) 
+                        cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
+                            << "clock (" << block_list2[y-1].clock << ")" 
+                            << "index (" << block_list2[y-1].index << ")" << endl;
                     //block_list1[0]? is this right?
                     set_result (block_list1[0], block_list2[y-1], INSERT_FIRST);
                     --y;
                     continue;
                 }
                 if (y == 0) {
-                    cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
-                         << " clock (" << block_list1[x-1].clock << ")" 
-                         << " index (" << block_list1[x-1].index << ")" << endl;
+                    if (DEBUG) 
+                        cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
+                            << " clock (" << block_list1[x-1].clock << ")" 
+                            << " index (" << block_list1[x-1].index << ")" << endl;
                     set_result (block_list1[x-1], block_list2[0], INSERT_SECOND);
                     --x;
                     continue;
@@ -109,15 +110,17 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
                         --x;
                         --y;
                 } else if (matrix[x-1][y] == min) {
-                    cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
-                      << " clock (" << block_list1[x-1].clock << ")"
-                      << " index (" << block_list1[x-1].index << ")" << endl;
+                    if (DEBUG) 
+                        cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
+                            << " clock (" << block_list1[x-1].clock << ")"
+                            << " index (" << block_list1[x-1].index << ")" << endl;
                     set_result (block_list1[x-1], block_list2[y], INSERT_SECOND);
                     --x;
                 } else {
-                    cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
-                         << " clock (" << block_list2[y-1].clock << ")"
-                         << " index (" << block_list2[y-1].index << ")" << endl;
+                    if (DEBUG) 
+                        cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
+                            << " clock (" << block_list2[y-1].clock << ")"
+                            << " index (" << block_list2[y-1].index << ")" << endl;
                     set_result (block_list1[x], block_list2[y-1], INSERT_FIRST);
                     --y;
                 }
@@ -180,7 +183,7 @@ int main (int argc, char* argv[]) {
     print_all_blocks (bbinfo_block1);
     print_all_blocks (bbinfo_block2);
 
-    cout << "=======" << endl;
+    if (DEBUG) cout << "=======" << endl;
     distance (bbinfo_block1, bbinfo_block2, bbinfo_block1.size(), bbinfo_block2.size());
     cout << "=======" << endl;
     int last_direction = -1;
@@ -204,9 +207,9 @@ int main (int argc, char* argv[]) {
         if (DEBUG) printf ("result %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
         if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1) || !CHECK_BLOCK_INDEX(result_block[i].block2, last_diverge2)) {
             if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
-                printf ("Merged right before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge2.clock, last_diverge2.index);
+                printf ("Merged right before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", last_diverge1.clock, last_diverge1.index, last_diverge1.bb_addr, last_diverge2.clock, last_diverge2.index, last_diverge2.bb_addr);
             }
-            printf ("Diverge before %lu,%llu @FIRST, %lu, %llu @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block2.clock, result_block[i].block2.index);
+            printf ("Diverge before %lu,%llu,%x @FIRST, %lu, %llu,%x @SECOND.\n", result_block[i].block1.clock, result_block[i].block1.index, result_block[i].block1.bb_addr, result_block[i].block2.clock, result_block[i].block2.index, result_block[i].block2.bb_addr);
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
             memcpy (&last_diverge2, &result_block[i].block2, sizeof(struct block));
         }
@@ -219,7 +222,7 @@ int main (int argc, char* argv[]) {
     }
 
     cout << "=======" << endl;
-    //cout << "results are written to " << output_filename << endl;
+    cout << "results are written to " << output_filename << endl;
     output.close();
     return retval;
 }
