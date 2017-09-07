@@ -251,6 +251,7 @@ extern int dump_reg_taints (int fd, taint_t* pregs, int thread_ndx);
 extern int dump_mem_taints_start (int fd);
 extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
+extern vector<struct ctrl_flow_param> ctrl_flow_params;
 
 FILE* slice_f;
 
@@ -5114,6 +5115,7 @@ void trace_instrumentation(TRACE trace, void* v)
                 IARG_FAST_ANALYSIS_CALL, 
                 IARG_INST_PTR, 
                 IARG_UINT32, BBL_Address (bbl), 
+                IARG_CONST_CONTEXT,
                 IARG_END);
         put_copy_of_disasm (str);
 #endif
@@ -5490,18 +5492,33 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 
 void init_ctrl_flow_info (struct thread_data* ptdata)
 {
-   ptdata->ctrl_flow_info.diverge_index = new std::queue<unsigned long>();
+   ptdata->ctrl_flow_info.diverge_point = new std::queue<struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.merge_point = new std::queue<struct ctrl_flow_block_index>();
    ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.count = 0;
+   memset (&ptdata->ctrl_flow_info.block_index, 0, sizeof(struct ctrl_flow_block_index));
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
    ptdata->ctrl_flow_info.is_rollback = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
-   /*ptdata->ctrl_flow_info.diverge_index->push (17025);
-   ptdata->ctrl_flow_info.diverge_index->push (17055);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7e7ebb8);
-   ptdata->ctrl_flow_info.block_instrumented->insert (0xb7eae1a8);*/
+   for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
+       struct ctrl_flow_param i = *iter;
+       if (i.pid == ptdata->record_pid) {
+           if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
+               struct ctrl_flow_block_index index;
+               index.clock = i.clock;
+               index.index = i.index;
+               ptdata->ctrl_flow_info.diverge_point->push (index);
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
+               struct ctrl_flow_block_index index;
+               index.clock = i.clock;
+               index.index = i.index;
+               ptdata->ctrl_flow_info.merge_point->push (index);
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
+               ptdata->ctrl_flow_info.block_instrumented->insert (i.ip);
+           }
+       }
+   }
 }
 
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
@@ -5688,7 +5705,8 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
     // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
-    if (tdata->ctrl_flow_info.diverge_index) delete tdata->ctrl_flow_info.diverge_index;
+    if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
+    if (tdata->ctrl_flow_info.merge_point) delete tdata->ctrl_flow_info.merge_point;
     if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
     if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
     if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;

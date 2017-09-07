@@ -155,10 +155,16 @@ string cleanupAddressingLine (string s) {
 	return s.substr(start_index, end_index - start_index) + " /* [SLICE_ADDRESSING]" + s.substr(end_index) + "*/";
 }
 
+string cleanupCtrlFlowLine (string s) {
+	size_t start_index = s.find("]") + 2;
+	size_t end_index = s.find("//");
+	return s.substr(start_index, end_index - start_index) + " /* [SLICE_CTRL_FLOW] */";
+}
+
 string cleanupVerificationLine (string s) { 
 	size_t start_index = s.find("]") + 2;
 	size_t end_index = s.find("//");
-	return s.substr(start_index, end_index - start_index) + " /* [SLICE_VERIFICATION]" + s.substr(end_index) + "*/";
+	return s.substr(start_index, end_index - start_index) + "/*" + s.substr (0, start_index) + s.substr(end_index) + "*/";
 }
 
 string memSizeToPrefix(int size){ 
@@ -293,6 +299,7 @@ void printerr (string s) {
 #define SLICE_RESTORE_REG 4
 #define SLICE_VERIFICATION 5
 #define SLICE_TAINT 6
+#define SLICE_CTRL_FLOW 7
 
 inline int getLineType (string line) { 
 	if (line.compare (0, 7, "[SLICE]") == 0)
@@ -301,10 +308,12 @@ inline int getLineType (string line) {
 		return SLICE_EXTRA;
 	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
 		return SLICE_ADDRESSING;
-	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0 || line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) //well, it's the same to handle control flow divergence initialization
+	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
+        else if (line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) 
+                return SLICE_CTRL_FLOW;
 	else if (line.compare (0, 23, "[SLICE_RESTORE_ADDRESS]") == 0) 
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
@@ -512,6 +521,9 @@ int main (int argc, char* argv[]) {
 			case SLICE_VERIFICATION:
 			    println (cleanupVerificationLine(replaceReg(s)));
 			    break;
+                        case SLICE_CTRL_FLOW:
+                            println (cleanupCtrlFlowLine(replaceReg(s)));
+                            break;
                         case SLICE_TAINT:
                                 println ("/*Eliminated " + s + "*/");
                                 break;

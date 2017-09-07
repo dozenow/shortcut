@@ -46,7 +46,7 @@
 #define DF_MASK 0x400
 
 #define TRACK_READONLY_REGION 
-//#define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
+#define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
@@ -200,13 +200,33 @@ struct ctrl_flow_origin_value {
     char value;
 };
 
+struct ctrl_flow_block_index { 
+    u_long clock;
+    uint64_t index;
+};
+
+#define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
+#define IS_BLOCK_INDEX_GREATER_OR_EQUAL(x,y) ((x.clock >= y.clock && x.index >= y.index))
+#define IS_BLOCK_INDEX_LESS_OR_EQUAL(x,y) ((x.clock <= y.clock && x.index <= y.index))
+#define CTRL_FLOW_BLOCK_TYPE_DIVERGENCE 1
+#define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT 2
+#define CTRL_FLOW_BLOCK_TYPE_MERGE      3
+
+struct ctrl_flow_param {
+    int type;
+    u_long clock;
+    uint64_t index;
+    uint32_t ip;
+    int pid;
+};
+
 struct ctrl_flow_info { 
-    uint64_t count;
-    std::queue<u_long> *diverge_index;
-    std::set<uint32_t> *block_instrumented;
+    struct ctrl_flow_block_index block_index;  //current block index
+    std::queue<struct ctrl_flow_block_index> *diverge_point; //index for all divergences
+    std::queue<struct ctrl_flow_block_index> *merge_point;  //index for all merge points, corresponding to the diverege point
+    std::set<uint32_t> *block_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
-    uint32_t bbl_addr;
     bool change_jump;
 
     //checkpoint and rollback
