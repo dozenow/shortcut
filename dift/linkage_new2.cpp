@@ -59,7 +59,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 344
+//#define EXTRA_DEBUG 60
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -2399,6 +2399,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 		       IARG_PTR, str,
 		       IARG_UINT32, mask,
 		       IARG_BRANCH_TAKEN,
+                       IARG_CONST_CONTEXT, 
 		       IARG_END);
 	put_copy_of_disasm (str);
 }
@@ -5037,10 +5038,13 @@ void instruction_instrumentation(INS ins, void *v)
 	
 }
 
-//assume the first operand is always the destination operand
 void instrument_print_inst_dest (INS ins) 
 { 
     uint32_t operand_count = INS_OperandCount (ins);
+    if (INS_IsCall (ins)) {
+        fprintf (stderr, "instrument_print_inst_dest: we have a call instruction on potential diverged branch. Make sure the control flow merges on this call (or the jump following this call)\n");
+        return;
+    }
     fprintf (stderr, "[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
     for (uint32_t i = 0; i<operand_count; ++i) { 
         if (INS_OperandWritten (ins, i)) { 
@@ -5078,8 +5082,15 @@ void instrument_print_inst_dest (INS ins)
                         IARG_UINT32, INS_MemoryWriteSize(ins),
                         PASS_BASE_INDEX,
                         IARG_END);
-            } else { 
+            } else if (INS_OperandIsBranchDisplacement (ins, i)) {
+                fprintf (stderr, "      --- implicit? %d, branch displacement.\n", implicit);
                 assert (0);
+            } else if (INS_OperandIsAddressGenerator(ins, i)) {
+                fprintf (stderr, "      --- implicit? %d, address generator\n", implicit);
+                assert (0);
+            } else {
+                fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand??????\n");
+                //assert (0);
             }
         }
     }
@@ -5490,12 +5501,16 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    memset (&ptdata->ctrl_flow_info.block_index, 0, sizeof(struct ctrl_flow_block_index));
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
+   ptdata->ctrl_flow_info.that_branch_store_set_reg = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.that_branch_distance = new std::queue<uint64_t> ();
+   ptdata->ctrl_flow_info.that_branch_store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
    ptdata->ctrl_flow_info.is_rollback = false;
+   ptdata->ctrl_flow_info.is_rollback_first_inst = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
-       if (i.pid == ptdata->record_pid) {
+       if (i.pid == ptdata->record_pid || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
            if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
                struct ctrl_flow_block_index index;
                index.clock = i.clock;
@@ -5508,6 +5523,8 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
                ptdata->ctrl_flow_info.merge_point->push (index);
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
                ptdata->ctrl_flow_info.block_instrumented->insert (i.ip);
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_DISTANCE) { 
+               ptdata->ctrl_flow_info.that_branch_distance->push (i.index);
            }
        }
    }

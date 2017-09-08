@@ -27,11 +27,19 @@ int main()
             }*/
             char tmp[32];
             struct stat stat;
-            int test = processID%2*processID*2 + processID;
+            int x = processID;
+            int y = 0;
             //itoa (test,tmp, 2);
+            if (processID%2) { 
+                x += 1;
+                y = 1;
+            } else { 
+                x += 2;
+                y = 2;
+            }
 
 		//printf("The process id is %d addr is %p\n", processID, &processID);
-            sprintf(tmp, "%d", processID);
+            sprintf(tmp, "%d+%d=%d", processID, x, y);
             //fstat (1, &stat);
             printf ("The process id is %s, int address %p, string address %p\n", tmp, &processID, tmp);
 	}

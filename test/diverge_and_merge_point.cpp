@@ -84,7 +84,7 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
                 int min = MAX_DISTANCE;
                 if (x == 0) {
                     if (DEBUG) 
-                        cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
+                        cout << "insert(1) at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
                             << "clock (" << block_list2[y-1].clock << ")" 
                             << "index (" << block_list2[y-1].index << ")" << endl;
                     //block_list1[0]? is this right?
@@ -94,7 +94,7 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
                 }
                 if (y == 0) {
                     if (DEBUG) 
-                        cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
+                        cout << "insert(1) at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
                             << " clock (" << block_list1[x-1].clock << ")" 
                             << " index (" << block_list1[x-1].index << ")" << endl;
                     set_result (block_list1[x-1], block_list2[0], INSERT_SECOND);
@@ -105,21 +105,21 @@ int distance (vector<block> &block_list1, vector<block> &block_list2, int length
                 min = MIN3 (matrix[x-1][y-1], matrix[x-1][y], matrix[x][y-1]);
                 if (matrix[x-1][y-1] == min) {
                         if (matrix[x-1][y-1] != matrix[x][y]) {
-                                printf ("substitute @%llu, %llu, block_addr %x, %x\n", block_list1[x-1].index, block_list2[y-1].index, block_list1[x-1].bb_addr, block_list2[y-1].bb_addr);
+                                if (DEBUG) printf ("substitute @%llu, %llu, block_addr %x, %x\n", block_list1[x-1].index, block_list2[y-1].index, block_list1[x-1].bb_addr, block_list2[y-1].bb_addr);
                                 set_result (block_list1[x-1], block_list2[y-1], SUBSTITUTE);
                         }
                         --x;
                         --y;
                 } else if (matrix[x-1][y] == min) {
                     if (DEBUG) 
-                        cout << "insert at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
+                        cout << "insert(2) at second with" << " block " << std::hex << block_list1[x-1].bb_addr << std::dec
                             << " clock (" << block_list1[x-1].clock << ")"
                             << " index (" << block_list1[x-1].index << ")" << endl;
                     set_result (block_list1[x-1], block_list2[y], INSERT_SECOND);
                     --x;
                 } else {
                     if (DEBUG) 
-                        cout << "insert at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
+                        cout << "insert(2) at first with" << " block " << std::hex << block_list2[y-1].bb_addr << std::dec
                             << " clock (" << block_list2[y-1].clock << ")"
                             << " index (" << block_list2[y-1].index << ")" << endl;
                     set_result (block_list1[x], block_list2[y-1], INSERT_FIRST);
@@ -198,9 +198,6 @@ int main (int argc, char* argv[]) {
     int last_direction = -1;
     for (auto iter = result_block.begin(); iter != result_block.end(); ++iter) { 
         if (last_direction == -1) last_direction = iter->direction;
-        if (iter->direction == SUBSTITUTE) { 
-            cerr << "[TODO] Haven't tested substitution of blocks." <<endl;
-        }
         if (last_direction != iter->direction && last_direction != SUBSTITUTE) {
             cerr << "Well, it seems each execution has some extra blocks, which is not tested yet." << endl;
         }
@@ -209,10 +206,8 @@ int main (int argc, char* argv[]) {
     
     if (retval == 1) 
         cout << "choose first execution as the base. " <<endl;
-    else if (retval == 2)
+    else
         cout << "choose second execution as the base. " <<endl;
-    else 
-        assert (0);
 
     //figure out the merge point
     u_long diverge_clock = 0;
@@ -221,19 +216,29 @@ int main (int argc, char* argv[]) {
     struct block last_diverge2;
     char message1[256];
     char message2[256];
+    uint64_t diverge_from1 = 0;
+    uint64_t diverge_from2 = 0;
     memset (&last_diverge1, 0, sizeof(struct block));
     memset (&last_diverge2, 0, sizeof(struct block));
     
     for (int i = result_block.size() - 1; i >= 0; --i) { 
+        if (DEBUG) {
+            print_block_info (message1, 256, result_block[i].block1);
+            print_block_info (message2, 256, result_block[i].block2);
+            cout << message1 << " " << message2 << endl;
+        }
         if (!CHECK_BLOCK_INDEX(result_block[i].block1, last_diverge1) || !CHECK_BLOCK_INDEX(result_block[i].block2, last_diverge2)) {
             if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
                 print_block_info (message1, 256, last_diverge1);
                 print_block_info (message2, 256, last_diverge2);
                 printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
-                if (retval == 1) 
-                        output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
-                else 
-                        output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_merge "  << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
+                if (retval == 1) {
+                    output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
+                    output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
+                } else {
+                    output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_merge "  << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
+                    output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+                }
             }
             print_block_info (message1, 256, result_block[i].block1);
             print_block_info (message2, 256, result_block[i].block2);
@@ -242,6 +247,8 @@ int main (int argc, char* argv[]) {
                 output << "0x" << std::hex << result_block[i].block1.bb_addr << std::dec << " ctrl_diverge " << result_block[i].block1.pid << "," << result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
             else 
                 output << "0x" << std::hex << result_block[i].block2.bb_addr << std::dec << " ctrl_diverge " << result_block[i].block2.pid << "," << result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
+            diverge_from1 = result_block[i].block1.index;
+            diverge_from2 = result_block[i].block2.index;
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
             memcpy (&last_diverge2, &result_block[i].block2, sizeof(struct block));
         }
@@ -257,19 +264,20 @@ int main (int argc, char* argv[]) {
         }
         print_block_info (message1, 256, result_block[i].block1);
         print_block_info (message2, 256, result_block[i].block2);
-        if (retval == 1) 
-            output << "0x" << std::hex << result_block[i].block1.bb_addr << std::dec << " ctrl_block_instrument " << result_block[i].block1.pid << "," << result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
-        else 
-            output << "0x" << std::hex << result_block[i].block2.bb_addr << std::dec << " ctrl_block_instrument " << result_block[i].block2.pid << "," << result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
+        output << "0x" << std::hex << result_block[i].block1.bb_addr << std::dec << " ctrl_block_instrument " <<  result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
+        output << "0x" << std::hex << result_block[i].block2.bb_addr << std::dec << " ctrl_block_instrument " <<  result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
     }
     if (last_diverge1.clock != 0 || last_diverge2.clock != 0) { 
         print_block_info (message1, 256, last_diverge1);
         print_block_info (message2, 256, last_diverge2);
         printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
-        if (retval == 1) 
+        if (retval == 1) {
             output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
-        else 
+            output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
+        } else {
             output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_merge " << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
+            output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+        }
     }
 
     cout << "=======" << endl;

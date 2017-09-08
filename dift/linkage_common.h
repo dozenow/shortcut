@@ -210,6 +210,7 @@ struct ctrl_flow_block_index {
 #define CTRL_FLOW_BLOCK_TYPE_DIVERGENCE 1
 #define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT 2
 #define CTRL_FLOW_BLOCK_TYPE_MERGE      3
+#define CTRL_FLOW_BLOCK_TYPE_DISTANCE   4
 
 struct ctrl_flow_param {
     int type;
@@ -224,12 +225,20 @@ struct ctrl_flow_info {
     std::queue<struct ctrl_flow_block_index> *diverge_point; //index for all divergences
     std::queue<struct ctrl_flow_block_index> *merge_point;  //index for all merge points, corresponding to the diverege point
     std::set<uint32_t> *block_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
+
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
-    bool change_jump;
+
+    std::queue<uint64_t> *that_branch_distance; //the number of dynamic blocks executed between the diverge and merge pionts for the other branch (the branch this exeuction doesn't take)
+    std::set<uint32_t> *that_branch_store_set_reg;
+    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+    uint64_t that_branch_block_count; //reset after rollback TODO also other fields in this struct
+
+    bool change_jump;  //true if this jump is the divergence point
 
     //checkpoint and rollback
-    bool is_rollback;
+    bool is_rollback; 
+    bool is_rollback_first_inst;
     CONTEXT ckpt_context;
     u_long ckpt_clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations
     // reg taints and flag taints; mem taints is stored in store_set_mem
