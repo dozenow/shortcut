@@ -222,7 +222,8 @@ string rewriteInst (string s) {
 		else if (inst.compare("jecxz") == 0) {
 			return s.replace(spaceIndex + 1, address.length(), "not handled");
 		} else {
-			cerr << "jump instruction? " + s << endl;
+                        if (s.find ("_branch_") == string::npos)
+			        cerr << "jump instruction? " + s << endl;
 		}
 	}
 	return s;

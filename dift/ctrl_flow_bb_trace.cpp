@@ -220,18 +220,18 @@ void track_trace(TRACE trace, void* data)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+        INS head = BBL_InsHead (bbl);
+        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_UINT32, BBL_Address (bbl), 
+                IARG_END);
         INS tail = BBL_InsTail (bbl);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
                 IARG_FAST_ANALYSIS_CALL,
                 IARG_INST_PTR, 
                 IARG_BRANCH_TAKEN,
                 IARG_CONST_CONTEXT,
-                IARG_END);
-        INS head = BBL_InsHead (bbl);
-        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
                 IARG_END);
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 	    if(INS_IsSyscall(ins)) {

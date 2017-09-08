@@ -140,8 +140,6 @@ u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
-bool ctrl_flow_generate_taint_set = false;  //TODO remove
-bool ctrl_flow_generate_slice = false;  //TODO remove
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -211,12 +209,6 @@ KNOB<unsigned int> KnobRecheckGroup(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
     "pintool", "group_dir", "",
     "the directory for the output files");
-KNOB<bool> KnobCtrlFlowGenerateTaintSet(KNOB_MODE_WRITEONCE, 
-        "pintool", "ctrl_flow_g_taint_set", "", 
-        "generate taint set for extra blocks");
-KNOB<bool> KnobCtrlFlowGenerateSlice(KNOB_MODE_WRITEONCE, 
-        "pintool", "ctrl_flow_g_slice", "", 
-        "generate slice using taint set");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -5042,10 +5034,10 @@ void instrument_print_inst_dest (INS ins)
 { 
     uint32_t operand_count = INS_OperandCount (ins);
     if (INS_IsCall (ins)) {
-        fprintf (stderr, "instrument_print_inst_dest: we have a call instruction on potential diverged branch. Make sure the control flow merges on this call (or the jump following this call)\n");
+        fprintf (stderr, "instrument_print_inst_dest: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
         return;
     }
-    fprintf (stderr, "[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
+    printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
     for (uint32_t i = 0; i<operand_count; ++i) { 
         if (INS_OperandWritten (ins, i)) { 
             bool implicit = INS_OperandIsImplicit (ins, i);
@@ -5054,13 +5046,13 @@ void instrument_print_inst_dest (INS ins)
                 assert (REG_valid(reg));
                 if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
                     //ignore ip register
-                    fprintf (stderr, "      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    printf ("      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else if (reg == LEVEL_BASE::REG_EFLAGS) {
                     //as the eflag reg is almost certainly modified by some instruction in a basic block (which the jump at the bb exit probably uses), I'll always put eflags in the store set
                     //so it's safe to ignore it here
-                    fprintf (stderr, "      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    printf ("      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else { 
-                    fprintf (stderr, "      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    printf ("      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                     INS_InsertCall (ins, IPOINT_BEFORE, 
                             AFUNPTR(print_inst_dest_reg),
                             IARG_FAST_ANALYSIS_CALL,
@@ -5070,7 +5062,7 @@ void instrument_print_inst_dest (INS ins)
                             IARG_END);
                 }
             } else if (INS_OperandIsMemory (ins, i)) { 
-                fprintf (stderr, "      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
+                printf ("      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
                 REG base_reg = INS_OperandMemoryBaseReg(ins, i);
                 REG index_reg = INS_OperandMemoryIndexReg(ins, i);
                 SETUP_BASE_INDEX (base_reg, index_reg);
@@ -5083,13 +5075,16 @@ void instrument_print_inst_dest (INS ins)
                         PASS_BASE_INDEX,
                         IARG_END);
             } else if (INS_OperandIsBranchDisplacement (ins, i)) {
-                fprintf (stderr, "      --- implicit? %d, branch displacement.\n", implicit);
+                printf ("      --- implicit? %d, branch displacement.\n", implicit);
                 assert (0);
             } else if (INS_OperandIsAddressGenerator(ins, i)) {
-                fprintf (stderr, "      --- implicit? %d, address generator\n", implicit);
+                printf ("      --- implicit? %d, address generator\n", implicit);
                 assert (0);
             } else {
-                fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand??????\n");
+                if (INS_IsRet (ins) || INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
+                    //what else operand can be????
+                } else 
+                        fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
                 //assert (0);
             }
         }
@@ -5105,6 +5100,13 @@ void trace_instrumentation(TRACE trace, void* v)
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
+        INS head = BBL_InsHead (bbl);
+        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_UINT32, BBL_Address (bbl), 
+                IARG_CONST_CONTEXT,
+                IARG_END);
         INS tail = BBL_InsTail (bbl);
         char* str = get_copy_of_disasm (tail);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
@@ -5112,13 +5114,6 @@ void trace_instrumentation(TRACE trace, void* v)
                 IARG_INST_PTR, 
                 IARG_PTR, str, 
                 IARG_BRANCH_TAKEN,
-                IARG_CONST_CONTEXT,
-                IARG_END);
-        INS head = BBL_InsHead (bbl);
-        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
                 IARG_CONST_CONTEXT,
                 IARG_END);
         put_copy_of_disasm (str);
@@ -5842,9 +5837,6 @@ int main(int argc, char** argv)
     if (checkpoint_clock == 0) 
 	    checkpoint_clock = UINT_MAX;
     recheck_group = KnobRecheckGroup.Value();
-    ctrl_flow_generate_taint_set = KnobCtrlFlowGenerateTaintSet.Value();
-    ctrl_flow_generate_slice = KnobCtrlFlowGenerateSlice.Value();
-    if (ctrl_flow_generate_slice) ctrl_flow_generate_taint_set = true;
 
     fork_flags_index = 0;   
 

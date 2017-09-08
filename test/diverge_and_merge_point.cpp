@@ -170,19 +170,34 @@ inline void print_block_info (char* info, int size, struct block block)
 }
 
 int main (int argc, char* argv[]) { 
-    string output_filename = "/tmp/ctrl_flow_instrument";
-    if (argc != 3) {
-        cerr << "usage: find_diverge_and_merge bb_info_file1 bb_info_file2" <<endl;
+    if (argc != 4) {
+        cerr << "usage: diverge_and_merge_point bb_info_file1 bb_info_file2 checks_file_path" <<endl;
+        exit (-1);
     }
+    string output_filename(argv[3]);
     ifstream bbinfo1_in (argv[1], ios::in);
     ifstream bbinfo2_in (argv[2], ios::in);
-    ofstream output (output_filename, ofstream::out | ofstream::trunc);
+    fstream output (output_filename, ios::in | ios::out);
     if (!bbinfo1_in.is_open() || !bbinfo2_in.is_open()) {
         cerr << "cannot open input files" <<endl;
     }
     if (!output.is_open()) { 
         cerr << "cannot open output file" <<endl;
     }
+    //remove all ctrl flow info in output file
+    string line;
+    vector<string> remaining_lines;
+    while (getline (output, line)) { 
+        if (line.find (" ctrl_") == string::npos) { 
+            remaining_lines.push_back (line);
+        }
+    }
+    output.close();
+    output.open(output_filename, ios::out | ios::trunc);
+    for (auto i: remaining_lines) {
+        output << i << endl;
+    }
+
     vector<block> bbinfo_block1;
     vector<block> bbinfo_block2;
 
