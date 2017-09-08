@@ -65,9 +65,10 @@ struct open_info {
 
 struct read_info {
     int      fd;
-    u_long  fd_ref;
+    u_long   fd_ref;
     char*    buf;
-    int size;
+    int      size;
+    u_long   clock;
     struct recheck_handle* recheck_handle;
 };
 

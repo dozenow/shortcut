@@ -12,7 +12,6 @@
 #include <string.h>
 #include "util.h"
 
-//TODO: Currently, we only use data flow tool, probably should also enable the index tool in the future
 int main (int argc, char* argv[]) 
 {
     char cpids[256];

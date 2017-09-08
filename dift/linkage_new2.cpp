@@ -140,6 +140,7 @@ u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
+const char* check_filename = "/tmp/checks";
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -209,6 +210,9 @@ KNOB<unsigned int> KnobRecheckGroup(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
     "pintool", "group_dir", "",
     "the directory for the output files");
+KNOB<string> KnobCheckFilename(KNOB_MODE_WRITEONCE, 
+    "pintool", "chk", "",
+    "a file with allowed control and data flow divergences");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -554,6 +558,7 @@ static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, 
     ri->fd = fd;
     ri->buf = buf;
     ri->size = size;
+    ri->clock = *ppthread_log_clock;
     ri->recheck_handle = tdata->recheck_handle;
     tdata->save_syscall_info = (void *) ri;
 }
@@ -571,13 +576,13 @@ static inline void sys_read_stop(int rc)
 	    size_t start = 0;
 	    size_t end = 0;
 	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, *ppthread_log_clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, ri->clock);
 		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
 	    }
 	} else {
-             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, *ppthread_log_clock);
+             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
 	}
     }
 
@@ -2307,6 +2312,8 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
 }
 
 //If we move an imm value to an memory address, we still need to verify the base and index registers if they're tainted. Therefore, at least the verifications need to be in the slice
+// JNF: xxx - This is probably wrong because fw_slice_mem is for memory being read from, not written to.  I think we'll need a new fw_slice_xxx function in taint_full_interface.c for this.  Also naming convention
+// would be fw_slice_2mem (I believe)
 static inline void fw_slice_src_dst_mem (INS ins, REG base_reg, REG index_reg)  
 {
     char* str = get_copy_of_disasm (ins);
@@ -5120,6 +5127,7 @@ void trace_instrumentation(TRACE trace, void* v)
 #endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
+	    // JNF: xxx this assumes that we know all blocks involved in a divergence before we run the slice generator (I think this is reasonable but it will impact the design of the bb tool)
             if (current_thread->ctrl_flow_info.block_instrumented->find(BBL_Address(bbl)) != current_thread->ctrl_flow_info.block_instrumented->end()) {
                 instrument_print_inst_dest (ins);
             }
@@ -5708,6 +5716,7 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->address_taint_set) delete tdata->address_taint_set;
+    // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
     if (tdata->ctrl_flow_info.merge_point) delete tdata->ctrl_flow_info.merge_point;
     if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
@@ -5837,6 +5846,7 @@ int main(int argc, char** argv)
     if (checkpoint_clock == 0) 
 	    checkpoint_clock = UINT_MAX;
     recheck_group = KnobRecheckGroup.Value();
+    check_filename = KnobCheckFilename.Value().c_str();
 
     fork_flags_index = 0;   
 
@@ -5912,7 +5922,7 @@ int main(int argc, char** argv)
 
 #endif
 
-    init_taint_structures(group_directory);
+    init_taint_structures(group_directory, check_filename);
 
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(dev_fd);

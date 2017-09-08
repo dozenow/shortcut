@@ -975,9 +975,9 @@ static inline void zero_partial_reg_until (int reg, int offset, int until)
 }
 
 #ifdef USE_CHECK_FILE
-static int init_check_map ()
+static int init_check_map (const char* check_filename)
 {
-    FILE* file = fopen ("/tmp/checks", "r");
+    FILE* file = fopen (check_filename, "r");
     if (!file) return -ENOENT;
     while (!feof (file)) {
 	char line[256];
@@ -1051,7 +1051,7 @@ static int init_check_map ()
 
 #endif
 
-void init_taint_structures (char* group_dir)
+void init_taint_structures (char* group_dir, const char* check_filename)
 {
     if (splice_output) {
 	taint_num = 0xc0000001;
@@ -1069,7 +1069,7 @@ void init_taint_structures (char* group_dir)
         taint_fds_cloexec = g_hash_table_new(g_direct_hash, g_direct_equal);
     }
 #ifdef USE_CHECK_FILE    
-    init_check_map();
+    init_check_map(check_filename);
 #endif
 }
 
@@ -2362,6 +2362,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
         int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
         if (base_tainted || index_tainted) {
             //we cannot handle memory write with tainted base/index regs that happens in a diverged branch
+	    // JNF: xxx we could eventually, though, if we were to assume a specific set of values (as for normal operation)?
             assert (0);
         }
         map<u_long, struct ctrl_flow_origin_value> *mem_map = (current_thread->ctrl_flow_info.is_rollback == false? current_thread->ctrl_flow_info.store_set_mem: current_thread->ctrl_flow_info.that_branch_store_set_mem);
@@ -2998,6 +2999,7 @@ TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc,
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, op_size, 0);
 
 	// If partially tainted, need to restore for validation. If untainted, restore for instruction
+	// JNF: xxx why was this changed?  don't we need to restore the values if untainted?
 	if (eax_tainted == 2) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
 
 	// Always verify ecx and edi if not untainted

@@ -54,6 +54,7 @@ struct wakeup_ckpt_data {
 	u_long __user * fake_calls;    
 	int 	      go_live;
 	char __user*  slice_filename;
+	char __user*  recheck_filename;
 };
 
 struct get_used_addr_data {

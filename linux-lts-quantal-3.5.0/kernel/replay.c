@@ -4418,7 +4418,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
-			 u_long nfake_calls, u_long *fake_call_points, int go_live, char* execute_slice_name)
+			 u_long nfake_calls, u_long *fake_call_points, int go_live, char* execute_slice_name, char* recheck_filename)
 {
 	struct ckpt_waiter* pckpt_waiter = NULL;
 	struct record_group* precg; 
@@ -4551,7 +4551,8 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&prect->rp_read_ulog_pos,
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
-						       &pos, execute_slice_name, &slice_addr, &slice_size);
+						       &pos, execute_slice_name, &slice_addr, 
+						       &slice_size);
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4689,7 +4690,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				return -EEXIST;
 			}
 			//run slice jumps back to the user space
-			start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid);	 
+			start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid, recheck_filename);	 
 		}
 
 		if (attach_device) {
@@ -8823,6 +8824,7 @@ replay_read (unsigned int fd, char __user * buf, size_t count)
 
 	if (retparams) {
 		u_int is_cache_file = *((u_int *)retparams);
+		u_int is_opened_cache_file;
 		int consume_size = 0;
 
 		if (is_cache_file & READ_NEW_CACHE_FILE) {
@@ -8837,7 +8839,8 @@ replay_read (unsigned int fd, char __user * buf, size_t count)
 			consume_size += sizeof(struct open_retvals);
 		}
 
-		if (is_replay_cache_file(current->replay_thrd->rp_cache_files, fd, &cache_fd)) {
+		is_opened_cache_file = is_replay_cache_file(current->replay_thrd->rp_cache_files, fd, &cache_fd);
+		if (is_opened_cache_file && is_cache_file) {
 			if (current->replay_thrd->rp_pin_attaching != PIN_ATTACHING_FF) {
 				// read from the open cache file
 				loff_t off = *((loff_t *) (retparams+sizeof(u_int)));
@@ -8889,6 +8892,13 @@ replay_read (unsigned int fd, char __user * buf, size_t count)
 			if (copy_to_user (buf, retparams+sizeof(u_int), rc)) printk ("replay_read: pid %d cannot copy %ld bytes to user\n", current->pid, rc);
 			consume_size = sizeof(u_int)+rc;
 			argsconsume (current->replay_thrd->rp_record_thread, consume_size); 
+			if (is_opened_cache_file) {
+				// Uncached read on an opened cache file - need to advance the file pointer
+				DPRINT ("advancing file pointer by %ld\n", rc);
+				if (sys_lseek (cache_fd, rc, SEEK_CUR) < 0) {
+					printk ("Unable to advance file pointer on uncached read of cached file\n");
+				}
+			}
 		}
 	}
 

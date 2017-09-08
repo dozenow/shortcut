@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog patchklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice pinoutcmp parserecheck finalize_slice_ctrl_flow diverge_and_merge_point
+	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -55,8 +55,8 @@ wparserecheck:
 parseklog: libutil.a parseklog.o parseklib.o
 	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
-patchklog: libutil.a patchklog.o parseklib.o
-	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o -o patchklog -lssl -lcrypto 
+patchklog: libutil.a patchklog.o parseklib.o libutil.a
+	g++ $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o libutil.a -o patchklog -lssl -lcrypto 
 
 rewriteklog: parseklib.o
 

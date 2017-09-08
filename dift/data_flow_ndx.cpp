@@ -19,8 +19,6 @@ unsigned int inst_start = 0;
 int child = 0;
 int fd; // File descriptor for the replay device
 TLS_KEY tls_key; // Key for accessing TLS. 
-bool tracing = false;  // Are we tracing right now?
-string subroutine;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "1000000000", "clock to stop");
 KNOB<unsigned int> KnobInstStart(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "start at this instruction");
@@ -192,27 +190,9 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
-static void trace_bbl (ADDRINT ip)
-{
-    printf ("[BB]0x%x, #%llu,%lu (clock)  %d  ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid);
-    PIN_LockClient();
-    if (IMG_Valid(IMG_FindByAddress(ip))) {
-        printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-    } else {
-        printf("unknown\n");
-    }
-    PIN_UnlockClient();
-}
-
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
-TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken) 
-{ 
-    if (!tracing && ip == inst_start) {
-	printf ("[START] bb trace at instruction 0x%x\n", inst_start);
-	tracing = 1;
-	subroutine = "";
-    }
-    if (tracing && subroutine == "") trace_bbl (current_thread->ctrl_flow_info.bbl_addr);
+TAINTSIGN monitor_control_flow_head ()
+{
     ++ current_thread->ctrl_flow_info.count;
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
@@ -220,9 +200,19 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken)
     }
 }
 
-TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start) 
+TAINTSIGN monitor_read (ADDRINT ip, ADDRINT ea)
 {
-    current_thread->ctrl_flow_info.bbl_addr = bbl_start;
+    printf ("[READ]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+}
+
+TAINTSIGN monitor_read2 (ADDRINT ip, ADDRINT ea, ADDRINT ea2)
+{
+    printf ("[READs]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea2, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+}
+
+TAINTSIGN monitor_write (ADDRINT ip, ADDRINT ea)
+{
+    printf ("[WRITE]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
 }
 
 void track_trace(TRACE trace, void* data)
@@ -232,19 +222,36 @@ void track_trace(TRACE trace, void* data)
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
         INS head = BBL_InsHead (bbl);
         INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
-                IARG_END);
-        INS tail = BBL_InsTail (bbl);
-        INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR, 
-                IARG_BRANCH_TAKEN,
-                IARG_CONST_CONTEXT,
-                IARG_END);
-	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
-	    if(INS_IsSyscall(ins)) {
+			IARG_FAST_ANALYSIS_CALL, 
+			IARG_END);
+
+	for (INS ins = head; INS_Valid(ins); ins = INS_Next(ins)) {
+	    if (INS_Address(ins) == inst_start) {
+		if (INS_IsMemoryRead(ins)) {
+		    if (INS_HasMemoryRead2(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_read2), 
+				       IARG_FAST_ANALYSIS_CALL,
+				       IARG_INST_PTR, 
+				       IARG_MEMORYREAD_EA,
+				       IARG_MEMORYREAD2_EA,
+				       IARG_END);
+		    } else {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_read), 
+				       IARG_FAST_ANALYSIS_CALL,
+				       IARG_INST_PTR, 
+				       IARG_MEMORYREAD_EA,
+				       IARG_END);
+		    }
+		} else if (INS_IsMemoryWrite(ins)) {
+		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_write), 
+				   IARG_FAST_ANALYSIS_CALL,
+				   IARG_INST_PTR, 
+				   IARG_MEMORYWRITE_EA,
+				   IARG_END);
+		}
+
+	    }
+	    if (INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
 			       IARG_SYSCALL_NUMBER, 
 			       IARG_SYSARG_VALUE, 0, 
@@ -288,6 +295,7 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     return TRUE;
 }
 
+#if 0
 void before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0)
 {
     if (tracing) {
@@ -337,6 +345,7 @@ void routine (RTN rtn, VOID *v)
 
     RTN_Close(rtn);
 }
+#endif
 
 int get_record_pid()
 {
@@ -412,7 +421,6 @@ int main(int argc, char** argv)
     // Read in knob parameters
     print_stop = atoi(KnobPrintStop.Value().c_str());
     inst_start = KnobInstStart.Value();
-    if (inst_start == 0) tracing = true;  // Tracing all the time
 
     ppthread_log_clock = map_shared_clock(fd);
     
@@ -422,7 +430,7 @@ int main(int argc, char** argv)
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
     TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
-    RTN_AddInstrumentFunction (routine, 0);
+    //RTN_AddInstrumentFunction (routine, 0);
     PIN_StartProgram();
 
     return 0;

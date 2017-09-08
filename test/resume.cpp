@@ -52,6 +52,7 @@ struct ckpt_data {
     int ckpt_pos; 
     int go_live;
     char* slice_filename;
+    char* recheck_filename;
 };
 
 //used to read in the header from the ckpt file
@@ -109,7 +110,8 @@ void *start_main_thread(void *td) {
     
     rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 			    cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-			    cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename);
+			    cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, 
+			    cd->go_live, cd->slice_filename, cd->recheck_filename);
 
     if (rc < 0) {
 	perror ("resume after ckpt");
@@ -151,7 +153,7 @@ int parse_process_map(int pcount, int fd) {
     return first_proc;
 }
 
-int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *thread, u_long &i) {
+int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *thread, u_long &i) {
 
     struct ckpt_data *thread_cd; 
     int rc = 0;
@@ -180,13 +182,14 @@ int restart_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
     }
     for (auto c : current->children) {
 	if (!fork()) { 
-	    return restart_all_procs(c, cd, thread, i);
+	    return recheck_all_procs(c, cd, thread, i);
 	}
     }
     if (current->main_thread){ 
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename);
+				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename,
+				cd->recheck_filename);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
@@ -584,79 +587,64 @@ int main (int argc, char* argv[])
 
 	if (from_ckpt > 0) {
 	    
-		sprintf (filename, "ckpt.%d", from_ckpt);
-		sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
-		//printf ("restoring from %s\n", pathname);
-		cfd = open (pathname, O_RDONLY);
-		if (cfd < 0) {
-			perror ("open checkpoint file");
-			return cfd;
+	    sprintf (filename, "ckpt.%d", from_ckpt);
+	    sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
+	    cfd = open (pathname, O_RDONLY);
+	    if (cfd < 0) {
+		perror ("open checkpoint file");
+		return cfd;
+	    }
+	    rc = read (cfd, &hdr, sizeof(hdr)); 
+	    if (rc != sizeof(hdr)) {
+		perror ("read proc count");
+		return rc;
+	    }
+	    if (hdr.proc_count > MAX_THREADS) { 
+		perror("we need more threads!");
+		return -1;
+	    }
+	    
+	    
+	    first_proc = parse_process_map(hdr.proc_count, cfd);
+	    
+	    close(cfd);
+	    
+	    if (go_live) {
+		// Supply default slice filename and recheck filename if not specified
+		if (slice_filename == NULL) {
+		    slice_filename = new char[256];
+		    sprintf (slice_filename, "%s/exslice.so", argv[base]);
 		}
-		rc = read (cfd, &hdr, sizeof(hdr)); 
-		if (rc != sizeof(hdr)) {
-			perror ("read proc count");
-			return rc;
+		if (recheck_filename == NULL) {
+		    recheck_filename = new char[256];
+		    sprintf (recheck_filename, "%s/recheck", argv[base]);
 		}
-		if (hdr.proc_count > MAX_THREADS) { 
-		    perror("we need more threads!");
-		    return -1;
+	    }
+
+	    if (slice_filename) {
+		load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
 		}
-
-
-		first_proc = parse_process_map(hdr.proc_count, cfd);
-		
-		close(cfd);
-
-		if (slice_filename) {
-		    load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
-		}
-
-		cd.fd = fd;
-		cd.attach_pin = attach_pin;
-		cd.attach_gdb = attach_gdb;
-		cd.follow_splits = follow_splits;
-		cd.save_mmap = save_mmap;		    
-		strcpy(cd.logdir, argv[base]);
-		strcpy(cd.libdir, libdir);
-		strcpy(cd.filename, filename);
-		strcpy(cd.uniqueid,uniqueid);
-		cd.attach_index = attach_index;
-		cd.attach_pid = attach_pid;
-		cd.nfake_calls = nfake_calls;
-		cd.fake_calls = fake_calls;
-		cd.go_live = go_live;
-		cd.slice_filename = slice_filename;
-		restart_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
-/*
- 		if (use_threads) {
-
-		    for (i = 1; i < hdr.proc_count; i++) {
-			rc = pthread_create(&thread[i], NULL, start_thread,(void *)&cd);
-			if (rc) { 
-			    printf("hmm... what rc is %d\n",rc);
-			    exit(-1);		
-			}
-
-		    }
-		}
-		else {
-		    for (i = 1; i < hdr.proc_count; i++) {
-			pid = fork ();
-			if (pid == 0) {
-			    rc = resume_proc_after_ckpt (fd, argv[base], filename, uniqueid, 0);
-			    if (rc < 0) {
-				perror ("resume after ckpt");
-					exit (-1);
-			    }
-			}
-		    }
-		}
-
-		rc = resume_after_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir, filename, uniqueid,attach_index, attach_pid,nfake_calls,fake_calls);
-*/
+	    
+	    cd.fd = fd;
+	    cd.attach_pin = attach_pin;
+	    cd.attach_gdb = attach_gdb;
+	    cd.follow_splits = follow_splits;
+	    cd.save_mmap = save_mmap;		    
+	    strcpy(cd.logdir, argv[base]);
+	    strcpy(cd.libdir, libdir);
+	    strcpy(cd.filename, filename);
+	    strcpy(cd.uniqueid,uniqueid);
+	    cd.attach_index = attach_index;
+	    cd.attach_pid = attach_pid;
+	    cd.nfake_calls = nfake_calls;
+	    cd.fake_calls = fake_calls;
+	    cd.go_live = go_live;
+	    cd.slice_filename = slice_filename;
+	    cd.recheck_filename = recheck_filename;
+	    recheck_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
 	} else {
-		rc = resume_with_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir,
-				       attach_index, attach_pid, ckpt_at, record_timing, nfake_calls, fake_calls);
+	    rc = resume_with_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir,
+				   attach_index, attach_pid, ckpt_at, record_timing, nfake_calls, fake_calls);
 	}
 	if (rc < 0) {
 		perror("resume");

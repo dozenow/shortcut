@@ -3,7 +3,8 @@
 
 import sys
 
-lineno = int(sys.argv[1])
+pinout = sys.argv[1]
+lineno = int(sys.argv[2])
 
 sources = {}
 
@@ -137,7 +138,7 @@ def findNextBSlice(cnt):
         
 
 # Read in and cache lines up to slicing point
-fh = open ("/tmp/pinout", "r")
+fh = open (pinout, "r")
 cnt = 0
 lines = {}
 for line in fh:

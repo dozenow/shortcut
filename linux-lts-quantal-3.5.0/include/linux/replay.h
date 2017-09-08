@@ -30,7 +30,9 @@ int fork_replay (char __user * logdir, const char __user *const __user *args,
 /* Linker may be NULL - otherwise points to special libc linker */
 long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
 			 int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, int ckpt_at, int record_timing, u_long nfake_calls, u_long* fake_call_points);
-long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, int go_live, char* execute_slice_name);
+long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      
+			      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, 
+			      int go_live, char* execute_slice_name, char* recheck_filename);
 long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name);
 
 /* Returns linker for exec to use */
@@ -200,7 +202,7 @@ struct startup_db_result {
 	unsigned long ckpt_clock;
 };
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid);
+long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name);
 
 void init_startup_db (void);
 void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned long ckpt_clock);
