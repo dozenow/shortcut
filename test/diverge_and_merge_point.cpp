@@ -3,6 +3,7 @@
 #include <fstream>
 #include <list>
 #include <vector>
+#include <set>
 #include <assert.h>
 #include <string.h>
 
@@ -166,12 +167,12 @@ void print_all_blocks (vector<block> &block_list) {
 inline void print_block_info (char* info, int size, struct block block)
 {
     memset (info, 0, size);
-    sprintf (info, "%lu,%llu,0x%x", block.clock, block.index, block.bb_addr);
+    sprintf (info, "%lu,%llu", block.clock, block.index);
 }
 
 int main (int argc, char* argv[]) { 
     if (argc != 4) {
-        cerr << "usage: diverge_and_merge_point bb_info_file1 bb_info_file2 checks_file_path" <<endl;
+        cerr << "usage: diverge_and_merge_point base_exuection_bb_trace diverged_execution_bb_trace  checks_filename" <<endl;
         exit (-1);
     }
     string output_filename(argv[3]);
@@ -182,7 +183,7 @@ int main (int argc, char* argv[]) {
         cerr << "cannot open input files" <<endl;
     }
     if (!output.is_open()) { 
-        cerr << "cannot open output file" <<endl;
+        cerr << "cannot open output file, create a new one instead" <<endl;
     }
     //remove all ctrl flow info in output file
     string line;
@@ -210,19 +211,7 @@ int main (int argc, char* argv[]) {
     if (DEBUG) cout << "=======" << endl;
     distance (bbinfo_block1, bbinfo_block2, bbinfo_block1.size(), bbinfo_block2.size());
     cout << "=======" << endl;
-    int last_direction = -1;
-    for (auto iter = result_block.begin(); iter != result_block.end(); ++iter) { 
-        if (last_direction == -1) last_direction = iter->direction;
-        if (last_direction != iter->direction && last_direction != SUBSTITUTE) {
-            cerr << "Well, it seems each execution has some extra blocks, which is not tested yet." << endl;
-        }
-    }
-    int retval = (last_direction == INSERT_FIRST?2:1);
-    
-    if (retval == 1) 
-        cout << "choose first execution as the base. " <<endl;
-    else
-        cout << "choose second execution as the base. " <<endl;
+    cout << "choose first execution as the base. " <<endl;
 
     //figure out the merge point
     u_long diverge_clock = 0;
@@ -233,6 +222,8 @@ int main (int argc, char* argv[]) {
     char message2[256];
     uint64_t diverge_from1 = 0;
     uint64_t diverge_from2 = 0;
+    set<uint32_t> diverged_block1;
+    set<uint32_t> diverged_block2;
     memset (&last_diverge1, 0, sizeof(struct block));
     memset (&last_diverge2, 0, sizeof(struct block));
     
@@ -246,22 +237,37 @@ int main (int argc, char* argv[]) {
             if (last_diverge1.clock != 0 || last_diverge2.clock != 0) {
                 print_block_info (message1, 256, last_diverge1);
                 print_block_info (message2, 256, last_diverge2);
-                printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
-                if (retval == 1) {
-                    output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
-                    output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
-                } else {
-                    output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_merge "  << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
-                    output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+                for (auto b: diverged_block1) { 
+                    printf ("        diverged blocks for execution 1: %x\n", b);
+                    output << "0x" << std::hex << b << std::dec << " ctrl_block_instrument block_addr" << endl;
+                    diverged_block1.clear();
                 }
+                for (auto b: diverged_block2) { 
+                    printf ("        diverged blocks for execution 2: %x\n", b);
+                    output << "0x" << std::hex << b << std::dec << " ctrl_block_instrument block_addr" << endl;
+                    diverged_block2.clear();
+                }
+                printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
+                if (diverge_clock != last_diverge1.clock) { 
+                    cerr << "Merge at a different clock?" << endl;
+                    assert (0);
+                }
+                //if (retval == 1) {
+                output << "0x0" << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
+                output << "0x0" << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
+                /*} else {
+                    output << "0x0" << " ctrl_merge "  << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
+                    output << "0x0" << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+                }*/
             }
             print_block_info (message1, 256, result_block[i].block1);
             print_block_info (message2, 256, result_block[i].block2);
             printf ("Diverge before %s @FIRST, %s @SECOND. \n", message1, message2);
-            if (retval == 1) 
-                output << "0x" << std::hex << result_block[i].block1.bb_addr << std::dec << " ctrl_diverge " << result_block[i].block1.pid << "," << result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
-            else 
-                output << "0x" << std::hex << result_block[i].block2.bb_addr << std::dec << " ctrl_diverge " << result_block[i].block2.pid << "," << result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
+            //if (retval == 1) 
+            output << "0x0"<< " ctrl_diverge " << result_block[i].block1.pid << "," << result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
+            //else 
+             //   output << "0x0"<< " ctrl_diverge " << result_block[i].block2.pid << "," << result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
+            diverge_clock = result_block[i].block1.clock;
             diverge_from1 = result_block[i].block1.index;
             diverge_from2 = result_block[i].block2.index;
             memcpy (&last_diverge1, &result_block[i].block1, sizeof(struct block));
@@ -271,32 +277,43 @@ int main (int argc, char* argv[]) {
             last_diverge1.bb_addr = result_block[i].block1.bb_addr;
             last_diverge1.index ++;
             assert (last_diverge1.clock == result_block[i].block1.clock);
+            diverged_block1.insert (result_block[i].block1.bb_addr);
         }
         if (result_block[i].direction != INSERT_SECOND) {
             last_diverge2.index ++;
             last_diverge2.bb_addr = result_block[i].block2.bb_addr;
             assert (last_diverge2.clock == result_block[i].block2.clock);
+            diverged_block2.insert (result_block[i].block2.bb_addr);
         }
-        print_block_info (message1, 256, result_block[i].block1);
-        print_block_info (message2, 256, result_block[i].block2);
-        output << "0x" << std::hex << result_block[i].block1.bb_addr << std::dec << " ctrl_block_instrument " <<  result_block[i].block1.clock << "," << result_block[i].block1.index << endl;
-        output << "0x" << std::hex << result_block[i].block2.bb_addr << std::dec << " ctrl_block_instrument " <<  result_block[i].block2.clock << "," << result_block[i].block2.index << endl;
     }
     if (last_diverge1.clock != 0 || last_diverge2.clock != 0) { 
         print_block_info (message1, 256, last_diverge1);
         print_block_info (message2, 256, last_diverge2);
-        printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
-        if (retval == 1) {
-            output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
-            output << "0x" << std::hex << last_diverge1.bb_addr << std::dec << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
-        } else {
-            output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_merge " << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
-            output << "0x" << std::hex << last_diverge2.bb_addr << std::dec << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+        for (auto b: diverged_block1) { 
+            printf ("        diverged blocks for execution 1: %x\n", b);
+            output << "0x" << std::hex << b << std::dec << " ctrl_block_instrument block_addr" << endl;
         }
+        for (auto b: diverged_block2) { 
+            printf ("        diverged blocks for execution 2: %x\n", b);
+            output << "0x" << std::hex << b << std::dec << " ctrl_block_instrument block_addr" << endl;
+        }
+
+        printf ("Merged right before %s @FIRST, %s @SECOND.\n", message1, message2);
+        if (diverge_clock != last_diverge1.clock) { 
+            cerr << "Merge at a different clock?" << endl;
+            assert (0);
+        }
+        //if (retval == 1) {
+        output << "0x0" << " ctrl_merge " << last_diverge1.pid << "," << last_diverge1.clock << "," << last_diverge1.index << endl;
+        output << "0x0" << " ctrl_distance " << last_diverge1.pid << "," << last_diverge2.index - diverge_from2 << endl;
+        /*} else {
+            output << "0x0" << " ctrl_merge " << last_diverge2.pid << "," << last_diverge2.clock << "," << last_diverge2.index << endl;
+            output << "0x0" << " ctrl_distance " << last_diverge2.pid << "," << last_diverge1.index - diverge_from1 << endl;
+        }*/
     }
 
     cout << "=======" << endl;
     cout << "results are written to " << output_filename << endl;
     output.close();
-    return retval;
+    return 1;
 }

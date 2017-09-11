@@ -221,6 +221,15 @@ struct ctrl_flow_param {
     int pid;
 };
 
+struct ctrl_flow_checkpoint { 
+    CONTEXT context;
+    u_long clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations
+    // reg taints and flag taints; mem taints is stored in store_set_mem
+    // other stuff in thread_data don't need to be checkpointed. Otherwise, add it here
+    taint_t reg_table[NUM_REGS * REG_SIZE];
+    std::stack<struct flag_taints>* flag_taints;
+};
+
 struct ctrl_flow_info { 
     struct ctrl_flow_block_index block_index;  //current block index
     std::queue<struct ctrl_flow_block_index> *diverge_point; //index for all divergences
@@ -240,13 +249,9 @@ struct ctrl_flow_info {
     //checkpoint and rollback
     bool is_rollback; 
     bool is_rollback_first_inst;
-    CONTEXT ckpt_context;
-    u_long ckpt_clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations
-    // reg taints and flag taints; mem taints is stored in store_set_mem
-    // other stuff in thread_data don't need to be checkpointed. Otherwise, add it here
-    taint_t ckpt_reg_table[NUM_REGS * REG_SIZE];
-    std::stack<struct flag_taints>* ckpt_flag_taints;
-};
+    struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
+    struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
+ };
 
 // Per-thread data structure
 // Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
