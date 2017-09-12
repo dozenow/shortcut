@@ -2312,14 +2312,12 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
 }
 
 //If we move an imm value to an memory address, we still need to verify the base and index registers if they're tainted. Therefore, at least the verifications need to be in the slice
-// JNF: xxx - This is probably wrong because fw_slice_mem is for memory being read from, not written to.  I think we'll need a new fw_slice_xxx function in taint_full_interface.c for this.  Also naming convention
-// would be fw_slice_2mem (I believe)
 static inline void fw_slice_src_dst_mem (INS ins, REG base_reg, REG index_reg)  
 {
     char* str = get_copy_of_disasm (ins);
     SETUP_BASE_INDEX(base_reg, index_reg);
     INS_InsertCall(ins, IPOINT_BEFORE,
-		   AFUNPTR(fw_slice_mem),
+		   AFUNPTR(fw_slice_2mem),
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_INST_PTR,
 		   IARG_PTR, str,
@@ -2816,6 +2814,7 @@ void instrument_taint_immval2mem(INS ins, REG base_reg = LEVEL_BASE::REG_INVALID
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_immval2mem),
 		   IARG_FAST_ANALYSIS_CALL,
+                   IARG_INST_PTR,
 		   IARG_MEMORYWRITE_EA, 
 		   IARG_UINT32, INS_MemoryWriteSize(ins),
                    PASS_BASE_INDEX_TAINT,

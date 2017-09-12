@@ -62,6 +62,7 @@ GHashTable* taint_fds_cloexec = NULL;
 #define CHECK_TYPE_MMAP_REGION 0
 #define CHECK_TYPE_RANGE       1
 #define CHECK_TYPE_SPECIFIC_RANGE 2
+#define CHECK_TYPE_SPECIFIC_RANGE_WRITE 3
 
 struct taint_check {
     int type;
@@ -1004,6 +1005,13 @@ static int init_check_map (const char* check_filename)
 			tc.value = range;
 		    }
 		    check_map[ip] = tc;
+                } else if (!strcmp(type, "specify_range_write")) {
+                    u_long start_addr, size;
+                    sscanf (value, "%lx,%lu", &start_addr, &size);
+                    tc.type = CHECK_TYPE_SPECIFIC_RANGE_WRITE;
+                    tc.value = start_addr;
+                    tc.size = size;
+                    check_map[ip] = tc;
                 } else if (!strcmp(type, "specify_range")) {
                     u_long start_addr, size;
                     sscanf (value, "%lx,%lu", &start_addr, &size);
@@ -2119,6 +2127,87 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
     assert (0); // To make compiler happy
 }
 
+// Only called if base or index register is tainted.  Returns true if register(s) are still tainted after verification due to range check */
+static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, 
+						int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, 
+						int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8,
+						int base_tainted, int index_tainted) 
+{ 
+    u_long start, end;
+    PIN_REGISTER base_value;
+    PIN_REGISTER index_value;
+#ifdef USE_CHECK_FILE
+    map<ADDRINT,taint_check>::iterator iter = check_map.find(ip);
+    if (iter != check_map.end()) {
+	if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE) {
+            start = iter->second.value;
+            end = iter->second.value + iter->second.size;
+	    if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
+	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
+	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
+	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
+	    for (u_long i = start; i <= end; i++) {
+		if (!is_mem_tainted(i, 1)) {
+		    // Untainted - load in valid value to memory address
+		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", i, *(u_char *) i, ip);
+		    add_modified_mem_for_final_check (i,1);  
+		}
+	    }
+	    print_readonly_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
+	    return true;
+	}
+    } else {
+        if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+        if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	return false;
+    }
+#else
+    if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
+    if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+    return false;
+#endif
+    return false;
+}
+
+static inline void taint_base_index_to_range_memwrite (ADDRINT ip, u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size) 
+{
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size,index_reg_off, index_reg_size);
+    if (bi_taint) {
+        u_long mem_start = 0;
+        uint32_t mem_size = 0;
+#ifdef USE_CHECK_FILE
+        map<ADDRINT,taint_check>::iterator iter = check_map.find(ip);
+        if (iter != check_map.end()) {
+            if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE) {
+                mem_start = iter->second.value;
+                mem_size = iter->second.size;
+            }
+        } else {
+            mem_start = mem_loc;
+            mem_size = size;
+        }
+#else
+        mem_start = mem_loc;
+        mem_size = size;
+#endif
+        //merge taints
+        uint32_t offset = 0;
+        while (offset < mem_size) { 
+            taint_t* mem_taints = NULL;
+            uint32_t count = get_cmem_taints_internal (mem_start + offset, mem_size-offset, &mem_taints);
+            if (mem_taints) {
+                for (uint32_t i = 0; i<count; ++i) { 
+                    mem_taints[i] = merge_taints (mem_taints[i], bi_taint);
+                }
+            } else { 
+                uint32_t ret = set_cmem_taints_one (mem_start+offset, count, bi_taint);
+                assert (ret == count);
+            }
+            offset += count;
+        }
+    }
+}
+
 static void inline print_immediate_addr (u_long mem_loc, ADDRINT ip)
 {
     printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %x (move upwards)\n", mem_loc, ip);
@@ -2158,10 +2247,22 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
     }
 
 #define VERIFY_BASE_INDEX_WRITE						\
+     int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
+     int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
+     if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8); \
+     if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+
+
+#define VERIFY_BASE_INDEX_WRITE_RANGE						\
     int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
     int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
-    if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8); \
-    if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+    bool still_tainted = false; \
+    if (base_tainted || index_tainted) { \
+	still_tainted = verify_base_index_registers_write_range (ip, ins_str, mem_loc, mem_size, \
+						     base_reg, base_reg_size, base_reg_value, base_reg_u8, \
+						     index_reg, index_reg_size, index_reg_value, index_reg_u8, \
+						     base_tainted, index_tainted); \
+    }
 
 void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size) 
 { 
@@ -2548,16 +2649,27 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
     if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
-TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS) 
+TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
+{ 
+    VERIFY_BASE_INDEX_WRITE_RANGE;
+    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    if (mem_tainted || still_tainted) {
+	printf ("[SLICE] #%x #%s\t", ip, ins_str);
+	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value (mem_loc, mem_size));
+    }
+    if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
+}
+
+TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, uint32_t src_mem_size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS) 
 { 
     // This may be a write (for pop) - so just verify for now
     VERIFY_BASE_INDEX_WRITE;
-    int tainted = is_mem_tainted (mem_loc, size);
+    int tainted = is_mem_tainted (src_mem_loc, src_mem_size);
     if (tainted) {
 	printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", mem_loc, tainted, size, dst_mem_loc, 0, dst_size, get_mem_value (mem_loc, size), get_mem_value (dst_mem_loc, dst_size));
-	print_immediate_addr (mem_loc, ip);
-	if (mem_loc != dst_mem_loc || size != dst_size) print_immediate_addr (dst_mem_loc, ip);
+	printf ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", src_mem_loc, tainted, src_mem_size, dst_mem_loc, 0, dst_size, get_mem_value (src_mem_loc, src_mem_size), get_mem_value (dst_mem_loc, dst_size));
+	print_immediate_addr (src_mem_loc, ip);
+	if (src_mem_loc != dst_mem_loc || src_mem_size != dst_size) print_immediate_addr (dst_mem_loc, ip);
 	add_modified_mem_for_final_check (dst_mem_loc, dst_size);
     }
 }
@@ -3603,15 +3715,10 @@ TAINTSIGN taint_add3_2wreg_2wreg (int src_reg1, int src_reg2, int src_reg3,
     shadow_reg_table[dst_reg2 * REG_SIZE + 3] = final_merged_taint;
 }
 
-TAINTSIGN taint_immval2mem (u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size)
+TAINTSIGN taint_immval2mem (ADDRINT ip, u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size)
 {
-    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size,index_reg_off, index_reg_size);
-    if (bi_taint) {
-        uint32_t ret = set_cmem_taints_one (mem_loc, size, bi_taint);
-        assert (ret == size);
-    } else {
-        clear_mem_taints(mem_loc, size);
-    }
+    clear_mem_taints(mem_loc, size);
+    taint_base_index_to_range_memwrite (ip, mem_loc, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
 }
 
 TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter, uint32_t rep_type)
