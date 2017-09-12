@@ -2342,8 +2342,8 @@ inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::map<u_lo
             set_cmem_taints_one (i->first, 1, i->second.taint);
             add_modified_mem_for_final_check (i->first, 1);
         }
+        printf ("[CTRL_FLOW] restore mem %lx, tainted? %d, current_value %d, new value %d\n", i->first, is_mem_tainted (i->first, 1), get_mem_value (i->first, 1), i->second.value);
         *(char*) (i->first) = i->second.value;
-        printf ("[CTRL_FLOW] restore mem %lx\n", i->first);
     }
 
     PIN_ExecuteAt (&ckpt->context);
@@ -2359,7 +2359,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
             IS_BLOCK_INDEX_LESS_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) ||
            current_thread->ctrl_flow_info.is_rollback == true) {
 
-        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *((char*) mem_loc));
+        printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *((uint8_t*) mem_loc));
 
         int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
         int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0;
@@ -2378,14 +2378,14 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
                 for (uint32_t i = 0; i<count; ++i) { 
                     if (mem_map->find (mem_loc + offset + i) == mem_map->end()) {
                         (*mem_map)[mem_loc + offset + i].taint = 0;
-                        (*mem_map)[mem_loc + offset + i].value = *((char*) mem_loc);
+                        (*mem_map)[mem_loc + offset + i].value = *((char*) (mem_loc+offset+i));
                     }
                 }
             } else { 
                 for (uint32_t i = 0; i<count; ++i) { 
                     if (mem_map->find (mem_loc + offset + i) == mem_map->end()) {
                         (*mem_map)[mem_loc + offset + i].taint = mem_taints[i];
-                        (*mem_map)[mem_loc + offset + i].value = *((char*) mem_loc);
+                        (*mem_map)[mem_loc + offset + i].value = *((char*) (mem_loc+offset+i));
                     }
                 }
             }
@@ -2537,7 +2537,7 @@ TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTE
             //now we need to rollback reg and mem, making them to have the original value and returning to the original exeuction
             //but in the meanwhile, we don't restore taints
             printf ("[CTRL_FLOW_THE_OTHER_BRANCH] Control flow exploration done. Let's rollback to the original exeuction.\n");
-            ctrl_flow_rollback (& current_thread->ctrl_flow_info.merge_point_ckpt, current_thread->ctrl_flow_info.that_branch_store_set_mem, 0);
+            //ctrl_flow_rollback (& current_thread->ctrl_flow_info.merge_point_ckpt, current_thread->ctrl_flow_info.that_branch_store_set_mem, 0);
         }
         ++ current_thread->ctrl_flow_info.that_branch_block_count;
     }
