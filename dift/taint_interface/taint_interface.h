@@ -187,7 +187,7 @@ TAINTSIGN taint_add3_2hwreg_2hwreg (int src_reg1, int src_reg2, int src_reg3,
                                     int dst_reg1, int dst_reg2);
 TAINTSIGN taint_add3_2wreg_2wreg (int src_reg1, int src_reg2, int src_reg3,
                                     int dst_reg1, int dst_reg2);
-TAINTSIGN taint_immval2mem (u_long mem_loc, uint32_t size);
+TAINTSIGN taint_immval2mem (u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size);
 TAINTSIGN taint_clear_reg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags);
 
 // call

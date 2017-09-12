@@ -3603,9 +3603,15 @@ TAINTSIGN taint_add3_2wreg_2wreg (int src_reg1, int src_reg2, int src_reg3,
     shadow_reg_table[dst_reg2 * REG_SIZE + 3] = final_merged_taint;
 }
 
-TAINTSIGN taint_immval2mem (u_long mem_loc, uint32_t size)
+TAINTSIGN taint_immval2mem (u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size)
 {
-    clear_mem_taints(mem_loc, size);
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size,index_reg_off, index_reg_size);
+    if (bi_taint) {
+        uint32_t ret = set_cmem_taints_one (mem_loc, size, bi_taint);
+        assert (ret == size);
+    } else {
+        clear_mem_taints(mem_loc, size);
+    }
 }
 
 TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter, uint32_t rep_type)

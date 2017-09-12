@@ -2512,7 +2512,7 @@ static inline void fw_slice_src_regflag_cmov (INS ins, uint32_t mask, REG dst, R
     put_copy_of_disasm (str);
 }
 
-static UINT32 get_reg_off (REG reg)
+static inline UINT32 get_reg_off (REG reg)
 {
     int treg = translate_reg((int)reg);
     UINT32 reg_offset = treg * REG_SIZE;
@@ -2810,13 +2810,15 @@ void instrument_taint_add_mem2reg (INS ins, REG dstreg, int set_flags, int clear
 		   IARG_END);
 }
 
-void instrument_taint_immval2mem(INS ins)
+void instrument_taint_immval2mem(INS ins, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
+    SETUP_BASE_INDEX_TAINT;
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_immval2mem),
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_MEMORYWRITE_EA, 
 		   IARG_UINT32, INS_MemoryWriteSize(ins),
+                   PASS_BASE_INDEX_TAINT,
 		   IARG_END);
 }
 
@@ -3314,7 +3316,7 @@ void instrument_mov (INS ins)
             REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
             //verification for base&index
             fw_slice_src_dst_mem (ins, base_reg, index_reg);
-            instrument_taint_immval2mem(ins);
+            instrument_taint_immval2mem(ins, base_reg, index_reg);
         }
     } else {
 	REG dstreg = INS_OperandReg(ins, 0);
