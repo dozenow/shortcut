@@ -4476,10 +4476,6 @@ void instruction_instrumentation(INS ins, void *v)
 #ifdef TAINT_STATS
     inst_instrumented++;
 #endif
-#ifdef EXTRA_DEBUG
-    //DEBUG: print out dynamic instructions and their mem read/write
-    debug_print (ins);
-#endif
    
     if(INS_IsSyscall(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),
@@ -5126,6 +5122,10 @@ void trace_instrumentation(TRACE trace, void* v)
         put_copy_of_disasm (str);
 #endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#ifdef EXTRA_DEBUG
+            //DEBUG: print out dynamic instructions and their mem read/write
+            debug_print (ins);
+#endif
 #ifdef TRACK_CTRL_FLOW_DIVERGE
 	    // JNF: xxx this assumes that we know all blocks involved in a divergence before we run the slice generator (I think this is reasonable but it will impact the design of the bb tool)
             if (current_thread->ctrl_flow_info.block_instrumented->find(BBL_Address(bbl)) != current_thread->ctrl_flow_info.block_instrumented->end()) {
@@ -5507,8 +5507,9 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.that_branch_store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.that_branch_distance = new std::queue<uint64_t> ();
    ptdata->ctrl_flow_info.that_branch_store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
-   ptdata->ctrl_flow_info.is_rollback = false;
-   ptdata->ctrl_flow_info.is_rollback_first_inst = false;
+   ptdata->ctrl_flow_info.is_rolled_back = false;
+   ptdata->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
+   ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 

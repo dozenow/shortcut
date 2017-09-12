@@ -2342,7 +2342,7 @@ inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::map<u_lo
             set_cmem_taints_one (i->first, 1, i->second.taint);
             add_modified_mem_for_final_check (i->first, 1);
         }
-        printf ("[CTRL_FLOW] restore mem %lx, tainted? %d, current_value %d, new value %d\n", i->first, is_mem_tainted (i->first, 1), get_mem_value (i->first, 1), i->second.value);
+        printf ("[CTRL_FLOW] restore mem %lx, tainted? %d, current_value %d, new value %u\n", i->first, is_mem_tainted (i->first, 1), get_mem_value (i->first, 1), i->second.value);
         *(char*) (i->first) = i->second.value;
     }
 
@@ -2354,10 +2354,10 @@ inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::map<u_lo
 //This function should always be called before the actual taint function
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
-    if ((current_thread->ctrl_flow_info.is_rollback == false && current_thread->ctrl_flow_info.merge_point->empty() == false &&
+    if ((current_thread->ctrl_flow_info.is_in_diverged_branch == false && current_thread->ctrl_flow_info.merge_point->empty() == false &&
         IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
             IS_BLOCK_INDEX_LESS_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) ||
-           current_thread->ctrl_flow_info.is_rollback == true) {
+           current_thread->ctrl_flow_info.is_in_diverged_branch == true) {
 
         printf ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, *((uint8_t*) mem_loc));
 
@@ -2368,7 +2368,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
 	    // JNF: xxx we could eventually, though, if we were to assume a specific set of values (as for normal operation)?
             assert (0);
         }
-        map<u_long, struct ctrl_flow_origin_value> *mem_map = (current_thread->ctrl_flow_info.is_rollback == false? current_thread->ctrl_flow_info.store_set_mem: current_thread->ctrl_flow_info.that_branch_store_set_mem);
+        map<u_long, struct ctrl_flow_origin_value> *mem_map = (current_thread->ctrl_flow_info.is_in_diverged_branch == false? current_thread->ctrl_flow_info.store_set_mem: current_thread->ctrl_flow_info.that_branch_store_set_mem);
         uint32_t offset = 0;
         //also store the original taint value for this mem address
         while (offset < size) {
@@ -2397,7 +2397,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
     //we don't need save the original value and taint for regs since we checkpoint all of them
-    if (current_thread->ctrl_flow_info.is_rollback == false) {
+    if (current_thread->ctrl_flow_info.is_in_diverged_branch == false) {
         if (current_thread->ctrl_flow_info.merge_point->empty() == false &&
                 IS_BLOCK_INDEX_GREATER_OR_EQUAL(current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.diverge_point->front()) &&
                 IS_BLOCK_INDEX_LESS_OR_EQUAL (current_thread->ctrl_flow_info.block_index, current_thread->ctrl_flow_info.merge_point->front())) {
@@ -2412,25 +2412,32 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
 
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx) 
 { 
-    if (current_thread->ctrl_flow_info.is_rollback == false) {
+    if (current_thread->ctrl_flow_info.is_in_diverged_branch == false) {
         //diverge point
         struct ctrl_flow_block_index index;
         memcpy (&index, &current_thread->ctrl_flow_info.block_index, sizeof(index));
         ++ index.index;
         if (current_thread->ctrl_flow_info.diverge_point->empty() == false &&
                 IS_BLOCK_INDEX_EQUAL(index, current_thread->ctrl_flow_info.diverge_point->front())) {
-            printf ("[CTRL_FLOW] before the divergence, index %lu_%llu\n", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
-            //checkpoint the current state and we may need to roll back later
-            //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
-            ctrl_flow_checkpoint (ctx, &current_thread->ctrl_flow_info.ckpt);
-            current_thread->ctrl_flow_info.change_jump = true;
-            if (ins_str[0] != 'j') { 
-                fprintf (stderr, "unrecognized basic block exit instruction. currently assume it's always jump instruction %s \n", ins_str);
-                assert (0);
-            } else if (strncmp (ins_str, "jecx", 4) == 0) {
-                fprintf (stderr, "jecx not implemented for control flow divergence. \n");
-                assert (0);
-            }
+            printf ("[CTRL_FLOW] before the divergence, index %lu_%llu, is_rolled_back %d\n", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index, current_thread->ctrl_flow_info.is_rolled_back);
+            if (current_thread->ctrl_flow_info.is_rolled_back == false) { 
+                //checkpoint the current state and we may need to roll back later
+                //even if we don't need to roll back, we still save the current shadow_reg_table and reg value before divergence which are used to initialize registers on different branches
+                ctrl_flow_checkpoint (ctx, &current_thread->ctrl_flow_info.ckpt);
+                current_thread->ctrl_flow_info.change_jump = true;
+                //let's force to take the alternative path first here
+                current_thread->ctrl_flow_info.is_in_diverged_branch = true;
+                current_thread->ctrl_flow_info.that_branch_block_count = 0;
+                current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = true;
+                if (ins_str[0] != 'j') { 
+                    fprintf (stderr, "unrecognized basic block exit instruction. currently assume it's always jump instruction %s \n", ins_str);
+                    assert (0);
+                } else if (strncmp (ins_str, "jecx", 4) == 0) {
+                    fprintf (stderr, "jecx not implemented for control flow divergence. \n");
+                    assert (0);
+                }
+                return;
+            } 
         }
         ++ current_thread->ctrl_flow_info.block_index.index;
         if (*ppthread_log_clock != current_thread->ctrl_flow_info.block_index.clock) {
@@ -2448,7 +2455,7 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* ins_str, BOOL taken, cons
 
 TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTEXT* ctx) 
 {
-    if (current_thread->ctrl_flow_info.is_rollback == false) {
+    if (current_thread->ctrl_flow_info.is_in_diverged_branch == false) {
         //merge point for this branch (the branch that this execution takes)
         if (current_thread->ctrl_flow_info.merge_point->empty() == false &&
                 current_thread->ctrl_flow_info.block_index.index == current_thread->ctrl_flow_info.merge_point->front().index &&
@@ -2464,39 +2471,36 @@ TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTE
             printf ("[CTRL_FLOW] found an expected control flow block, ip %x, index %llu\n", ip, current_thread->ctrl_flow_info.block_index.index);
             //We'll force to taint some registers and addresses 
             //Of course, initialization is necessary for those reg/mem that is originally untainted
+            
             //TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
 
             init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
             taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
             printf ("[SLICE] #%x #jmp %s_this_branch_end\t [SLICE_INFO] \n", ip, label_prefix);
-            printf ("[SLICE] #%x #%s_that_branch_start:\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_that_branch_init:\t [SLICE_INFO] \n", ip, label_prefix);
             printf ("[CTRL_FLOW] initialization of original reg/mem values\n");
             init_ctrl_flow_the_other_branch (ip, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
             printf ("[CTRL_FLOW] initialization of original reg/mem values done\n");
-            printf ("[SLICE] #%x #jmp %s_that_branch_middle\t [SLICE_INFO] \n", ip, label_prefix);
-            
-            //ok let's prepare for rollback
-            if (current_thread->ctrl_flow_info.that_branch_distance->front() == 0) {
-                //there is no alternative path in this case
-                current_thread->ctrl_flow_info.store_set_reg->clear();
-                current_thread->ctrl_flow_info.store_set_mem->clear();
-                printf ("[SLICE] #%x #%s_this_branch_start:\t [SLICE_INFO] \n", ip, label_prefix);
-                printf ("[SLICE] #%x #jmp %s_this_branch_middle\t [SLICE_INFO] \n", ip, label_prefix);
-                printf ("[SLICE] #%x #%s_that_branch_middle:\t [SLICE_INFO] \n", ip, label_prefix);
-                printf ("[SLICE] #%x #%s_that_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
-                printf ("[SLICE] #%x #%s_this_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
-                current_thread->ctrl_flow_info.merge_point->pop();
-                current_thread->ctrl_flow_info.diverge_point->pop();
-            } else {
-                //before we explore the alternative path, let's do another checkpoint, so that we can return to this original execution faithfully
-                ctrl_flow_checkpoint (ctx, &current_thread->ctrl_flow_info.merge_point_ckpt);
-                current_thread->ctrl_flow_info.that_branch_block_count = 0;
-                current_thread->ctrl_flow_info.is_rollback = true;
-                current_thread->ctrl_flow_info.is_rollback_first_inst = true;
-                current_thread->ctrl_flow_info.change_jump = true;
-                //let's rollback to the diverge point
-                ctrl_flow_rollback (&current_thread->ctrl_flow_info.ckpt, current_thread->ctrl_flow_info.store_set_mem, 1);
-            }
+            printf ("[SLICE] #%x #jmp %s_that_branch_execute_and_taint\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_that_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_this_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
+
+            //then we need to also taint the other branch since we rolled back and remove all previously taint information
+            //
+            //TODO well, I think this might break the current taint backtracing tool
+            //
+            taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+
+            current_thread->ctrl_flow_info.merge_point->pop();
+            current_thread->ctrl_flow_info.diverge_point->pop();
+            current_thread->ctrl_flow_info.that_branch_distance->pop ();
+            current_thread->ctrl_flow_info.store_set_reg->clear();
+            current_thread->ctrl_flow_info.store_set_mem->clear();
+            current_thread->ctrl_flow_info.that_branch_store_set_reg->clear();
+            current_thread->ctrl_flow_info.that_branch_store_set_mem->clear();
+            current_thread->ctrl_flow_info.is_rolled_back = false;
+            printf ("[CTRL_FLOW] This control flow is handled.\n");
+            fflush (stdout);
         } 
     } else { 
         //merge point for the other branch
@@ -2504,40 +2508,28 @@ TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTE
 
         if (current_thread->ctrl_flow_info.that_branch_block_count -1 /*minue 1 because we rollback and execute this block twice*/== current_thread->ctrl_flow_info.that_branch_distance->front()) { 
             current_thread->ctrl_flow_info.that_branch_block_count = 0;
-            current_thread->ctrl_flow_info.that_branch_distance->pop ();
-            current_thread->ctrl_flow_info.is_rollback = false;
-            current_thread->ctrl_flow_info.is_rollback_first_inst = false;
+            current_thread->ctrl_flow_info.is_in_diverged_branch = false;
+            current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
 
             char label_prefix[32];
-            sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.block_index.clock, current_thread->ctrl_flow_info.block_index.index);
+            sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.merge_point->front().clock, current_thread->ctrl_flow_info.merge_point->front().index);
             printf ("[CTRL_FLOW_THE_OTHER_BRANCH] taint_ctrl_flow_branch: the other branch: merge before this block, %x\n", ip);
             //TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
             init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
             taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
             printf ("[SLICE] #%x #jmp %s_that_branch_end\t [SLICE_INFO] \n", ip, label_prefix);
-            printf ("[SLICE] #%x #%s_this_branch_start:\t [SLICE_INFO] \n", ip, label_prefix);
+            printf ("[SLICE] #%x #%s_this_branch_init:\t [SLICE_INFO] \n", ip, label_prefix);
             printf ("[CTRL_FLOW] initialization of original reg/mem values\n");
 
             init_ctrl_flow_the_other_branch (ip, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
             printf ("[CTRL_FLOW] initialization of original reg/mem values done\n");
-            printf ("[SLICE] #%x #jmp %s_this_branch_middle\t [SLICE_INFO] \n", ip, label_prefix);
-            printf ("[SLICE] #%x #%s_that_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
-            printf ("[SLICE] #%x #%s_this_branch_end:\t [SLICE_INFO] \n", ip, label_prefix);
-            //then we need to also taint the original branch since we rolled back and remove all previously taint information
-            //TODO well, I think this might break the current taint backtracing tool
-            taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
+            printf ("[SLICE] #%x #jmp %s_this_branch_execute_and_taint\t [SLICE_INFO] \n", ip, label_prefix);
 
-            current_thread->ctrl_flow_info.merge_point->pop();
-            current_thread->ctrl_flow_info.diverge_point->pop();
-            current_thread->ctrl_flow_info.store_set_reg->clear();
-            current_thread->ctrl_flow_info.store_set_mem->clear();
-            current_thread->ctrl_flow_info.that_branch_store_set_reg->clear();
-            current_thread->ctrl_flow_info.that_branch_store_set_mem->clear();
+            //let's roll back to the diverge point and take the original branch
+            current_thread->ctrl_flow_info.change_jump = true;
+            current_thread->ctrl_flow_info.is_rolled_back = true;
+            ctrl_flow_rollback (&current_thread->ctrl_flow_info.ckpt, current_thread->ctrl_flow_info.that_branch_store_set_mem, 1);
 
-            //now we need to rollback reg and mem, making them to have the original value and returning to the original exeuction
-            //but in the meanwhile, we don't restore taints
-            printf ("[CTRL_FLOW_THE_OTHER_BRANCH] Control flow exploration done. Let's rollback to the original exeuction.\n");
-            //ctrl_flow_rollback (& current_thread->ctrl_flow_info.merge_point_ckpt, current_thread->ctrl_flow_info.that_branch_store_set_mem, 0);
         }
         ++ current_thread->ctrl_flow_info.that_branch_block_count;
     }
@@ -2735,29 +2727,25 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, c
 {
     if (is_flag_tainted (mask)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
-        if (current_thread->ctrl_flow_info.is_rollback == false && current_thread->ctrl_flow_info.change_jump) { 
+        if (current_thread->ctrl_flow_info.is_in_diverged_branch == false && current_thread->ctrl_flow_info.change_jump) { 
             char changed_inst[64] = {0};
             char* start = strchr (ins_str, ' ');
             memcpy (changed_inst, ins_str, start-ins_str);
             current_thread->ctrl_flow_info.change_jump = false;
             char prefix[64];
             sprintf (prefix,  "b_%lu_%llu", current_thread->ctrl_flow_info.merge_point->front().clock, current_thread->ctrl_flow_info.merge_point->front().index);
-            //well, the process_slice will change this function to take the contrary branch
-            printf ("[SLICE] #%x #%s %s_that_branch_start\t", ip, changed_inst, prefix); 
-            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d block_index %llu\n", mask, (int) taken, current_thread->ctrl_flow_info.block_index.index);
-            printf ("[SLICE] #0x0 #jmp %s_this_branch_start\t[SLICE_INFO] \n", prefix);
-            printf ("[SLICE] #0x0 #%s_this_branch_middle:\t[SLICE_INFO] \n", prefix);
+            printf ("[SLICE] #0x0 #%s_this_branch_execute_and_taint:\t[SLICE_INFO] \n", prefix);
 
-        } else if (current_thread->ctrl_flow_info.is_rollback == true && current_thread->ctrl_flow_info.change_jump) { 
+        } else if (current_thread->ctrl_flow_info.is_in_diverged_branch == true && current_thread->ctrl_flow_info.change_jump) { 
             char changed_inst[64] = {0};
             char* start = strchr (ins_str, ' ');
-            if (current_thread->ctrl_flow_info.is_rollback_first_inst) {
+            if (current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst) {
                 //if we enter this jump for the first time, we need to force the jump to take a different direction
                 //now we modify the eflag value
                 CONTEXT save_ctx;
                 PIN_SaveContext (ctx, &save_ctx);
                 uint32_t value = (uint32_t) PIN_GetContextReg (&save_ctx, LEVEL_BASE::REG_EFLAGS);
-                printf ("[CTRL_FLOW] rolling back: eflag value before %x\n", value);
+                printf ("[CTRL_FLOW] force to jump: eflag value before %x\n", value);
                 if (mask & CF_FLAG) value ^= CF_MASK;
                 if (mask & PF_FLAG) value ^= PF_MASK;
                 if (mask & AF_FLAG) value ^= AF_MASK;
@@ -2765,9 +2753,9 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, c
                 if (mask & SF_FLAG) value ^= SF_MASK;
                 if (mask & OF_FLAG) value ^= OF_MASK;
                 if (mask & DF_FLAG) value ^= DF_MASK;
-                printf ("[CTRL_FLOW] rolling back: eflag value after %x\n", value);
+                printf ("[CTRL_FLOW] force to jump: eflag value after %x\n", value);
                 PIN_SetContextReg (&save_ctx, LEVEL_BASE::REG_EFLAGS, value);
-                current_thread->ctrl_flow_info.is_rollback_first_inst = false;
+                current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
                 current_thread->ctrl_flow_info.that_branch_block_count = 0;
                 PIN_ExecuteAt (&save_ctx);
             }
@@ -2776,8 +2764,15 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, c
             sprintf (prefix,  "b_%lu_%llu", current_thread->ctrl_flow_info.merge_point->front().clock, current_thread->ctrl_flow_info.merge_point->front().index);
             //well, the process_slice will change this function to take the contrary branch
             printf ("[CTRL_FLOW] now the branch is taken %d\n", (int) taken);
-            printf ("[SLICE] #0x0 #%s_that_branch_middle:\t[SLICE_INFO] \n", prefix);
+            //well, the process_slice will change this function to take the contrary branch
+            printf ("[SLICE] #%x #%s %s_this_branch_init\t", ip, changed_inst, prefix); 
+            printf ("    [SLICE_INFO] #src_flag[FM%x:1:4] #branch_taken %d block_index %llu\n", mask, (int) taken, current_thread->ctrl_flow_info.block_index.index);
+            printf ("[SLICE] #0x0 #jmp %s_that_branch_init\t[SLICE_INFO] \n", prefix);
+
+            printf ("[SLICE] #0x0 #%s_that_branch_execute_and_taint:\t[SLICE_INFO] \n", prefix);
             current_thread->ctrl_flow_info.change_jump = false;
+        } else if (current_thread->ctrl_flow_info.is_in_diverged_branch == true && current_thread->ctrl_flow_info.that_branch_block_count -1 /*minue 1 because we rollback and execute this block twice*/== current_thread->ctrl_flow_info.that_branch_distance->front()) { 
+            printf ("[CTRL_FLOW] ignore this jump as it's redundant.\n");
         } else {
 #endif
             printf ("[SLICE] #%x #%s\t", ip, ins_str);

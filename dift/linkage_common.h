@@ -247,8 +247,9 @@ struct ctrl_flow_info {
     bool change_jump;  //true if this jump is the divergence point
 
     //checkpoint and rollback
-    bool is_rollback; 
-    bool is_rollback_first_inst;
+    bool is_in_diverged_branch;
+    bool is_in_diverged_branch_first_inst;
+    bool is_rolled_back;
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
     struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
