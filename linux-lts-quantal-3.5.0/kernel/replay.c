@@ -4599,17 +4599,18 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	}
 
 	//we need to get the cache files from whoever set them up
-	if (is_thread) { 
-		put_replay_cache_files(current->replay_thrd->rp_cache_files);
-		tsk = pid_task(find_vpid(current->tgid), PIDTYPE_PID);
-		if (!tsk->replay_thrd) { 
-			printk("%d what? the tgid has to have a replay_thrd!\n", current->pid);
-		}
-		get_replay_cache_files(tsk->replay_thrd->rp_cache_files);
-		prept->rp_cache_files = tsk->replay_thrd->rp_cache_files;
-		arch_restore_sysenter_return(current->mm->context.vdso);
-
-	}
+        if (is_thread) { 
+                if (!go_live) {
+                        put_replay_cache_files(current->replay_thrd->rp_cache_files);
+                        tsk = pid_task(find_vpid(current->tgid), PIDTYPE_PID);
+                        if (!tsk->replay_thrd) { 
+                                printk("%d what? the tgid has to have a replay_thrd!\n", current->pid);
+                        }
+                        get_replay_cache_files(tsk->replay_thrd->rp_cache_files);
+                        prept->rp_cache_files = tsk->replay_thrd->rp_cache_files;
+                }
+                arch_restore_sysenter_return(current->mm->context.vdso);
+        }
 
 	/*
 	 * If pin, set the process to sleep, so that we can manually attach pin
@@ -4720,6 +4721,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	int found, is_thread = 1;
 	u_long cur_ckpts, consumed, slice_addr, slice_size;
 	u_char ch, ch2;
+        long ret_code = -1;
 
 	// Restore the checkpoint
 	sprintf (ckpt, "%s/%s",logdir, filename);
@@ -4844,7 +4846,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	MPRINT("pid %d consumed is %lu, argsconsumed %lu\n", current->pid, consumed, argsconsumed(prect));
 
 	//changes b/c of advanced ckpting
-	if (is_thread) { 
+	if (is_thread && !go_live) { 
 		//we need to share cache_files with our leader! 
 		put_replay_cache_files(current->replay_thrd->rp_cache_files);
 		tsk = pid_task(find_vpid(current->tgid), PIDTYPE_PID);
@@ -4856,20 +4858,34 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 		MPRINT("%d(%ld) taking %d's cache_files %p\n",current->pid, record_pid, current->tgid, prept->rp_cache_files);
 	}
 
-	printk ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
-		current->pid, record_pid,prect->rp_log[prept->rp_out_ptr].sysnum, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
+	if(prept->rp_ckpt_pthread_block_clock){
+		ret_code = 32; //this is sys_pthread_block's sysnumber
+	} else {
+                ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
+        }
+
+	printk ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+		current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
+
 
 	if (go_live) {
-		current->replay_thrd = NULL;
-		printk ("replay pid %d goes live (not fully tested for multi-process)\n", current->pid);
-		BUG();
-	}
+            //destroy_replay_group (current->replay_thrd->rp_group);
+            printk ("replay pid %d goes live (not fully tested for multi-process), rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+                
+            up (prept->rp_ckpt_restart_sem); //wake up the main thread
+            // TODO: wait for the main thread to destroy the replay group
 
-	if(prept->rp_ckpt_pthread_block_clock){
-		return 32; //this is sys_pthread_block's sysnumber
-	}
+            /*if (execute_slice_name) { 
+                if (slice_addr == 0) {
+                    printk ("Cannot find forward slice library\n");
+                    return -EEXIST;
+                }
+                //run slice jumps back to the user space
+                start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid);	 
+            }*/
+        }
 
-	return prect->rp_log[prept->rp_out_ptr].sysnum;
+        return ret_code;
 }
 EXPORT_SYMBOL(replay_full_ckpt_proc_wakeup);
 
@@ -6963,6 +6979,7 @@ sys_pthread_log (u_long log_addr, int __user * ignore_addr)
 		current->replay_thrd->rp_record_thread->rp_ignore_flag_addr = ignore_addr;
 		read_user_log (current->replay_thrd->rp_record_thread);
 		MPRINT ("Read user log into address %lx for thread %d\n", log_addr, current->pid);
+		printk ("sys_prthread_log called by pid %d which is replaying\n", current->pid);
 	} else {
 		printk ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
 		return -EINVAL;
@@ -7312,7 +7329,13 @@ asmlinkage long sys_pthread_sysign (void)
 {
 	// This replays an ignored syscall which delivers a signal
 	DPRINT ("In sys_pthread_sysign\n");
-	return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
+        if (current->replay_thrd)
+	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
+        else { 
+                printk ("[HACK] Pid %d Going live while in sys_pthread_sysign, put it to sleep\n", current->pid);
+                msleep (10000);
+                return 0;
+        }
 }
 
 #define SHIM_CALL_MAIN(number, F_RECORD, F_REPLAY, F_SYS) \
@@ -9770,7 +9793,11 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 			set_fs(KERNEL_DS);
 			prt->rp_exec_filename = filename;
 			MPRINT("%s %d: do_execve(%s, %p, %p, %p)\n", __func__, __LINE__, name, __argv, __envp, regs);
-			rc = do_execve(name, __argv, __envp, regs);
+                        //check if the current executable matches the one in the cache
+                        //if so, we open the actual executable instead in order to support java to go live
+                        //TODO:xdou fix this 
+                        //rc = do_execve(filename, __argv, __envp, regs);
+                        rc = do_execve(name, __argv, __envp, regs);
 			set_fs(old_fs);
 
 			prt->rp_record_thread->rp_ignore_flag_addr = NULL;
