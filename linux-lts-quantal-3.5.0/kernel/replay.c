@@ -120,7 +120,7 @@ int verify_debug = 0;
 //#define MPRINT(x,...)
 #define MCPRINT
 
-#define JNF_HACK
+//#define JNF_HACK
 
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;

@@ -117,29 +117,29 @@ print_vmas (struct task_struct* tsk)
 	for (mpnt = tsk->mm->mmap; mpnt; mpnt = mpnt->vm_next) {
 		printk ("VMA start %lx end %lx", mpnt->vm_start, mpnt->vm_end);
 		if (mpnt->vm_flags & VM_MAYSHARE) {
-			printk (" s");
+			printk (" s ");
 		} else {
-			printk (" p");
+			printk (" p ");
 		}
 		if (mpnt->vm_file) {
 			printk (" file %s ", dentry_path (mpnt->vm_file->f_dentry, buf, sizeof(buf)));
-			if (mpnt->vm_flags & VM_READ) {
-				printk ("r");
-			} else {
-				printk ("-");
-			}
-			if (mpnt->vm_flags & VM_WRITE) {
-				printk ("w");
-			} else {
-				printk ("-");
-			}
-			if (mpnt->vm_flags & VM_EXEC) {
-				printk ("x");
-			} else {
-				printk ("-");
-			}
-		}
-		printk ("\n");
+                }
+                if (mpnt->vm_flags & VM_READ) {
+                    printk ("r");
+                } else {
+                    printk ("-");
+                }
+                if (mpnt->vm_flags & VM_WRITE) {
+                    printk ("w");
+                } else {
+                    printk ("-");
+                }
+                if (mpnt->vm_flags & VM_EXEC) {
+                    printk ("x");
+                } else {
+                    printk ("-");
+                }
+                printk ("\n");
 	}
 	up_read (&tsk->mm->mmap_sem);
 }
@@ -787,7 +787,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 
 			sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, vma->vm_start);
 			old_fs = get_fs();
-			set_fs (KERNEL_DS);
 			mmap_fd = sys_open (mmap_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
 			if (mmap_fd < 0) {
 				printk ("replay_full_checkpoint_proc_to_disk: open of %s returns %d\n", mmap_filename, mmap_fd);
@@ -795,7 +794,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				goto exit;
 			}
 			mmap_file = fget (mmap_fd);
-			set_fs (old_fs);
 			
 			if (vma->vm_start == (u_long) tsk->mm->context.vdso) {
 				printk ("Pid %d replay_full_checkpoint_proc_to_disk: skip vdso %lx to %lx\n", current->pid, vma->vm_start, vma->vm_end);
@@ -822,12 +820,14 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				rc = copied;
 				goto freemem;
 			}
+                        printk ("replay_full_checkpoint_proc_to_disk: mmap file %s\n", pvmas->vmas_file);
 			
 			if(!strncmp(pvmas->vmas_file, "/dev/zero", 9)) continue; /* Skip writing this one */
 
 			if (!(pvmas->vmas_flags & VM_READ) || 
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     strncmp(pvmas->vmas_file, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN))) { //why is this in here...? 
+                                printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;
 			}
 			
@@ -1041,7 +1041,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	int was_libkeep = 0;
 
 	char fpu_is_allocated;
-	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s\n", current->pid, filename);
+	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s, pos %lld\n", current->pid, filename, *ppos);
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -1212,7 +1212,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			premapped = 0;
 			copied = vfs_read (file, (char *) pvmas, sizeof(struct vma_stats), ppos);
 			if (copied != sizeof(struct vma_stats)) {
-				printk ("replay_full_resume_proc_from_disk: tried to read vma info, got rc %d\n", copied);
+				printk ("replay_full_resume_proc_from_disk: tried to read vma info, got rc %d, pvmas %p, ppos %lld\n", copied, pvmas, *ppos);
 				rc = copied;
 				goto freemem;
 			}				
@@ -1221,14 +1221,16 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			//MAP_PRIVATE should use copy-on-write if we write into the memory region and changes are not carried out to the underlying files. Therefore, for writable memory regions, it's safe to mmap with MAP_PRIVATE
 			//however, if the memory region is also shared, it may be tricky
 			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
-				printk ("[CHECK] memory regions is shared and writable! %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
-				printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
 				if (pvmas->vmas_file[0] && 
 				    !strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
-					printk ("But its the clock mapping so maybe not\n");
+				//	printk ("But its the clock mapping so maybe not\n");
 				} else {
-					shared_file = 1;
-					BUG();
+                                    printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+                                    printk ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
+                                    printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
+
+                                    shared_file = 1;
+                                    //BUG();
 				}
 			}
 			
@@ -1242,8 +1244,14 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 						flags = O_RDWR;
 						MPRINT ("special uclock vma\n");
 						sprintf (pvmas->vmas_file, "/run/shm/uclock%d", clock_pid);
-					}
-					if (!strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN)) { 
+						map_file = filp_open (pvmas->vmas_file, O_RDWR, 0);
+						if (IS_ERR(map_file)) {
+							rc = PTR_ERR(map_file);
+							printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, pvmas->vmas_file, rc);
+							goto freemem;
+						}
+					} 
+					else if (!strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN)) { 
 						new_file = get_replay_mmap(&replay_mmap_btree, pvmas->vmas_file);
 						if (new_file) { 
 							flags = O_CREAT|O_RDWR;					
@@ -1379,6 +1387,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (!(pvmas->vmas_flags&VM_READ) || 
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN))) {
+                                printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;  // Not in checkpoint - so skip writing this one
 			}				
 			if (!(pvmas->vmas_flags&VM_WRITE)){
@@ -1386,7 +1395,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, PROT_WRITE); 
 			}
 		     
-			set_fs(KERNEL_DS);
 			if (!map_file) {
 				char mmap_filename[256];
 				struct file* mmap_file = NULL;
@@ -1411,7 +1419,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
 				filp_close (mmap_file, NULL);
 			}
-			set_fs(old_fs);			
 			if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections		
 			if (replay_debug) {
 				do_gettimeofday(&tv_end);
@@ -1672,6 +1679,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			printk ("sys_execute_fw_slice: cannot close file.\n");
 			return -EIO;
 		}
+                if (replay_debug) print_vmas(current);
 		return 0;
 	} else {
 		//finish executing the slice and restore register states
