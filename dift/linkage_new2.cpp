@@ -5553,7 +5553,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
     if (recheck_group) {
-	ptdata->recheck_handle = open_recheck_log (recheck_group, ptdata->record_pid);
+	ptdata->recheck_handle = open_recheck_log (threadid, recheck_group, ptdata->record_pid);
     } else {
 	ptdata->recheck_handle = NULL;
     }	

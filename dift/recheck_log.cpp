@@ -19,7 +19,7 @@ struct recheck_handle {
     int recheckfd;
 };
 
-struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
+struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
     char recheck_filename[512];
@@ -39,7 +39,11 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
 	return NULL;
     }
 
-    handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    //TODO: remove this properly for multi-process program; should be fine for multi-threaded though???
+    if (threadid == 0) 
+        handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    else 
+        handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_APPEND, 0644);
     if (handle->recheckfd < 0) {
 	fprintf (stderr, "Cannot open recheck log\n");
 	return NULL;
