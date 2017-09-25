@@ -3007,10 +3007,15 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
     if (first_iter) {
 
         int size = (int) (ecx_val*op_size);
+        ADDRINT origin_src_mem_loc = src_mem_loc;
         if (!size) return; 
 
 	assert (is_flag_tainted(DF_FLAG) == 0); // JNF: Not sure how to handle this flag?
-	assert ((eflags & DF_MASK) == 0); 
+	if (eflags & DF_MASK) { 
+            fprintf (stderr, "Well, fw_slice_string_move has DF flag set, let's verify if we handle it correctly, ip %x\n", ip);
+            src_mem_loc -= size;
+            dst_mem_loc -= size;
+        }
 
 	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, 4, 0);
@@ -3040,8 +3045,8 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	// Move string if src memory is tainted 
 	if (mem_tainted) {
 	    printf ("[SLICE] #%x #%s\t", ip, ins_str);
-	    printf ("    [SLICE_INFO] #src_mem[%x:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]\n", src_mem_loc, mem_tainted, size, LEVEL_BASE::REG_ECX, ecx_tainted, 4,
-		    LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4);
+	    printf ("    [SLICE_INFO] #src_mem[%x:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d] (origin_mem_src %x)\n", src_mem_loc, mem_tainted, size, LEVEL_BASE::REG_ECX, ecx_tainted, 4,
+		    LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4, origin_src_mem_loc);
 
 	    // We modified these bytes - add to hash
 	    add_modified_mem_for_final_check (dst_mem_loc, size);

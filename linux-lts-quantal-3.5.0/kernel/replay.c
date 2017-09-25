@@ -803,6 +803,8 @@ struct replay_group {
 
 	struct xray_monitor* rg_open_socks; // Keeps track of open sockets for partitioned replay
         struct replay_perf_wrapper rg_perf_wrapper; //a perf_event_wrapper
+        u_long rg_slice_addr;  //slice attach address (should be set by the main thread in the group)
+        u_long rg_slice_size;
 };
 
 struct argsalloc_node {
@@ -4305,6 +4307,7 @@ replay_full_ckpt (long rc)
 	
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, first_proc->pid);
 	retval = replay_full_checkpoint_hdr_to_disk (ckpt, precg->rg_id, clock, proc_count, curr_ckpt_tsk, current, &pos);
+        printk ("Pid %d after replay_full_checkpoint_hdr_to_disk pos %lld\n", current->pid, pos);
 	if (retval) return retval;
 
 	// First write out data for this process
@@ -4674,11 +4677,15 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	atomic_set(&prept->ckpt_restore_done,1);
 
 	if (go_live) {
+                if (slice_addr == 0) {
+                        slice_addr = current->replay_thrd->rp_group->rg_slice_addr;
+                        slice_size = current->replay_thrd->rp_group->rg_slice_size;
+                }
 		//free up resources directly, otherwise a few thousand executions cause out-of-memory error
 		destroy_replay_group (current->replay_thrd->rp_group);
 		//TODO: what should we do for multi-threaded programs?
 		current->replay_thrd = NULL;
-		printk ("replay pid %d goes live\n", current->pid);
+                printk ("replay pid %d goes live\n", current->pid);
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
@@ -4871,7 +4878,12 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	if (go_live) {
             //destroy_replay_group (current->replay_thrd->rp_group);
             printk ("replay pid %d goes live (not fully tested for multi-process), rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+            if (slice_addr != 0) { 
+                current->replay_thrd->rp_group->rg_slice_addr = slice_addr;
+                current->replay_thrd->rp_group->rg_slice_size = slice_size;
+            }
                 
+            current->replay_thrd = NULL;
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
             // TODO: wait for the main thread to destroy the replay group
 
@@ -7070,6 +7082,7 @@ sys_pthread_block (u_long clock)
 	int is_restart = 0;
 	if (!current->replay_thrd) {
 		printk ("sys_pthread_block called by non-replay process %d\n", current->pid);
+                msleep (10000);
 		return -EINVAL;
 	}
 	prt = current->replay_thrd;

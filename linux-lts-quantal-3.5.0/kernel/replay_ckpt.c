@@ -968,6 +968,7 @@ exit:
 		rc = sys_close (fd);
 		if (rc < 0) printk ("replay_checkpoint_proc_to_disk: close returns %d\n", rc);
 	}
+        printk ("Pid %d replay_checkpoint_proc_to_disk exit: current pos %lld\n", current->pid, *ppos);
 	set_fs(old_fs);
 	return rc;
 }
@@ -1493,6 +1494,9 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 	if (slicelib == NULL) {
 	    // Signal handlers will be restored from slice execution
+            //advance the file pos
+            *ppos += sizeof (struct k_sigaction)*_NSIG;
+        } else {
 	    copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
 	    if (copied != sizeof(struct k_sigaction)*_NSIG) {
 		printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
@@ -1508,7 +1512,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		printk ("replay_full_resume_proc_from_disk end time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
-	if (replay_debug) print_vmas(current);
+	if (replay_debug) {
+            printk ("replay_full_resume_proc_from_disk: vmas status ---------------- \n");
+            print_vmas(current);
+            printk ("replay_full_resume_proc_from_disk: end vmas status ---------------- \n");
+        }
 freemem:
 	KFREE (pmminfo);
 	KFREE (pvmas);

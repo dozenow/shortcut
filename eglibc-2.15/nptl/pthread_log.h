@@ -4,7 +4,7 @@
 /* Note: must update both user-level and kernel headers together */
 
 // Debug log uses uncompressed format
-//#define USE_DEBUG_LOG
+#define USE_DEBUG_LOG
 
 // This creates a separate log for debugging
 //#define USE_EXTRA_DEBUG_LOG
