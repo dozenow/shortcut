@@ -309,6 +309,7 @@ struct thread_data {
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
     struct ctrl_flow_info ctrl_flow_info;
+    FILE* slice_output_file;
 };
 
 struct memcpy_header {
