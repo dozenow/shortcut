@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <poll.h>
+#include <pthread.h>
 // Note assert requires locale, which does not work with our hacked libc - don't use it */
 
 #include "../dift/recheck_log.h"
@@ -1612,3 +1613,8 @@ void rt_sigprocmask_recheck ()
     }
 }
 
+void recheck_pthread_fix ()
+{
+    /*pthread_mutex_t *mutex = (pthread_mutex_t*) (0x804a060);
+    pthread_mutex_lock (mutex);*/
+}

@@ -104,10 +104,10 @@ void pthread_log_alloc (struct pthread_log_head * log_addr, int* ignore_addr)
 }
 
 // This informs the kernel about a thread blocking on user clock - returns when thread is unblocked
-void pthread_log_block (u_long clock)
+long pthread_log_block (u_long clock)
 {
     INTERNAL_SYSCALL_DECL(__err);
-    INTERNAL_SYSCALL(pthread_block,__err,1,clock);
+    return INTERNAL_SYSCALL(pthread_block,__err,1,clock);
 }
 
 // This informs the kernel that the log is full
@@ -118,10 +118,10 @@ void pthread_log_full (void)
 }
 
 // Fake syscall for signals delivered in ignored region
-void pthread_sysign (void)
+int pthread_sysign (void)
 {
     INTERNAL_SYSCALL_DECL(__err);
-    INTERNAL_SYSCALL(pthread_sysign,__err,0);
+    return INTERNAL_SYSCALL(pthread_sysign,__err,0);
 }
 
 #ifdef DO_FAKE_CALLS
@@ -357,6 +357,8 @@ allocate_log (void)
 	pthread_log_debug ("Unable to allocate thread log, errno is %d\n", errno);
 	abort ();
     }
+    if (!is_recording() && !is_replaying()) //if we take a checkpoint just after the mmap above, resuming would fail because of incorrect pthread status
+        return NULL;
     head->ignore_flag = 0;
     head->need_fake_calls = 0;
 #ifdef USE_DEBUG_LOG
@@ -575,6 +577,9 @@ pthread_log_replay (unsigned long type, unsigned long check)
     int num_fake_calls, i, retval;
 
     if (head == NULL) return 0;
+    if (!is_replaying()) {
+            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay.\n");
+    }
 
     if (head->num_expected_records > 1) {
 	head->expected_clock++;
@@ -596,7 +601,19 @@ pthread_log_replay (unsigned long type, unsigned long check)
 	DPRINT ("Read entry from log: %lx\n", *pentry);
 
 	if (*pentry == 0) { // We've reached the end of the log - some other thread may be able to run, though
-	    pthread_log_block (INT_MAX); 
+            if (!is_replaying()) {
+                pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay before pthread_log_block, type %d, clock MAX\n", type, next_clock);
+            }
+            long ret = pthread_log_block (INT_MAX); 
+            if (ret == -EINVAL) { 
+                pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block, type %d, clock MAX\n", type, next_clock);
+                pthread_log_status = PTHREAD_LOG_OFF;
+                sleep (3);
+                return ret;
+            }
+            if (!is_replaying()) {
+                pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block2, type %d, clock MAX\n", type, next_clock);
+            }
 	}
 	head->num_expected_records = (*pentry & CLOCK_MASK);
 	if (head->num_expected_records) {
@@ -638,12 +655,33 @@ pthread_log_replay (unsigned long type, unsigned long check)
 	head->next += sizeof(int);
 
 	// Make the specified number of fake syscalls to sequence signals correctly
-	for (i = 0; i < num_fake_calls; i++) pthread_sysign ();
+	for (i = 0; i < num_fake_calls; i++) {
+            if (pthread_sysign () == -EINVAL) { 
+                pthread_log_debug ("well, pthread_sysign does not succeed, which is correct if we're going live, next clock %lu , type %ld, check %lx, current clock %lu\n", next_clock, type, check, *ppthread_log_clock);
+                pthread_log_status = PTHREAD_LOG_OFF;
+                sleep (3);
+                return -EINVAL;
+            }
+        }
     }
 
     while (*ppthread_log_clock < next_clock) {
 	DPRINT ("waiting for clock %lu (type %lx, check %lx)\n", next_clock, type, check);
-	pthread_log_block (next_clock); // Kernel will block us until we can run again
+	//pthread_log_debug( "waiting for clock %lu (type %lx, check %lx)\n", next_clock, type, check);
+        if (!is_replaying()) {
+            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay before pthread_log_block, type %d, clock %lu\n", type, next_clock);
+        }
+	long ret = pthread_log_block (next_clock); // Kernel will block us until we can run again
+        if (ret == -EINVAL) { 
+            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block, type %d, clock %lu\n", type, next_clock);
+            pthread_log_status = PTHREAD_LOG_OFF;
+            return ret;
+        }
+        if (!is_replaying()) {
+            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block2, type %d, clock %lu\n", type, next_clock);
+            pthread_log_status = PTHREAD_LOG_OFF;
+            return retval; //If the process is blocking before checkpiont, after resuming, ppthread_log_clock no longer exists and we simply returns from this function
+        }
     }
     head->expected_clock = next_clock + 1;
 #ifdef DO_FAKE_CALLS
@@ -676,6 +714,8 @@ allocate_extra_log (void)
 	pthread_log_debug ("Unable to allocate extra thread log, errno is %d\n", errno);
 	abort ();
     }
+    if (!is_recording() && !is_replaying()) //if we take a checkpoint just after the mmap above, resuming would fail because of incorrect pthread status
+        return NULL;
     head->next = ((char *) head + sizeof (struct pthread_extra_log_head));
     head->end =  ((char *) head + sizeof (struct pthread_extra_log_head) + PTHREAD_LOG_SIZE);
 
@@ -1397,8 +1437,16 @@ __pthread_cond_timedwait_rep (cond, mutex, abstime)
      pthread_mutex_t *mutex;
      const struct timespec *abstime;
 {
+  int rc;
   pthread_log_replay (PTHREAD_COND_TIMEDWAIT_ENTER, (u_long) cond); 
-  return pthread_log_replay (PTHREAD_COND_TIMEDWAIT_EXIT, (u_long) cond); 
+  rc = pthread_log_replay (PTHREAD_COND_TIMEDWAIT_EXIT, (u_long) cond); 
+  if (!is_replaying()) {
+      pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
+      rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
+      //usleep (5000000);
+      pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait: done\n");
+  }
+  return rc;
 }
 
 int
@@ -2427,8 +2475,16 @@ void pthread_log_lll_wait_tid (int* ptid)
     lll_wait_tid(*ptid);
     pthread_log_record (0, LLL_WAIT_TID_EXIT, (u_long) ptid, 0); 
   } else if (is_replaying()) {
+    pthread_log_debug ("before pthread_log_lll_wait_tid, ptid %p, %d\n", ptid, *ptid);
     pthread_log_replay (LLL_WAIT_TID_ENTER, (u_long) ptid); 
+    pthread_log_debug ("in the middle of pthread_log_lll_wait_tid\n");
     pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
+    pthread_log_debug ("after pthread_log_lll_wait_tid ptid %p, %d\n", ptid, *ptid);
+    if (!is_replaying()) {
+        pthread_log_debug ("[HACK] let's manully wait for pid %d\n", *ptid);
+        lll_wait_tid (*ptid);
+        pthread_log_debug ("[HACK] let's manully wait for pid %d: done\n", *ptid);
+    }
   } else {
     lll_wait_tid(*ptid);
   }

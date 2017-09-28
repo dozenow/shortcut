@@ -4726,7 +4726,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	ds_list_iter_t* iter;
 	char ckpt[MAX_LOGDIR_STRLEN+20];
 	int found, is_thread = 1;
-	u_long cur_ckpts, consumed, slice_addr, slice_size;
+	u_long cur_ckpts, consumed, slice_addr = 0, slice_size;
 	u_char ch, ch2;
         long ret_code = -1;
 
@@ -7082,7 +7082,7 @@ sys_pthread_block (u_long clock)
 	int is_restart = 0;
 	if (!current->replay_thrd) {
 		printk ("sys_pthread_block called by non-replay process %d\n", current->pid);
-                msleep (10000);
+                //msleep (3000);
 		return -EINVAL;
 	}
 	prt = current->replay_thrd;
@@ -7345,9 +7345,9 @@ asmlinkage long sys_pthread_sysign (void)
         if (current->replay_thrd)
 	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
         else { 
-                printk ("[HACK] Pid %d Going live while in sys_pthread_sysign, put it to sleep\n", current->pid);
-                msleep (10000);
-                return 0;
+                printk ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
+                //msleep (3000);
+                return -EINVAL;
         }
 }
 

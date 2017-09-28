@@ -59,7 +59,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 60
+#define EXTRA_DEBUG 53
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -746,6 +746,15 @@ static inline void taint_syscall_retval (const char* sysname)
     printf ("[SLICE_TAINT] %s #eax\n", sysname);
 }
 
+static inline void sys_clone_start (struct thread_data* tdata, int flags, void* ptid, void* tls, void* ctid) 
+{
+    if (flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
+        fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p\n", ptid, ctid);
+        /*taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
+        taint_syscall_memory_out ("clone", (char*)tls, sizeof (struct user_desc));
+        taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));*/
+    }
+}
 
 static void sys_ioctl_stop (int rc) 
 {
@@ -1754,6 +1763,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 { 
     switch (sysnum) {
+        case SYS_clone:
+            sys_clone_start (tdata, (int) syscallarg2, (void*) syscallarg3, (void*) syscallarg4, (void*) syscallarg5);
+            break;
         case SYS_open:
             sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
             break;
@@ -1936,6 +1948,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     int rc = (int) ret_value;
     switch(sysnum) {
         case SYS_clone:
+            printf ("end of clone\n");
             break;
         case SYS_open:
             sys_open_stop(rc);
@@ -4379,9 +4392,9 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
       }
       PIN_UnlockClient();
-      printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
+      printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d thread id %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
-	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
+	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0), current_thread->threadid);
 	//printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
 	//old_val = *((u_char *) 0x8700b15);
     //printf ("reg xmm1 tainted? ");
@@ -5539,6 +5552,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
     fprintf (stderr, "in thread_start %d\n", threadid);
+    printf ("in thread_start %d\n", threadid);
     
     // TODO Use slab allocator
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
