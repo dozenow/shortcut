@@ -129,7 +129,7 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
 
 }
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename)
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename, char* recheck_filename)
 {
     struct wakeup_ckpt_data data;
     data.logdir = logdir;
@@ -139,6 +139,7 @@ int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uni
     data.fd = fd_spec;
     data.go_live = go_live;
     data.slice_filename = slice_filename;
+    data.recheck_filename = recheck_filename;
     return ioctl (fd_spec, SPECI_CKPT_PROC_RESUME, &data);    
 }
 

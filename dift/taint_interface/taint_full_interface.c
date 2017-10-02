@@ -37,11 +37,8 @@ extern u_long* ppthread_log_clock;
 #define ROOT_INDEX_MASK 0xfffffc00
 #define LEAF_INDEX_MASK 0x000003ff
 
-#define OUTPUT_SLICE(slice...) \
-    printf (slice); \
-    if (current_thread->slice_output_file) { \
-        fprintf (current_thread->slice_output_file, slice); \
-    } 
+extern void output_slice (struct thread_data* tdata, const char* format, ...);
+#define OUTPUT_SLICE(slice...) output_slice(current_thread, slice)
 
 taint_t* mem_root[ROOT_TABLE_SIZE];  // Top-level table for memory taints
 struct slab_alloc leaf_table_alloc;
@@ -2276,20 +2273,20 @@ void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size)
     current_thread->address_taint_set->insert (mem_interval);
 }
 
-int fw_slice_check_final_mem_taint (taint_t* pregs) 
+int fw_slice_check_final_mem_taint (struct thread_data* tdata) 
 { 
 	int has_mem = 0;
 	int i;
        
-        for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
-                iter != current_thread->address_taint_set->end(); ++iter) {
+        for(interval_set<unsigned long>::iterator iter = tdata->address_taint_set->begin();
+                iter != tdata->address_taint_set->end(); ++iter) {
 	    // We need to deal with partial taint
 	    u_long bytes_to_restore = 0;
 	    u_long addr;
 	    for (addr = iter->lower(); addr <= iter->upper(); addr++) {
 		if (is_mem_tainted (addr, 1)) {
 		    if (bytes_to_restore) {
-			OUTPUT_SLICE ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
+			output_slice (tdata, "[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
 			has_mem = 1;
 			bytes_to_restore = 0;
 		    }
@@ -2298,15 +2295,15 @@ int fw_slice_check_final_mem_taint (taint_t* pregs)
 		}
 	    }
 	    if (bytes_to_restore) {
-		OUTPUT_SLICE ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
+		output_slice (tdata, "[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
 		has_mem = 1;
 	    }
         }
 
 	/* Assume 1 thread for now */
 	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
-	    if (pregs[i]) {
-		printf ("[CHECK_REG] $reg(%d) is tainted, index %d\n", i/REG_SIZE, i);
+	    if (tdata->shadow_reg_table[i]) {
+		printf ("[CHECK_REG] $reg(%d) is tainted, index %d, thread id %d record pid %d\n", i/REG_SIZE, i, tdata->threadid, tdata->record_pid);
 	    }
 	}
         fflush (stdout);

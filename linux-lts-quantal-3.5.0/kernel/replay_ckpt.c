@@ -1131,10 +1131,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
 	restore_sysv_mappings (file, ppos);
 
-	if (!is_thread) { 
-		
-		// restore the replay cache state (this is going to be done on per process)
-		restore_replay_cache_files (file, ppos, slicelib != NULL);
+        if (!is_thread) {
+                char slice_fullname[256];
+                snprintf (slice_fullname, 256, "%s.%d.so", slicelib, record_pid);
+                // restore the replay cache state (this is going to be done on per process)
+                restore_replay_cache_files (file, ppos, slicelib != NULL);
 
 		// Delete all the vm areas of current process 
 		// (except if there is a slice library specified - leave that)
@@ -1153,7 +1154,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					was_libkeep = 1;
 					continue;
 				}
-				if (!strcmp(s, slicelib)) {
+				if (!strcmp(s, slice_fullname)) {
 					DPRINT ("This is the slice library do not unmap it\n");
 					if (*slice_addr == 0) {
 						char val, val2;
@@ -1165,10 +1166,16 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 							*slice_size = vma->vm_end - vma->vm_start;
 						}					    
 					}
-					vma = vma_next;
-					was_libkeep = 1;
-					continue;
-				}
+                                        vma = vma_next;
+                                        was_libkeep = 1;
+                                        continue;
+                                }
+                                if (!strncmp (s, slicelib, strlen (slicelib))) { 
+					DPRINT ("This is the slice library for other threads, do not unmap it\n");
+                                        vma = vma_next;
+                                        was_libkeep = 1;
+                                        continue;
+                                }
 			} else if (was_libkeep) {
 			    /* This I think is for globals for libc and exslice - hack, so may not work */
 			    was_libkeep = 0;
@@ -1469,7 +1476,38 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 	}
 	else { 
+                char slice_fullname[256];
 		arch_restore_sysenter_return(current->mm->context.vdso);
+                snprintf (slice_fullname, 256, "%s.%d.so", slicelib, record_pid);
+                //figure out the slice lib address 
+                //deletion of the vm areas will be done by the main thread
+                down_write (&current->mm->mmap_sem);
+                vma = current->mm->mmap;
+                *slice_addr = 0;
+                while(vma) {
+                    vma_next = vma->vm_next;
+                    if (slicelib && vma->vm_file) {
+                        char buf[256];
+                        char* s = dentry_path (vma->vm_file->f_dentry, buf, sizeof(buf));
+                        if (!strcmp(s, slice_fullname)) {
+                            DPRINT ("This is the slice library \n");
+                            if (*slice_addr == 0) {
+                                char val, val2;
+                                get_user(val, (char __user *) vma->vm_start+4);
+                                get_user(val2, (char __user *) vma->vm_start+5);
+                                DPRINT ("val %d val2 %d\n", val, val2);
+                                if (val == 1 && val2 == 1) {
+                                    *slice_addr = vma->vm_start;
+                                    *slice_size = vma->vm_end - vma->vm_start;
+                                }					    
+                            }
+                            vma = vma_next;
+                            break;
+                        }
+                    }
+                    vma = vma_next;
+                } 
+                up_write (&current->mm->mmap_sem);
 	}
 
 	// Read in TLS info
@@ -1542,9 +1580,9 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 
 #define SLICE_INFO_SIZE  4096
 #define STACK_SIZE      65536
-#define RECHECK_FILE_NAME_LEN 64
+#define RECHECK_FILE_NAME_LEN 128
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
+long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1613,6 +1651,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 	int stack_size = 4096;
 	printk ("sys_execute_fw_slice: %d, %p\n", finish, filename);
 	if (finish == 0) { 
+            //following codes are deprecated; they have the same logic as start_fw_slice
 		//start to execute the slice
 		long addr = 0;
 		long extra_space_addr = 0;

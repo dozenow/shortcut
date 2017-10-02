@@ -31,6 +31,7 @@ using namespace std;
 
 //#define LPRINT
 
+
 void print_help(const char *program) {
 	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
 			program);
@@ -96,7 +97,7 @@ void *start_thread(void *td) {
     int rc;
     struct ckpt_data *cd = (struct ckpt_data *) td;
     
-    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos, cd->go_live, cd->slice_filename);
+    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos, cd->go_live, cd->slice_filename, cd->recheck_filename);
     if (rc < 0) {
 	perror ("resume proc after ckpt");
 	exit (-1);
@@ -188,7 +189,7 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
     if (current->main_thread){ 
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename,
+				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename, //this is the prefix of the slice and recheck filename
 				cd->recheck_filename);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
@@ -197,7 +198,7 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 
     }
     else { 
-	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename);
+	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename, cd->recheck_filename); //again this is the prefix for the filenames
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
@@ -365,30 +366,34 @@ again:
 #endif
 
     // Now try and load the library and get the start fn address
-    hndl = dlopen (slicelib, RTLD_NOW);
-    if (hndl == NULL) {
-	fprintf (stderr, "dlopen failed: %s\n", dlerror());
-	exit (0);
-    }
+    for (map<int, Ckpt_Proc*>::iterator iter = ckpt_procs.begin(); iter != ckpt_procs.end(); ++iter) {
+        char slicename[256];
+        snprintf (slicename, 256, "%s.%d.so", slicelib, iter->first);
+        hndl = dlopen (slicename, RTLD_NOW);
+        if (hndl == NULL) {
+            fprintf (stderr, "slice %s dlopen failed: %s\n", slicename, dlerror());
+            exit (0);
+        }
 #ifdef LPRINT
-    printf ("hndl: %p\n", hndl);
+        printf ("hndl: %p\n", hndl);
 #endif
 
-    void* pfn = dlsym (hndl, "_start");
-    if (pfn == NULL) {
-	perror ("dlsym");
-    }
+        void* pfn = dlsym (hndl, "_start");
+        if (pfn == NULL) {
+            perror ("dlsym");
+        }
 
 #ifdef LPRINT
-    printf ("pfn: %p\n", pfn);
-    file = fopen(procname, "r");
-    while (!feof(file)) {
-	if (fgets (buf, sizeof(buf), file)) {
-	    printf ("%s", buf);
-	}
-    }
-    fclose(file);
+        printf ("pfn: %p\n", pfn);
+        file = fopen(procname, "r");
+        while (!feof(file)) {
+            if (fgets (buf, sizeof(buf), file)) {
+                printf ("%s", buf);
+            }
+        }
+        fclose(file);
 #endif
+    }
 
 #ifdef LTIMING
     gettimeofday(&tv2, NULL);
@@ -507,11 +512,13 @@ int main (int argc, char* argv[])
 			case 6:
 			{
 				slice_filename = optarg;
+                                perror ("Deprecated arguments! Now always using the default slice filenames in replay_logdb\n");
 				break;
 			}
 			case 7:
 			{
 				recheck_filename = optarg;
+                                perror ("Deprecated arguments! Now always using the default recheck filenames in replay_logdb\n");
 				break;
 			}
 			default:
@@ -603,7 +610,9 @@ int main (int argc, char* argv[])
 		perror("we need more threads!");
 		return -1;
 	    }
-	    
+            if (hdr.proc_count > 1) {
+                printf ("Resuming a multi-threaded program, loading slices with default filenames\n");
+            }
 	    
 	    first_proc = parse_process_map(hdr.proc_count, cfd);
 	    
@@ -613,7 +622,7 @@ int main (int argc, char* argv[])
 		// Supply default slice filename and recheck filename if not specified
 		if (slice_filename == NULL) {
 		    slice_filename = new char[256];
-		    sprintf (slice_filename, "%s/exslice.so", argv[base]);
+                    sprintf (slice_filename, "%s/exslice", argv[base]); //this is only the prefix for the filename
 		}
 		if (recheck_filename == NULL) {
 		    recheck_filename = new char[256];

@@ -1,6 +1,7 @@
 #include "pin.H"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <dirent.h>
 #include <assert.h>
@@ -59,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 53
+//#define EXTRA_DEBUG 53
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -150,12 +151,48 @@ bool produce_output = true;
 struct slab_alloc open_info_alloc;
 struct slab_alloc thread_data_alloc;
 
-#define OUTPUT_SLICE(slice...) \
-    printf (slice); \
-    if (current_thread->slice_output_file) { \
-        fprintf (current_thread->slice_output_file, slice); \
-    } 
+inline void output_slice (struct thread_data* tdata, const char* format, ...) 
+{
+    char output_slice_buf[512];
+    va_list arglist;
+    va_start (arglist, format);
+    int length = vsnprintf (output_slice_buf, 512, format, arglist);
+    va_end (arglist);
 
+    assert (length != 511);  //make sure we don't truncate the message because of buffer size limits
+    printf ("%s", output_slice_buf); 
+    if (tdata->slice_buffer) { 
+        tdata->slice_buffer->push (string(output_slice_buf)); 
+        if (tdata->slice_buffer->size() > 1024) {  //write into file
+            while (!tdata->slice_buffer->empty()) {  
+                string s = tdata->slice_buffer->front(); 
+                int ret = write (tdata->slice_output_file, s.c_str(), s.length());
+                assert (ret == (int)s.length());
+                tdata->slice_buffer->pop ();
+            }
+            fsync (tdata->slice_output_file); 
+        }
+    } 
+}
+
+inline void sync_slice_buffer (struct thread_data* tdata)
+{
+    //let's scan over all memory address included in the slice
+    printf ("check mem taints in forward slice for thread with record pid %d\n", tdata->record_pid);
+    if (fw_slice_check_final_mem_taint (tdata) == 0) { 
+        printf ("all mem address in the slice are also tainted in the final checkpoint\n");
+    }
+    //dump slice buffer
+    while (!tdata->slice_buffer->empty()) { 
+        string s = tdata->slice_buffer->front(); 
+        tdata->slice_buffer->pop ();
+        int ret = write (tdata->slice_output_file, s.c_str(), s.length());
+        assert (ret == (int)s.length());
+    }
+    fsync (tdata->slice_output_file); 
+}
+
+#define OUTPUT_SLICE(slice...) output_slice(current_thread, slice)
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
     "pintool", "i", "",
@@ -2077,11 +2114,11 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	list_for_each_entry (fds, &open_fds->fds, list) {
 		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
-	//let's scan over all memory address included in the slice
-	printf ("check mem taints in forward slice.\n");
-        if (fw_slice_check_final_mem_taint (current_thread->shadow_reg_table) == 0) { 
-		printf ("all mem address in the slice are also tainted in the final checkpoint\n");
-	}
+        //dump slice buffer for all active threads
+        for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
+            printf ("Now finalizing slice for thread id %d, record_pid %d\n", iter->second->threadid, iter->second->record_pid);
+            sync_slice_buffer (iter->second);
+        }
 	
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -5574,15 +5611,15 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
     if (recheck_group) {
-        char filename[256];
-        snprintf (filename, 256, "%s/slice.%d", group_directory, ptdata->record_pid);
-        ptdata->slice_output_file = fopen (filename, "w+");
-        assert (ptdata->slice_output_file != NULL);
 	ptdata->recheck_handle = open_recheck_log (threadid, recheck_group, ptdata->record_pid);
     } else {
 	ptdata->recheck_handle = NULL;
-        ptdata->slice_output_file = 0;
     }	
+    char filename[256];
+    snprintf (filename, 256, "%s/slice.%d", group_directory, ptdata->record_pid);
+    ptdata->slice_output_file = open (filename, O_RDWR|O_TRUNC|O_CREAT, 0644);
+    assert (ptdata->slice_output_file > 0);
+    ptdata->slice_buffer = new queue<string>();
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
@@ -5741,9 +5778,15 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
+    sync_slice_buffer (tdata);
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
-    if (tdata->slice_output_file) fclose (tdata->slice_output_file);
+    if (tdata->slice_output_file) {
+        fsync (tdata->slice_output_file);
+        close (tdata->slice_output_file);
+        tdata->slice_output_file = 0;
+    }
+    if (tdata->slice_buffer) delete tdata->slice_buffer;
     if (tdata->address_taint_set) delete tdata->address_taint_set;
     // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
@@ -5855,9 +5898,7 @@ int main(int argc, char** argv)
     	snprintf(group_directory, 256, "/tmp/%d", PIN_GetPid());
 #ifndef NO_FILE_OUTPUT
     if (mkdir(group_directory, 0755)) {
-        if (errno == EEXIST) {
-            fprintf(stderr, "directory already exists, using it: %s\n", group_directory);
-        } else {
+        if (errno != EEXIST) {
             fprintf(stderr, "could not make directory %s\n", group_directory);
             exit(-1);
         }

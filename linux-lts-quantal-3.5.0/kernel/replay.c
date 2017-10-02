@@ -803,8 +803,6 @@ struct replay_group {
 
 	struct xray_monitor* rg_open_socks; // Keeps track of open sockets for partitioned replay
         struct replay_perf_wrapper rg_perf_wrapper; //a perf_event_wrapper
-        u_long rg_slice_addr;  //slice attach address (should be set by the main thread in the group)
-        u_long rg_slice_size;
 };
 
 struct argsalloc_node {
@@ -4677,10 +4675,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	atomic_set(&prept->ckpt_restore_done,1);
 
 	if (go_live) {
-                if (slice_addr == 0) {
-                        slice_addr = current->replay_thrd->rp_group->rg_slice_addr;
-                        slice_size = current->replay_thrd->rp_group->rg_slice_size;
-                }
 		//free up resources directly, otherwise a few thousand executions cause out-of-memory error
 		destroy_replay_group (current->replay_thrd->rp_group);
 		//TODO: what should we do for multi-threaded programs?
@@ -4693,12 +4687,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		}
 
 		if (execute_slice_name) { 
+                        char recheckname[256];
+                        snprintf (recheckname, 256, "%s.%ld.so", recheck_filename, record_pid);
 			if (slice_addr == 0) {
 				printk ("Cannot find forward slice library\n");
 				return -EEXIST;
 			}
 			//run slice jumps back to the user space
-			start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid, recheck_filename);	 
+			start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
 		}
 
 		if (attach_device) {
@@ -4715,7 +4711,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 EXPORT_SYMBOL(replay_full_ckpt_wakeup);
 
 long
-replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live, char* execute_slice_name)
+replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int fd, int ckpt_pos, int go_live, char* execute_slice_name, char* recheck_filename)
 {
 	struct ckpt_waiter* pckpt_waiter;
 	struct record_thread* prect;
@@ -4878,23 +4874,22 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	if (go_live) {
             //destroy_replay_group (current->replay_thrd->rp_group);
             printk ("replay pid %d goes live (not fully tested for multi-process), rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
-            if (slice_addr != 0) { 
-                current->replay_thrd->rp_group->rg_slice_addr = slice_addr;
-                current->replay_thrd->rp_group->rg_slice_size = slice_size;
-            }
                 
             current->replay_thrd = NULL;
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
-            // TODO: wait for the main thread to destroy the replay group
-
-            /*if (execute_slice_name) { 
+            if (execute_slice_name) { 
+                char recheckname[256];
+                snprintf (recheckname, 256, "%s.%ld.so", recheck_filename, record_pid);
                 if (slice_addr == 0) {
                     printk ("Cannot find forward slice library\n");
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
-                start_fw_slice (execute_slice_name, slice_addr, slice_size, record_pid);	 
-            }*/
+                start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
+            }
+
+            // TODO: wait for the main thread to destroy the replay group
+
         }
 
         return ret_code;
