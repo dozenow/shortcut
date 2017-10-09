@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
+#include <limits.h>
 
 #include <iostream>
 #include <string>
@@ -17,6 +19,7 @@ struct linedata {
     string clock;
     string blockno;
     string branch_flag;
+    u_long weight;
 };
 
 static int parse_line (string s, struct linedata& data)
@@ -41,6 +44,7 @@ static int parse_line (string s, struct linedata& data)
     data.pid = s.substr(0,pos);
     s = s.substr(pos+1);
     data.branch_flag = s.substr(0, 1);
+    data.weight = 1;
 
     return 0;
 }
@@ -63,6 +67,10 @@ int read_file (char* filename, vector<struct linedata>& ins)
 		} else {
 		    fprintf (stderr, "Unable to parse line %s\n", line);
 		}
+	    } else if (!strncmp (line, "[SUB]", 5)) {
+		u_long sweight;
+		assert (sscanf (line, "[SUB] %ld instructions", &sweight) == 1);
+		ins.back().weight += sweight;
 	    }
 	}
     }	
@@ -100,37 +108,46 @@ int main (int argc, char* argv[])
 			bb1[line1-1].clock.c_str(), atoi(bb1[line1-1].blockno.c_str())+1, bb1[line1-1].branch_flag.c_str());
 	    }
 	    DPRINT ("Mismatch: %s %s\n", bb1[line1].address.c_str(), bb2[line2].address.c_str());
-	    int best1 = bb1.size();
-	    int best2 = bb2.size();
+	    int best1 = INT_MAX/2;
+	    int best2 = INT_MAX/2;
+	    int bestline1 = bb1.size();
+	    int bestline2 = bb2.size();
+	    long weight1 = 0;
 	    for (int mline1 = line1; mline1 < size1; mline1++) {
-		DPRINT ("Try %d\n", mline1);
-		for (int mline2 = line2; mline2 < size2 && mline2 < best1+best2-mline1; mline2++) {
+		DPRINT ("Try %d:%s\n", mline1, bb1[mline1].address.c_str());
+		weight1 += bb1[mline1].weight;
+		long weight2 = 0;
+		for (int mline2 = line2; mline2 < size2; mline2++) {
+		    weight2 += bb2[mline2].weight;
 		    if (bb1[mline1].address == bb2[mline2].address) {
 			DPRINT ("Match found for %d:%s at %d:%s\n", mline1, bb1[mline1].address.c_str(), 
 				mline2, bb2[mline2].address.c_str());
-			if (mline1+mline2 < best1+best2) {
+			if (weight1+weight2 < best1+best2) {
 			    DPRINT ("Best so far\n");
-			    best1=mline1;
-			    best2=mline2;
+			    best1=weight1;
+			    best2=weight2;
+			    bestline1 = mline1;
+			    bestline2 = mline2;
 			}
 			break;
 		    }
+		    if (best1+best2 <= weight1) break;
 		}
 		DPRINT ("best1 %d best2 %d\n", best1, best2);
-		if (best1+best2 <= mline1 + line2 - 1) break;
+		if (best1+best2 <= weight1) break;
 	    }
 	    
-	    for (int i = line1; i < best1; i++) {
+	    for (int i = line1; i < bestline1; i++) {
 		printf ("%s ctrl_block_instrument_orig branch %s\n", bb1[i].address.c_str(), bb1[i].branch_flag.c_str());
 	    }
-	    for (int i = line2; i < best2; i++) {
+	    for (int i = line2; i < bestline2; i++) {
 		printf ("%s ctrl_block_instrument_alt branch %s\n", bb2[i].address.c_str(), bb2[i].branch_flag.c_str());
 	    }
 
-	    printf ("%s ctrl_merge %s,%s,%s\n", bb1[best1].address.c_str(), bb1[best1].pid.c_str(),
-		    bb1[best1].clock.c_str(), bb1[best1].blockno.c_str());
-	    line1 = best1;
-	    line2 = best2;
+	    printf ("%s ctrl_merge %s,%s,%s\n", bb1[bestline1].address.c_str(), bb1[bestline1].pid.c_str(),
+		    bb1[bestline1].clock.c_str(), bb1[bestline1].blockno.c_str());
+	    line1 = bestline1;
+	    line2 = bestline2;
 	}
     }
     

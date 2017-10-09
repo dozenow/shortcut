@@ -21,6 +21,7 @@ int fd; // File descriptor for the replay device
 TLS_KEY tls_key; // Key for accessing TLS. 
 bool tracing = false;  // Are we tracing right now?
 string subroutine;
+u_long subcount = 0;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "1000000000", "clock to stop");
 KNOB<unsigned int> KnobInstStart(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "start at this instruction");
@@ -213,25 +214,34 @@ TAINTSIGN monitor_control_flow_inst (ADDRINT ip, BOOL is_branch, BOOL taken)
 	tracing = 1;
 	subroutine = "";
     }
-    if (tracing && subroutine == "") {
-	char branch_flag;
-	if (is_branch) {
-	    if (taken) {
-		branch_flag = 't';
-	    } else {
-		branch_flag = 'n';
+    if (tracing) {
+	if (subroutine == "") {
+	    if (subcount > 0) {
+		printf ("[SUB] %ld instructions\n", subcount);
+		subcount = 0;
 	    }
+
+	    char branch_flag;
+	    if (is_branch) {
+		if (taken) {
+		    branch_flag = 't';
+		} else {
+		    branch_flag = 'n';
+		}
+	    } else {
+		branch_flag = '-';
+	    }
+	    printf ("[INST]0x%x, #%llu,%lu (clock)  %d %c ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid, branch_flag);
+	    PIN_LockClient();
+	    if (IMG_Valid(IMG_FindByAddress(ip))) {
+		printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	    } else {
+		printf("unknown\n");
+	    }
+	    PIN_UnlockClient();
 	} else {
-	    branch_flag = '-';
+	    subcount++;
 	}
-	printf ("[INST]0x%x, #%llu,%lu (clock)  %d %c ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid, branch_flag);
-	PIN_LockClient();
-	if (IMG_Valid(IMG_FindByAddress(ip))) {
-	    printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-	} else {
-	    printf("unknown\n");
-	}
-	PIN_UnlockClient();
     }
 }
 
@@ -453,9 +463,9 @@ int main(int argc, char** argv)
     PIN_AddThreadFiniFunction(thread_fini, 0);
     PIN_AddFollowChildProcessFunction(follow_child, argv);
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
+    RTN_AddInstrumentFunction (routine, 0);
     TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
-    RTN_AddInstrumentFunction (routine, 0);
     PIN_StartProgram();
 
     return 0;
