@@ -18,6 +18,7 @@
 #include <dirent.h>
 #include <poll.h>
 #include <pthread.h>
+#include <time.h>
 // Note assert requires locale, which does not work with our hacked libc - don't use it */
 
 #include "../dift/recheck_log.h"
@@ -1611,6 +1612,59 @@ void rt_sigprocmask_recheck ()
 	    }
 	}
     }
+}
+
+void recheck_wait_clock_init (pthread_mutex_t* mutex, pthread_cond_t* cond)
+{
+    //TODO: eliminate this syscall unless debugging
+    int pid = syscall(SYS_gettid);
+    unsigned long* clock = 0x60000000;
+    printf ("Pid %d recheck_wait_clock_init: %lu mutex %p cond %p, size %d,%d\n", pid, *clock, mutex, cond, sizeof(pthread_mutex_t), sizeof (pthread_cond_t));
+    if (pthread_mutex_init (mutex, NULL)) {
+        fprintf (stderr, "cannot init mutex.\n");
+        exit (-1);
+    }
+    if (pthread_cond_init (cond, NULL)) { 
+        fprintf (stderr, "cannot init mutex.\n");
+        exit (-1);
+    }
+}
+
+void recheck_wait_clock (unsigned long *current_clock, unsigned long wait_clock, pthread_mutex_t* mutex, pthread_cond_t* cond) 
+{
+    //TODO: eliminate this syscall unless debugging
+    int pid = syscall(SYS_gettid);
+
+    printf ("Pid %d call recheck_wait_clock.\n", pid);
+    int rc = pthread_mutex_lock (mutex);
+
+    if (rc) { 
+        fprintf (stderr, "cannot mutex lock ret %d\n", rc);
+        exit (-1);
+    }
+    if (*current_clock >= wait_clock) {
+        printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, *current_clock, current_clock, wait_clock);
+    } else {
+        printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p cond %p\n", pid, *current_clock, wait_clock, mutex, cond);
+        if (pthread_cond_broadcast (cond)) {
+            fprintf (stderr, "cannot broadcast to cond.\n");
+            exit (-1);
+        }
+        pthread_mutex_unlock (mutex);
+
+        pthread_mutex_lock (mutex);
+        //wait for its own clock
+        while (*current_clock < wait_clock) {
+            printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
+            int ret = pthread_cond_wait (cond, mutex);
+            if (ret) {
+                printf ("Pid %d pthread_cond_wait return non-zero code: %d\n", pid, ret);
+                exit (-1);
+            }
+            printf ("Pid %d stops waiting while current clock is %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
+        }
+    }
+    pthread_mutex_unlock (mutex);
 }
 
 void recheck_pthread_fix ()

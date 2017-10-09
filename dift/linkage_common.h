@@ -254,6 +254,20 @@ struct ctrl_flow_info {
     struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
 
+#define MUTEX_INIT 0
+#define MUTEX_DESTROY 1
+#define MUTEX_LOCK 2
+#define MUTEX_UNLOCK 3
+struct mutex_state {
+    int pid; //current holder
+    int state; //state
+};
+
+struct mutex_info_cache {
+    ADDRINT mutex;
+    ADDRINT attr;
+};
+
 // Per-thread data structure
 // Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
 struct thread_data {
@@ -309,8 +323,13 @@ struct thread_data {
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
     struct ctrl_flow_info ctrl_flow_info;
-    queue<string>* slice_buffer;
-    int slice_output_file;
+    queue<string>* slice_buffer;  //generated slice is put on this buffer first
+    int slice_output_file;        //and then written to this file
+    u_long expected_clock; //the clock we're expecting
+
+    union {
+        struct mutex_info_cache mutex_info_cache;
+    } pthread_info;
 };
 
 struct memcpy_header {

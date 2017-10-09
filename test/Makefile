@@ -114,7 +114,7 @@ sync_files: sync_files.cpp streamserver.h parseklib.o streamnw.cpp streamnw.h
 	c++ -Wall -Werror -std=c++0x sync_files.cpp parseklib.o streamnw.cpp -o sync_files 
 
 recheck_support.o: recheck_support.c ../dift/recheck_log.h
-	gcc recheck_support.c -c -o recheck_support.o -Wall
+	gcc recheck_support.c -c -o recheck_support.o -Wall -lrt -lpthread
 
 .PHONY: clean
 clean:

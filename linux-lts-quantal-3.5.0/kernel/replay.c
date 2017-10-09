@@ -4688,7 +4688,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 		if (execute_slice_name) { 
                         char recheckname[256];
-                        snprintf (recheckname, 256, "%s.%ld.so", recheck_filename, record_pid);
+                        snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
 			if (slice_addr == 0) {
 				printk ("Cannot find forward slice library\n");
 				return -EEXIST;
@@ -4879,17 +4879,22 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
             if (execute_slice_name) { 
                 char recheckname[256];
-                snprintf (recheckname, 256, "%s.%ld.so", recheck_filename, record_pid);
+                snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
                 if (slice_addr == 0) {
                     printk ("Cannot find forward slice library\n");
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
                 start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
+
+                /*printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
+                set_current_state(TASK_INTERRUPTIBLE);
+                schedule();
+                printk("Pid %d woken up\n", current->pid);*/
+                printk ("Pid %d return to execute slice.\n", current->pid);
             }
 
             // TODO: wait for the main thread to destroy the replay group
-
         }
 
         return ret_code;

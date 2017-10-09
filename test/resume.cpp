@@ -29,7 +29,7 @@ using namespace std;
 
 #define MAX_THREADS 128 //arbitrary... but works
 
-//#define LPRINT
+#define LPRINT
 
 
 void print_help(const char *program) {
@@ -340,8 +340,10 @@ again:
     fclose(file);
     printf ("\n\n\n");
 #endif
+
     // Let's load libc first
     void* hndl = NULL;
+
     if (pthread_dir) {
 	    char libc_filename[256];
 	    sprintf (libc_filename, "%s/libc-2.15.so", pthread_dir);

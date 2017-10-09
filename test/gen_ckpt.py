@@ -81,7 +81,7 @@ if len(input_asm_file) is 0:
         all_slices = glob.glob(outputdir + '/slice.*')
         for slice_file in all_slices: 
                 print ("#proccessing slice " + slice_file)
-                index = slice_file.rfind ('.')
+                index = slice_file.rfind ('.') + 1
                 filename = outputdir + "/exslice." + slice_file[index:] + ".asm"
                 input_asm_file.append (filename)
                 outfd = open(filename, "w")
@@ -120,7 +120,7 @@ for asm_file in input_asm_file:
     for line in infd:
         if line.strip() == "/*slice begins*/":
             break
-    mainfd.write ("\"" + line.strip() + "\\n\"\n")
+        mainfd.write ("\"" + line.strip() + "\\n\"\n")
     mainfd.write("\"call _section1\\n\"\n")
 
     outfd = open(outputdir+"/exslice1." + record_pid + ".c", "w")
@@ -169,7 +169,7 @@ for asm_file in input_asm_file:
     linkstr = "gcc -shared "+outputdir+"/exslice." + record_pid + ".o -o "+outputdir+"/exslice." + record_pid + ".so recheck_support.o"
     for i in range(fcnt):
         strno = str(i + 1)
-        os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice" + strno + "." + record_pid + ".c -o "+outputdir+"/exslice" + strno + "." + record_pid + ".o")
+        os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice" + strno + "." + record_pid + ".c -o "+outputdir+"/exslice" + strno + "." + record_pid + ".o ")
         linkstr += " " + outputdir + "/exslice" + strno + "." + record_pid + ".o"
     os.system(linkstr)
 

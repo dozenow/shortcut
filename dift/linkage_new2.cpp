@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 53
+//#define EXTRA_DEBUG 88
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -139,6 +139,7 @@ const char* splice_input = NULL;
 u_long num_merge_entries = 0x40000000/(sizeof(taint_t)*2);
 u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
+map<ADDRINT, struct mutex_state*> active_mutex;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
@@ -193,6 +194,18 @@ inline void sync_slice_buffer (struct thread_data* tdata)
 }
 
 #define OUTPUT_SLICE(slice...) output_slice(current_thread, slice)
+
+static inline void slice_wait_clock (u_long clock) 
+{
+    OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000600 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push %lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", clock, current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+}
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
     "pintool", "i", "",
@@ -443,6 +456,51 @@ void print_static_address(FILE* fp, ADDRINT ip)
     }
     fprintf(fp, "%#x %s\n", static_ip, img_name);
     PIN_UnlockClient();
+}
+
+static inline void detect_slice_ordering (int syscall_num) 
+{
+    // ignore pthread syscalls, or deterministic system calls that we don't log (e.g. 123, 186, 243, 244)
+    if (!(syscall_num == 17 || syscall_num == 31 || syscall_num == 32 || 
+	  syscall_num == 35 || syscall_num == 44 || syscall_num == 53 || 
+	  syscall_num == 56 || syscall_num == 58 || syscall_num == 98 || 
+	  syscall_num == 119 || syscall_num == 123 || syscall_num == 127 ||
+	  syscall_num == 186 || syscall_num == 243 || syscall_num == 244)) {
+        if (current_thread->ignore_flag) {
+            if (!(*(int *)(current_thread->ignore_flag))) {
+                current_thread->expected_clock += 2;
+                if (current_thread->expected_clock < *ppthread_log_clock) { 
+                    //OUTPUT_SLICE ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
+                    slice_wait_clock (*ppthread_log_clock);
+                    current_thread->expected_clock = *ppthread_log_clock;
+                } /*else if (current_thread->expected_clock > *ppthread_log_clock) {
+                    //OUTPUT_SLICE ("[SLICE] syscall end %d; clock %lu, current thread expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
+                    slice_wait_clock (*ppthread_log_clock);
+                } */
+                OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+                OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+                OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+
+            } else { 
+                printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d\n", syscall_num);
+            }
+        } else {
+            current_thread->expected_clock += 2;
+            if (current_thread->expected_clock < *ppthread_log_clock) { 
+                //OUTPUT_SLICE ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
+                slice_wait_clock (*ppthread_log_clock);
+                current_thread->expected_clock = *ppthread_log_clock;
+            } /*else if (current_thread->expected_clock > *ppthread_log_clock) {
+                //OUTPUT_SLICE ("[SLICE] syscall end %d; clock %lu, current thread expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
+                slice_wait_clock (*ppthread_log_clock);
+            } */
+            OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+        }
+    } else { 
+        printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d\n", syscall_num);
+    }
 }
 
 static inline void increment_syscall_cnt (int syscall_num)
@@ -2119,6 +2177,11 @@ void syscall_end(int sysnum, ADDRINT ret_value)
             printf ("Now finalizing slice for thread id %d, record_pid %d\n", iter->second->threadid, iter->second->record_pid);
             sync_slice_buffer (iter->second);
         }
+        printf ("Figure out all valid mutex at this point\n");
+        for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+            printf ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+        }
+        fflush (stdout);
 	
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -2155,6 +2218,7 @@ void instrument_syscall(ADDRINT syscall_num,
 	check_clock_before_syscall (dev_fd, (int) syscall_num);
     }
     if (sysnum == 252) dift_done();
+    //detect_slice_ordering (sysnum);
 
     if (segment_length && *ppthread_log_clock >= segment_length) {
 	// Done with this replay - do exit stuff now because we may not get clean unwind
@@ -2227,6 +2291,7 @@ void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD 
     if (current_thread->syscall_in_progress) {
 	// reset the syscall number after returning from system call
 	increment_syscall_cnt (current_thread->sysnum);
+        detect_slice_ordering (current_thread->sysnum);
 	current_thread->syscall_in_progress = false;
     }
 
@@ -5620,6 +5685,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->slice_output_file = open (filename, O_RDWR|O_TRUNC|O_CREAT, 0644);
     assert (ptdata->slice_output_file > 0);
     ptdata->slice_buffer = new queue<string>();
+    ptdata->expected_clock = 0;
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
@@ -5773,6 +5839,25 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 #endif
     }
     active_threads[ptdata->record_pid] = ptdata;
+    if (*ppthread_log_clock != 0) {
+        current_thread->expected_clock = *ppthread_log_clock;
+        if (*ppthread_log_clock <=2) { 
+            //init clock values for the first thread
+            OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x60000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+
+            //init mutex and condition var 
+            OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000600 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock_init [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #add esp, 8 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+
+        } else {
+            //wait for the clock until it should start
+            slice_wait_clock (current_thread->expected_clock);
+        }
+    }
 }
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
@@ -5794,6 +5879,145 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
     if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
     if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
+}
+
+void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
+{
+}
+
+void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
+{
+    ++current_thread->expected_clock;
+    if (current_thread->expected_clock < *ppthread_log_clock) { 
+        //OUTPUT_SLICE ("[SLICE_DEBUG] pthread_replay %d; clock %lu, next clock expects %lu\n", type, *ppthread_log_clock, current_thread->expected_clock);
+        slice_wait_clock (*ppthread_log_clock);
+        current_thread->expected_clock = *ppthread_log_clock;
+    } /*else if (current_thread->expected_clock > *ppthread_log_clock) {
+        //OUTPUT_SLICE ("[SLICE] pthread_replay %d; clock %lu, current thread expects %lu\n", type, *ppthread_log_clock, current_thread->expected_clock);
+        slice_wait_clock (*ppthread_log_clock);
+    } */
+    OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [0x60000000] [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+}
+
+void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr) 
+{
+    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
+    current_thread->pthread_info.mutex_info_cache.attr = attr;
+}
+
+void track_pthread_mutex_params_1 (ADDRINT mutex) 
+{
+    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
+}
+
+void track_pthread_mutex_init (ADDRINT rtn_addr)
+{
+    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    ADDRINT attr = current_thread->pthread_info.mutex_info_cache.attr;
+    struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
+    state->pid = current_thread->record_pid;
+    state->state = MUTEX_INIT;
+    active_mutex[mutex] = state;
+    if (attr != 0) {
+        fprintf (stderr, " pthread_mutex_init with ATTR, not handled yet.\n");
+    }
+}
+
+void track_pthread_mutex_lock (ADDRINT rtn_addr)
+{
+    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    if (active_mutex.find (mutex) != active_mutex.end()) {
+        struct mutex_state* state = active_mutex[mutex];
+        state->pid = current_thread->record_pid;
+        state->state = MUTEX_LOCK;
+    } else { 
+        fprintf (stderr, "unfound mutex to lock\n");
+    }
+}
+
+void track_pthread_mutex_unlock (ADDRINT rtn_addr)
+{   
+    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    if (active_mutex.find (mutex) != active_mutex.end()) {
+        struct mutex_state* state = active_mutex[mutex];
+        state->pid = current_thread->record_pid;
+        state->state = MUTEX_UNLOCK;
+    } else { 
+        fprintf (stderr, "unfound mutex to unlock, pid %d\n", current_thread->record_pid);
+    }
+}
+
+void track_pthread_mutex_destroy (ADDRINT rtn_addr)
+{
+    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    struct mutex_state* state = active_mutex[mutex];
+    free (state);
+    active_mutex.erase (mutex);
+}
+
+void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
+{
+    fprintf (stderr, "untracked pthread operation %s\n", (char*) name);
+}
+
+void routine (RTN rtn, VOID* v)
+{ 
+    const char *name;
+
+    name = RTN_Name(rtn).c_str();
+    if (!strcmp (name, "pthread_log_replay")) {
+        RTN_Open(rtn);
+
+        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
+                IARG_ADDRINT, RTN_Address(rtn), 
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                IARG_END);
+        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_pthread_replay,
+                IARG_ADDRINT, RTN_Address(rtn), 
+                IARG_FUNCRET_EXITPOINT_VALUE,  
+                IARG_END);
+
+        RTN_Close(rtn);
+    } else if (!strncmp (name, "pthread_", 8)) {
+        RTN_Open(rtn);
+        if (!strcmp (name, "pthread_mutex_init")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_init, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_mutex_lock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_mutex_unlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_unlock, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_mutex_destroy")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else {
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) untracked_pthread_function, 
+                    IARG_PTR, name, 
+                    IARG_ADDRINT, RTN_Address(rtn),
+                    IARG_END);
+        }
+        RTN_Close(rtn);
+    }
 }
 
 #ifndef NO_FILE_OUTPUT
@@ -6059,6 +6283,7 @@ int main(int argc, char** argv)
 #endif
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
+    RTN_AddInstrumentFunction (routine, 0);
     PIN_SetSyntaxIntel();
     PIN_StartProgram();
 

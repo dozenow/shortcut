@@ -1154,6 +1154,12 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					was_libkeep = 1;
 					continue;
 				}
+				if (strlen(s) >= 12 && !strcmp(s+strlen(s)-12,"libpthread-2.15.so")) {
+					DPRINT ("This is libpthread - do not unmap it\n");
+					vma = vma_next;
+					was_libkeep = 1;
+					continue;
+				}
 				if (!strcmp(s, slice_fullname)) {
 					DPRINT ("This is the slice library do not unmap it\n");
 					if (*slice_addr == 0) {
@@ -1591,6 +1597,34 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
 
+        //mutex/cond/clock for slice ordering
+        //TODO: use a meaningful filename
+        long rc = 0;
+        int fd = 0;
+        mm_segment_t old_fs = get_fs ();
+
+        set_fs (KERNEL_DS);
+        fd = sys_open ("/tmp/shared_clock", O_CREAT| O_RDWR, 0644);
+        if (fd < 0) { 
+            printk ("[ERROR] cannot open shared clock file, ret %d\n", fd);
+            BUG();
+        }
+        set_fs (old_fs);
+        rc = sys_ftruncate (fd, 4096);
+        BUG_ON (rc < 0);
+        rc = sys_mmap_pgoff (0x60000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
+        if (IS_ERR ((void*)rc)) { 
+            printk ("[ERROR] cannot map shared clock? ret %ld\n", rc);
+            BUG ();
+        }
+        rc = sys_close (fd);
+        BUG_ON (rc < 0);
+        if (IS_ERR((void*) rc)) {
+            printk ("0x60000000 cannot be allocated? ret %ld\n", rc);
+        } else { 
+            printk ("allocate space for mutex/cond/clock\n");
+        }
+
 	// Allocate space for the restore stack and also for storing some fw slice info
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if (IS_ERR((void *) extra_space_addr)) {
@@ -1637,7 +1671,9 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	} else {
 		snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
 	}
-	
+
+        DPRINT ("start_fw_slice: recheck filename %s\n", recheck_filename);
+                
 	regs->sp -= RECHECK_FILE_NAME_LEN;
 	regs->bp = regs->sp;
 	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);
