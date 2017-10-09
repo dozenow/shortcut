@@ -12,9 +12,10 @@
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 u_long print_stop = 1000000;
-long print_start = 0;
+u_long print_start = 0;
 u_long* ppthread_log_clock = NULL;
 
+KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print start");
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
 
 long global_syscall_cnt = 0;
@@ -164,7 +165,7 @@ ADDRINT find_static_address(ADDRINT ip)
 
 void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
 {
-    if (global_syscall_cnt >= print_start) {
+    if (*ppthread_log_clock >= print_start) { 
         printf ("%x   ", ip);
         PIN_LockClient();
         if (IMG_Valid(IMG_FindByAddress(ip))) {
@@ -178,6 +179,7 @@ void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
             ADDRINT mem = PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX);
             printf ("String at that location is %s\n", (char *) mem);
         }
+	fflush (stdout);
     }
 }
 
@@ -234,12 +236,16 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
 
 void before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0)
 {
-    printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+    if (*ppthread_log_clock >= print_start) { 
+	printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+    }
 }
 
 void after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT ret)
 {
-    printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+    if (*ppthread_log_clock >= print_start) { 
+	printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+    }
 }
 
 void routine (RTN rtn, VOID *v)
@@ -332,6 +338,7 @@ int main(int argc, char** argv)
     // Obtain a key for TLS storage
     tls_key = PIN_CreateThreadDataKey(0);
 
+    print_start = atoi(KnobPrintStart.Value().c_str());
     print_stop = atoi(KnobPrintStop.Value().c_str());
     
     // Try to map the log clock for this epoch

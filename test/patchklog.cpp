@@ -153,6 +153,103 @@ static void handle_newselect (int fd, struct taint_retval* trv, struct klog_resu
     }
 }
 
+static char* map_pinout (const char* filename, u_long& mapsize)
+{
+    // Try to find the nth jump in the file
+    int fd = open (filename, O_RDONLY);
+    if (fd < 0) {
+	fprintf (stderr, "Cannot open pinout file %s, errno=%d\n", filename, errno);
+	return NULL;
+    }
+    
+    struct stat st;
+    if (fstat (fd, &st) < 0) {
+	fprintf (stderr, "Cannot stat pinout file, errno=%d\n", errno);
+	return NULL;
+    }
+
+    char* p = (char *) mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (p == MAP_FAILED) {
+	fprintf (stderr, "Cannot map pinout file, errno=%d\n", errno);
+	return NULL;
+    }
+    
+    close(fd);
+    mapsize = st.st_size;
+    
+    return p;
+}
+
+static int replay_and_redirect (int dev_fd, char* outfilename, string recpidstr, u_long last_clock, const char* dirname)
+{
+    int rc;
+    pid_t cpid = fork ();
+    if (cpid == 0) {
+	// Redirect output to a file
+	int fd = open (outfilename, O_CREAT | O_TRUNC | O_RDWR, 0644);
+	if (fd < 0) {
+	    fprintf (stderr, "Cannot open %s, errno=%d\n", outfilename, errno);
+	    return fd;
+	}
+	rc = dup2 (fd, 1);
+	if (rc < 0) {
+	    fprintf (stderr, "Cannot dup2 outfile, errno=%d\n", errno);
+	    return fd;
+	}
+	close(fd);
+
+	char attach_offset[64];
+	sprintf (attach_offset, "--attach_offset=%s,%lu", recpidstr.c_str(), last_clock);
+	rc = execl("./resume", "resume", "-p", dirname, "--pthread", "../eglibc-2.15/prefix/lib", attach_offset, NULL);
+	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
+	return -1;
+    } 
+    printf ("Waiting until we can attach\n");
+
+    // Wait until we can attach pin
+    do {
+	rc = get_attach_status (dev_fd, cpid);
+    } while (rc <= 0);
+    printf ("Go ahead\n");
+
+    return cpid;
+}
+
+static int run_tool (int dev_fd, const char* tool, pid_t cpid, const char* address, u_long resume_clock)
+{
+    if (fork() == 0) {
+	const char* args[256];
+	char cpids[64], end_str[64];
+	u_int argcnt = 0;
+	
+	args[argcnt++] = "pin";
+	args[argcnt++] = "-pid";
+	sprintf (cpids, "%d", cpid);
+	args[argcnt++] = cpids;
+	args[argcnt++] = "-t";
+	args[argcnt++] = tool;
+	args[argcnt++] = "-i";
+	args[argcnt++] = address;
+	args[argcnt++] = "-s";
+	sprintf (end_str, "%lu", resume_clock);
+	args[argcnt++] = end_str;
+	args[argcnt++] = NULL;
+	long rc = execv ("../../pin/pin", (char **) args);
+	fprintf (stderr, "execv of pin tool failed, rc=%ld, errno=%d\n", rc, errno);
+	return -1;
+    }
+
+    wait_for_replay_group(dev_fd, cpid);
+    
+    int status;
+    long rc = waitpid (cpid, &status, 0);
+    if (rc < 0) {
+	fprintf (stderr, "waitpid returns %ld, errno %d for pid %d\n", rc, errno, cpid);
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv) 
 {
     struct klogfile *log;
@@ -321,182 +418,117 @@ int main(int argc, char **argv)
     close (destfd);
     close (tfd);
 
+    u_long mapsize;
+    char* p = map_pinout (pinoutname.c_str(), mapsize);
+    if (p == NULL) return -1;
+    
+    // For replay runs below
+    int fd = open ("/dev/spec0", O_RDWR);
+    if (fd < 0) {
+	perror("open /dev/spec0");
+	return fd;
+    }
+
     if (hdr.diverge_type == DIVERGE_JUMP) {
 	printf ("Looking for jump index %lu\n", hdr.diverge_ndx);
 
-	// Try to find the nth jump in the file
-	int fd = open (pinoutname.c_str(), O_RDONLY);
-	if (fd < 0) {
-	    fprintf (stderr, "Cannot open pinout file %s, errno=%d\n", pinoutname.c_str(), errno);
-	    return fd;
-	}
-
-	struct stat st;
-	rc = fstat (fd, &st);
-	if (rc < 0) {
-	    fprintf (stderr, "Cannot stat pinout file, errno=%d\n", errno);
-	    return rc;
-	}
-
-	char* p = (char *) mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (p == MAP_FAILED) {
-	    fprintf (stderr, "Cannot map pinout file, errno=%d\n", errno);
-	    return -1;
-	}
-
-	close(fd);
-
 	u_long jump_count = 0;
 	char address[64];
-	for (u_long i = 0; i < st.st_size; i++) {
+	for (u_long i = 0; i < mapsize; i++) {
 	    if (p[i] == '#' && p[i+1] == 'j') {
-		if (jump_count == hdr.diverge_ndx) {
-		    u_long start = i-2;
-		    while (p[start] != '#') start--;
-		    start = start+1;
-		    u_long end = i-1;
-		    strcpy(address, "0x");
-		    memcpy(address+2, p+start, end-start);
-		    address[end-start+2] = '\0';
-		    printf ("address: %s\n", address);
-		    break;
-		}
-		jump_count++;
+		u_long j;
+		for (j = i+2; p[j] != ' '; j++);
+		if (!(p[j+1] == 'b' && p[j+2] == '_')) {
+		    if (jump_count == hdr.diverge_ndx) {
+			u_long start = i-2;
+			while (p[start] != '#') start--;
+			start = start+1;
+			u_long end = i-1;
+			strcpy(address, "0x");
+			memcpy(address+2, p+start, end-start);
+			address[end-start+2] = '\0';
+			printf ("address: %s\n", address);
+			break;
+		    }
+		    jump_count++;
+		} /* else alt cf */
 	    }
 	}
 
 	printf ("Should resume from clock %lu and stop at %lu\n", hdr.last_clock, resume_clock);
 
-	// For replay runs below
-	fd = open ("/dev/spec0", O_RDWR);
-	if (fd < 0) {
-	    perror("open /dev/spec0");
-	    return fd;
+	// First run alternate execution
+	char outfilename[256];
+	sprintf (outfilename, "%s/altpath_bbs", altdirname);
+	pid_t cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, altdirname);
+	if (cpid < 0) return cpid;
+	run_tool (fd, "../dift/obj-ia32/ctrl_flow_bb_trace.so", cpid, address, resume_clock);
+
+	// Now original one
+	sprintf (outfilename, "%s/origpath_bbs", altdirname);
+	cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, dir.c_str());
+	if (cpid < 0) return cpid;
+	run_tool (fd, "../dift/obj-ia32/ctrl_flow_bb_trace.so", cpid, address, resume_clock);
+	
+    } else if (hdr.diverge_type == DIVERGE_INDEX) {
+	printf ("Looking for diverge index 0x%lx\n", hdr.diverge_ndx);
+
+	char needle[256];
+	sprintf (needle, "[SLICE_VERIFICATION] push 0x%lx ", hdr.diverge_ndx);
+	char* found = strstr (p, needle);
+	if (!found) {
+	    printf ("Not found\n");
+	    return -1;
+	}
+	u_long inst;
+	char inst_str[80];
+	sscanf (found+strlen(needle), "//comes with %lx", &inst);
+	printf ("Instruction 0x%lx\n", inst);
+	sprintf (inst_str, "0x%lx", inst);
+
+	// Start with original execution
+	char outfilename[256];
+	sprintf (outfilename, "%s/orig_rws", altdirname);
+	pid_t cpid = replay_and_redirect (fd, outfilename, recpidstr, hdr.last_clock, dir.c_str());
+	if (cpid < 0) return cpid;
+	run_tool (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock);
+	
+	// First check if all examples are read only 
+	FILE* file = fopen(outfilename, "r");
+	if (file == NULL) {
+	    fprintf (stderr, "Cannot open file: %s\n", outfilename);
+	    return -1;
 	}
 
-	// Now let's run the pin tools for the original and the alteteed runs to gather bbl data
-	// Alternate first
-	pid_t cpid = fork ();
-	if (cpid == 0) {
-	    // Redirect output to a file
-	    char outfilename[256];
-	    sprintf (outfilename, "%s/altpath_bbs", altdirname);
-	    int fd = open (outfilename, O_CREAT | O_TRUNC | O_RDWR, 0644);
-	    if (fd < 0) {
-		fprintf (stderr, "Cannot open %s, errno=%d\n", outfilename, errno);
-		return fd;
+	bool is_readonly = true;
+	while (!feof(file)) {
+	    char line[256];
+	    if (fgets (line, 256, file)) {
+		if (!strncmp (line, "[READ]", 6)) {
+		    printf ("Read-only %c\n", line[strlen(line)-2]);
+		    if (line[strlen(line)-2] == '0') {
+			is_readonly = false;
+			break;
+		    }
+		} else if (!strncmp (line, "[WRITE]", 7)) {
+		    is_readonly = false;
+		    break;
+		}
 	    }
-	    rc = dup2 (fd, 1);
-	    if (rc < 0) {
-		fprintf (stderr, "Cannot dup2 outfile, errno=%d\n", errno);
-		return fd;
-	    }
-	    close(fd);
+	}
+	fclose (file);
 
-	    char attach_offset[64];
-	    sprintf (attach_offset, "--attach_offset=%s,%lu", recpidstr.c_str(), hdr.last_clock);
-	    rc = execl("./resume", "resume", "-p", altdirname, "--pthread", "../eglibc-2.15/prefix/lib", attach_offset, NULL);
-	    fprintf (stderr, "execl of resume failed, rc=%ld, errno=%d\n", rc, errno);
-	    return -1;
+	if (is_readonly) {
+	    printf ("All accesses are to read-only region\n");
+	    printf ("0x%lx rangev mm\n", inst); 
+	    return 0;
 	} 
 
-	// Wait until we can attach pin
-	do {
-	    rc = get_attach_status (fd, cpid);
-	} while (rc <= 0);
-
-	// Now run the bbl tool
-	pid_t mpid = fork();
-	if (mpid == 0) {
-	    const char* args[256];
-	    char cpids[64], end_str[64];
-	    u_int argcnt = 0;
-
-	    args[argcnt++] = "pin";
-	    args[argcnt++] = "-pid";
-	    sprintf (cpids, "%d", cpid);
-	    args[argcnt++] = cpids;
-	    args[argcnt++] = "-t";
-	    args[argcnt++] = "../dift/obj-ia32/ctrl_flow_bb_trace.so";
-	    args[argcnt++] = "-i";
-	    args[argcnt++] = address;
-	    args[argcnt++] = "-s";
-	    sprintf (end_str, "%lu", resume_clock);
-	    args[argcnt++] = end_str;
-	    args[argcnt++] = NULL;
-	    rc = execv ("../../pin/pin", (char **) args);
-	    fprintf (stderr, "execv of pin ctrl flow tool failed, rc=%ld, errno=%d\n", rc, errno);
-	    return -1;
-	}
-	
-	wait_for_replay_group(fd, cpid);
-
-	int status;
-	rc = waitpid (cpid, &status, 0);
-	if (rc < 0) {
-	    fprintf (stderr, "waitpid returns %ld, errno %d for pid %d\n", rc, errno, cpid);
-	}
-
-	// Now original
-	cpid = fork ();
-	if (cpid == 0) {
-	    // Redirect output to a file
-	    char outfilename[256];
-	    sprintf (outfilename, "%s/origpath_bbs", altdirname);
-	    int fd = open (outfilename, O_CREAT | O_TRUNC | O_RDWR, 0644);
-	    if (fd < 0) {
-		fprintf (stderr, "Cannot open %s, errno=%d\n", outfilename, errno);
-		return fd;
-	    }
-	    rc = dup2 (fd, 1);
-	    if (rc < 0) {
-		fprintf (stderr, "Cannot dup2 outfile, errno=%d\n", errno);
-		return fd;
-	    }
-	    close(fd);
-
-	    char attach_offset[64];
-	    sprintf (attach_offset, "--attach_offset=%s,%lu", recpidstr.c_str(), hdr.last_clock);
-	    rc = execl("./resume", "resume", "-p", dir.c_str(), "--pthread", "../eglibc-2.15/prefix/lib", attach_offset, NULL);
-	    fprintf (stderr, "execl of resume failed, rc=%ld, errno=%d\n", rc, errno);
-	    return -1;
-	} 
-
-	// Wait until we can attach pin
-	do {
-	    rc = get_attach_status (fd, cpid);
-	} while (rc <= 0);
-
-	// Now run the bbl tool
-	mpid = fork();
-	if (mpid == 0) {
-	    const char* args[256];
-	    char cpids[64], end_str[64];
-	    u_int argcnt = 0;
-
-	    args[argcnt++] = "pin";
-	    args[argcnt++] = "-pid";
-	    sprintf (cpids, "%d", cpid);
-	    args[argcnt++] = cpids;
-	    args[argcnt++] = "-t";
-	    args[argcnt++] = "../dift/obj-ia32/ctrl_flow_bb_trace.so";
-	    args[argcnt++] = "-i";
-	    args[argcnt++] = address;
-	    args[argcnt++] = "-s";
-	    sprintf (end_str, "%lu", resume_clock);
-	    args[argcnt++] = end_str;
-	    args[argcnt++] = NULL;
-	    rc = execv ("../../pin/pin", (char **) args);
-	    fprintf (stderr, "execv of pin ctrl flow tool failed, rc=%ld, errno=%d\n", rc, errno);
-	    return -1;
-	}
-	
-	wait_for_replay_group(fd, cpid);
-
-	rc = waitpid (cpid, &status, 0);
-	if (rc < 0) {
-	    fprintf (stderr, "waitpid returns %ld, errno %d for pid %d\n", rc, errno, cpid);
-	}
+	// OK, so do the alternate path, too
+	sprintf (outfilename, "%s/alt_rws", altdirname);
+	cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, altdirname);
+	if (cpid < 0) return cpid;
+	run_tool (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock);
 
     }
 

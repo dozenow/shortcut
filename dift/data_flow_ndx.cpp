@@ -9,8 +9,9 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <iostream>
-
 using namespace std;
+
+#include "mmap_regions.h"
 
 /* Globals */
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
@@ -38,6 +39,7 @@ struct thread_data {
     int    syscall_cnt;	    // per thread count of syscalls
     int    sysnum;	    // current syscall number
     u_long ignore_flag;
+    int    len, prot, flags; // For mmap region info
     struct ctrl_flow_info  ctrl_flow_info;
 };
 
@@ -62,6 +64,39 @@ static int trace_done ()
     fprintf(stderr, "%d: in trace_done, clock %lu\n",PIN_GetTid(), *ppthread_log_clock);
 
     return 1; //we are the one that acutally did the dift done
+}
+
+void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
+		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+{ 
+    switch (sysnum) {
+        case SYS_mmap:
+        case SYS_mmap2:
+	    tdata->len = syscallarg1;
+	    tdata->prot = syscallarg2;
+	    tdata->flags = syscallarg4;
+	    tdata->app_syscall_chk = tdata->len + tdata->prot; // Pin sometimes makes mmaps during mmap
+	    break;
+        case SYS_munmap:
+            delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            break;
+        case SYS_mprotect:
+            change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            break;
+    }
+}
+
+void syscall_end(int sysnum, ADDRINT retval)
+{
+    int rc = retval;
+    switch(sysnum) {
+        case SYS_mmap:
+        case SYS_mmap2:
+	    if (rc > 0 || rc < -1024) {
+		add_mmap_region (rc, current_thread->len, current_thread->prot, current_thread->flags);
+	    }
+            break;
+    }
 }
 
 inline void increment_syscall_cnt (struct thread_data* ptdata, int syscall_num)
@@ -103,26 +138,15 @@ void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, V
 	fprintf (stderr, "inst_syscall_end: NULL current_thread\n");
     }	
 
+    ADDRINT ret_value = PIN_GetSyscallReturn(ctxt, std);
+    if (*ppthread_log_clock <= print_stop) { 
+	syscall_end(current_thread->sysnum, ret_value);
+    }
+
     increment_syscall_cnt(current_thread, current_thread->sysnum);
     // reset the syscall number after returning from system call
     current_thread->sysnum = 0;
     increment_syscall_cnt(current_thread, current_thread->sysnum);
-}
-
-static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd)
-{
-    tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
-}
-
-void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
-		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
-{
-    switch (sysnum) {
-        case SYS_mmap:
-        case SYS_mmap2:
-            sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
-            break;
-    }
 }
 
 // called before every application system call
@@ -191,7 +215,7 @@ ADDRINT find_static_address(ADDRINT ip)
 }
 
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
-TAINTSIGN monitor_control_flow_head ()
+TAINTSIGN monitor_control_flow_head (ADDRINT ip)
 {
     ++ current_thread->ctrl_flow_info.count;
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
@@ -200,14 +224,14 @@ TAINTSIGN monitor_control_flow_head ()
     }
 }
 
-TAINTSIGN monitor_read (ADDRINT ip, ADDRINT ea)
+TAINTSIGN monitor_read (ADDRINT ip, ADDRINT ea, UINT32 len)
 {
-    printf ("[READ]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+    printf ("[READ]0x%x, 0x%x, #%llu,%lu (clock), ro %d\n", ip, ea, current_thread->ctrl_flow_info.count, *ppthread_log_clock, is_readonly (ea, len));
 }
 
-TAINTSIGN monitor_read2 (ADDRINT ip, ADDRINT ea, ADDRINT ea2)
+TAINTSIGN monitor_read2 (ADDRINT ip, ADDRINT ea, ADDRINT ea2, UINT32 len)
 {
-    printf ("[READs]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea2, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+    printf ("[READ2]0x%x, 0x%x, #%llu,%lu (clock), ro %d\n", ip, ea2, current_thread->ctrl_flow_info.count, *ppthread_log_clock, is_readonly (ea, len));
 }
 
 TAINTSIGN monitor_write (ADDRINT ip, ADDRINT ea)
@@ -223,6 +247,7 @@ void track_trace(TRACE trace, void* data)
         INS head = BBL_InsHead (bbl);
         INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
 			IARG_FAST_ANALYSIS_CALL, 
+			IARG_INST_PTR,
 			IARG_END);
 
 	for (INS ins = head; INS_Valid(ins); ins = INS_Next(ins)) {
@@ -234,12 +259,14 @@ void track_trace(TRACE trace, void* data)
 				       IARG_INST_PTR, 
 				       IARG_MEMORYREAD_EA,
 				       IARG_MEMORYREAD2_EA,
+				       IARG_MEMORYREAD_SIZE,
 				       IARG_END);
 		    } else {
 			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_read), 
 				       IARG_FAST_ANALYSIS_CALL,
 				       IARG_INST_PTR, 
 				       IARG_MEMORYREAD_EA,
+				       IARG_MEMORYREAD_SIZE,
 				       IARG_END);
 		    }
 		} else if (INS_IsMemoryWrite(ins)) {
@@ -430,7 +457,7 @@ int main(int argc, char** argv)
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
     TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
-    //RTN_AddInstrumentFunction (routine, 0);
+    init_mmap_region ();
     PIN_StartProgram();
 
     return 0;

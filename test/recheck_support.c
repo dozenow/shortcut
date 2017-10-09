@@ -175,15 +175,15 @@ void handle_index_diverge(u_long foo)
     abort ();
 }
 
-static inline void check_retval (const char* name, int expected, int actual) {
+static inline void check_retval (const char* name, u_long clock, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
-	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, actual);
 	    handle_mismatch();
 	}
     } else {
-	if (expected != -1*(errno)){
-	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, -1*(errno));
+	if (expected != -1*(errno)) {
+	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, -1*(errno));
 	    handle_mismatch();
 	}  
     }
@@ -314,7 +314,7 @@ void read_recheck (size_t count)
 	    handle_mismatch();
 	}
 	rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
-	check_retval ("read", pentry->retval, rc);
+	check_retval ("read", pentry->clock, pentry->retval, rc);
         if (!pread->partial_read) {
 	    if (rc > 0) {
 		if (memcmp (tmpbuf, readData, rc)) {
@@ -358,7 +358,7 @@ void write_recheck ()
     }
 
     rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
-    check_retval ("write", pentry->retval, rc);
+    check_retval ("write", pentry->clock, pentry->retval, rc);
 }
 
 void open_recheck ()
@@ -383,7 +383,7 @@ void open_recheck ()
     LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
-    check_retval ("open", pentry->retval, rc);
+    check_retval ("open", pentry->clock, pentry->retval, rc);
     if (rc >= MAX_FDS) abort ();
     if (rc >= 0 && popen->has_retvals) {
 	cache_files_opened[rc].is_open_cache_file = 1;
@@ -408,7 +408,7 @@ void openat_recheck ()
     LPRINT ( "openat: dirfd %d filename %s flags %x mode %d rc %ld clock %lu\n", popen->dirfd, fileName, popen->flags, popen->mode, pentry->retval, pentry->clock);
 #endif
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
-    check_retval ("openat", pentry->retval, rc);
+    check_retval ("openat", pentry->clock, pentry->retval, rc);
     if  (rc >= MAX_FDS) abort ();
 }
 
@@ -431,7 +431,7 @@ void close_recheck ()
     if (pclose->fd >= MAX_FDS) abort();
     rc = syscall(SYS_close, pclose->fd);
     cache_files_opened[pclose->fd].is_open_cache_file = 0;
-    check_retval ("close", pentry->retval, rc);
+    check_retval ("close", pentry->clock, pentry->retval, rc);
 }
 
 void access_recheck ()
@@ -452,7 +452,7 @@ void access_recheck ()
 #endif
 
     rc = syscall(SYS_access, accessName, paccess->mode);
-    check_retval ("access", pentry->retval, rc);
+    check_retval ("access", pentry->clock, pentry->retval, rc);
 }
 
 void stat64_alike_recheck (char* syscall_name, int syscall_num)
@@ -483,7 +483,7 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 #endif
 
     rc = syscall(syscall_num, pathName, &st);
-    check_retval (syscall_name, pentry->retval, rc);
+    check_retval (syscall_name, pentry->clock, pentry->retval, rc);
     if (pstat64->has_retvals) {
 	if (st.st_dev != pstat64->retvals.st_dev) {
 	    printf ("[MISMATCH] %s dev does not match %llu vs. recorded %llu\n", syscall_name, st.st_dev, pstat64->retvals.st_dev);
@@ -590,7 +590,7 @@ void fstat64_recheck ()
 #endif
 
     rc = syscall(SYS_fstat64, pfstat64->fd, &st);
-    check_retval ("fstat64", pentry->retval, rc);
+    check_retval ("fstat64", pentry->clock, pentry->retval, rc);
     if (pfstat64->has_retvals) {
 	if (st.st_dev != pfstat64->retvals.st_dev) {
 	    printf ("[MISMATCH] fstat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pfstat64->retvals.st_dev);
@@ -679,7 +679,7 @@ void fcntl64_getfl_recheck ()
 #endif
 
     rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
-    check_retval ("fcntl64 getfl", pentry->retval, rc);
+    check_retval ("fcntl64 getfl", pentry->clock, pentry->retval, rc);
 }
 
 void fcntl64_setfl_recheck ()
@@ -699,7 +699,7 @@ void fcntl64_setfl_recheck ()
 #endif
 
     rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
-    check_retval ("fcntl64 setfl", pentry->retval, rc);
+    check_retval ("fcntl64 setfl", pentry->clock, pentry->retval, rc);
 }
 
 void fcntl64_getlk_recheck ()
@@ -720,7 +720,7 @@ void fcntl64_getlk_recheck ()
 #endif
 
     rc = syscall(SYS_fcntl64, pgetlk->fd, F_GETLK, &fl);
-    check_retval ("fcntl64 getlk", pentry->retval, rc);
+    check_retval ("fcntl64 getlk", pentry->clock, pentry->retval, rc);
     if (pgetlk->has_retvals) {
 	if (memcmp(&fl, &pgetlk->flock, sizeof(fl))) {
 	    printf ("[MISMATCH] fcntl64 getlk does not match\n");
@@ -746,7 +746,7 @@ void fcntl64_getown_recheck ()
 #endif
 
     rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
-    check_retval ("fcntl64 getown", pentry->retval, rc);
+    check_retval ("fcntl64 getown", pentry->clock, pentry->retval, rc);
 }
 
 void fcntl64_setown_recheck (long owner)
@@ -773,7 +773,7 @@ void fcntl64_setown_recheck (long owner)
     }
 
     rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, use_owner);
-    check_retval ("fcntl64 setown", pentry->retval, rc);
+    check_retval ("fcntl64 setown", pentry->clock, pentry->retval, rc);
 }
 
 void ugetrlimit_recheck ()
@@ -794,7 +794,7 @@ void ugetrlimit_recheck ()
 #endif
 
     rc = syscall(SYS_ugetrlimit, pugetrlimit->resource, &rlim);
-    check_retval ("ugetrlimit", pentry->retval, rc);
+    check_retval ("ugetrlimit", pentry->clock, pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
 	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
 	handle_mismatch();
@@ -820,7 +820,7 @@ void uname_recheck ()
 #endif
 
     rc = syscall(SYS_uname, &uname);
-    check_retval ("uname", pentry->retval, rc);
+    check_retval ("uname", pentry->clock, pentry->retval, rc);
 
     if (memcmp(&uname.sysname, &puname->utsname.sysname, sizeof(uname.sysname))) {
 	fprintf (stderr, "[MISMATCH] uname sysname does not match: %s\n", uname.sysname);
@@ -868,7 +868,7 @@ void statfs64_recheck ()
 #endif
 
     rc = syscall(SYS_statfs64, path, pstatfs64->sz, &st);
-    check_retval ("statfs64", pentry->retval, rc);
+    check_retval ("statfs64", pentry->clock, pentry->retval, rc);
     if (rc == 0) {
 	if (pstatfs64->statfs.f_type != st.f_type) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_type does not match: %d\n", st.f_type);
@@ -926,7 +926,7 @@ void gettimeofday_recheck () {
     LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
 #endif
     rc = syscall (SYS_gettimeofday, &tv, &tz);
-    check_retval ("gettimeofday", pentry->retval, rc);
+    check_retval ("gettimeofday", pentry->clock, pentry->retval, rc);
     
     if (pget->tv_ptr) { 
 	memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
@@ -986,7 +986,7 @@ void prlimit64_recheck ()
 	prlim = NULL;
     }
     rc = syscall(SYS_prlimit64, prlimit->pid, prlimit->resource, prlimit->new_limit, prlim);
-    check_retval ("prlimit64", pentry->retval, rc);
+    check_retval ("prlimit64", pentry->clock, pentry->retval, rc);
     if (prlimit->has_retvals) {
 	if (prlimit->retparams.rlim_cur != rlim.rlim_cur) {
 	    printf ("[MISMATCH] prlimit64 soft limit does not match: %lld\n", rlim.rlim_cur);
@@ -1026,7 +1026,7 @@ void setpgid_recheck (int pid, int pgid)
     }
 
     rc = syscall(SYS_setpgid, use_pid, use_pgid);
-    check_retval ("setpgid", pentry->retval, rc);
+    check_retval ("setpgid", pentry->clock, pentry->retval, rc);
 }
 
 void readlink_recheck ()
@@ -1063,7 +1063,7 @@ void readlink_recheck ()
     LPRINT ( "path %s rc %ld clock %lu\n", path, pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_readlink, path, tmpbuf, preadlink->bufsiz);
-    check_retval ("readlink", pentry->retval, rc);
+    check_retval ("readlink", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	if (memcmp(tmpbuf, linkdata, pentry->retval)) {
 	    printf ("[MISMATCH] readdata returns link data %s\n", linkdata);
@@ -1093,7 +1093,7 @@ void socket_recheck ()
     block[1] = psocket->type;
     block[2] = psocket->protocol;
     rc = syscall(SYS_socketcall, SYS_SOCKET, &block);
-    check_retval ("socket", pentry->retval, rc);
+    check_retval ("socket", pentry->clock, pentry->retval, rc);
 }
 
 inline void process_taintmask (char* mask, u_long size, char* buffer)
@@ -1129,7 +1129,7 @@ inline void connect_or_bind_recheck (int call, char* call_name)
     block[1] = (u_long) pconnect->addr;
     block[2] = pconnect->addrlen;
     rc = syscall(SYS_socketcall, call, &block);
-    check_retval (call_name, pentry->retval, rc);
+    check_retval (call_name, pentry->clock, pentry->retval, rc);
 }
 
 void connect_recheck () { 
@@ -1183,7 +1183,7 @@ void getuid32_recheck ()
     LPRINT ( "getuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_getuid32);
-    check_retval ("getuid32", pentry->retval, rc);
+    check_retval ("getuid32", pentry->clock, pentry->retval, rc);
 }
 
 void geteuid32_recheck ()
@@ -1199,7 +1199,7 @@ void geteuid32_recheck ()
     LPRINT ( "geteuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_geteuid32);
-    check_retval ("geteuid32", pentry->retval, rc);
+    check_retval ("geteuid32", pentry->clock, pentry->retval, rc);
 }
 
 void getgid32_recheck ()
@@ -1215,7 +1215,7 @@ void getgid32_recheck ()
     LPRINT ( "getgid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_getgid32);
-    check_retval ("getgid32", pentry->retval, rc);
+    check_retval ("getgid32", pentry->clock, pentry->retval, rc);
 }
 
 void getegid32_recheck ()
@@ -1231,7 +1231,7 @@ void getegid32_recheck ()
     LPRINT ( "getegid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_getegid32);
-    check_retval ("getegid32", pentry->retval, rc);
+    check_retval ("getegid32", pentry->clock, pentry->retval, rc);
 }
 
 void llseek_recheck ()
@@ -1257,7 +1257,7 @@ void llseek_recheck ()
 #endif 
 
     rc = syscall(SYS__llseek, pllseek->fd, pllseek->offset_high, pllseek->offset_low, &off, pllseek->whence);
-    check_retval ("llseek", pentry->retval, rc);
+    check_retval ("llseek", pentry->clock, pentry->retval, rc);
     if (rc >= 0 && off != pllseek->result) {
 	printf ("[MISMATCH] llseek returns offset %llu\n", off);
 	handle_mismatch();
@@ -1284,7 +1284,7 @@ void ioctl_recheck ()
 
     if (pioctl->dir == _IOC_WRITE) {
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
-	check_retval ("ioctl", pentry->retval, rc);
+	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
 	add_to_taintbuf (pentry, RETBUF, tmpbuf, pioctl->arglen);
@@ -1303,7 +1303,7 @@ void ioctl_recheck ()
 	    }
 	}
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);
-	check_retval ("ioctl", pentry->retval, rc);
+	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
     }
@@ -1338,7 +1338,7 @@ void getdents64_recheck ()
     LPRINT ( "getdents64: fd %u buf %p count %u arglen %ld rc %ld clock %lu\n", pgetdents64->fd, pgetdents64->buf, pgetdents64->count, pgetdents64->arglen, pentry->retval, pentry->clock);
 #endif 
     rc = syscall(SYS_getdents64, pgetdents64->fd, tmpbuf, pgetdents64->count);
-    check_retval ("getdents64", pentry->retval, rc);
+    check_retval ("getdents64", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	int compared = 0;
 	char* p = dents; 
@@ -1379,7 +1379,7 @@ void eventfd2_recheck ()
 #endif 
 
     rc = syscall(SYS_eventfd2, peventfd2->count, peventfd2->flags);
-    check_retval ("eventfd2", pentry->retval, rc);
+    check_retval ("eventfd2", pentry->clock, pentry->retval, rc);
 }
 
 void poll_recheck ()
@@ -1417,7 +1417,7 @@ void poll_recheck ()
 	    LPRINT ("\tfd %d events %x returns revents %x\n", pollbuf[i].fd, pollbuf[i].events, pollbuf[i].revents);
 	}
     }
-    check_retval ("poll", pentry->retval, rc);
+    check_retval ("poll", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	for (i = 0; i < ppoll->nfds; i++) {
 	    if (pollbuf[i].revents != revents[i]) {
@@ -1460,7 +1460,7 @@ void newselect_recheck ()
     }
 
     rc = syscall(SYS__newselect, pnewselect->nfds, readfds, writefds, exceptfds, use_timeout);
-    check_retval ("select", pentry->retval, rc);
+    check_retval ("select", pentry->clock, pentry->retval, rc);
     if (readfds && memcmp (&pnewselect->readfds, readfds, pnewselect->setsize)) {
 	printf ("[MISMATCH] select returns different readfds\n");
 	handle_mismatch();
@@ -1495,7 +1495,7 @@ void set_robust_list_recheck ()
 #endif 
 
     rc = syscall(SYS_set_robust_list, pset_robust_list->head, pset_robust_list->len);
-    check_retval ("set_robust_list", pentry->retval, rc);
+    check_retval ("set_robust_list", pentry->clock, pentry->retval, rc);
 }
 
 long set_tid_address_recheck ()
@@ -1542,7 +1542,7 @@ void rt_sigaction_recheck ()
     if (prt_sigaction->act) pact = (struct sigaction *) data;
     if (prt_sigaction->oact) poact = (struct sigaction *) tmpbuf;
     rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, poact, prt_sigaction->sigsetsize); 
-    check_retval ("rt_sigaction", pentry->retval, rc);
+    check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
     if (prt_sigaction->oact) {
 	if (prt_sigaction->act) {
 	    if (memcmp (tmpbuf, data+20, 20)) {
@@ -1596,7 +1596,7 @@ void rt_sigprocmask_recheck ()
     if (prt_sigprocmask->set) pset = (sigset_t *) data;
     if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
     rc = syscall(SYS_rt_sigprocmask, prt_sigprocmask->how, pset, poset, prt_sigprocmask->sigsetsize); 
-    check_retval ("rt_sigprocmask", pentry->retval, rc);
+    check_retval ("rt_sigprocmask", pentry->clock, pentry->retval, rc);
     if (prt_sigprocmask->oset) {
 	if (prt_sigprocmask->set) {
 	    if (memcmp (tmpbuf, data+prt_sigprocmask->sigsetsize, prt_sigprocmask->sigsetsize)) {

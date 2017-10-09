@@ -173,6 +173,23 @@ static void print_rt_sigprocmask(FILE *out, struct klog_result *res) {
 	}
 }
 
+static void print_ioctl(FILE *out, struct klog_result *res) {
+    struct syscall_result *psr = &res->psr;
+    u_long i;
+    
+    parseklog_default_print(out, res);
+    
+    if (psr->flags & SR_HAS_RETPARAMS) {
+	u_long* plen = (u_long *)(res->retparams);
+	fprintf(out, "         length %lu\n", *plen);
+	for (i = 0; i < *plen; i++) {
+	    fprintf(out, "%lu %02x\n", i, *((char *)res->retparams+sizeof(u_long)+i));
+	}
+    } else {
+	fprintf(out, "         no return parameters\n");
+    }
+}
+
 static void print_getcwd(FILE *out, struct klog_result *res) {
 
 	parseklog_default_print(out, res);
@@ -449,6 +466,7 @@ int main(int argc, char **argv) {
 		parseklog_set_printfcn(log, print_waitpid, 7);
 		parseklog_set_printfcn(log, print_execve, 11);
 		parseklog_set_printfcn(log, print_pipe, 42);
+		parseklog_set_printfcn(log, print_ioctl, SYS_ioctl);
 		parseklog_set_printfcn(log, print_gettimeofday, 78);
 		parseklog_set_printfcn(log, print_socketcall, 102);
 		parseklog_set_printfcn(log, print_write, 146);

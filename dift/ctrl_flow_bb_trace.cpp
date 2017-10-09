@@ -205,15 +205,43 @@ static void trace_bbl (ADDRINT ip)
 }
 
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
-TAINTSIGN monitor_control_flow_tail (ADDRINT ip, BOOL taken) 
-{ 
+
+TAINTSIGN monitor_control_flow_inst (ADDRINT ip, BOOL is_branch, BOOL taken)
+{
     if (!tracing && ip == inst_start) {
-	printf ("[START] bb trace at instruction 0x%x\n", inst_start);
+	printf ("[START] inst trace at instruction 0x%x\n", inst_start);
 	tracing = 1;
 	subroutine = "";
     }
+    if (tracing && subroutine == "") {
+	char branch_flag;
+	if (is_branch) {
+	    if (taken) {
+		branch_flag = 't';
+	    } else {
+		branch_flag = 'n';
+	    }
+	} else {
+	    branch_flag = '-';
+	}
+	printf ("[INST]0x%x, #%llu,%lu (clock)  %d %c ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid, branch_flag);
+	PIN_LockClient();
+	if (IMG_Valid(IMG_FindByAddress(ip))) {
+	    printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	} else {
+	    printf("unknown\n");
+	}
+	PIN_UnlockClient();
+    }
+}
+
+TAINTSIGN monitor_control_flow_tail (ADDRINT ip) 
+{ 
     if (tracing && subroutine == "") trace_bbl (current_thread->ctrl_flow_info.bbl_addr);
     ++ current_thread->ctrl_flow_info.count;
+    if (current_thread->ctrl_flow_info.count > 17100 && current_thread->ctrl_flow_info.count < 17150) {
+	printf ("[XXX] at ip 0x%x set count to %lld\n", ip, current_thread->ctrl_flow_info.count); // For debugging
+    }
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
         current_thread->ctrl_flow_info.count = 0;
@@ -230,20 +258,13 @@ void track_trace(TRACE trace, void* data)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-        INS head = BBL_InsHead (bbl);
-        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
-                IARG_END);
-        INS tail = BBL_InsTail (bbl);
-        INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR, 
-                IARG_BRANCH_TAKEN,
-                IARG_CONST_CONTEXT,
-                IARG_END);
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+	    INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_inst,
+			    IARG_FAST_ANALYSIS_CALL,
+			    IARG_INST_PTR,
+			    IARG_BOOL, INS_IsBranch(ins),
+			    IARG_BRANCH_TAKEN,
+			    IARG_END);
 	    if(INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
 			       IARG_SYSCALL_NUMBER, 
@@ -256,6 +277,18 @@ void track_trace(TRACE trace, void* data)
 			       IARG_END);
 	    }
 	}
+        INS head = BBL_InsHead (bbl);
+        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_UINT32, BBL_Address (bbl), 
+                IARG_END);
+        INS tail = BBL_InsTail (bbl);
+        INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR, 
+                IARG_CONST_CONTEXT,
+                IARG_END);
     }
 }
 

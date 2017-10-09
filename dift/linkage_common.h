@@ -14,6 +14,7 @@
 #include <map>
 #include <stack>
 #include <queue>
+#include <deque>
 #include <set>
 
 #define NUM_REGS 120
@@ -33,6 +34,12 @@
 #define DF_FLAG 0x40
 #define ALL_FLAGS 0x7f
 
+#define CF_INDEX 0
+#define PF_INDEX 1
+#define AF_INDEX 2
+#define ZF_INDEX 3
+#define SF_INDEX 4
+#define OF_INDEX 5
 #define DF_INDEX 6
 
 //actual hardware mask
@@ -45,7 +52,6 @@
 #define OF_MASK 0x800
 #define DF_MASK 0x400
 
-#define TRACK_READONLY_REGION 
 #define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
 
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
@@ -203,15 +209,21 @@ struct ctrl_flow_origin_value {
 struct ctrl_flow_block_index { 
     u_long clock;
     uint64_t index;
+    u_long ip;
+    bool orig_taken;
+    uint32_t merge_ip;
+    queue<pair<u_long,char> > orig_path; // List of branches taken and not
+    queue<pair<u_long,char> > alt_path; // List of branches taken and not
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
 #define IS_BLOCK_INDEX_GREATER_OR_EQUAL(x,y) ((x.clock >= y.clock && x.index >= y.index))
 #define IS_BLOCK_INDEX_LESS_OR_EQUAL(x,y) ((x.clock <= y.clock && x.index <= y.index))
-#define CTRL_FLOW_BLOCK_TYPE_DIVERGENCE 1
-#define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT 2
-#define CTRL_FLOW_BLOCK_TYPE_MERGE      3
-#define CTRL_FLOW_BLOCK_TYPE_DISTANCE   4
+#define CTRL_FLOW_BLOCK_TYPE_DIVERGENCE      1
+#define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG 2
+#define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT  3
+#define CTRL_FLOW_BLOCK_TYPE_MERGE           4
+#define CTRL_FLOW_BLOCK_TYPE_DISTANCE        5
 
 struct ctrl_flow_param {
     int type;
@@ -219,6 +231,7 @@ struct ctrl_flow_param {
     uint64_t index;
     uint32_t ip;
     int pid;
+    char branch_flag;
 };
 
 struct ctrl_flow_checkpoint { 
@@ -231,25 +244,32 @@ struct ctrl_flow_checkpoint {
 };
 
 struct ctrl_flow_info { 
-    struct ctrl_flow_block_index block_index;  //current block index
-    std::queue<struct ctrl_flow_block_index> *diverge_point; //index for all divergences
-    std::queue<struct ctrl_flow_block_index> *merge_point;  //index for all merge points, corresponding to the diverege point
-    std::set<uint32_t> *block_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
+    u_long clock; // Current clock value
+    uint64_t index; // Current index value
+    //struct ctrl_flow_block_index block_index;  //current block index
+    std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
+    std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
 
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
 
-    std::queue<uint64_t> *that_branch_distance; //the number of dynamic blocks executed between the diverge and merge pionts for the other branch (the branch this exeuction doesn't take)
     std::set<uint32_t> *that_branch_store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
-    uint64_t that_branch_block_count; //reset after rollback TODO also other fields in this struct
+
+    set<uint32_t> *diverge_insts; 
+    set<uint32_t> *merge_insts; 
+    set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
 
     bool change_jump;  //true if this jump is the divergence point
 
     //checkpoint and rollback
+    uint64_t save_index; // Value prior to alternate path exploration
+    bool is_in_original_branch;
     bool is_in_diverged_branch;
     bool is_in_diverged_branch_first_inst;
     bool is_rolled_back;
+    bool changed_jump;
+    bool change_original_branch;
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
     struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };

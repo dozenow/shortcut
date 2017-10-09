@@ -96,7 +96,7 @@ extern struct thread_data* current_thread;
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
-TAINTSIGN monitor_control_flow_head (ADDRINT ip, uint32_t bbl_start, const CONTEXT* ctx);
+TAINTSIGN monitor_merge_point (ADDRINT ip, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
 int fw_slice_check_final_mem_taint (taint_t* pregs);
@@ -110,7 +110,7 @@ TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t 
 TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t reg_size, const PIN_REGISTER* reg_value, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, const PIN_REGISTER* reg1_value, uint32_t reg1_u8, 
 			      int reg2, uint32_t reg2_size, const PIN_REGISTER* reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
-TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, const CONTEXT* ctx);
+TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, ADDRINT target, const CONTEXT* ctx);
 TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, const PIN_REGISTER* dst_regvalue,
 			      const PIN_REGISTER* src_regvalue, const PIN_REGISTER* count_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8);

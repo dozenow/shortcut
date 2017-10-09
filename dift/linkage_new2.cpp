@@ -877,8 +877,7 @@ static void sys_mmap_stop(int rc)
 
 #endif
     if (rc > 0 || rc < -1024) {
-        mmi->addr = rc;
-        add_mmap_region (current_thread, mmi);
+        add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
     }
 }
 
@@ -1838,10 +1837,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
-            delete_mmap_region (tdata, (u_long)syscallarg0, (int)syscallarg1);
+            delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
-            change_mmap_region (tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
             fprintf (stderr, "[UNHANDLED] for read-only mmap region detection.\n");
@@ -2396,6 +2395,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 		       IARG_PTR, str,
 		       IARG_UINT32, mask,
 		       IARG_BRANCH_TAKEN,
+		       IARG_BRANCH_TARGET_ADDR,
                        IARG_CONST_CONTEXT, 
 		       IARG_END);
 	put_copy_of_disasm (str);
@@ -3447,12 +3447,10 @@ void instrument_cmov(INS ins, uint32_t mask)
 			IARG_UINT32, REG_Size(reg),
 			IARG_EXECUTING,
 			IARG_END);
-#ifdef TRACK_READONLY_REGION
         //here I still merge taints of index/base registers in
         //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
         if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, reg, base_reg, -1, -1);
         if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, reg, index_reg, -1, -1);
-#endif
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {
@@ -5104,22 +5102,16 @@ void trace_instrumentation(TRACE trace, void* v)
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
-        INS head = BBL_InsHead (bbl);
-        INS_InsertCall (head, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_head, 
-                IARG_FAST_ANALYSIS_CALL, 
-                IARG_INST_PTR, 
-                IARG_UINT32, BBL_Address (bbl), 
-                IARG_CONST_CONTEXT,
-                IARG_END);
         INS tail = BBL_InsTail (bbl);
         char* str = get_copy_of_disasm (tail);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR, 
-                IARG_PTR, str, 
-                IARG_BRANCH_TAKEN,
-                IARG_CONST_CONTEXT,
-                IARG_END);
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR, 
+			IARG_PTR, str, 
+			IARG_BRANCH_TAKEN,
+			IARG_CONST_CONTEXT,
+			IARG_END);
+
         put_copy_of_disasm (str);
 #endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
@@ -5128,8 +5120,15 @@ void trace_instrumentation(TRACE trace, void* v)
             debug_print (ins);
 #endif
 #ifdef TRACK_CTRL_FLOW_DIVERGE
-	    // JNF: xxx this assumes that we know all blocks involved in a divergence before we run the slice generator (I think this is reasonable but it will impact the design of the bb tool)
-            if (current_thread->ctrl_flow_info.block_instrumented->find(BBL_Address(bbl)) != current_thread->ctrl_flow_info.block_instrumented->end()) {
+	    if (current_thread->ctrl_flow_info.merge_insts->find(INS_Address(ins)) != current_thread->ctrl_flow_info.merge_insts->end()) {
+		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_merge_point,
+				IARG_FAST_ANALYSIS_CALL, 
+				IARG_INST_PTR, 
+				IARG_CONST_CONTEXT,
+				IARG_END);
+	    }
+
+            if (current_thread->ctrl_flow_info.insts_instrumented->find(INS_Address(ins)) != current_thread->ctrl_flow_info.insts_instrumented->end()) {
                 instrument_print_inst_dest (ins);
             }
 #endif
@@ -5499,38 +5498,69 @@ void AfterForkInParent(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 
 void init_ctrl_flow_info (struct thread_data* ptdata)
 {
-   ptdata->ctrl_flow_info.diverge_point = new std::queue<struct ctrl_flow_block_index>();
-   ptdata->ctrl_flow_info.merge_point = new std::queue<struct ctrl_flow_block_index>();
-   ptdata->ctrl_flow_info.block_instrumented = new std::set<uint32_t> ();
-   memset (&ptdata->ctrl_flow_info.block_index, 0, sizeof(struct ctrl_flow_block_index));
+   ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.diverge_inst = new std::map<u_long,struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.clock = 0;
+   ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
    ptdata->ctrl_flow_info.that_branch_store_set_reg = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.that_branch_distance = new std::queue<uint64_t> ();
    ptdata->ctrl_flow_info.that_branch_store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
+   ptdata->ctrl_flow_info.diverge_insts = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.merge_insts = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
+   ptdata->ctrl_flow_info.is_in_original_branch = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.change_jump = false;
 
+   struct ctrl_flow_block_index index;
+   index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
-       if (i.pid == ptdata->record_pid || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
+       if (i.pid == ptdata->record_pid || i.pid == -1 || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
            if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
-               struct ctrl_flow_block_index index;
                index.clock = i.clock;
                index.index = i.index;
-               ptdata->ctrl_flow_info.diverge_point->push (index);
-           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
-               struct ctrl_flow_block_index index;
-               index.clock = i.clock;
-               index.index = i.index;
-               ptdata->ctrl_flow_info.merge_point->push (index);
-           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT) {
-               ptdata->ctrl_flow_info.block_instrumented->insert (i.ip);
-           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_DISTANCE) { 
-               ptdata->ctrl_flow_info.that_branch_distance->push (i.index);
-           }
+	       index.ip = i.ip; 
+	       index.orig_taken = (i.branch_flag == 'y');
+	       ptdata->ctrl_flow_info.diverge_insts->insert(i.ip);
+          } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
+	       index.merge_ip = i.ip;
+	       if (i.pid == -1) {
+		   if (index.ip == 0) {
+		       fprintf (stderr, "merge entry without preceeding diverge entry\n");
+		   } else {
+		       // Add wild card divergence
+		       (*ptdata->ctrl_flow_info.diverge_inst)[index.ip] = index;
+		   }
+	       } else {
+		   ptdata->ctrl_flow_info.diverge_point->push_back (index);
+	       }
+	       ptdata->ctrl_flow_info.merge_insts->insert(i.ip);
+	       index.ip = 0;
+	       while (!index.orig_path.empty()) index.orig_path.pop();
+	       while (!index.alt_path.empty()) index.alt_path.pop();
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG) {
+	       if (index.ip == 0) {
+		   fprintf (stderr, "Orig path entry without preceeding diverge entry\n");
+	       } else {
+		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);	
+		   if (i.branch_flag != '-') {
+		       index.orig_path.push(make_pair(i.ip,i.branch_flag));
+		   }
+	       }
+           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
+	       if (index.ip == 0) {
+		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
+	       } else {
+		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
+		   if (i.branch_flag != '-') {
+		       index.alt_path.push(make_pair(i.ip,i.branch_flag));
+		   }
+	       }
+	   }
        }
    }
 }
@@ -5538,7 +5568,6 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
 void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 {
     struct thread_data* ptdata;
-    fprintf (stderr, "in thread_start %d\n", threadid);
     
     // TODO Use slab allocator
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
@@ -5562,7 +5591,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (ptdata);
 
-    init_mmap_region (ptdata);
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
 				       ptdata, (void **) &current_thread, &thread_ndx);
@@ -5720,10 +5748,12 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->address_taint_set) delete tdata->address_taint_set;
     // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
-    if (tdata->ctrl_flow_info.merge_point) delete tdata->ctrl_flow_info.merge_point;
-    if (tdata->ctrl_flow_info.block_instrumented) delete tdata->ctrl_flow_info.block_instrumented;
+    if (tdata->ctrl_flow_info.diverge_inst) delete tdata->ctrl_flow_info.diverge_inst;
     if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
     if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
+    if (tdata->ctrl_flow_info.diverge_insts) delete tdata->ctrl_flow_info.diverge_insts;
+    if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
+    if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
 }
 
 #ifndef NO_FILE_OUTPUT
@@ -5989,6 +6019,8 @@ int main(int argc, char** argv)
 #ifndef USE_FILE
     PIN_AddForkFunction(FPOINT_AFTER_IN_PARENT, AfterForkInParent, 0);
 #endif
+
+    init_mmap_region ();
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
     PIN_SetSyntaxIntel();
