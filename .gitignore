@@ -41,6 +41,7 @@ test/process_slice
 test/streamserver
 test/fullsend
 test/traces
+test/find_diverge
 test/dev/.tmp_versions
 test/dev/Module.symvers
 test/dev/modules.order
