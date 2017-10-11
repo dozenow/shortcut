@@ -20,6 +20,7 @@
 #include <sys/queue.h>
 #include <sys/time.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 
 #include <vector>
 #include <map>
@@ -29,7 +30,7 @@ using namespace std;
 
 #define MAX_THREADS 128 //arbitrary... but works
 
-#define LPRINT
+//#define LPRINT
 
 
 void print_help(const char *program) {

@@ -197,14 +197,14 @@ inline void sync_slice_buffer (struct thread_data* tdata)
 
 static inline void slice_wait_clock (u_long clock) 
 {
-    OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000600 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #push %lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", clock, current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-    OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+    OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000600 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push %lu [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #add esp, 16 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+    OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
 }
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
@@ -469,6 +469,9 @@ static inline void detect_slice_ordering (int syscall_num)
         if (current_thread->ignore_flag) {
             if (!(*(int *)(current_thread->ignore_flag))) {
                 current_thread->expected_clock += 2;
+                OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
                 if (current_thread->expected_clock < *ppthread_log_clock) { 
                     //OUTPUT_SLICE ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
                     slice_wait_clock (*ppthread_log_clock);
@@ -477,15 +480,14 @@ static inline void detect_slice_ordering (int syscall_num)
                     //OUTPUT_SLICE ("[SLICE] syscall end %d; clock %lu, current thread expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
                     slice_wait_clock (*ppthread_log_clock);
                 } */
-                OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-                OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-                OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-
             } else { 
-                printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d\n", syscall_num);
+                printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
             }
         } else {
             current_thread->expected_clock += 2;
+            OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
             if (current_thread->expected_clock < *ppthread_log_clock) { 
                 //OUTPUT_SLICE ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
                 slice_wait_clock (*ppthread_log_clock);
@@ -494,12 +496,10 @@ static inline void detect_slice_ordering (int syscall_num)
                 //OUTPUT_SLICE ("[SLICE] syscall end %d; clock %lu, current thread expects %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock);
                 slice_wait_clock (*ppthread_log_clock);
             } */
-            OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-            OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x60000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-            OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+
         }
     } else { 
-        printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d\n", syscall_num);
+        printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
     }
 }
 
@@ -851,10 +851,15 @@ static inline void taint_syscall_retval (const char* sysname)
 static inline void sys_clone_start (struct thread_data* tdata, int flags, void* ptid, void* tls, void* ctid) 
 {
     if (flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
-        fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p\n", ptid, ctid);
-        /*taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
-        taint_syscall_memory_out ("clone", (char*)tls, sizeof (struct user_desc));
-        taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));*/
+        fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p, force to wait on the clock TODO \n", ptid, ctid);
+        //put a fake clone syscall here
+        //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
+        OUTPUT_SLICE ("[SLICE] #00000000 #push 0x%p [SLICE_INFO] clone ctid \n", ctid);
+        OUTPUT_SLICE ("[SLICE] #00000000 #push 0x%p [SLICE_INFO] clone ptid \n", ptid);
+        OUTPUT_SLICE ("[SLICE] #00000000 #push %d [SLICE_INFO] clone record pid \n", current_thread->record_pid);
+        taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
+        taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));
+        taint_syscall_retval ("clone");
     }
 }
 
@@ -2175,6 +2180,12 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         //dump slice buffer for all active threads
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             printf ("Now finalizing slice for thread id %d, record_pid %d\n", iter->second->threadid, iter->second->record_pid);
+            //wakeup other sleeping threads
+            output_slice (iter->second, "[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            output_slice (iter->second, "[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+
+            output_slice (iter->second, "[SLICE] #00000000 #call recheck_final_clock_wakeup [SLICE_INFO] \n");
+            output_slice (iter->second, "[SLICE] #00000000 #add esp, 8 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
             sync_slice_buffer (iter->second);
         }
         printf ("Figure out all valid mutex at this point\n");
@@ -5855,7 +5866,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 
         } else {
             //wait for the clock until it should start
-            slice_wait_clock (current_thread->expected_clock);
+            slice_wait_clock (current_thread->expected_clock - 1);
         }
     }
 }
@@ -5888,6 +5899,7 @@ void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
 {
     ++current_thread->expected_clock;
+    OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [0x60000000] [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
     if (current_thread->expected_clock < *ppthread_log_clock) { 
         //OUTPUT_SLICE ("[SLICE_DEBUG] pthread_replay %d; clock %lu, next clock expects %lu\n", type, *ppthread_log_clock, current_thread->expected_clock);
         slice_wait_clock (*ppthread_log_clock);
@@ -5896,7 +5908,6 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
         //OUTPUT_SLICE ("[SLICE] pthread_replay %d; clock %lu, current thread expects %lu\n", type, *ppthread_log_clock, current_thread->expected_clock);
         slice_wait_clock (*ppthread_log_clock);
     } */
-    OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [0x60000000] [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
 }
 
 void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr) 

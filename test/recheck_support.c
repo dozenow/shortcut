@@ -1620,11 +1620,9 @@ void recheck_wait_clock_init (int* mutex, pthread_cond_t* cond)
 {
     //TODO: eliminate this syscall unless debugging
     int pid = syscall(SYS_gettid);
-    unsigned long* clock = 0x60000000;
-    printf ("Pid %d recheck_wait_clock_init: %lu mutex %p cond %p, size %d,%d\n", pid, *clock, mutex, cond, sizeof(pthread_mutex_t), sizeof (pthread_cond_t));
+    unsigned long* clock = (unsigned long*)0x60000000;
+    printf ("Pid %d recheck_wait_clock_init: %lu mutex %p cond %p\n", pid, *clock, mutex, cond);
     *mutex = 0;
-
-
 }
 
 void recheck_wait_clock (unsigned long *current_clock, unsigned long wait_clock, int* mutex, pthread_cond_t* cond) 
@@ -1643,13 +1641,41 @@ void recheck_wait_clock (unsigned long *current_clock, unsigned long wait_clock,
         while (*current_clock < wait_clock) {
             printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
             syscall (SYS_futex, mutex, FUTEX_WAIT, 0, NULL, NULL, 0);
-            printf ("Pid %d stops waiting while current clock is %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
+            printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
         }
     }
+}
+
+void recheck_final_clock_wakeup (unsigned long *current_clock, int* mutex) 
+{
+    int pid = syscall(SYS_gettid);
+    printf ("Pid %d finishes executing slice, now wake up other sleeping threads.\n", pid);
+    syscall (SYS_futex, mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
 }
 
 void recheck_pthread_fix ()
 {
     /*pthread_mutex_t *mutex = (pthread_mutex_t*) (0x804a060);
     pthread_mutex_lock (mutex);*/
+}
+
+int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
+{
+    int* process_map = (int*)0x60000300;
+    int i = 0;
+    pid_t ret = 0;
+    while (i < 100) {
+        if (record_pid == *process_map) {
+            ret = *(process_map +1);
+            break;
+        }
+        ++i;
+        process_map += 2;
+    }
+    printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
+    *ptid = ret;
+    *ctid = 0;
+    printf ("fake_clone ptid now has value %d, ctid %d\n", *ptid, *ctid);
+
+    return ret;
 }

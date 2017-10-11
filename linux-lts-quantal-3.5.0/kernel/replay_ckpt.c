@@ -1599,8 +1599,12 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 
         //mutex/cond/clock for slice ordering
         //TODO: use a meaningful filename
+        //First 4 bytes correponse to the clock, next 4 bytes log the number of running threads now
+        //bytes from offset 0x200 mean the futex wait address (used for use-level slice ordering)
         long rc = 0;
         int fd = 0;
+        int index = 0;
+        char* pid_map_start_address = 0x60000300;
         mm_segment_t old_fs = get_fs ();
 
         set_fs (KERNEL_DS);
@@ -1617,6 +1621,14 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
             printk ("[ERROR] cannot map shared clock? ret %ld\n", rc);
             BUG ();
         }
+        index = atomic_add_return (1, (int*)0x60000004);
+        //write the process map
+        if (index < 100) { 
+            *((int*)(pid_map_start_address + (index-1) * 8)) = record_pid;
+            *((int*)(pid_map_start_address + (index-1) * 8 + 4)) = current->pid;
+        } else { 
+            BUG ();
+        }
         rc = sys_close (fd);
         BUG_ON (rc < 0);
         if (IS_ERR((void*) rc)) {
@@ -1624,6 +1636,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         } else { 
             printk ("allocate space for mutex/cond/clock\n");
         }
+        //TODO: unlink the file
 
 	// Allocate space for the restore stack and also for storing some fw slice info
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
