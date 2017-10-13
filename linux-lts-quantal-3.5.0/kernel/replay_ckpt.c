@@ -1604,8 +1604,10 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         long rc = 0;
         int fd = 0;
         int index = 0;
-        char* pid_map_start_address = 0x60000300;
+        int pid_map_offset = 0x300/sizeof(int);
         mm_segment_t old_fs = get_fs ();
+        struct page* page;
+        void* kmap_start_address = NULL;
 
         set_fs (KERNEL_DS);
         fd = sys_open ("/tmp/shared_clock", O_CREAT| O_RDWR, 0644);
@@ -1617,15 +1619,21 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         rc = sys_ftruncate (fd, 4096);
         BUG_ON (rc < 0);
         rc = sys_mmap_pgoff (0x60000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-        if (IS_ERR ((void*)rc)) { 
+        if (IS_ERR ((void*)rc) || rc != 0x60000000) { 
             printk ("[ERROR] cannot map shared clock? ret %ld\n", rc);
             BUG ();
         }
-        index = atomic_add_return (1, (int*)0x60000004);
+        rc = get_user_pages (current, current->mm, rc, 1, 1, 0, &page, NULL);
+        if (rc != 1) { 
+            printk ("start_fw_slice: cannot get page rc %ld\n", rc);
+            BUG ();
+        }
+        kmap_start_address = kmap (page);
+        index = atomic_add_return (1, (atomic_t*)(kmap_start_address + 0x4));
         //write the process map
         if (index < 100) { 
-            *((int*)(pid_map_start_address + (index-1) * 8)) = record_pid;
-            *((int*)(pid_map_start_address + (index-1) * 8 + 4)) = current->pid;
+            *((int*)kmap_start_address + pid_map_offset + (index-1)*2) = record_pid;
+            *((int*)kmap_start_address + pid_map_offset + (index-1)*2+ 1) = current->pid;
         } else { 
             BUG ();
         }
@@ -1636,6 +1644,8 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         } else { 
             printk ("allocate space for mutex/cond/clock\n");
         }
+        kunmap(page);
+        put_page (page);
         //TODO: unlink the file
 
 	// Allocate space for the restore stack and also for storing some fw slice info
@@ -1818,7 +1828,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		}
 		//TODO unmap the libc from resume
 		do_gettimeofday (&tv);
-		printk ("end execute_slice %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("Pid %d end execute_slice %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		return 0;
 	}
 }

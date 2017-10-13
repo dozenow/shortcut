@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog patchklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point
+	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point parseulib.o
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -65,6 +65,9 @@ libutil.a: util.o parseklib.o
 	ranlib $@
 
 parseklib.o: $(KENREL_CONFIG) 
+
+parseulib.o: $(KENREL_CONFIG)  parseulib.cpp parseulib.h
+	c++ -c -std=c++0x parseulib.cpp -o parseulib.o
 
 reset_ndx: libutil.a
 

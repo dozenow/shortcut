@@ -4891,7 +4891,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
-                printk ("Pid %d return to execute slice.\n", current->pid);
+                printk ("Pid %d returns from start_fw_slice.\n", current->pid);
             }
 
             // TODO: wait for the main thread to destroy the replay group

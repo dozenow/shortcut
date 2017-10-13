@@ -15,6 +15,8 @@
 #include <stack>
 #include <queue>
 #include <set>
+#include "../test/parseklib.h"
+#include "../test/parseulib.h"
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -326,6 +328,10 @@ struct thread_data {
     queue<string>* slice_buffer;  //generated slice is put on this buffer first
     int slice_output_file;        //and then written to this file
     u_long expected_clock; //the clock we're expecting
+
+    //slice ordering
+    struct klogfile* klog;
+    struct ulog* ulog;
 
     union {
         struct mutex_info_cache mutex_info_cache;
