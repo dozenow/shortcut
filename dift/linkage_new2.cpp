@@ -176,8 +176,50 @@ inline void output_slice (struct thread_data* tdata, const char* format, ...)
     } 
 }
 
+//Not sure about the caller-saved registers
+//Also we don't preserve flags in this function, so call pushfd/popfd if you need
+inline void print_function_call_inst (struct thread_data* tdata, const char* function_name, int arg_num ...)
+{
+    va_list list;
+    va_start (list, arg_num);
+    assert (arg_num >= 0);
+    for (int i = 0; i<arg_num; ++i) {
+        output_slice (tdata, "[SLICE] #00000000 #push 0x%lx [SLICE_INFO] \n", va_arg (list, long));
+    }
+    output_slice (tdata, "[SLICE] #00000000 #call %s [SLICE_INFO] \n", function_name);
+    output_slice (tdata, "[SLICE] #00000000 #add esp, %d [SLICE_INFO] \n", arg_num*4);
+
+    va_end (list);
+}
+
 inline void sync_slice_buffer (struct thread_data* tdata)
 {
+    printf ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
+    //wakeup other sleeping threads
+    output_slice (tdata, "[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    output_slice (tdata, "[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    output_slice (tdata, "[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    output_slice (tdata, "[SLICE] #00000000 #call recheck_final_clock_wakeup [SLICE_INFO] \n");
+    output_slice (tdata, "[SLICE] #00000000 #add esp, 8 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    output_slice (tdata, "[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    //let's re-create necessary pthread state for this thread
+    printf ("Figure out all valid mutex at this point\n");
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            printf ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            output_slice (tdata, "[SLICE] #00000000 #pushfd [SLICE_INFO] re-create pthread state, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case MUTEX_LOCK: 
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+                    break;
+                default: 
+                    fprintf (stderr, "unhandled pthread operation.\n");
+            }
+            output_slice (tdata, "[SLICE] #00000000 #popfd [SLICE_INFO] re-create pthread state, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+
     //let's scan over all memory address included in the slice
     printf ("check mem taints in forward slice for thread with record pid %d\n", tdata->record_pid);
     if (fw_slice_check_final_mem_taint (tdata) == 0) { 
@@ -2193,22 +2235,11 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	//TODO: socks, x server ...
 	printf ("opened files: \n");
 	list_for_each_entry (fds, &open_fds->fds, list) {
-		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
+            printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
         //dump slice buffer for all active threads
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            printf ("Now finalizing slice for thread id %d, record_pid %d\n", iter->second->threadid, iter->second->record_pid);
-            //wakeup other sleeping threads
-            output_slice (iter->second, "[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-            output_slice (iter->second, "[SLICE] #00000000 #push 0x60000000 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-
-            output_slice (iter->second, "[SLICE] #00000000 #call recheck_final_clock_wakeup [SLICE_INFO] \n");
-            output_slice (iter->second, "[SLICE] #00000000 #add esp, 8 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
             sync_slice_buffer (iter->second);
-        }
-        printf ("Figure out all valid mutex at this point\n");
-        for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
-            printf ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
         }
         fflush (stdout);
 	
@@ -5972,6 +6003,7 @@ void track_pthread_mutex_lock (ADDRINT rtn_addr)
     if (active_mutex.find (mutex) != active_mutex.end()) {
         struct mutex_state* state = active_mutex[mutex];
         state->pid = current_thread->record_pid;
+        assert (state->state != MUTEX_LOCK); //we have a deadlock?
         state->state = MUTEX_LOCK;
     } else { 
         struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
@@ -6026,7 +6058,7 @@ void routine (RTN rtn, VOID* v)
                 IARG_END);
 
         RTN_Close(rtn);
-    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10)) {
+    } else if (!strncmp (name, "pthread_", 8)/* || !strncmp (name, "__pthread_", 10)*/) {
         RTN_Open(rtn);
         if (!strcmp (name, "pthread_mutex_init")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,

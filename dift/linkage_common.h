@@ -263,6 +263,7 @@ struct ctrl_flow_info {
 struct mutex_state {
     int pid; //current holder
     int state; //state
+    ADDRINT field; //additional parameters we need to log
 };
 
 struct mutex_info_cache {
