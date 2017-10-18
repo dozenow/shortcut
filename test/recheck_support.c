@@ -1674,10 +1674,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
     }
     printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
     *ptid = ret;
-    if (*ctid) { 
-        //well, we need to clear the content at this address when the child exits
-        fprintf (stderr, "unhandled clone operation....\n");
-    }
+    *ctid = ret;
     printf ("fake_clone ptid now has value %d, ctid %d\n", *ptid, *ctid);
 
     return ret;

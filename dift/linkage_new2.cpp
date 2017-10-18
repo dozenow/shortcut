@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 88
+//#define EXTRA_DEBUG 0
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -530,6 +530,7 @@ static inline void detect_slice_ordering (int syscall_num)
                     slice_wait_clock (psr->stop_clock);
                     current_thread->expected_clock = psr->stop_clock;
                 } 
+                if(syscall_num == 120) current_thread->child_pid = psr->retval;
             } else { 
                 printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
             }
@@ -550,6 +551,7 @@ static inline void detect_slice_ordering (int syscall_num)
                 slice_wait_clock (psr->stop_clock);
                 current_thread->expected_clock = psr->stop_clock;
             } 
+            if(syscall_num == 120) current_thread->child_pid = psr->retval;
         }
     } else { 
         printf ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
@@ -901,17 +903,28 @@ static inline void taint_syscall_retval (const char* sysname)
     OUTPUT_SLICE ("[SLICE_TAINT] %s #eax\n", sysname);
 }
 
-static inline void sys_clone_start (struct thread_data* tdata, int flags, void* ptid, void* tls, void* ctid) 
+static inline void sys_clone_start (struct thread_data* tdata, int flags, pid_t* ptid, pid_t* ctid)  //don't trust the manual page on clone, it's different than the clone syscall
 {
-    if (flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
+    struct clone_info* info = &tdata->op.clone_info_cache;
+    info->flags = flags;
+    info->ptid = ptid;
+    info->ctid = ctid;
+}
+
+static inline void sys_clone_stop (int rc) 
+{
+    struct clone_info* info = &current_thread->op.clone_info_cache;
+    pid_t* ptid = info->ptid;
+    pid_t* ctid = info->ctid;
+    if (info->flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
         fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p, force to wait on the clock TODO \n", ptid, ctid);
         //put a fake clone syscall here
         //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
         OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] clone  \n");
         OUTPUT_SLICE ("[SLICE] #00000000 #push %p [SLICE_INFO] clone ctid \n", ctid);
         OUTPUT_SLICE ("[SLICE] #00000000 #push %p [SLICE_INFO] clone ptid \n", ptid);
-        OUTPUT_SLICE ("[SLICE] #00000000 #push %d [SLICE_INFO] clone record pid \n", current_thread->record_pid);
-        OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_fake_clone [SLICE_INFO] clone record pid %d\n", current_thread->record_pid);
+        OUTPUT_SLICE ("[SLICE] #00000000 #push %d [SLICE_INFO] clone record pid \n", current_thread->child_pid);
+        OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_fake_clone [SLICE_INFO] clone record pid %d, child pid %d\n", current_thread->record_pid, rc);
         OUTPUT_SLICE ("[SLICE] #00000000 #add esp, 12 [SLICE_INFO] record_pid %d\n", current_thread->record_pid);
         OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] clone  \n");
         taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
@@ -1683,6 +1696,7 @@ static inline void sys_set_tid_address_start (struct thread_data* tdata, int* ti
 	OUTPUT_SLICE ("[SLICE] #00000000 #call set_tid_address_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
 	recheck_set_tid_address (tdata->recheck_handle, tidptr, *ppthread_log_clock);
     }
+    taint_syscall_memory_out ("set_tid_address", (char*)tidptr, sizeof(int));
 }
 
 static inline void sys_set_tid_address_stop (int rc) 
@@ -1928,7 +1942,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 { 
     switch (sysnum) {
         case SYS_clone:
-            sys_clone_start (tdata, (int) syscallarg2, (void*) syscallarg3, (void*) syscallarg4, (void*) syscallarg5);
+            sys_clone_start (tdata, (int) syscallarg2, (pid_t*) syscallarg3, (pid_t*) syscallarg4);
             break;
         case SYS_open:
             sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
@@ -2115,7 +2129,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     int rc = (int) ret_value;
     switch(sysnum) {
         case SYS_clone:
-            printf ("end of clone\n");
+            sys_clone_stop (rc);
             break;
         case SYS_open:
             sys_open_stop(rc);
@@ -6000,10 +6014,13 @@ void track_pthread_mutex_init (ADDRINT rtn_addr)
 void track_pthread_mutex_lock (ADDRINT rtn_addr)
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    printf ("record pid %d, lock %p\n", current_thread->record_pid, (void*)mutex);
     if (active_mutex.find (mutex) != active_mutex.end()) {
         struct mutex_state* state = active_mutex[mutex];
         state->pid = current_thread->record_pid;
-        assert (state->state != MUTEX_LOCK); //we have a deadlock?
+        if (state->state == MUTEX_LOCK) {  //we have a deadlock?
+            fprintf (stderr, "we have a deadlock in the original program or do we have unsupported unlock pthread operation?\n");
+        }
         state->state = MUTEX_LOCK;
     } else { 
         struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
@@ -6017,6 +6034,7 @@ void track_pthread_mutex_lock (ADDRINT rtn_addr)
 void track_pthread_mutex_unlock (ADDRINT rtn_addr)
 {   
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    printf ("record pid %d, unlock %p\n", current_thread->record_pid, (void*)mutex);
     if (active_mutex.find (mutex) != active_mutex.end()) {
         struct mutex_state* state = active_mutex[mutex];
         state->pid = current_thread->record_pid;
@@ -6036,7 +6054,7 @@ void track_pthread_mutex_destroy (ADDRINT rtn_addr)
 
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
-    fprintf (stderr, "untracked pthread operation %s\n", (char*) name);
+    fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
 void routine (RTN rtn, VOID* v)
@@ -6058,7 +6076,7 @@ void routine (RTN rtn, VOID* v)
                 IARG_END);
 
         RTN_Close(rtn);
-    } else if (!strncmp (name, "pthread_", 8)/* || !strncmp (name, "__pthread_", 10)*/) {
+    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10)) {
         RTN_Open(rtn);
         if (!strcmp (name, "pthread_mutex_init")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,
@@ -6068,14 +6086,14 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_init, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_lock")) {
+        } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_unlock")) {
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
@@ -6089,8 +6107,9 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+            /*TODO:  pthread_cond_wait will release mutex */
         } else {
-            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) untracked_pthread_function, 
+            RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
                     IARG_PTR, name, 
                     IARG_ADDRINT, RTN_Address(rtn),
                     IARG_END);

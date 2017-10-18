@@ -608,7 +608,6 @@ pthread_log_replay (unsigned long type, unsigned long check)
             if (ret == -EINVAL) { 
                 pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block, type %d, clock MAX\n", type, next_clock);
                 pthread_log_status = PTHREAD_LOG_OFF;
-                sleep (3);
                 return ret;
             }
             if (!is_replaying()) {
@@ -1443,7 +1442,6 @@ __pthread_cond_timedwait_rep (cond, mutex, abstime)
   if (!is_replaying()) {
       pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
       rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
-      //usleep (5000000);
       pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait: done\n");
   }
   return rc;

@@ -196,6 +196,12 @@ struct getdents64_info {
     u_int count;
 };
 
+struct clone_info { 
+    int flags;
+    pid_t* ptid;
+    pid_t* ctid;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -307,6 +313,7 @@ struct thread_data {
 	struct prlimit64_info prlimit64_info_cache;
 	struct ioctl_info ioctl_info_cache;
 	struct getdents64_info getdents64_info_cache;
+        struct clone_info clone_info_cache;
     } op;
 
     void* save_syscall_info;
@@ -333,6 +340,7 @@ struct thread_data {
     //slice ordering
     struct klogfile* klog;
     struct ulog* ulog;
+    pid_t child_pid; //the recorded child pid returned from clone (the return value from clone is the actual child pid)
 
     union {
         struct mutex_info_cache mutex_info_cache;
