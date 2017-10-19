@@ -168,13 +168,7 @@ __pthread_disable_asynccancel (int oldtype)
   } else if (is_replaying()) {
     struct pthread *self = THREAD_SELF;
     pthread_log_replay (PTHREAD_CANCELHANDLING_ENTER, (u_long) &self->cancelhandling); 
-    if (!is_replaying()) {
-        return __internal_pthread_disable_asynccancel(oldtype);
-    }
     pthread_log_replay (PTHREAD_CANCELHANDLING_EXIT, (u_long) &self->cancelhandling); 
-    if (!is_replaying()) {
-        return __internal_pthread_disable_asynccancel(oldtype);
-    }
   } else {
     __internal_pthread_disable_asynccancel(oldtype);
   }

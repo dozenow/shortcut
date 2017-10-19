@@ -17,6 +17,7 @@
 #include <set>
 #include "../test/parseklib.h"
 #include "../test/parseulib.h"
+#include "track_pthread.h"
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -262,19 +263,15 @@ struct ctrl_flow_info {
     struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
 
-#define MUTEX_INIT 0
-#define MUTEX_DESTROY 1
-#define MUTEX_LOCK 2
-#define MUTEX_UNLOCK 3
-struct mutex_state {
-    int pid; //current holder
-    int state; //state
-    ADDRINT field; //additional parameters we need to log
-};
-
 struct mutex_info_cache {
     ADDRINT mutex;
     ADDRINT attr;
+};
+
+struct wait_info_cache {
+    ADDRINT mutex;
+    ADDRINT cond;
+    ADDRINT abstime;
 };
 
 // Per-thread data structure
@@ -333,18 +330,20 @@ struct thread_data {
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
     struct ctrl_flow_info ctrl_flow_info;
+
     queue<string>* slice_buffer;  //generated slice is put on this buffer first
     int slice_output_file;        //and then written to this file
-    u_long expected_clock; //the clock we're expecting
 
     //slice ordering
+    u_long expected_clock; //the clock we're expecting
     struct klogfile* klog;
     struct ulog* ulog;
     pid_t child_pid; //the recorded child pid returned from clone (the return value from clone is the actual child pid)
 
     union {
         struct mutex_info_cache mutex_info_cache;
-    } pthread_info;
+        struct wait_info_cache wait_info_cache;
+    } pthread_info; //for remembering input parameters to pthread functions
 };
 
 struct memcpy_header {

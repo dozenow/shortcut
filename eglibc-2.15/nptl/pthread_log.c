@@ -1439,11 +1439,11 @@ __pthread_cond_timedwait_rep (cond, mutex, abstime)
   int rc;
   pthread_log_replay (PTHREAD_COND_TIMEDWAIT_ENTER, (u_long) cond); 
   rc = pthread_log_replay (PTHREAD_COND_TIMEDWAIT_EXIT, (u_long) cond); 
-  if (!is_replaying()) {
+  /*if (!is_replaying()) {
       pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
       rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
       pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait: done\n");
-  }
+  }*/
   return rc;
 }
 
@@ -2478,11 +2478,11 @@ void pthread_log_lll_wait_tid (int* ptid)
     pthread_log_debug ("in the middle of pthread_log_lll_wait_tid\n");
     pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
     pthread_log_debug ("after pthread_log_lll_wait_tid ptid %p, %d\n", ptid, *ptid);
-    if (!is_replaying()) {
+    /*if (!is_replaying()) {
         pthread_log_debug ("[HACK] let's manully wait for pid %d\n", *ptid);
         lll_wait_tid (*ptid);
         pthread_log_debug ("[HACK] let's manully wait for pid %d: done\n", *ptid);
-    }
+    }*/
   } else {
     lll_wait_tid(*ptid);
   }

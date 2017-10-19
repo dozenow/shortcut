@@ -139,7 +139,8 @@ const char* splice_input = NULL;
 u_long num_merge_entries = 0x40000000/(sizeof(taint_t)*2);
 u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
-map<ADDRINT, struct mutex_state*> active_mutex;
+extern map<ADDRINT, struct mutex_state*> active_mutex; 
+extern map<ADDRINT, struct cond_state*> active_cond; 
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
@@ -182,9 +183,14 @@ inline void print_function_call_inst (struct thread_data* tdata, const char* fun
 {
     va_list list;
     va_start (list, arg_num);
+    stack<long> stack;
     assert (arg_num >= 0);
     for (int i = 0; i<arg_num; ++i) {
-        output_slice (tdata, "[SLICE] #00000000 #push 0x%lx [SLICE_INFO] \n", va_arg (list, long));
+        stack.push (va_arg (list, long));
+    }
+    while (!stack.empty()) {
+        output_slice (tdata, "[SLICE] #00000000 #push 0x%lx [SLICE_INFO] \n", stack.top());
+        stack.pop ();
     }
     output_slice (tdata, "[SLICE] #00000000 #call %s [SLICE_INFO] \n", function_name);
     output_slice (tdata, "[SLICE] #00000000 #add esp, %d [SLICE_INFO] \n", arg_num*4);
@@ -194,7 +200,6 @@ inline void print_function_call_inst (struct thread_data* tdata, const char* fun
 
 inline void sync_slice_buffer (struct thread_data* tdata)
 {
-    printf ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
     //wakeup other sleeping threads
     output_slice (tdata, "[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
     output_slice (tdata, "[SLICE] #00000000 #push 0x60000200 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
@@ -202,6 +207,8 @@ inline void sync_slice_buffer (struct thread_data* tdata)
     output_slice (tdata, "[SLICE] #00000000 #call recheck_final_clock_wakeup [SLICE_INFO] \n");
     output_slice (tdata, "[SLICE] #00000000 #add esp, 8 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
     output_slice (tdata, "[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+
+    printf ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
     //let's re-create necessary pthread state for this thread
     printf ("Figure out all valid mutex at this point\n");
     for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
@@ -209,9 +216,24 @@ inline void sync_slice_buffer (struct thread_data* tdata)
             printf ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
             output_slice (tdata, "[SLICE] #00000000 #pushfd [SLICE_INFO] re-create pthread state, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
             switch (iter->second->state) { 
-                case MUTEX_LOCK: 
+                case MUTEX_AFTER_LOCK: 
                     print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
                     print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+                    break;
+                default: 
+                    fprintf (stderr, "unhandled pthread operation.\n");
+            }
+            output_slice (tdata, "[SLICE] #00000000 #popfd [SLICE_INFO] re-create pthread state, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+    for (map<ADDRINT, struct cond_state*>::iterator iter = active_cond.begin(); iter != active_cond.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            printf ("       pid %d cond %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            output_slice (tdata, "[SLICE] #00000000 #pushfd [SLICE_INFO] re-create pthread state, expected %lu, actual %lu, pid %d\n", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
                     break;
                 default: 
                     fprintf (stderr, "unhandled pthread operation.\n");
@@ -225,6 +247,7 @@ inline void sync_slice_buffer (struct thread_data* tdata)
     if (fw_slice_check_final_mem_taint (tdata) == 0) { 
         printf ("all mem address in the slice are also tainted in the final checkpoint\n");
     }
+
     //dump slice buffer
     while (!tdata->slice_buffer->empty()) { 
         string s = tdata->slice_buffer->front(); 
@@ -5973,6 +5996,7 @@ void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 
 void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
 {
+    //slice ordering
     u_long recorded_clock = parseulib_get_next_clock (current_thread->ulog);
     if (recorded_clock != 0) {
         ++current_thread->expected_clock;
@@ -5985,71 +6009,6 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
     } else { 
         fprintf (stderr, "well, clock in the user log does not exit??\n");
     }
-}
-
-void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr) 
-{
-    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-    current_thread->pthread_info.mutex_info_cache.attr = attr;
-}
-
-void track_pthread_mutex_params_1 (ADDRINT mutex) 
-{
-    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-}
-
-void track_pthread_mutex_init (ADDRINT rtn_addr)
-{
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    ADDRINT attr = current_thread->pthread_info.mutex_info_cache.attr;
-    struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
-    state->pid = current_thread->record_pid;
-    state->state = MUTEX_INIT;
-    active_mutex[mutex] = state;
-    if (attr != 0) {
-        fprintf (stderr, " pthread_mutex_init with ATTR, not handled yet.\n");
-    }
-}
-
-void track_pthread_mutex_lock (ADDRINT rtn_addr)
-{
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    printf ("record pid %d, lock %p\n", current_thread->record_pid, (void*)mutex);
-    if (active_mutex.find (mutex) != active_mutex.end()) {
-        struct mutex_state* state = active_mutex[mutex];
-        state->pid = current_thread->record_pid;
-        if (state->state == MUTEX_LOCK) {  //we have a deadlock?
-            fprintf (stderr, "we have a deadlock in the original program or do we have unsupported unlock pthread operation?\n");
-        }
-        state->state = MUTEX_LOCK;
-    } else { 
-        struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
-        state->pid = current_thread->record_pid;
-        state->state = MUTEX_LOCK;
-        active_mutex[mutex] = state;
-        fprintf (stderr, "unfound mutex to lock\n");
-    }
-}
-
-void track_pthread_mutex_unlock (ADDRINT rtn_addr)
-{   
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    printf ("record pid %d, unlock %p\n", current_thread->record_pid, (void*)mutex);
-    if (active_mutex.find (mutex) != active_mutex.end()) {
-        struct mutex_state* state = active_mutex[mutex];
-        state->pid = current_thread->record_pid;
-        state->state = MUTEX_UNLOCK;
-    } else { 
-        fprintf (stderr, "unfound mutex to unlock, pid %d\n", current_thread->record_pid);
-    }
-}
-
-void track_pthread_mutex_destroy (ADDRINT rtn_addr)
-{
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    struct mutex_state* state = active_mutex[mutex];
-    free (state);
-    active_mutex.erase (mutex);
 }
 
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
@@ -6076,7 +6035,7 @@ void routine (RTN rtn, VOID* v)
                 IARG_END);
 
         RTN_Close(rtn);
-    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10)) {
+    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
         RTN_Open(rtn);
         if (!strcmp (name, "pthread_mutex_init")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,
@@ -6087,10 +6046,10 @@ void routine (RTN rtn, VOID* v)
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
         } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock")) {
-            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_lock_before,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
-            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock, 
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
         } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
@@ -6107,7 +6066,17 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-            /*TODO:  pthread_cond_wait will release mutex */
+        } else if (!strcmp (name, "pthread_cond_timedwait")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_create") || !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || !strcmp (name, "pthread_log_mutex_lock_rep") || !strcmp (name, "__pthread_mutex_unlock_rep")) {
+            printf ("ignored pthread operation %s\n", name);
         } else {
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
                     IARG_PTR, name, 
