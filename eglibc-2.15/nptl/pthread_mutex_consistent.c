@@ -34,4 +34,3 @@ internal_pthread_mutex_consistent (mutex) // REPLAY
 
   return 0;
 }
-

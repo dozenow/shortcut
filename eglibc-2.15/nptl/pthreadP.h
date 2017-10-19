@@ -541,6 +541,7 @@ extern int __pthread_cond_wait_2_0 (pthread_cond_2_0_t *cond,
 
 extern int __pthread_getaffinity_np (pthread_t th, size_t cpusetsize,
 				     cpu_set_t *cpuset);
+extern void __pthread_go_live (void);
 
 /* The two functions are in libc.so and not exported.  */
 extern int __libc_enable_asynccancel (void) attribute_hidden;

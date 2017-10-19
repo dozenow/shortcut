@@ -124,6 +124,12 @@ int pthread_sysign (void)
     return INTERNAL_SYSCALL(pthread_sysign,__err,0);
 }
 
+void __pthread_go_live (void)
+{
+    pthread_log_status = PTHREAD_LOG_OFF;
+}
+strong_alias (__pthread_go_live, pthread_go_live);
+
 #ifdef DO_FAKE_CALLS
 // This calls into kernel to allow PIN attach/detach
 void pthread_fake_call (void)
@@ -2478,11 +2484,6 @@ void pthread_log_lll_wait_tid (int* ptid)
     pthread_log_debug ("in the middle of pthread_log_lll_wait_tid\n");
     pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
     pthread_log_debug ("after pthread_log_lll_wait_tid ptid %p, %d\n", ptid, *ptid);
-    /*if (!is_replaying()) {
-        pthread_log_debug ("[HACK] let's manully wait for pid %d\n", *ptid);
-        lll_wait_tid (*ptid);
-        pthread_log_debug ("[HACK] let's manully wait for pid %d: done\n", *ptid);
-    }*/
   } else {
     lll_wait_tid(*ptid);
   }

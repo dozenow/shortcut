@@ -99,6 +99,7 @@ static const struct pthread_functions pthread_functions =
     .ptr_pthread_attr_setscope = __pthread_attr_setscope,
     .ptr_pthread_condattr_destroy = __pthread_condattr_destroy,
     .ptr_pthread_condattr_init = __pthread_condattr_init,
+    .ptr_pthread_go_live = __pthread_go_live,
     .ptr___pthread_cond_broadcast = __pthread_cond_broadcast,
     .ptr___pthread_cond_destroy = __pthread_cond_destroy,
     .ptr___pthread_cond_init = __pthread_cond_init,
