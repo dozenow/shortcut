@@ -241,6 +241,7 @@ extern void pthread_exit (void *__retval) __attribute__ ((__noreturn__));
    __THROW.  */
 extern int pthread_join (pthread_t __th, void **__thread_return);
 extern void pthread_go_live (void);
+extern void pthread_log_lll_wait_tid (int* ptid);
 
 #ifdef __USE_GNU
 /* Check whether thread TH has terminated.  If yes return the status of

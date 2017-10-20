@@ -91,6 +91,7 @@ struct pthread_functions
   void (*ptr__pthread_cleanup_pop_restore) (struct _pthread_cleanup_buffer *,
 					    int);
   void (*ptr_pthread_go_live) (void);
+  void (*ptr_pthread_log_lll_wait_tid) (int*);
 #define HAVE_PTR_NTHREADS
   unsigned int *ptr_nthreads;
   void (*ptr___pthread_unwind) (__pthread_unwind_buf_t *)

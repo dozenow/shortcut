@@ -4,7 +4,8 @@ using namespace std;
 
 extern struct thread_data* current_thread;
 map<ADDRINT, struct mutex_state*> active_mutex; //I need to replace this with a thread-safe STL library
-map<ADDRINT, struct cond_state*> active_cond; //I need to replace this with a thread-safe STL library
+//the key is the address of conditional variable or tid
+map<ADDRINT, struct wait_state*> active_wait; //I need to replace this with a thread-safe STL library
 
 void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr) 
 {
@@ -68,27 +69,34 @@ static inline void change_mutex_state (ADDRINT mutex, int mutex_state)
     if (active_mutex.find (mutex) != active_mutex.end()) {
         state = active_mutex[mutex];
     } else { 
-        fprintf (stderr, "unfound mutex to unlock, pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
+        fprintf (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
+        return;
     }
     state->pid = current_thread->record_pid;
-
     state->state = mutex_state;
 }
 
-static inline void change_cond_state (ADDRINT cond, int cond_state, ADDRINT mutex, ADDRINT abstime)
+static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mutex, ADDRINT abstime)
 {
-    struct cond_state* state = NULL;
-    if (active_cond.find (cond) != active_cond.end()) {
-        state = active_cond[cond];
+    struct wait_state* state = NULL;
+    if (active_wait.find (wait) != active_wait.end()) {
+        state = active_wait[wait];
     } else { 
-        state = (struct cond_state*) malloc (sizeof(struct cond_state));
-        fprintf (stderr, "uninitialized cond %p\n", (void*) cond);
+        state = (struct wait_state*) malloc (sizeof(struct wait_state));
     }
     state->pid = current_thread->record_pid;
-    state->state = cond_state;
+    state->state = wait_state;
     state->mutex = mutex;
     state->abstime = abstime;
-    active_cond[cond] = state;
+    active_wait[wait] = state;
+}
+
+static inline void destroy_wait_state (ADDRINT wait)
+{
+    struct wait_state* state = active_wait[wait];
+    assert (state != NULL);
+    free (state);
+    active_wait.erase (wait);
 }
 
 void track_pthread_mutex_unlock (ADDRINT rtn_addr)
@@ -114,7 +122,7 @@ void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT a
     cache->abstime = abstime;
     printf ("record pid %d, before cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)mutex, (void*) cond);
     //change_mutex_state (mutex, MUTEX_UNLOCK):
-    change_cond_state (cond, COND_BEFORE_WAIT, mutex, abstime);
+    change_wait_state (cond, COND_BEFORE_WAIT, mutex, abstime);
 }
 
 void track_pthread_cond_timedwait_after (ADDRINT rtn_addr) 
@@ -122,5 +130,22 @@ void track_pthread_cond_timedwait_after (ADDRINT rtn_addr)
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     printf ("record pid %d, after cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
     //change_mutex_state (mutex, MUTEX_AFTER_LOCK);
-    change_cond_state (cache->cond, COND_AFTER_WAIT, cache->mutex, cache->abstime);
+    //change_cond_state (cache->cond, COND_AFTER_WAIT, cache->mutex, cache->abstime);
+    destroy_wait_state (cache->cond);
+}
+
+void track_pthread_lll_wait_tid_before (ADDRINT tid)
+{
+    printf ("record pid %d, before lll_wait_tid %p\n", current_thread->record_pid, (void*)tid);
+    struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
+    cache->tid = tid;
+    change_wait_state (tid, LLL_WAIT_TID_BEFORE, 0, 0);
+}
+
+void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr)
+{
+    struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
+    printf ("record pid %d, after lll_wait_tid %p\n", current_thread->record_pid, (void*)cache->tid);
+    //change_wait_tid_state (tid, LLL_WAIT_TID_AFTER);
+    destroy_wait_state (cache->tid);
 }

@@ -194,6 +194,9 @@ FORWARD (pthread_setcanceltype, (int type, int *oldtype), (type, oldtype), 0)
 
 FORWARD2 (pthread_go_live, void, (void), (), return)
 
+FORWARD2 (pthread_log_lll_wait_tid, void, (int* ptid), (ptid), return)
+
+
 #define return /* value is void */
 FORWARD2(__pthread_unwind,
 	 void attribute_hidden __attribute ((noreturn)) __cleanup_fct_attribute

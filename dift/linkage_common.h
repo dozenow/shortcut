@@ -272,6 +272,7 @@ struct wait_info_cache {
     ADDRINT mutex;
     ADDRINT cond;
     ADDRINT abstime;
+    ADDRINT tid;
 };
 
 // Per-thread data structure

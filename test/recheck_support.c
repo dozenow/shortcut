@@ -100,6 +100,8 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
 void recheck_start(char* filename)
 {
     int rc, i, fd;
+    fprintf (stderr, "recheck_start %ld\n", syscall(SYS_gettid));
+    fflush (stderr);
 
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
@@ -1620,7 +1622,7 @@ void recheck_wait_clock_init (int* mutex, pthread_cond_t* cond)
 {
     //TODO: eliminate this syscall unless debugging
     int pid = syscall(SYS_gettid);
-    unsigned long* clock = (unsigned long*)0x60000000;
+    unsigned long* clock = (unsigned long*)0x70000000;
     printf ("Pid %d recheck_wait_clock_init: %lu mutex %p cond %p\n", pid, *clock, mutex, cond);
     *mutex = 0;
 }
@@ -1661,7 +1663,7 @@ void recheck_pthread_fix ()
 
 int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
 {
-    int* process_map = (int*)0x60000300;
+    int* process_map = (int*)0x70000300;
     int i = 0;
     pid_t ret = 0;
     while (i < 100) {

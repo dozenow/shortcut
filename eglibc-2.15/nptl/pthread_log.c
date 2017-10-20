@@ -2472,7 +2472,7 @@ void pthread_log_lll_unlock (int* plock, int type)
   }
 }
 
-void pthread_log_lll_wait_tid (int* ptid)
+void __pthread_log_lll_wait_tid (int* ptid)
 {
   if (is_recording()) { 
     pthread_log_record (0, LLL_WAIT_TID_ENTER, (u_long) ptid, 1); 
@@ -2488,6 +2488,8 @@ void pthread_log_lll_wait_tid (int* ptid)
     lll_wait_tid(*ptid);
   }
 }
+
+strong_alias (__pthread_log_lll_wait_tid, pthread_log_lll_wait_tid);
 
 int pthread_log_lll_timedwait_tid (int* ptid, const struct timespec* abstime)
 {

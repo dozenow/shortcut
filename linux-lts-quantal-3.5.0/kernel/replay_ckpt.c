@@ -1606,6 +1606,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         int index = 0;
         int pid_map_offset = 0x300/sizeof(int);
         mm_segment_t old_fs = get_fs ();
+        long ret_address;
         struct page* page;
         void* kmap_start_address = NULL;
 
@@ -1615,17 +1616,18 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
             printk ("[ERROR] cannot open shared clock file, ret %d\n", fd);
             BUG();
         }
-        set_fs (old_fs);
         rc = sys_ftruncate (fd, 4096);
         BUG_ON (rc < 0);
-        rc = sys_mmap_pgoff (0x60000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-        if (IS_ERR ((void*)rc) || rc != 0x60000000) { 
+        rc = sys_mmap_pgoff (0x70000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
+        if (IS_ERR ((void*)rc) || rc != 0x70000000) { 
             printk ("[ERROR] cannot map shared clock? ret %ld\n", rc);
             BUG ();
         }
-        rc = get_user_pages (current, current->mm, rc, 1, 1, 0, &page, NULL);
+        ret_address = rc;
+        printk ("before get_user_pages %p %p %lx, %p\n", current, current->mm, ret_address, &page);
+        rc = get_user_pages (current, current->mm, ret_address, 1, 1, 0, &page, NULL);
         if (rc != 1) { 
-            printk ("start_fw_slice: cannot get page rc %ld\n", rc);
+            printk ("start_fw_slice: cannot get page rc %ld, address to be mapped %lx\n", rc, ret_address);
             BUG ();
         }
         kmap_start_address = kmap (page);
@@ -1640,7 +1642,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         rc = sys_close (fd);
         BUG_ON (rc < 0);
         if (IS_ERR((void*) rc)) {
-            printk ("0x60000000 cannot be allocated? ret %ld\n", rc);
+            printk ("0x70000000 cannot be allocated? ret %ld\n", rc);
         } else { 
             printk ("allocate space for mutex/cond/clock\n");
         }
@@ -1652,6 +1654,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if (IS_ERR((void *) extra_space_addr)) {
 		printk ("[ERROR] start_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
+                set_fs (old_fs);
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
@@ -1702,6 +1705,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);
 	
 	set_thread_flag (TIF_IRET);
+        set_fs (old_fs);
 	
 	return 0;
 }

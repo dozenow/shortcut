@@ -228,7 +228,6 @@ extern void lcok_ignore_address (void);
 
 void pthread_log_lll_lock (int* plock, int type);
 void pthread_log_lll_unlock (int* plock, int type);
-void pthread_log_lll_wait_tid (int* ptid);
 int pthread_log_lll_timedwait_tid (int* ptid, const struct timespec* abstime);
 
 #endif

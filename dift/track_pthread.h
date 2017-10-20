@@ -17,13 +17,15 @@
 #define MUTEX_UNLOCK            4
 #define COND_BEFORE_WAIT        5
 #define COND_AFTER_WAIT         6
+#define LLL_WAIT_TID_BEFORE     7
+#define LLL_WAIT_TID_AFTER      8
 struct mutex_state {
     int pid; //current holder
     int state; //state
     ADDRINT field; //additional parameters we need to log
 };
 
-struct cond_state {
+struct wait_state {
     int pid; //current holder
     int state; //state
     ADDRINT mutex;
@@ -39,5 +41,9 @@ void track_pthread_mutex_unlock (ADDRINT rtn_addr);
 void track_pthread_mutex_destroy (ADDRINT rtn_addr);
 void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime);
 void track_pthread_cond_timedwait_after (ADDRINT rtn_addr);
+
+void track_pthread_lll_wait_tid_before (ADDRINT tid);
+void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr);
+
 
 #endif

@@ -4873,7 +4873,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 	if (go_live) {
             //destroy_replay_group (current->replay_thrd->rp_group);
-            printk ("replay pid %d goes live (not fully tested for multi-process), rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+            printk ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
                 
             current->replay_thrd = NULL;
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
@@ -4891,7 +4891,11 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
-                printk ("Pid %d returns from start_fw_slice.\n", current->pid);
+                printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
+                if (ret_code == 53) { 
+                    printk ("[HACK] pid %d wait on sysign\n", current->pid);
+                    msleep (3000);
+                }
             }
 
             // TODO: wait for the main thread to destroy the replay group
