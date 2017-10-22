@@ -5050,22 +5050,22 @@ void instrument_print_inst_dest (INS ins)
         fprintf (stderr, "instrument_print_inst_dest: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
         return;
     }
-    printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
+    //printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
     for (uint32_t i = 0; i<operand_count; ++i) { 
         if (INS_OperandWritten (ins, i)) { 
-            bool implicit = INS_OperandIsImplicit (ins, i);
+            //bool implicit = INS_OperandIsImplicit (ins, i);
             if (INS_OperandIsReg (ins, i)) {
                 REG reg = INS_OperandReg (ins, i);
                 assert (REG_valid(reg));
                 if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
                     //ignore ip register
-                    printf ("      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    //printf ("      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else if (reg == LEVEL_BASE::REG_EFLAGS) {
                     //as the eflag reg is almost certainly modified by some instruction in a basic block (which the jump at the bb exit probably uses), I'll always put eflags in the store set
                     //so it's safe to ignore it here
-                    printf ("      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+                    //printf ("      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else { 
-                    printf ("      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+		    //printf ("      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                     INS_InsertCall (ins, IPOINT_BEFORE, 
                             AFUNPTR(print_inst_dest_reg),
                             IARG_FAST_ANALYSIS_CALL,
@@ -5075,7 +5075,7 @@ void instrument_print_inst_dest (INS ins)
                             IARG_END);
                 }
             } else if (INS_OperandIsMemory (ins, i)) { 
-                printf ("      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
+                //printf ("      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
                 REG base_reg = INS_OperandMemoryBaseReg(ins, i);
                 REG index_reg = INS_OperandMemoryIndexReg(ins, i);
                 SETUP_BASE_INDEX (base_reg, index_reg);
@@ -5088,16 +5088,16 @@ void instrument_print_inst_dest (INS ins)
                         PASS_BASE_INDEX,
                         IARG_END);
             } else if (INS_OperandIsBranchDisplacement (ins, i)) {
-                printf ("      --- implicit? %d, branch displacement.\n", implicit);
+		// printf ("      --- implicit? %d, branch displacement.\n", implicit);
                 assert (0);
             } else if (INS_OperandIsAddressGenerator(ins, i)) {
-                printf ("      --- implicit? %d, address generator\n", implicit);
+                //printf ("      --- implicit? %d, address generator\n", implicit);
                 assert (0);
             } else {
                 if (INS_IsRet (ins) || INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
                     //what else operand can be????
                 } else 
-                        fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
+		    fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
                 //assert (0);
             }
         }

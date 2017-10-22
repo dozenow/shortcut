@@ -2407,7 +2407,7 @@ inline void ctrl_flow_checkpoint (const CONTEXT* ctx, struct ctrl_flow_checkpoin
 
 static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::map<u_long, struct ctrl_flow_origin_value>* store_set_mem) 
 {
-    printf ("[CTRL_FLOW] Start to rollback: index %lu,%llu\n", current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index);
+    CFDEBUG ("[CTRL_FLOW] Start to rollback: index %lu,%llu\n", current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index);
     assert (*ppthread_log_clock == ckpt->clock);
 
     //restore reg taints
@@ -2417,14 +2417,14 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
         delete current_thread->saved_flag_taints;
     current_thread->saved_flag_taints = ckpt->flag_taints;
 
-    printf ("[CTRL_FLOW] registers are restored. \n");
+    CFDEBUG ("[CTRL_FLOW] registers are restored. \n");
 
     //restore mem taints and mem values
     map<u_long, struct ctrl_flow_origin_value> *mem_map = store_set_mem;
     for (auto i = mem_map->begin(); i != mem_map->end(); ++i) { 
 	set_cmem_taints_one (i->first, 1, i->second.taint);
 	add_modified_mem_for_final_check (i->first, 1);
-        printf ("[CTRL_FLOW] restore mem %lx, tainted? %d, current_value %d, new value %u\n", i->first, is_mem_tainted (i->first, 1), get_mem_value (i->first, 1), i->second.value);
+        CFDEBUG ("[CTRL_FLOW] restore mem %lx, tainted? %d, current_value %d, new value %u\n", i->first, is_mem_tainted (i->first, 1), get_mem_value (i->first, 1), i->second.value);
         *(char*) (i->first) = i->second.value;
     }
 
@@ -2905,7 +2905,7 @@ static void change_jump (uint32_t mask, const CONTEXT* ctx, char* ins_str)
     CONTEXT save_ctx;
     PIN_SaveContext (ctx, &save_ctx);
     uint32_t value = (uint32_t) PIN_GetContextReg (&save_ctx, LEVEL_BASE::REG_EFLAGS);
-    printf ("[CTRL_FLOW] %s force to jump: eflag value before %x\n", ins_str, value);
+    CFDEBUG ("[CTRL_FLOW] %s force to jump: eflag value before %x\n", ins_str, value);
     if (!strncmp(ins_str, "jle ", 4) || !strncmp(ins_str, "jng ", 4)) {
 	if ((value & ZF_MASK) || (!!(value & SF_MASK) != !!(value & OF_MASK))) {
 	    value &= ~(ZF_MASK|SF_MASK|OF_MASK);
