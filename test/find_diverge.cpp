@@ -115,10 +115,10 @@ int main (int argc, char* argv[])
 	    long weight1 = 0;
 	    for (int mline1 = line1; mline1 < size1; mline1++) {
 		DPRINT ("Try %d:%s\n", mline1, bb1[mline1].address.c_str());
-		weight1 += bb1[mline1].weight;
+		weight1 += (bb1[mline1].branch_flag != "-");
 		long weight2 = 0;
 		for (int mline2 = line2; mline2 < size2; mline2++) {
-		    weight2 += bb2[mline2].weight;
+		    weight2 += (bb2[mline2].branch_flag != "-");
 		    if (bb1[mline1].address == bb2[mline2].address) {
 			DPRINT ("Match found for %d:%s at %d:%s\n", mline1, bb1[mline1].address.c_str(), 
 				mline2, bb2[mline2].address.c_str());

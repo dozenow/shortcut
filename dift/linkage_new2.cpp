@@ -59,7 +59,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 60
+//#define EXTRA_DEBUG 182
+//#define EXTRA_DEBUG_STOP 192
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -1541,6 +1542,7 @@ static inline void sys_fstat64_stop (int rc)
     if (rc == 0) {
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ino, sizeof(fsi->buf->st_ino));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_nlink, sizeof(fsi->buf->st_nlink));
+	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_rdev, sizeof(fsi->buf->st_rdev));
 	//taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_size, sizeof(fsi->buf->st_size));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_atime, sizeof(fsi->buf->st_atime));
 	taint_syscall_memory_out ("fstat64", (char *)&fsi->buf->st_ctime, sizeof(fsi->buf->st_ctime));
@@ -1566,6 +1568,7 @@ static inline void sys_stat64_stop (int rc)
 	if (rc == 0) {
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
+	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_rdev, sizeof(si->buf->st_rdev));
 	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_size, sizeof(si->buf->st_size));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
@@ -4364,11 +4367,15 @@ void instrument_bswap (INS ins)
 		   IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT val)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT ebx_val, ADDRINT esi_val)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
 #endif
+#ifdef EXTRA_DEBUG_STOP
+    if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
+#endif
+
     //static u_char old_val = 0;
     //if (*((u_char *) 0x8700b15) != old_val) {
       printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
@@ -4380,7 +4387,6 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-	//printf ("8700b15 val %u tainted? %d\n", *((u_char *) 0x8700b15), is_mem_arg_tainted (0x8700b15, 1));
 	//old_val = *((u_char *) 0x8700b15);
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
@@ -4418,7 +4424,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_MEMORYREAD2_EA, 
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -4427,7 +4434,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_MEMORYWRITE_EA,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
 			   IARG_END);
 	} else {
 	    assert (0);
@@ -4440,7 +4448,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_ADDRINT, 0,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
 			   IARG_END);
 	} else {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -4449,7 +4458,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYWRITE_EA, 
 			   IARG_ADDRINT, 0,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
 			   IARG_END);
 	}
     } else { 
@@ -4459,7 +4469,8 @@ void debug_print (INS ins)
 		       IARG_PTR, str,
 		       IARG_ADDRINT, 0,
 		       IARG_ADDRINT, 0,
-		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+		       IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+		       IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
 		       IARG_END);
     }
 }
@@ -5124,6 +5135,8 @@ void trace_instrumentation(TRACE trace, void* v)
 		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_merge_point,
 				IARG_FAST_ANALYSIS_CALL, 
 				IARG_INST_PTR, 
+				IARG_PTR, str, 
+				IARG_BRANCH_TAKEN,
 				IARG_CONST_CONTEXT,
 				IARG_END);
 	    }
@@ -5524,7 +5537,10 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
                index.clock = i.clock;
                index.index = i.index;
 	       index.ip = i.ip; 
-	       index.orig_taken = (i.branch_flag == 'y');
+	       index.orig_taken = (i.branch_flag == 't');
+	       index.extra_loop_iterations = 0;
+	       index.orig_path_nonempty = false;
+	       index.alt_path_nonempty = false;
 	       ptdata->ctrl_flow_info.diverge_insts->insert(i.ip);
           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
 	       index.merge_ip = i.ip;
@@ -5550,6 +5566,7 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
 		   if (i.branch_flag != '-') {
 		       index.orig_path.push(make_pair(i.ip,i.branch_flag));
 		   }
+		   index.orig_path_nonempty = true;
 	       }
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
 	       if (index.ip == 0) {
@@ -5559,6 +5576,7 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
 		   if (i.branch_flag != '-') {
 		       index.alt_path.push(make_pair(i.ip,i.branch_flag));
 		   }
+		   index.alt_path_nonempty = true;
 	       }
 	   }
        }

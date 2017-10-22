@@ -10,6 +10,7 @@
 #define STAT64_CTIME      14
 #define STAT64_ATIME      15
 #define STAT64_BLOCKS     16
+#define STAT64_RDEV       17
 #define NEWSELECT_TIMEOUT 10
 #define GETTIMEOFDAY_TV   10
 #define GETTIMEOFDAY_TZ   11
@@ -27,9 +28,10 @@ struct taint_retval {
 };
 /* Followed by size bytes */
 
-#define DIVERGE_MISMATCH 0
-#define DIVERGE_JUMP     1
-#define DIVERGE_INDEX    2
+#define DIVERGE_MISMATCH     0
+#define DIVERGE_JUMP         1
+#define DIVERGE_INDEX        2
+#define DIVERGE_JUMP_DELAYED 3
 
 struct taintbuf_hdr {
     u_long diverge_type;

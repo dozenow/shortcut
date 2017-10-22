@@ -149,12 +149,10 @@ void recheck_start(char* filename)
 
 void handle_mismatch()
 {
-    static int cnt = 0;
-    cnt++;
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf (DIVERGE_MISMATCH, 0);
     sleep(2);
-    //abort();
+    abort();
 }
 
 void handle_jump_diverge()
@@ -162,6 +160,15 @@ void handle_jump_diverge()
     int i;
     fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
+    sleep(2);
+    abort();
+}
+
+void handle_delayed_jump_diverge()
+{
+    int i;
+    fprintf (stderr, "[MISMATCH] control flow delayed divergence");
+    dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort();
 }
@@ -513,10 +520,12 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	    printf ("[MISMATCH] %s gid does not match %d vs. recorded %d\n", syscall_name, st.st_gid, pstat64->retvals.st_gid);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_rdev != pstat64->retvals.st_rdev) {
 	    printf ("[MISMATCH] %s rdev does not match %llu vs. recorded %llu\n", syscall_name, st.st_rdev, pstat64->retvals.st_rdev);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_size != pstat64->retvals.st_size) {
 	    printf ("[MISMATCH] %s size does not match %lld vs. recorded %lld\n", syscall_name, st.st_size, pstat64->retvals.st_size);
 	    handle_mismatch();
@@ -534,6 +543,7 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	/* Assume atime will be handled by tainting since it changes often */
 	((struct stat64 *) pstat64->buf)->st_ino = st.st_ino;
 	((struct stat64 *) pstat64->buf)->st_nlink = st.st_nlink;
+	((struct stat64 *) pstat64->buf)->st_rdev = st.st_rdev;
 	//((struct stat64 *) pstat64->buf)->st_size = st.st_size;
 	((struct stat64 *) pstat64->buf)->st_mtime = st.st_mtime;
 	((struct stat64 *) pstat64->buf)->st_ctime = st.st_ctime;
@@ -541,6 +551,7 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	//((struct stat64 *) pstat64->buf)->st_blocks = st.st_blocks;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
 	add_to_taintbuf (pentry, STAT64_NLINK, &st.st_nlink, sizeof(st.st_nlink));
+	add_to_taintbuf (pentry, STAT64_RDEV, &st.st_rdev, sizeof(st.st_rdev));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
@@ -620,10 +631,12 @@ void fstat64_recheck ()
 	    printf ("[MISMATCH] fstat64 gid does not match %d vs. recorded %d\n", st.st_gid, pfstat64->retvals.st_gid);
 	    handle_mismatch();
 	}
+#if 0
 	if (st.st_rdev != pfstat64->retvals.st_rdev) {
 	    printf ("[MISMATCH] fstat64 rdev does not match %llu vs. recorded %llu\n", st.st_rdev, pfstat64->retvals.st_rdev);
 	    handle_mismatch();
 	}
+#endif
 	if (st.st_size != pfstat64->retvals.st_size) {
 	    printf ("[MISMATCH] fstat64 size does not match %lld vs. recorded %lld\n", st.st_size, pfstat64->retvals.st_size);
 	    handle_mismatch();
@@ -641,6 +654,7 @@ void fstat64_recheck ()
 	/* Assume inode, atime, mtime, ctime will be handled by tainting since it changes often */
 	((struct stat64 *) pfstat64->buf)->st_ino = st.st_ino;
 	((struct stat64 *) pfstat64->buf)->st_nlink = st.st_nlink;
+	((struct stat64 *) pfstat64->buf)->st_rdev = st.st_rdev;
 	//((struct stat64 *) pfstat64->buf)->st_size = st.st_size;
 	((struct stat64 *) pfstat64->buf)->st_mtime = st.st_mtime;
 	((struct stat64 *) pfstat64->buf)->st_ctime = st.st_ctime;
@@ -648,6 +662,7 @@ void fstat64_recheck ()
 	//((struct stat64 *) pfstat64->buf)->st_blocks = st.st_blocks;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
 	add_to_taintbuf (pentry, STAT64_NLINK, &st.st_nlink, sizeof(st.st_nlink));
+	add_to_taintbuf (pentry, STAT64_RDEV, &st.st_nlink, sizeof(st.st_rdev));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));

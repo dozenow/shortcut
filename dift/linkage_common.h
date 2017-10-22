@@ -212,8 +212,11 @@ struct ctrl_flow_block_index {
     u_long ip;
     bool orig_taken;
     uint32_t merge_ip;
+    uint32_t extra_loop_iterations;
     queue<pair<u_long,char> > orig_path; // List of branches taken and not
     queue<pair<u_long,char> > alt_path; // List of branches taken and not
+    bool orig_path_nonempty; // For loops 
+    bool alt_path_nonempty; // For loops
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
