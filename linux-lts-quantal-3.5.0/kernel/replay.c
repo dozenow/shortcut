@@ -4416,6 +4416,10 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 }
 
 #define PRINT_TIME 0
+
+//TODO remove this
+struct mutex fw_slice_mutex;
+
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
@@ -4583,12 +4587,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		MPRINT ("Set linker for replay process to %s\n", linker);
 	}
 
+        mutex_init (&fw_slice_mutex);
 	if (num_procs > 1) {
 		DPRINT ("Pid %d: waking %lu checkpoint processes\n", current->pid, num_procs-1);
 		pckpt_waiter->pos = pos;
 		pckpt_waiter->index = 1;
 
 		//wakeup only on thread, because only one can read ckpt file at a time anyway!
+                //xdou: TODO will this hurt our performance?
 		up (&pckpt_waiter->sem);
 
 		MPRINT ("Pid %d: waiting for %lu wakeups on sem %p\n", 
@@ -4694,7 +4700,10 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				return -EEXIST;
 			}
 			//run slice jumps back to the user space
+                        mutex_lock (&fw_slice_mutex);
 			start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
+                        mutex_unlock (&fw_slice_mutex);
+                        printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
 		}
 
 		if (attach_device) {
@@ -4885,17 +4894,15 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
+                mutex_lock (&fw_slice_mutex);
                 start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
+                mutex_unlock (&fw_slice_mutex);
 
                 /*printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
                 printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
-                if (ret_code == 53) { 
-                    printk ("[HACK] pid %d wait on sysign\n", current->pid);
-                    msleep (3000);
-                }
             }
 
             // TODO: wait for the main thread to destroy the replay group
@@ -9813,8 +9820,8 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
                         //check if the current executable matches the one in the cache
                         //if so, we open the actual executable instead in order to support java to go live
                         //TODO:xdou fix this 
-                        //rc = do_execve(filename, __argv, __envp, regs);
-                        rc = do_execve(name, __argv, __envp, regs);
+                        rc = do_execve(filename, __argv, __envp, regs);
+                        //rc = do_execve(name, __argv, __envp, regs);
 			set_fs(old_fs);
 
 			prt->rp_record_thread->rp_ignore_flag_addr = NULL;

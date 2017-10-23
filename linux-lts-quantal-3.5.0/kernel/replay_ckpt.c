@@ -826,7 +826,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 
 			if (!(pvmas->vmas_flags & VM_READ) || 
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
-			     strncmp(pvmas->vmas_file, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN))) { //why is this in here...? 
+			     (strncmp(pvmas->vmas_file, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) { //why is this in here...? 
                                 printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;
 			}
@@ -1154,12 +1154,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					was_libkeep = 1;
 					continue;
 				}
-				if (strlen(s) >= 12 && !strcmp(s+strlen(s)-12,"libpthread-2.15.so")) {
-					DPRINT ("This is libpthread - do not unmap it\n");
-					vma = vma_next;
-					was_libkeep = 1;
-					continue;
-				}
 				if (!strcmp(s, slice_fullname)) {
 					DPRINT ("This is the slice library do not unmap it\n");
 					if (*slice_addr == 0) {
@@ -1400,10 +1394,13 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) continue; /* Skip writing this one */
 			if (!(pvmas->vmas_flags&VM_READ) || 
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
-			     strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN))) {
+			     (strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) {
                                 printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;  // Not in checkpoint - so skip writing this one
 			}				
+                        if (pvmas->vmas_flags & VM_MAYSHARE && !strncmp (pvmas->vmas_file, "/replay_cache/", 14)) { 
+                            printk ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
+                        }
 			if (!(pvmas->vmas_flags&VM_WRITE)){
                                 // force it to writable temproarilly
 				rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, PROT_WRITE); 
@@ -1607,7 +1604,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         int pid_map_offset = 0x300/sizeof(int);
         mm_segment_t old_fs = get_fs ();
         long ret_address;
-        struct page* page;
+        struct page* page = NULL;
         void* kmap_start_address = NULL;
 
         set_fs (KERNEL_DS);
@@ -1627,17 +1624,17 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
         printk ("before get_user_pages %p %p %lx, %p\n", current, current->mm, ret_address, &page);
         rc = get_user_pages (current, current->mm, ret_address, 1, 1, 0, &page, NULL);
         if (rc != 1) { 
-            printk ("start_fw_slice: cannot get page rc %ld, address to be mapped %lx\n", rc, ret_address);
-            BUG ();
-        }
-        kmap_start_address = kmap (page);
-        index = atomic_add_return (1, (atomic_t*)(kmap_start_address + 0x4));
-        //write the process map
-        if (index < 100) { 
-            *((int*)kmap_start_address + pid_map_offset + (index-1)*2) = record_pid;
-            *((int*)kmap_start_address + pid_map_offset + (index-1)*2+ 1) = current->pid;
+            printk ("[ERROR] start_fw_slice: cannot get page rc %ld, address to be mapped %lx\n", rc, ret_address);
         } else { 
-            BUG ();
+            kmap_start_address = kmap (page);
+            index = atomic_add_return (1, (atomic_t*)(kmap_start_address + 0x4));
+            //write the process map
+            if (index < 100) { 
+                *((int*)kmap_start_address + pid_map_offset + (index-1)*2) = record_pid;
+                *((int*)kmap_start_address + pid_map_offset + (index-1)*2+ 1) = current->pid;
+            } else { 
+                BUG ();
+            }
         }
         rc = sys_close (fd);
         BUG_ON (rc < 0);
@@ -1645,9 +1642,11 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
             printk ("0x70000000 cannot be allocated? ret %ld\n", rc);
         } else { 
             printk ("allocate space for mutex/cond/clock\n");
+        } if (page) {
+            kunmap(page);
+            put_page (page);
         }
-        kunmap(page);
-        put_page (page);
+        set_fs (old_fs);
         //TODO: unlink the file
 
 	// Allocate space for the restore stack and also for storing some fw slice info
@@ -1683,8 +1682,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	printk ("start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", slice_addr, entry, regs->ip);
-	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	printk ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {
@@ -1703,9 +1701,9 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	regs->sp -= RECHECK_FILE_NAME_LEN;
 	regs->bp = regs->sp;
 	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);
+	DPRINT ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
 	
 	set_thread_flag (TIF_IRET);
-        set_fs (old_fs);
 	
 	return 0;
 }

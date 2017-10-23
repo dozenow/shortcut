@@ -5957,7 +5957,8 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
             parseklog_get_next_psr (current_thread->klog);
             //init clock values for the first thread
             OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-            OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x70000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+            //OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x70000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [0x70000000],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
 
             //init mutex and condition var 
             OUTPUT_SLICE ("[SLICE] #00000000 #push 0x70000600 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
