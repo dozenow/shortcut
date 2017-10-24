@@ -299,16 +299,16 @@ u_long* map_shared_clock (int fd_spec)
 {
     u_long* clock;
 
-    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK);
+    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK, (u_long) &clock);
     if (fd < 0) {
-	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d\n", fd, errno);
+	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d, clock %p\n", fd, errno, clock);
 	return NULL;
     }
 
     clock = mmap (0, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     if (clock == MAP_FAILED) {
-	fprintf (stderr, "Cannot setup shared page for clock\n");
-	return NULL;
+        fprintf (stderr, "Cannot setup shared page for clock\n");
+        return NULL;
     }
 
     close (fd);

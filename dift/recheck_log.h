@@ -5,6 +5,22 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
+struct go_live_process_map {
+    int record_pid;
+    int current_pid;
+};
+//note: there is one kernel-level structure corresponding to this one in replay.h
+//note2: the atomic_t in linux is integer on 32bit
+struct go_live_clock {
+    char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
+    unsigned long slice_clock;
+    int num_threads;  //the number of started threads
+    int num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+    int mutex; //for slice ordering
+    void* replay_group;
+    struct go_live_process_map process_map[0];
+};
+ 
 /* Generic entry header */
 struct recheck_entry { 
     int sysnum;

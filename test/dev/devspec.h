@@ -139,7 +139,7 @@ struct add_startup_db_data {
 #define SPECI_WAIT_FOR_REPLAY_GROUP _IOR('u', 19, pid_t)
 #define SPECI_TRY_TO_EXIT _IOR('u', 20, pid_t)
 #define SPECI_GET_REPLAY_PID _IOR('u', 21, struct get_replay_pid_data)
-#define SPECI_MAP_CLOCK _IO('u',22)
+#define SPECI_MAP_CLOCK _IOW('u',22, u_long)
 #define SPECI_GET_OPEN_FDS _IOR('u', 23, struct open_fds_data)
 #define SPECI_CHECK_FOR_REDO _IO('u', 24)
 #define SPECI_REDO_MMAP _IOW('u', 25, struct redo_mmap_data)

@@ -26,6 +26,8 @@
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
+struct go_live_clock* go_live_clock;
+
 #define PRINT_VALUES
 #define PRINT_TO_LOG
 
@@ -97,23 +99,31 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
     return 0;
 }
 
-void recheck_start(char* filename)
+void recheck_start(char* filename, void* clock_addr)
 {
     int rc, i, fd;
-    fprintf (stderr, "recheck_start %ld\n", syscall(SYS_gettid));
+    fprintf (stderr, "recheck_start %ld, filename %s, go_live_clock %p\n", syscall(SYS_gettid), filename, clock_addr);
     fflush (stderr);
 
+    go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;
     }
-    rc = read (fd, buf, sizeof(buf));
+    rc = dup2 (fd, 1020); //this is necessary to avoid fd conflict; TODO: change the open syscall directly
+    if (rc < 0) {
+	fprintf (stderr, "[BUG] Cannot dup log file descriptor\n");
+        sleep (2);
+        exit (-1);
+    }
+    close (fd);
+    rc = read (1020, buf, sizeof(buf));
     if (rc <= 0) {
 	fprintf (stderr, "Cannot read recheck file\n");
 	return;
     }
-    close (fd);
+    close (1020);
 
     for (i = 0; i < MAX_FDS; i++) {
 	cache_files_opened[i].is_open_cache_file = 0;
@@ -159,7 +169,7 @@ void handle_mismatch()
     cnt++;
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf (DIVERGE_MISMATCH, 0);
-    sleep(2);
+    //sleep(2);
     //abort();
 }
 
@@ -185,6 +195,25 @@ static inline void check_retval (const char* name, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
 	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+            if (!strcmp (name, "open")) { 
+                int max = expected > actual?expected:actual;
+                int i = 0;
+                for (i = 3; i<=max; ++i) {
+                    char proclnk[256];
+                    char filename[256];
+                    int r = 0;
+
+                    sprintf(proclnk, "/proc/self/fd/%d", i);
+                    r = readlink(proclnk, filename, 255);
+                    if (r < 0)
+                    {
+                        fprintf (stderr, "[BUG] failed to readlink\n");
+                        sleep (2);
+                    }
+                    filename[r] = '\0';
+                    printf ("      file descript %d, filename %s\n", i, filename);
+                }
+            }
 	    handle_mismatch();
 	}
     } else {
@@ -1618,66 +1647,73 @@ void rt_sigprocmask_recheck ()
     }
 }
 
-void recheck_wait_clock_init (int* mutex, pthread_cond_t* cond)
+void recheck_add_clock_by_2 ()
+{
+    __sync_add_and_fetch (&go_live_clock->slice_clock, 2);
+}
+
+void recheck_add_clock_by_1 ()
+{
+    __sync_add_and_fetch (&go_live_clock->slice_clock, 1);
+}
+
+void recheck_wait_clock_init ()
 {
     //TODO: eliminate this syscall unless debugging
     int pid = syscall(SYS_gettid);
-    unsigned long* clock = (unsigned long*)0x70000000;
-    printf ("Pid %d recheck_wait_clock_init: %lu mutex %p cond %p\n", pid, *clock, mutex, cond);
-    *mutex = 0;
+    printf ("Pid %d recheck_wait_clock_init: %lu mutex %p\n", pid, go_live_clock->slice_clock, &go_live_clock->mutex);
+    go_live_clock->mutex = 0;
 }
 
-void recheck_wait_clock (unsigned long *current_clock, unsigned long wait_clock, int* mutex, pthread_cond_t* cond) 
+void recheck_wait_clock (unsigned long wait_clock) 
 {
     //TODO: eliminate this syscall unless debugging
     int pid = syscall(SYS_gettid);
 
     printf ("Pid %d call recheck_wait_clock.\n", pid);
-    if (*current_clock >= wait_clock) {
-        printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, *current_clock, current_clock, wait_clock);
+    if (go_live_clock->slice_clock >= wait_clock) {
+        printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, go_live_clock->slice_clock, &go_live_clock->slice_clock, wait_clock);
     } else {
-        printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p cond %p\n", pid, *current_clock, wait_clock, mutex, cond);
+        printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p \n", pid, go_live_clock->slice_clock, wait_clock, &go_live_clock->mutex);
+        fflush (stdout);
         //wake up other sleeping threads
-        syscall (SYS_futex, mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
+        syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
         //wait for its own clock
-        while (*current_clock < wait_clock) {
-            printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
-            syscall (SYS_futex, mutex, FUTEX_WAIT, 0, NULL, NULL, 0);
-            printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, *current_clock, wait_clock);
+        while (go_live_clock->slice_clock < wait_clock) {
+            printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+            fflush (stdout);
+            syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAIT, go_live_clock->mutex, NULL, NULL, 0);
+            printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+            fflush (stdout);
         }
     }
 }
 
-void recheck_final_clock_wakeup (unsigned long *current_clock, int* mutex) 
+void recheck_final_clock_wakeup () 
 {
     int pid = syscall(SYS_gettid);
     printf ("Pid %d finishes executing slice, now wake up other sleeping threads.\n", pid);
-    syscall (SYS_futex, mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
-}
-
-void recheck_pthread_fix ()
-{
-    /*pthread_mutex_t *mutex = (pthread_mutex_t*) (0x804a060);
-    pthread_mutex_lock (mutex);*/
+    fflush (stdout);
+    syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
 }
 
 int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
 {
-    int* process_map = (int*)0x70000300;
+    struct go_live_process_map* process_map = go_live_clock->process_map;
     int i = 0;
     pid_t ret = 0;
     while (i < 100) {
-        if (record_pid == *process_map) {
-            ret = *(process_map +1);
+        if (record_pid == process_map[i].record_pid) {
+            ret = process_map[i].current_pid;
             break;
         }
         ++i;
-        process_map += 2;
     }
     printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
     *ptid = ret;
     *ctid = ret;
     printf ("fake_clone ptid now has value %d, ctid %d\n", *ptid, *ctid);
+    fflush (stdout);
 
     return ret;
 }

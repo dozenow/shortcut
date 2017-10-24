@@ -417,9 +417,15 @@ int main (int argc, char* argv[]) {
 	println ("_start:");
 
 	//start
+        println ("pushfd");
+	println ("push dword ptr [ebp]");
+        println ("add ebp, 4");
 	println ("push ebp");
 	println ("call recheck_start");
 	println ("pop ebp");
+        println ("sub ebp, 4");
+	println ("add esp, 4");
+        println ("popfd");
 	println ("/*TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)*/");
 
 	//write out all restore address

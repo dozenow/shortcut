@@ -1023,7 +1023,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					u_long* pthreadclock, u_long *ignore_flag, 
 					u_long *user_log_addr, ulong *user_log_pos,
 					u_long *child_tid,u_long *replay_hook, loff_t* ppos, 
-					char* slicelib, u_long* slice_addr, u_long* slice_size)
+					char* slicelib, u_long* slice_addr, u_long* slice_size, u_long* pthread_clock_addr)
 {
 	mm_segment_t old_fs = get_fs();
 	int rc = 0, fd, exe_fd, copied, i, map_count, key, shmflg=0, id, premapped = 0, new_file = 0;
@@ -1042,6 +1042,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	int was_libkeep = 0;
 
 	char fpu_is_allocated;
+       
 	MPRINT ("pid %d enters replay_full_resume_proc_from_disk: filename %s, pos %lld\n", current->pid, filename, *ppos);
 	if (PRINT_TIME) {
 		struct timeval tv;
@@ -1231,7 +1232,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if ((pvmas->vmas_flags & VM_MAYSHARE) && (pvmas->vmas_flags & VM_WRITE)) { 
 				if (pvmas->vmas_file[0] && 
 				    !strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
-				//	printk ("But its the clock mapping so maybe not\n");
+                                    *pthread_clock_addr = pvmas->vmas_start;
+                                    printk ("Pid %d pthread_clock_addr %lx\n", current->pid, *pthread_clock_addr);
 				} else {
                                     printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
                                     printk ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
@@ -1253,6 +1255,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 						MPRINT ("special uclock vma\n");
 						sprintf (pvmas->vmas_file, "/run/shm/uclock%d", clock_pid);
 						map_file = filp_open (pvmas->vmas_file, O_RDWR, 0);
+
 						if (IS_ERR(map_file)) {
 							rc = PTR_ERR(map_file);
 							printk ("replay_full_resume_proc_from_disk: filp_open error %d %s rc %d\n", __LINE__, pvmas->vmas_file, rc);
@@ -1585,7 +1588,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 #define STACK_SIZE      65536
 #define RECHECK_FILE_NAME_LEN 128
 
-long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
+long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, void* user_clock_addr) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1594,66 +1597,22 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
 
-        //mutex/cond/clock for slice ordering
-        //TODO: use a meaningful filename
-        //First 4 bytes correponse to the clock, next 4 bytes log the number of running threads now
-        //bytes from offset 0x200 mean the futex wait address (used for use-level slice ordering)
-        long rc = 0;
-        int fd = 0;
-        int index = 0;
-        int pid_map_offset = 0x300/sizeof(int);
-        mm_segment_t old_fs = get_fs ();
-        long ret_address;
-        struct page* page = NULL;
-        void* kmap_start_address = NULL;
-
-        set_fs (KERNEL_DS);
-        fd = sys_open ("/tmp/shared_clock", O_CREAT| O_RDWR, 0644);
-        if (fd < 0) { 
-            printk ("[ERROR] cannot open shared clock file, ret %d\n", fd);
-            BUG();
-        }
-        rc = sys_ftruncate (fd, 4096);
-        BUG_ON (rc < 0);
-        rc = sys_mmap_pgoff (0x70000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-        if (IS_ERR ((void*)rc) || rc != 0x70000000) { 
-            printk ("[ERROR] cannot map shared clock? ret %ld\n", rc);
+        int index = atomic_add_return (1, &go_live_clock->num_threads);
+        printk ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
+        if (index > 99) { 
+            printk ("start_fw_slice: too many concurrent threads?\n");
             BUG ();
-        }
-        ret_address = rc;
-        printk ("before get_user_pages %p %p %lx, %p\n", current, current->mm, ret_address, &page);
-        rc = get_user_pages (current, current->mm, ret_address, 1, 1, 0, &page, NULL);
-        if (rc != 1) { 
-            printk ("[ERROR] start_fw_slice: cannot get page rc %ld, address to be mapped %lx\n", rc, ret_address);
         } else { 
-            kmap_start_address = kmap (page);
-            index = atomic_add_return (1, (atomic_t*)(kmap_start_address + 0x4));
             //write the process map
-            if (index < 100) { 
-                *((int*)kmap_start_address + pid_map_offset + (index-1)*2) = record_pid;
-                *((int*)kmap_start_address + pid_map_offset + (index-1)*2+ 1) = current->pid;
-            } else { 
-                BUG ();
-            }
+            go_live_clock->process_map[index].record_pid = record_pid;
+            go_live_clock->process_map[index].current_pid = current->pid;
         }
-        rc = sys_close (fd);
-        BUG_ON (rc < 0);
-        if (IS_ERR((void*) rc)) {
-            printk ("0x70000000 cannot be allocated? ret %ld\n", rc);
-        } else { 
-            printk ("allocate space for mutex/cond/clock\n");
-        } if (page) {
-            kunmap(page);
-            put_page (page);
-        }
-        set_fs (old_fs);
-        //TODO: unlink the file
+        info.slice_clock = go_live_clock;
 
 	// Allocate space for the restore stack and also for storing some fw slice info
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if (IS_ERR((void *) extra_space_addr)) {
 		printk ("[ERROR] start_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
-                set_fs (old_fs);
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
@@ -1689,7 +1648,7 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 		printk ("[BUG] fw slice probably won't work because checkpoint has not set the gs register\n");
 	}
 
-	//now push parameters to the stack
+	//now push parameters to the stack; recheck_start function is added by process_slice.cpp
 	if (recheck_filename) {
 		strcpy (recheck_log_name, recheck_filename);
 	} else {
@@ -1698,12 +1657,16 @@ long start_fw_slice (u_long slice_addr, u_long slice_size, long record_pid, char
 
         DPRINT ("start_fw_slice: recheck filename %s\n", recheck_filename);
                 
-	regs->sp -= RECHECK_FILE_NAME_LEN;
-	regs->bp = regs->sp;
+        regs->sp -= RECHECK_FILE_NAME_LEN;
 	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);
-	DPRINT ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
-	
+
+        //address of the slice_clock
+        regs->sp -= sizeof(long);
+        put_user ((long)user_clock_addr, (long __user*) regs->sp);
+       	
+	regs->bp = regs->sp;
 	set_thread_flag (TIF_IRET);
+	printk ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
 	
 	return 0;
 }
@@ -1799,8 +1762,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		struct timeval tv;
 		
 		//pop the filename from the stack
-		regs->sp += RECHECK_FILE_NAME_LEN;
-		regs->bp += RECHECK_FILE_NAME_LEN;
+		regs->sp += RECHECK_FILE_NAME_LEN + sizeof(long);
+		regs->bp += RECHECK_FILE_NAME_LEN + sizeof(long);
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		//restore the registers
@@ -1816,6 +1779,12 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		DPRINT ("sys_execute_fw_slice ends: .\n");
 		if (replay_debug) dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
+                //destroy replay group if necessary
+                if (atomic_sub_return  (1, &slice_info->slice_clock->num_remaining_threads) == 0) {
+                    printk ("finnish executing the last slice.\n");
+                    //TODO unmap the libc from resume
+                    destroy_replay_group (slice_info->slice_clock->replay_group);
+                }
 
 		//unmap the slice
 		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
@@ -1828,8 +1797,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			printk ("sys_execute_fw_slice: cannot munmap");
 			return -1;
 		}
-		//TODO unmap the libc from resume
-		do_gettimeofday (&tv);
+
+                do_gettimeofday (&tv);
 		printk ("Pid %d end execute_slice %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		return 0;
 	}

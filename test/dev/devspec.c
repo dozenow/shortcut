@@ -406,7 +406,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 	    
 
 	case SPECI_MAP_CLOCK: {
-		return pthread_shm_path ();
+		return pthread_shm_path ((void __user **)data);
 	}
 	case SPECI_CHECK_FOR_REDO: {
 		return check_for_redo ();

@@ -71,29 +71,28 @@ static void pthread_log_init (void)
     int fd;
 
     INTERNAL_SYSCALL_DECL(__err);
-    fd = INTERNAL_SYSCALL(pthread_shm_path,__err,0);
+    fd = INTERNAL_SYSCALL(pthread_shm_path,__err,1, &ppage);
     if (fd < 0) {
 	pthread_log_debug("shm_open failed\n");
 	exit (0);
     }
-    
     ppage = mmap (0, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     DPRINT ("Initial mmap returns %p\n", ppage);
 
     if (ppage == MAP_FAILED) {
-	pthread_log_debug ("Cannot setup shared page for clock\n");
-	exit (0);
+        pthread_log_debug ("Cannot setup shared page for clock\n");
+        exit (0);
     }
-    
+    //close the shared mmap file
+    INTERNAL_SYSCALL (close, __err, 1, fd);
+
     ppthread_log_clock = (unsigned long *) ppage;
 #ifdef DO_FAKE_CALLS
     ppthread_log_make_fake_clock = ppthread_log_clock+1;
 #endif
     
     INTERNAL_SYSCALL_DECL(__err);
-    INTERNAL_SYSCALL(pthread_init,__err,3,&pthread_log_status,(u_long)pthread_log_record,(u_long)pthread_log_replay);
-    //close the shared mmap file
-    INTERNAL_SYSCALL (close, __err, 1, fd);
+    INTERNAL_SYSCALL(pthread_init,__err,4,&pthread_log_status,(u_long)pthread_log_record,(u_long)pthread_log_replay, ppage);
 }
 
 // This informs the kernel about a newly allocated log

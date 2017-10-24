@@ -593,6 +593,11 @@ int main (int argc, char* argv[])
 		perror("open /dev/spec0");
 		exit(EXIT_FAILURE);
 	}
+        rc = dup2 (fd, 1019);
+        assert (rc > 0);
+        close (fd);
+        fd = 1019; //TODO: we need a better open syscall to avoid unclosed fd
+
 	pid = getpid();
 
 	if (from_ckpt > 0) {

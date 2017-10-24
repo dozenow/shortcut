@@ -1862,11 +1862,13 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     }
 
     // Debug
-    //OUTPUT_SLICE ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
     //OUTPUT_SLICE ("[SLICE_EXTRA] call handle_jump_diverge // comes with %x\n", ip);
 
     // (2) And register with max to include only tainted values
-    OUTPUT_SLICE ("[SLICE_EXTRA] pand %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    // xdou: For some reason, pand and por with stack address will get me a general protection error; so avoid it with another movdqu
+    //OUTPUT_SLICE ("[SLICE_EXTRA] pand %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] pand %s, xmm0 // comes with %x\n", translate_mmx(reg), ip);
 
     // (3) Set up the non-tainted values in memory
     for (i = 3; i >= 0; i--) {
@@ -1881,7 +1883,9 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     }
 
     // (4) Or with the register to load those values
-    OUTPUT_SLICE ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    //OUTPUT_SLICE ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] por %s, xmm0 // comes with %x\n", translate_mmx(reg), ip);
 
     // (5) Fix the stack
     OUTPUT_SLICE ("[SLICE_EXTRA] add esp, 32 // comes with %x\n", ip);
@@ -3263,6 +3267,9 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
+        if (ip == 0xb6c1a4e0) { 
+            //randomization of JVM stack
+        }
 	verify_register (ip, src_reg, src_size, src_value, src_u8);
 
 	// Since we verified, src and flags are not tainted

@@ -803,6 +803,7 @@ struct replay_group {
 
 	struct xray_monitor* rg_open_socks; // Keeps track of open sockets for partitioned replay
         struct replay_perf_wrapper rg_perf_wrapper; //a perf_event_wrapper
+        u_long rg_pthread_clock_addr; //The user-level page where we map the shared clock
 };
 
 struct argsalloc_node {
@@ -1110,7 +1111,7 @@ int read_log_data_internal (struct record_thread* prect, struct syscall_result* 
 int skip_and_read_log_data (struct record_thread* prect);
 static ssize_t write_log_data(struct file* file, loff_t* ppos, struct record_thread* prect, struct syscall_result* psr, int count);
 static void destroy_record_group (struct record_group *prg);
-static void destroy_replay_group (struct replay_group *prepg);
+void destroy_replay_group (struct replay_group *prepg);
 static void __destroy_replay_thread (struct replay_thread* prp);
 static void argsfreeall (struct record_thread* prect);
 void write_begin_log (struct file* file, loff_t* ppos, struct record_thread* prect);
@@ -1961,6 +1962,7 @@ new_replay_group (struct record_group* prec_group, int follow_splits)
 	prg->rg_nfake_calls = 0;
 	prg->rg_fake_calls_made = 0;
 	prg->rg_fake_calls = NULL;
+        prg->rg_pthread_clock_addr = 0;
 	// Record group should not be destroyed before replay group
 	get_record_group (prec_group);
 
@@ -2044,7 +2046,7 @@ err:
 	return NULL;
 }
 
-static void
+void
 destroy_replay_group (struct replay_group *prepg)
 {
 	struct replay_thread *prt;
@@ -4417,9 +4419,6 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 
 #define PRINT_TIME 0
 
-//TODO remove this
-struct mutex fw_slice_mutex;
-
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
 			 int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
@@ -4440,6 +4439,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	int clock, i, is_thread = 1;
 	u_long slice_addr = 0;
 	u_long slice_size;
+        u_long pthread_clock_addr;
 
 	if(PRINT_TIME) {
 		struct timeval tv;
@@ -4505,6 +4505,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	MPRINT ("Pid %d set_record_group_id to %llu\n", current->pid, rg_id);
 	rg_unlock (precg); //I'm worried that the other threads might need to grab the lock later	
 	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
+        if (num_procs) { 
+                struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
+                atomic_set (&go_live_clock->num_remaining_threads, num_procs);
+                go_live_clock->mutex = 0;
+        }
 	if (num_procs > 1) {
 	        mutex_lock(&ckpt_mutex);
 		__init_ckpt_waiters();
@@ -4557,7 +4562,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
 						       &pos, execute_slice_name, &slice_addr, 
-						       &slice_size);
+						       &slice_size, &current->replay_thrd->rp_group->rg_pthread_clock_addr);
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4587,7 +4592,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		MPRINT ("Set linker for replay process to %s\n", linker);
 	}
 
-        mutex_init (&fw_slice_mutex);
 	if (num_procs > 1) {
 		DPRINT ("Pid %d: waking %lu checkpoint processes\n", current->pid, num_procs-1);
 		pckpt_waiter->pos = pos;
@@ -4681,9 +4685,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	atomic_set(&prept->ckpt_restore_done,1);
 
 	if (go_live) {
-		//free up resources directly, otherwise a few thousand executions cause out-of-memory error
-		destroy_replay_group (current->replay_thrd->rp_group);
-		//TODO: what should we do for multi-threaded programs?
+                struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
+
+                if (pthread_clock_addr == 0) {
+                        pthread_clock_addr = current->replay_thrd->rp_group->rg_pthread_clock_addr;
+                        BUG_ON (pthread_clock_addr == 0);
+                }
 		current->replay_thrd = NULL;
                 printk ("replay pid %d goes live\n", current->pid);
 		{
@@ -4699,10 +4706,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				printk ("Cannot find forward slice library\n");
 				return -EEXIST;
 			}
+
 			//run slice jumps back to the user space
-                        mutex_lock (&fw_slice_mutex);
-			start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
-                        mutex_unlock (&fw_slice_mutex);
+			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
                         printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
 		}
 
@@ -4734,6 +4740,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	u_long cur_ckpts, consumed, slice_addr = 0, slice_size;
 	u_char ch, ch2;
         long ret_code = -1;
+        u_long pthread_clock_addr;
 
 	// Restore the checkpoint
 	sprintf (ckpt, "%s/%s",logdir, filename);
@@ -4819,7 +4826,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 							(u_long*)&prept->rp_record_thread->rp_read_ulog_pos,
 							(u_long *)&current->clear_child_tid,
 							(u_long *)&prept->rp_replay_hook,
-							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size);
+							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size, &current->replay_thrd->rp_group->rg_pthread_clock_addr);
 	MPRINT ("Pid %d gets record_pid %ld consumed %ld exp clock %lu retval %ld\n", current->pid, record_pid, consumed, prept->rp_expected_clock, retval);
 
 
@@ -4881,8 +4888,12 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	if (go_live) {
-            //destroy_replay_group (current->replay_thrd->rp_group);
+            struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
             printk ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+            if (pthread_clock_addr == 0) {
+                pthread_clock_addr = (u_long) current->replay_thrd->rp_group->rg_pthread_clock_addr;
+                BUG_ON (pthread_clock_addr == 0);
+            }
                 
             current->replay_thrd = NULL;
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
@@ -4894,17 +4905,13 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
-                mutex_lock (&fw_slice_mutex);
-                start_fw_slice (slice_addr, slice_size, record_pid, recheckname);	 
-                mutex_unlock (&fw_slice_mutex);
-
+                start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
                 /*printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
                 printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
             }
-
             // TODO: wait for the main thread to destroy the replay group
         }
 
@@ -6948,7 +6955,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 }
 
 asmlinkage long
-sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook)
+sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, void __user * pthread_clock_map)
 {
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
@@ -7319,7 +7326,7 @@ asmlinkage long sys_pthread_status (int __user * status)
 }
 
 /* Returns a fd for the shared memory page back to the user */
-long pthread_shm_path (void)
+long pthread_shm_path (void __user** mapped_address)
 {
 	int fd;
 	mm_segment_t old_fs = get_fs();
@@ -7328,11 +7335,11 @@ long pthread_shm_path (void)
 	if (current->record_thrd) {
 		struct record_group* prg = current->record_thrd->rp_group;
 		MPRINT ("Pid %d (record) returning existing shmpath %s\n", current->pid, prg->rg_shmpath);
-		fd = sys_open(prg->rg_shmpath, O_RDWR | O_NOFOLLOW, 0644);
+                fd = sys_open(prg->rg_shmpath, O_RDWR | O_NOFOLLOW, 0644);
 	} else if (current->replay_thrd) {
 		struct record_group* prg = current->replay_thrd->rp_group->rg_rec_group;
 		MPRINT ("Pid %d (replay) returning existing shmpath %s\n", current->pid, prg->rg_shmpath);
-		fd = sys_open(prg->rg_shmpath, O_RDWR | O_NOFOLLOW, 0644);
+                fd = sys_open(prg->rg_shmpath, O_RDWR | O_NOFOLLOW, 0644);
 	} else {
 		printk("[WARN]Pid %d, neither record/replay is asking for the shm_path???\n", current->pid);
 		fd = -EINVAL;
@@ -7344,9 +7351,10 @@ long pthread_shm_path (void)
 }
 EXPORT_SYMBOL(pthread_shm_path);
 
-asmlinkage long sys_pthread_shm_path (void)
+//Note: only used in glibc; you should always use pthread_shm_path
+asmlinkage long sys_pthread_shm_path (void __user** mapped_address)
 {
-	return pthread_shm_path();
+    return pthread_shm_path(mapped_address);
 }
 
 asmlinkage long sys_pthread_sysign (void)
