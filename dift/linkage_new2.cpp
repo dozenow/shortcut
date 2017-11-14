@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 7099
+//#define EXTRA_DEBUG 3600
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -372,6 +372,7 @@ extern int dump_mem_taints_start (int fd);
 extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
 extern vector<struct ctrl_flow_param> ctrl_flow_params;
+extern vector<struct check_syscall> ignored_syscall;
 
 FILE* slice_f;
 
@@ -753,23 +754,27 @@ static inline void sys_read_stop(int rc)
 {
     int read_fileno = -1;
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
-
-    if (ri->recheck_handle) {
-	OUTPUT_SLICE ("[SLICE] #00000000 #push edx [SLICE_INFO] count argument to read\n");
-	OUTPUT_SLICE ("[SLICE] #00000000 #call read_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	OUTPUT_SLICE ("[SLICE] #00000000 #pop edx [SLICE_INFO]\n");
-	if (filter_input()) {
-	    size_t start = 0;
-	    size_t end = 0;
-	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, ri->clock);
-		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
-	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
-	    }
-	} else {
-             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
-	}
+    if (check_is_syscall_ignored (current_thread->record_pid, current_thread->syscall_cnt)) {
+        fprintf (stderr, "Syscall is ignored during rechecking, read syscall, pid %d, index %d, rc %d\n", current_thread->record_pid, current_thread->syscall_cnt, rc);            
+        recheck_read_ignore (ri->recheck_handle);
+    } else { 
+        if (ri->recheck_handle) {
+            OUTPUT_SLICE ("[SLICE] #00000000 #push edx [SLICE_INFO] count argument to read\n");
+            OUTPUT_SLICE ("[SLICE] #00000000 #call read_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #pop edx [SLICE_INFO]\n");
+            if (filter_input()) {
+                size_t start = 0;
+                size_t end = 0;
+                if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+                    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, ri->clock);
+                    add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+                } else {
+                    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
+                }
+            } else {
+                recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
+            }
+        }
     }
 
     if (rc > 0) {
@@ -1969,7 +1974,6 @@ static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how,
 static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
 {
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
-    ppthread_log_clock = (u_long*)user_clock_addr;
 }
 
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,

@@ -220,7 +220,9 @@ string rewriteInst (string s) {
                         else 
                                 return s;
 		else if (inst.compare("jecxz") == 0) {
-			return s.replace(spaceIndex + 1, address.length(), "not handled");
+			//return s.replace(spaceIndex + 1, address.length(), "not handled");
+                        fprintf (stderr, "[ERROR] jecxz not handled yet.\n");
+                        return "";
 		} else {
                         if (s.find ("_branch_") == string::npos)
 			        cerr << "jump instruction? " + s << endl;

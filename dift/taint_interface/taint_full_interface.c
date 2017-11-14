@@ -75,6 +75,7 @@ struct taint_check {
 
 map<ADDRINT,taint_check> check_map;
 vector<struct ctrl_flow_param> ctrl_flow_params;
+vector<struct check_syscall> ignored_syscall;
 
 #endif
 
@@ -1043,6 +1044,14 @@ static int init_check_map (const char* check_filename)
                     sscanf (value, "%d,%llu", &param.pid, &param.index);
                     param.ip = ip;
                     ctrl_flow_params.push_back (param);
+                } else if (!strcmp (type, "ignore_syscall")) {
+                    /*
+                     * Currently only read syscall can be ignored
+                     */
+                    struct check_syscall param;
+                    param.index = atol (value); 
+                    param.pid = (int) ip;
+                    ignored_syscall.push_back (param);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type\n", line);
 		    return -1;
@@ -1055,6 +1064,23 @@ static int init_check_map (const char* check_filename)
     }
     fclose (file);
     return 0;
+}
+
+int check_is_syscall_ignored (int pid, u_long index)
+{
+    vector<struct check_syscall>::iterator iter = ignored_syscall.begin();
+    int ret = 0;
+
+    while (iter != ignored_syscall.end()) { 
+        if (iter->pid == pid && iter->index == index) {
+            ret = 1;
+            break;
+        }
+        ++iter;
+    }
+    if (iter != ignored_syscall.end())
+        ignored_syscall.erase (iter);
+    return ret;
 }
 
 #endif
@@ -3045,7 +3071,8 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	if (esi_tainted == 2 || (esi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
 	// Always verify registers if not untainted
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
+        // TODO: xdou fix this
+	//if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
 	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
 	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0);
 
@@ -3269,6 +3296,9 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     if (src_tainted) {
         if (ip == 0xb6c1a4e0) { 
             //randomization of JVM stack
+            fprintf (stderr, "A special JVM function!!!\n");
+            fflush (stderr);
+            print_extra_move_reg_4 (ip, src_reg, src_value, 1);
         }
 	verify_register (ip, src_reg, src_size, src_value, src_u8);
 

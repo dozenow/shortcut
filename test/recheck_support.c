@@ -356,6 +356,7 @@ void read_recheck (size_t count)
 		    printf ("[MISMATCH] read returns different values\n");
 		    printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
 		    handle_mismatch();
+                    memcpy (pread->buf, readData, pentry->retval);
 		}
 	    }
         } else {

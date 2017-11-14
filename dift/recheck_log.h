@@ -263,6 +263,7 @@ struct recheck_handle;
 
 struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
+int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);

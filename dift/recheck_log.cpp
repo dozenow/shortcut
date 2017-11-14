@@ -39,11 +39,7 @@ struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t 
 	return NULL;
     }
 
-    //TODO: remove this properly for multi-process program; should be fine for multi-threaded though???
-    if (threadid == 0) 
-        handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
-    else 
-        handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_APPEND, 0644);
+    handle->recheckfd = open (recheck_filename, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (handle->recheckfd < 0) {
 	fprintf (stderr, "Cannot open recheck log\n");
 	return NULL;
@@ -151,6 +147,12 @@ long calculate_partial_read_size (int is_cache_file, int partial_read, size_t st
 		fprintf (stderr, "calculate_partial_read_size: size is %ld\n", result);
 		return  result;
 	}
+}
+
+int recheck_read_ignore (struct recheck_handle* handle) 
+{
+    skip_to_syscall (handle, SYS_read);
+    return 0;
 }
 
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)

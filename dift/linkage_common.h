@@ -230,6 +230,11 @@ struct ctrl_flow_param {
     int pid;
 };
 
+struct check_syscall { 
+    int pid;
+    u_long index;
+};
+
 struct ctrl_flow_checkpoint { 
     CONTEXT context;
     u_long clock; //for sanity check only; diverge and merge point should not cross syscall or pthread operations

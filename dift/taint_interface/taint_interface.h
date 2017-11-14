@@ -226,6 +226,8 @@ int is_mem_arg_tainted (u_long mem_loc, uint32_t size);
 int is_flag_tainted (uint32_t flag);
 void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size);
 
+int check_is_syscall_ignored (int pid, u_long index);
+
 #ifdef __cplusplus
 }
 #endif
