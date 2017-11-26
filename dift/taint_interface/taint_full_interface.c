@@ -72,6 +72,7 @@ struct taint_check {
 };
 
 map<ADDRINT,taint_check> check_map;
+map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
 
 #ifdef TAINT_STATS
@@ -980,11 +981,12 @@ static int init_check_map (const char* check_filename)
     if (!file) return -ENOENT;
     while (!feof (file)) {
 	char line[256];
-	char addr[64], type[64], value[64], extra1[64], extra2[64];
+	char addr[64], type[64], value[64], extra1[64], extra2[64], extra3[64], extra4[64];
 	struct taint_check tc;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
-	  if (sscanf(line, "%63s %63s %63s %63s %63s", addr, type, value, extra1, extra2) >= 3) {
+	  if (sscanf(line, "%63s %63s %63s %63s %63s %63s %63s", addr, type, value, 
+		     extra1, extra2, extra3, extra4) >= 3) {
 		u_long ip = strtoul(addr, NULL, 0);
 		if (ip == 0 && strlen (addr) == 0) {
 		    fprintf (stderr, "check %s: invalid address\n", line);
@@ -1032,6 +1034,7 @@ static int init_check_map (const char* check_filename)
                     param.type = CTRL_FLOW_BLOCK_TYPE_DIVERGENCE;
                     sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
 		    param.branch_flag = extra2[0];
+		    param.iter_count = atoi(extra4);
                     param.ip = ip;
                     ctrl_flow_params.push_back(param);
                 } else if (!strcmp(type, "ctrl_merge")) {
@@ -1052,6 +1055,13 @@ static int init_check_map (const char* check_filename)
 		    param.branch_flag = extra1[0];
                     param.ip = ip;
 		    ctrl_flow_params.push_back(param);
+		} else if (!strncmp(type, "syscall_read_extra", 18)) {
+		    syscall_check schk;
+		    schk.type = SYSCALL_READ_EXTRA;
+		    schk.clock = ip;
+		    schk.value = atoi(value);
+		    printf ("syscall read extra ip %ld value %ld\n", schk.clock, schk.value);
+		    syscall_checks[ip] = schk;
 		} else { 
 		    fprintf (stderr, "check %s: invalid type\n", line);
 		    return -1;
@@ -1841,12 +1851,15 @@ static const char* translate_mmx (uint32_t reg)
 
 static inline void add_imm_load_to_slice (uint32_t reg, uint32_t size, char* val, ADDRINT ip)
 {
+    printf ("[SLICE_EXTRA] pushfd // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] sub esp, 12 // comes with %x\n", ip); // For alignment
     printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) val), ip);
     printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+4)), ip);
     printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+8)), ip);
     printf ("[SLICE_EXTRA] push %lu // comes with %x\n", *((u_long *) (val+12)), ip);
     printf ("[SLICE_EXTRA] movdqu %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
-    printf ("[SLICE_EXTRA] add esp, 16 // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] add esp, 28 // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] popfd // comes with %x\n", ip);
 }
 
 static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char* val, ADDRINT ip)
@@ -1855,6 +1868,8 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     u_long mask, vals;
 
     // (1) Set up a bitmask in memory 
+    printf ("[SLICE_EXTRA] pushfd // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] sub esp, 12 // comes with %x\n", ip); // For alignment
     for (i = 3; i >= 0; i--) {
 	mask = 0;
 	for (j = 3; j >= 0; j--) {
@@ -1889,7 +1904,8 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     printf ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
 
     // (5) Fix the stack
-    printf ("[SLICE_EXTRA] add esp, 32 // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] add esp, 44 // comes with %x\n", ip);
+    printf ("[SLICE_EXTRA] popfd // comes with %x\n", ip);
 }
 
 static inline void copy_value_to_pin_register (PIN_REGISTER* reg, uint32_t reg_value, uint32_t reg_size, uint32_t reg_u8) 
@@ -1987,6 +2003,7 @@ static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t
 
 static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t mem_size, int tainted, string prefix="[SLICE_EXTRA]") 
 { 
+    if (is_readonly (mem_loc, mem_size)) return; // Don't prefill read-ony memory
     if (tainted == 2) {
 	for (uint32_t i = 0; i < mem_size; i++) {
 	    if (!is_mem_tainted(mem_loc+i, 1)) {
@@ -2026,11 +2043,11 @@ static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
     clear_mem_taints (mem_loc, mem_size);
 }
 
-static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8)
+static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8, u_long mem_loc)
 {
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards)\n", ip); //save flags
     printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards)\n", reg, reg_size, reg_value, ip);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
+    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x expected address %lx\n", debug_counter++, ip, mem_loc);
     printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards)\n", ip); 
@@ -2095,7 +2112,7 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
 	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
 	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
-	    for (u_long i = start; i <= end; i++) {
+	    for (u_long i = start; i < end; i++) {
 		if (!is_mem_tainted(i, 1)) {
 		    // Untainted - load in valid value to memory address
 		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", i, *(u_char *) i, ip);
@@ -2106,8 +2123,8 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    return true;
 	}
     } else {
-        if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-        if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+	if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc);
+	if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc);
 	return false;
     }
     assert (0); // To make compiler happy
@@ -2137,7 +2154,7 @@ static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* in
 	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
 	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted, "[SLICE_VERIFICATION]");
 	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted, "[SLICE_VERIFICATION]");
-	    for (u_long i = start; i <= end; i++) {
+	    for (u_long i = start; i < end; i++) {
 		if (!is_mem_tainted(i, 1)) {
 		    // Untainted - load in valid value to memory address
 		    printf ("[SLICE] #00000000 #mov byte ptr [0x%lx], %d [SLICE_INFO] comes with %x\n", i, *(u_char *) i, ip);
@@ -2148,8 +2165,8 @@ static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* in
 	    return true;
 	}
     } else {
-        if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8);
-        if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+        if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc);
+        if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc);
 	return false;
     }
     return false;
@@ -2165,7 +2182,7 @@ static inline void taint_base_index_to_range_memwrite (ADDRINT ip, u_long mem_lo
         if (iter != check_map.end()) {
             if (iter->second.type == CHECK_TYPE_RANGE_WRITE) {
 		mem_start = mem_loc - iter->second.value;
-		mem_size = iter->second.size * 2 + 1;
+		mem_size = iter->second.value * 2 + 1;
             } else if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE) {
                 mem_start = iter->second.value;
                 mem_size = iter->second.size;
@@ -2233,8 +2250,8 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
 #define VERIFY_BASE_INDEX_WRITE						\
      int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0; \
      int index_tainted = (index_reg_size>0)?is_reg_tainted (index_reg, index_reg_size, index_reg_u8):0; \
-     if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8); \
-     if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8);
+     if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc); \
+     if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc);
 
 
 #define VERIFY_BASE_INDEX_WRITE_RANGE						\
@@ -2317,7 +2334,7 @@ TAINTSIGN ctrl_flow_taint_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t 
 
     for (uint32_t i = 0; i<size; ++i) {
 	shadow_reg_table[reg_offset + i] = merge_taints (shadow_reg_table[reg_offset+i], ctrl_flow_taint);
-	printf ("[TAINT_REG]: Taint for reg %d offset %d is %d cf taint %d\n", treg, reg_offset+i, shadow_reg_table[reg_offset+i], ctrl_flow_taint);
+	CFDEBUG ("[TAINT_REG]: Taint for reg %d offset %d is %d cf taint %d\n", treg, reg_offset+i, shadow_reg_table[reg_offset+i], ctrl_flow_taint);
     }
 }
 
@@ -2487,6 +2504,11 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
     }
 }
 
+static void make_label_prefix (char* prefix, const struct ctrl_flow_block_index& dp) 
+{
+    sprintf (prefix, "b_%lu_%llu_%u", dp.clock, dp.index, dp.extra_loop_iterations);
+}
+
 static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx, int ndx_incr) 
 {
     if (!current_thread->ctrl_flow_info.is_in_diverged_branch && !current_thread->ctrl_flow_info.is_in_original_branch) {
@@ -2524,7 +2546,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 			it->second.extra_loop_iterations = 0;
 		    }
 		    
-		    if (it->second.extra_loop_iterations > 1) {
+		    if (it->second.extra_loop_iterations > it->second.iter_count) {
 			CFDEBUG ("Reached maximum extra loop iterations\n");
 			it->second.extra_loop_iterations = 0;
 		    } else {
@@ -2537,6 +2559,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 			dp.merge_ip = it->second.merge_ip;
 			dp.orig_path = it->second.orig_path;
 			dp.alt_path = it->second.alt_path;
+			dp.extra_loop_iterations = it->second.extra_loop_iterations; // Use this to generate unique jump targets
 			if (need_swap) {
 			    dp.orig_path_nonempty = it->second.alt_path_nonempty;
 			    dp.alt_path_nonempty = it->second.orig_path_nonempty;
@@ -2580,8 +2603,10 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		char changed_inst[64] = {0};
 		char* start = strchr (ins_str, ' ');
 		memcpy (changed_inst, ins_str, start-ins_str);
+
 		char prefix[64];
-		sprintf (prefix,  "b_%lu_%llu", current_thread->ctrl_flow_info.diverge_point->front().clock, current_thread->ctrl_flow_info.diverge_point->front().index);
+		make_label_prefix (prefix, current_thread->ctrl_flow_info.diverge_point->front());
+
 		printf ("[SLICE] #%x #%s %s_this_branch_init\t", ip, changed_inst, prefix); 
 		printf ("    [SLICE_INFO] #src_flag[FM?:1:4] #branch_taken %d block_index %llu\n", !taken, current_thread->ctrl_flow_info.index+ndx_incr-1);
 		printf ("[SLICE] #0x0 #jmp %s_that_branch_init\t[SLICE_INFO] \n", prefix);
@@ -2635,7 +2660,8 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		CFDEBUG ("Reached merge point on orig branch\n");
 
 		char label_prefix[32];
-		sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.diverge_point->front().clock, current_thread->ctrl_flow_info.diverge_point->front().index);
+		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
+
 		CFDEBUG ("[CTRL_FLOW] taint_ctrl_flow_branch: merge before address %x\n", ip);
 		CFDEBUG ("[CTRL_FLOW] found an expected control flow block, ip %x, index %llu\n", ip, current_thread->ctrl_flow_info.index);
 		//We'll force to taint some registers and addresses 
@@ -2675,7 +2701,8 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
 		
 		char label_prefix[32];
-		sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.diverge_point->front().clock, current_thread->ctrl_flow_info.diverge_point->front().index);
+		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
+
 		CFDEBUG ("[CTRL_FLOW_THE_OTHER_BRANCH] taint_ctrl_flow_branch: the other branch: merge before this block, %x\n", ip);
 		//TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
 		init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
@@ -2725,6 +2752,7 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
 TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, uint32_t src_mem_size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS) 
 { 
     // This may be a write (for pop) - so just verify for now
+    u_long mem_loc = dst_mem_loc; // To make macro happy
     VERIFY_BASE_INDEX_WRITE;
     int tainted = is_mem_tainted (src_mem_loc, src_mem_size);
     if (tainted) {
@@ -2953,7 +2981,8 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, A
 		CFDEBUG ("Uh-oh! Original path not going expeced direction orig branch 0x%lx, ip 0x%x orig %c taken %d\n", orig_branch.first, ip, orig_branch.second, taken);
 		// We are going to "abort" this control flow divergence
 		char label_prefix[256];
-		sprintf (label_prefix, "b_%lu_%llu", current_thread->ctrl_flow_info.diverge_point->front().clock, current_thread->ctrl_flow_info.diverge_point->front().index);
+		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
+
 		printf ("[SLICE] #%x #jmp %s_branch_end\t [SLICE_INFO] \n", ip, label_prefix);
 		printf ("[SLICE] #%x #%s_that_branch_init:\t [SLICE_INFO] \n", ip, label_prefix);
 		// This should have been a control flow divergence at the diverge point (oops) 
@@ -3009,6 +3038,7 @@ TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, A
         }
 #endif 
     } else { 
+	if (current_thread->ctrl_flow_info.change_jump) fprintf (stderr, "Diverge at non-tainted jump: %x %s mask %x\n", ip, ins_str, mask);
         assert (current_thread->ctrl_flow_info.change_jump == false); //we diverge at a non-tainted jump??
     }
 }
@@ -3084,7 +3114,7 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 	int al_tainted = is_reg_tainted (LEVEL_BASE::REG_EAX, 1, 0);
 	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, 4, 0);
-	
+
 	// Determine max. string length, mem taint
 	int mem_tainted = 0;
 	u_long stringlen = find_string_len (mem_loc, al_val, ecx_val, rep_type, mem_tainted);
@@ -3104,9 +3134,9 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 	if (edi_tainted == 2 || (edi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_EDI, edi_val, edi_tainted);
 
 	// Always verify registers if not untainted
-	if (rep_type != REP_TYPE && al_tainted) verify_register (ip, LEVEL_BASE::REG_EAX, 1, al_val, 0);
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
-	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
+	if (rep_type != REP_TYPE && al_tainted) verify_register (ip, LEVEL_BASE::REG_EAX, 1, al_val, 0, mem_loc);
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, mem_loc);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, mem_loc);
 
 	// Scan string if src memory is tainted 
 	if (mem_tainted) {
@@ -3149,9 +3179,9 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	if (esi_tainted == 2 || (esi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
 	// Always verify registers if not untainted
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
-	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
-	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0);
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
+	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0, 0);
 
 	// Move string if src memory is tainted 
 	if (mem_tainted) {
@@ -3206,9 +3236,9 @@ TAINTSIGN fw_slice_string_compare (ADDRINT ip, char* ins_str, ADDRINT mem_loc1, 
 	if (esi_tainted == 2 || (esi_tainted == 0 && (mem1_tainted||mem2_tainted))) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
 	// Always verify registers if not untainted
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
-	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
-	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0);
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
+	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0, 0);
 
 	// Move string if src memory is tainted 
 	if (mem1_tainted||mem2_tainted) {
@@ -3239,8 +3269,8 @@ TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc,
 	if (eax_tainted == 2) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
 
 	// Always verify ecx and edi if not untainted
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0);
-	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0);
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
 
 	if (eax_tainted) {
 	    printf ("[SLICE] #%x #%s\t", ip, ins_str);
@@ -3371,7 +3401,7 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
-	verify_register (ip, src_reg, src_size, src_value, src_u8);
+	verify_register (ip, src_reg, src_size, src_value, src_u8, 0);
 
 	// Since we verified, src and flags are not tainted
 	for (i = 0; i < src_size; i++) {
@@ -3837,7 +3867,7 @@ TAINTSIGN taint_immval2mem (ADDRINT ip, u_long mem_loc, uint32_t size, int base_
     taint_base_index_to_range_memwrite (ip, mem_loc, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
 }
 
-TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter, uint32_t rep_type)
+TAINTSIGN taint_string_scan (u_long mem_loc, ADDRINT al_val, uint32_t ecx_val, uint32_t first_iter, uint32_t rep_type)
 {
     if (first_iter) {
 	// Accumulate taints from memory until we are sure that we will stop the scan
@@ -3887,7 +3917,7 @@ TAINTSIGN taint_string_move (u_long src_mem_loc, u_long dst_mem_loc, uint32_t op
     }
 }
 
-TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, uint32_t size, ADDRINT ecx_val, uint32_t first_iter)
+TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, ADDRINT ecx_val, uint32_t first_iter)
 {
     if (first_iter) {
 	// Accumulate taints from memory until we are sure that we will stop the scan

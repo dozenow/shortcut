@@ -30,6 +30,10 @@ char logbuf[4096];
 int logfd;
 #endif
 
+// This pauses for a while to let us see what went wrong
+//#define DELAY
+#define DELAY sleep(2);
+
 char buf[1024*1024];
 char tmpbuf[1024*1024];
 char taintbuf_filename[256];
@@ -122,7 +126,6 @@ void recheck_start(char* filename)
 	}
     }
     strcat (taintbuf_filename, "taintbuf");
-    printf ("taintbuf is: %s\n", taintbuf_filename);
 
 #ifdef PRINT_VALUES
 #ifdef PRINT_TO_LOG
@@ -151,7 +154,7 @@ void handle_mismatch()
 {
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf (DIVERGE_MISMATCH, 0);
-    sleep(2);
+    DELAY;
     abort();
 }
 
@@ -160,7 +163,7 @@ void handle_jump_diverge()
     int i;
     fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
-    sleep(2);
+    DELAY;
     abort();
 }
 
@@ -169,7 +172,7 @@ void handle_delayed_jump_diverge()
     int i;
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
-    sleep(2);
+    DELAY;
     abort();
 }
 
@@ -178,7 +181,7 @@ void handle_index_diverge(u_long foo)
     int i;
     fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
-    sleep(2);
+    DELAY;
     abort ();
 }
 
@@ -247,7 +250,7 @@ void partial_read (struct recheck_entry* pentry, struct read_recheck* pread, cha
 #endif
 }
 
-void read_recheck (size_t count)
+long read_recheck (size_t count)
 {
     struct recheck_entry* pentry;
     struct read_recheck* pread;
@@ -271,7 +274,8 @@ void read_recheck (size_t count)
     if (pread->has_retvals) {
 	LPRINT ( "is_cache_file: %x ", is_cache_file);
     }
-    LPRINT ( "fd %d buf %lx count %d/%d tainted? %d readlen %d returns %ld clock %lu\n", pread->fd, (u_long) pread->buf, pread->count, count, pread->is_count_tainted, pread->readlen, pentry->retval, pentry->clock);
+    LPRINT ( "fd %d buf %lx count %d/%d tainted? %d readlen %d returns %ld max %ld clock %lu\n", 
+	     pread->fd, (u_long) pread->buf, pread->count, count, pread->is_count_tainted, pread->readlen, pentry->retval, pread->max_bound, pentry->clock);
 #endif
 
     if (pread->is_count_tainted) {
@@ -282,7 +286,6 @@ void read_recheck (size_t count)
 
     if (is_cache_file && pentry->retval >= 0) {
 	struct stat64 st;
-	LPRINT ("Cache file\n");
 	if (!cache_files_opened[pread->fd].is_open_cache_file) {
 	    printf ("[BUG] cache file should be opened but it is not\n");
 	    handle_mismatch();
@@ -321,22 +324,39 @@ void read_recheck (size_t count)
 	    handle_mismatch();
 	}
 	rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
-	check_retval ("read", pentry->clock, pentry->retval, rc);
-        if (!pread->partial_read) {
+	if (pread->max_bound > 0) {
+	    if (rc > pread->max_bound) {
+		printf ("[MISMATCH] read expected up to %d bytes, actually read %ld at clock %ld\n", 
+			rc, pread->max_bound, pentry->clock);
+		handle_mismatch();
+	    } 
 	    if (rc > 0) {
-		if (memcmp (tmpbuf, readData, rc)) {
-		    printf ("[MISMATCH] read returns different values\n");
-		    printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
-		    handle_mismatch();
-		}
+		// Read allowed to return different values b/c they are tainted in slice
+		// So we copy to the slice address space
+		memcpy (pread->buf, tmpbuf, rc);
+		add_to_taintbuf (pentry, RETVAL, &rc, sizeof(long));
+		add_to_taintbuf (pentry, RETBUF, tmpbuf, rc);
 	    }
-        } else {
-	    partial_read (pentry, pread, tmpbuf, readData, 0, rc);
+	} else {
+	    check_retval ("read", pentry->clock, pentry->retval, rc);
+	    if (!pread->partial_read) {
+		if (rc > 0) {
+		    LPRINT ("About to compare %p and %p\n", tmpbuf, readData);
+		    if (memcmp (tmpbuf, readData, rc)) {
+			printf ("[MISMATCH] read returns different values\n");
+			printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
+			handle_mismatch();
+		    }
+		}
+	    } else {
+		partial_read (pentry, pread, tmpbuf, readData, 0, rc);
+	    }
 	}
     }
+    return rc;
 }
 
-void write_recheck ()
+long write_recheck ()
 {
     struct recheck_entry* pentry;
     struct write_recheck* pwrite;
@@ -353,7 +373,7 @@ void write_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "write: fd %d buf %lx count %d rc %ld clock %lu\n", pwrite->fd, (u_long) pwrite->buf, pwrite->count, pentry->retval, pentry->clock);
 #endif
-    if (pwrite->fd == 99999) return;  // Debugging fd - ignore
+    if (pwrite->fd == 99999) return pwrite->count;  // Debugging fd - ignore
     if (cache_files_opened[pwrite->fd].is_open_cache_file) {
 	printf ("[ERROR] Should not be writing to a cache file\n");
 	handle_mismatch();
@@ -366,9 +386,10 @@ void write_recheck ()
 
     rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
     check_retval ("write", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void open_recheck ()
+long open_recheck ()
 {
     struct recheck_entry* pentry;
     struct open_recheck* popen;
@@ -396,9 +417,10 @@ void open_recheck ()
 	cache_files_opened[rc].is_open_cache_file = 1;
 	cache_files_opened[rc].orv = popen->retvals;
     }
+    return rc;
 }
 
-void openat_recheck ()
+long openat_recheck ()
 {
     struct recheck_entry* pentry;
     struct openat_recheck* popen;
@@ -417,9 +439,10 @@ void openat_recheck ()
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
     check_retval ("openat", pentry->clock, pentry->retval, rc);
     if  (rc >= MAX_FDS) abort ();
+    return rc;
 }
 
-void close_recheck ()
+long close_recheck ()
 {
     struct recheck_entry* pentry;
     struct close_recheck* pclose;
@@ -439,9 +462,10 @@ void close_recheck ()
     rc = syscall(SYS_close, pclose->fd);
     cache_files_opened[pclose->fd].is_open_cache_file = 0;
     check_retval ("close", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void access_recheck ()
+long access_recheck ()
 {
     struct recheck_entry* pentry;
     struct access_recheck* paccess;
@@ -460,9 +484,10 @@ void access_recheck ()
 
     rc = syscall(SYS_access, accessName, paccess->mode);
     check_retval ("access", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void stat64_alike_recheck (char* syscall_name, int syscall_num)
+long stat64_alike_recheck (char* syscall_name, int syscall_num)
 {
     struct recheck_entry* pentry;
     struct stat64_recheck* pstat64;
@@ -564,17 +589,18 @@ void stat64_alike_recheck (char* syscall_name, int syscall_num)
 	    handle_mismatch();
 	}
     }
+    return rc;
 }
 
-void stat64_recheck () { 
-    stat64_alike_recheck ("stat64", SYS_stat64);
+long stat64_recheck () { 
+    return stat64_alike_recheck ("stat64", SYS_stat64);
 }
 
-void lstat64_recheck () { 
-    stat64_alike_recheck ("lstat64", SYS_lstat64);
+long lstat64_recheck () { 
+    return stat64_alike_recheck ("lstat64", SYS_lstat64);
 }
 
-void fstat64_recheck ()
+long fstat64_recheck ()
 {
     struct recheck_entry* pentry;
     struct fstat64_recheck* pfstat64;
@@ -662,7 +688,7 @@ void fstat64_recheck ()
 	//((struct stat64 *) pfstat64->buf)->st_blocks = st.st_blocks;
 	add_to_taintbuf (pentry, STAT64_INO, &st.st_ino, sizeof(st.st_ino));
 	add_to_taintbuf (pentry, STAT64_NLINK, &st.st_nlink, sizeof(st.st_nlink));
-	add_to_taintbuf (pentry, STAT64_RDEV, &st.st_nlink, sizeof(st.st_rdev));
+	add_to_taintbuf (pentry, STAT64_RDEV, &st.st_rdev, sizeof(st.st_rdev));
 	add_to_taintbuf (pentry, STAT64_MTIME, &st.st_mtime, sizeof(st.st_mtime));
 	add_to_taintbuf (pentry, STAT64_CTIME, &st.st_ctime, sizeof(st.st_ctime));
 	add_to_taintbuf (pentry, STAT64_ATIME, &st.st_atime, sizeof(st.st_atime));
@@ -675,9 +701,10 @@ void fstat64_recheck ()
 	    handle_mismatch();
 	}
     }
+    return rc;
 }
 
-void fcntl64_getfl_recheck ()
+long fcntl64_getfl_recheck ()
 {
     struct recheck_entry* pentry;
     struct fcntl64_getfl_recheck* pgetfl;
@@ -695,9 +722,10 @@ void fcntl64_getfl_recheck ()
 
     rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
     check_retval ("fcntl64 getfl", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void fcntl64_setfl_recheck ()
+long fcntl64_setfl_recheck ()
 {
     struct recheck_entry* pentry;
     struct fcntl64_setfl_recheck* psetfl;
@@ -715,9 +743,10 @@ void fcntl64_setfl_recheck ()
 
     rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
     check_retval ("fcntl64 setfl", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void fcntl64_getlk_recheck ()
+long fcntl64_getlk_recheck ()
 {
     struct recheck_entry* pentry;
     struct fcntl64_getlk_recheck* pgetlk;
@@ -742,9 +771,10 @@ void fcntl64_getlk_recheck ()
 	    handle_mismatch();
 	}
     }
+    return rc;
 }
 
-void fcntl64_getown_recheck ()
+long fcntl64_getown_recheck ()
 {
     struct recheck_entry* pentry;
     struct fcntl64_getown_recheck* pgetown;
@@ -762,9 +792,10 @@ void fcntl64_getown_recheck ()
 
     rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
     check_retval ("fcntl64 getown", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void fcntl64_setown_recheck (long owner)
+long fcntl64_setown_recheck (long owner)
 {
     struct recheck_entry* pentry;
     struct fcntl64_setown_recheck* psetown;
@@ -789,9 +820,10 @@ void fcntl64_setown_recheck (long owner)
 
     rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, use_owner);
     check_retval ("fcntl64 setown", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void ugetrlimit_recheck ()
+long ugetrlimit_recheck ()
 {
     struct recheck_entry* pentry;
     struct ugetrlimit_recheck* pugetrlimit;
@@ -814,9 +846,10 @@ void ugetrlimit_recheck ()
 	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
 	handle_mismatch();
     }
+    return rc;
 }
 
-void uname_recheck ()
+long uname_recheck ()
 {
     struct recheck_entry* pentry;
     struct uname_recheck* puname;
@@ -860,9 +893,10 @@ void uname_recheck ()
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
 	handle_mismatch();
     }
+    return rc;
 }
 
-void statfs64_recheck ()
+long statfs64_recheck ()
 {
     struct recheck_entry* pentry;
     struct statfs64_recheck* pstatfs64;
@@ -922,9 +956,10 @@ void statfs64_recheck ()
 	    handle_mismatch();
 	}
     }
+    return rc;
 }
 
-void gettimeofday_recheck () { 
+long gettimeofday_recheck () { 
     struct recheck_entry* pentry;
     struct gettimeofday_recheck *pget;
     struct timeval tv;
@@ -945,12 +980,13 @@ void gettimeofday_recheck () {
     
     if (pget->tv_ptr) { 
 	memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
-		add_to_taintbuf (pentry, GETTIMEOFDAY_TV, &tv, sizeof(struct timeval));
+	add_to_taintbuf (pentry, GETTIMEOFDAY_TV, &tv, sizeof(struct timeval));
     }
     if (pget->tz_ptr) { 
 	memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
     }
+    return rc;
 }
 
 long time_recheck () { 
@@ -973,7 +1009,7 @@ long time_recheck () {
     return rc;
 }
 
-void prlimit64_recheck ()
+long prlimit64_recheck ()
 {
     struct recheck_entry* pentry;
     struct prlimit64_recheck* prlimit;
@@ -1010,9 +1046,10 @@ void prlimit64_recheck ()
 	    printf ("[MISMATCH] prlimit64 hard limit does not match: %lld\n", rlim.rlim_max);
 	}
     }
+    return rc;
 }
 
-void setpgid_recheck (int pid, int pgid)
+long setpgid_recheck (int pid, int pgid)
 {
     struct recheck_entry* pentry;
     struct setpgid_recheck* psetpgid;
@@ -1042,9 +1079,10 @@ void setpgid_recheck (int pid, int pgid)
 
     rc = syscall(SYS_setpgid, use_pid, use_pgid);
     check_retval ("setpgid", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void readlink_recheck ()
+long readlink_recheck ()
 {
     struct recheck_entry* pentry;
     struct readlink_recheck* preadlink;
@@ -1085,9 +1123,10 @@ void readlink_recheck ()
 	    handle_mismatch();
 	}
     }
+    return rc;
 }
 
-void socket_recheck ()
+long socket_recheck ()
 {
     struct recheck_entry* pentry;
     struct socket_recheck* psocket;
@@ -1109,6 +1148,7 @@ void socket_recheck ()
     block[2] = psocket->protocol;
     rc = syscall(SYS_socketcall, SYS_SOCKET, &block);
     check_retval ("socket", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
 inline void process_taintmask (char* mask, u_long size, char* buffer)
@@ -1120,7 +1160,7 @@ inline void process_taintmask (char* mask, u_long size, char* buffer)
     }
 }
 
-inline void connect_or_bind_recheck (int call, char* call_name)
+inline long connect_or_bind_recheck (int call, char* call_name)
 {
     struct recheck_entry* pentry;
     struct connect_recheck* pconnect;
@@ -1145,14 +1185,15 @@ inline void connect_or_bind_recheck (int call, char* call_name)
     block[2] = pconnect->addrlen;
     rc = syscall(SYS_socketcall, call, &block);
     check_retval (call_name, pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void connect_recheck () { 
-    connect_or_bind_recheck (SYS_CONNECT, "connect");
+long connect_recheck () { 
+    return connect_or_bind_recheck (SYS_CONNECT, "connect");
 }
 
-void bind_recheck () {
-    connect_or_bind_recheck (SYS_BIND, "bind");
+long bind_recheck () {
+    return connect_or_bind_recheck (SYS_BIND, "bind");
 }
 
 long getpid_recheck ()
@@ -1185,7 +1226,7 @@ long getpgrp_recheck ()
     return rc;
 }
 
-void getuid32_recheck ()
+long getuid32_recheck ()
 {
     struct recheck_entry* pentry;
     int rc;
@@ -1199,9 +1240,10 @@ void getuid32_recheck ()
 #endif 
     rc = syscall(SYS_getuid32);
     check_retval ("getuid32", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void geteuid32_recheck ()
+long geteuid32_recheck ()
 {
     struct recheck_entry* pentry;
     int rc;
@@ -1215,9 +1257,10 @@ void geteuid32_recheck ()
 #endif 
     rc = syscall(SYS_geteuid32);
     check_retval ("geteuid32", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void getgid32_recheck ()
+long getgid32_recheck ()
 {
     struct recheck_entry* pentry;
     int rc;
@@ -1231,9 +1274,10 @@ void getgid32_recheck ()
 #endif 
     rc = syscall(SYS_getgid32);
     check_retval ("getgid32", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void getegid32_recheck ()
+long getegid32_recheck ()
 {
     struct recheck_entry* pentry;
     int rc;
@@ -1247,9 +1291,10 @@ void getegid32_recheck ()
 #endif 
     rc = syscall(SYS_getegid32);
     check_retval ("getegid32", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void llseek_recheck ()
+long llseek_recheck ()
 {
     struct recheck_entry* pentry;
     struct llseek_recheck* pllseek;
@@ -1277,9 +1322,10 @@ void llseek_recheck ()
 	printf ("[MISMATCH] llseek returns offset %llu\n", off);
 	handle_mismatch();
     }
+    return rc;
 }
 
-void ioctl_recheck ()
+long ioctl_recheck ()
 {
     struct recheck_entry* pentry;
     struct ioctl_recheck* pioctl;
@@ -1322,6 +1368,7 @@ void ioctl_recheck ()
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
     }
+    return rc;
 }
 
 // Can I find this definition at user level?
@@ -1333,7 +1380,7 @@ struct linux_dirent64 {
 	char		d_name[0];
 };
 
-void getdents64_recheck ()
+long getdents64_recheck ()
 {
     struct recheck_entry* pentry;
     struct getdents64_recheck* pgetdents64;
@@ -1375,9 +1422,10 @@ void getdents64_recheck ()
 	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
 	}
     }
+    return rc;
 }
 
-void eventfd2_recheck ()
+long eventfd2_recheck ()
 {
     struct recheck_entry* pentry;
     struct eventfd2_recheck* peventfd2;
@@ -1395,9 +1443,10 @@ void eventfd2_recheck ()
 
     rc = syscall(SYS_eventfd2, peventfd2->count, peventfd2->flags);
     check_retval ("eventfd2", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
-void poll_recheck ()
+long poll_recheck ()
 {
     struct recheck_entry* pentry;
     struct poll_recheck* ppoll;
@@ -1440,9 +1489,10 @@ void poll_recheck ()
 	    }
 	}
     }
+    return rc;
 }
 
-void newselect_recheck ()
+long newselect_recheck ()
 {
     struct recheck_entry* pentry;
     struct newselect_recheck* pnewselect;
@@ -1491,9 +1541,10 @@ void newselect_recheck ()
     if (pnewselect->is_timeout_tainted) {
 	add_to_taintbuf (pentry, NEWSELECT_TIMEOUT, use_timeout, sizeof(struct timeval));
     }
+    return rc;
 }
 
-void set_robust_list_recheck ()
+long set_robust_list_recheck ()
 {
     struct recheck_entry* pentry;
     struct set_robust_list_recheck* pset_robust_list;
@@ -1511,6 +1562,7 @@ void set_robust_list_recheck ()
 
     rc = syscall(SYS_set_robust_list, pset_robust_list->head, pset_robust_list->len);
     check_retval ("set_robust_list", pentry->clock, pentry->retval, rc);
+    return rc;
 }
 
 long set_tid_address_recheck ()
@@ -1530,16 +1582,16 @@ long set_tid_address_recheck ()
 #endif 
 
     rc = syscall(SYS_set_tid_address, pset_tid_address->tidptr); 
+    LPRINT ("set_tid_address returns %ld\n", rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
     return rc;
 }
 
-void rt_sigaction_recheck ()
+long rt_sigaction_recheck ()
 {
     struct recheck_entry* pentry;
     struct rt_sigaction_recheck* prt_sigaction;
     struct sigaction* pact = NULL;
-    struct sigaction* poact = NULL;
     char* data;
     long rc;
 
@@ -1555,39 +1607,15 @@ void rt_sigaction_recheck ()
 #endif 
 
     if (prt_sigaction->act) pact = (struct sigaction *) data;
-    if (prt_sigaction->oact) poact = (struct sigaction *) tmpbuf;
-    rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, poact, prt_sigaction->sigsetsize); 
+    rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, prt_sigaction->oact, prt_sigaction->sigsetsize); 
     check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
-    if (prt_sigaction->oact) {
-	if (prt_sigaction->act) {
-	    if (memcmp (tmpbuf, data+20, 20)) {
-		u_long* pn = (u_long *) tmpbuf;
-		u_long* po = (u_long *) (data+20);
-		int i;
-		printf ("[MISMATCH] sigaction returns different values\n");
-		for (i = 0; i < 5; i++) {
-		  printf ("%lx vs. %lx (addr %p)", pn[i], po[i], &po[i]);
-		}
-		printf ("\n");
-		handle_mismatch();
-	    }
-	} else {
-	    if (memcmp (tmpbuf, data, 20)) {
-		u_long* pn = (u_long *) tmpbuf;
-		u_long* po = (u_long *) data;
-		int i;
-		printf ("[MISMATCH] sigaction returns different values (no set)\n");
-		for (i = 0; i < 5; i++) {
-		    printf ("%lx vs. %lx ", pn[i], po[i]);
-		}
-		printf ("\n");
-		handle_mismatch();
-	    }
-	}
+    if (prt_sigaction->oact && rc == 0) {
+	add_to_taintbuf (pentry, SIGACTION_ACTION, prt_sigaction->oact, 20);
     }
+    return rc;
 }
 
-void rt_sigprocmask_recheck ()
+long rt_sigprocmask_recheck ()
 {
     struct recheck_entry* pentry;
     struct rt_sigprocmask_recheck* prt_sigprocmask;
@@ -1625,5 +1653,6 @@ void rt_sigprocmask_recheck ()
 	    }
 	}
     }
+    return rc;
 }
 

@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog patchklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize
+	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range cmpklog
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -42,6 +42,8 @@ launcher: CFLAGS += --static -I../../eglibc-2.15/prefix/include -L../../eglibc-2
 resume: resume.cpp libutil.a
 	c++ -std=c++0x resume.cpp libutil.a -o resume -pthread --static -ldl
 
+canonicalize: CPPFLAGS += -std=c++0x
+
 getstats: libutil.a
 
 filemap: libutil.a 
@@ -59,6 +61,8 @@ patchklog: libutil.a patchklog.o parseklib.o libutil.a
 	g++ $(CFLAGS) $(LDFLAGS) parseklib.o patchklog.o libutil.a -o patchklog -lssl -lcrypto 
 
 rewriteklog: parseklib.o
+
+cmpklog: parseklib.o
 
 libutil.a: util.o parseklib.o
 	ar rv $@ $^

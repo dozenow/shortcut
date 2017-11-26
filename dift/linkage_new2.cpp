@@ -59,8 +59,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 182
-//#define EXTRA_DEBUG_STOP 192
+//#define EXTRA_DEBUG 5130
+//#define EXTRA_DEBUG_STOP 5132
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -245,6 +245,7 @@ extern int dump_mem_taints_start (int fd);
 extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
 extern vector<struct ctrl_flow_param> ctrl_flow_params;
+extern map<u_long,syscall_check> syscall_checks;
 
 FILE* slice_f;
 
@@ -569,6 +570,13 @@ static inline void sys_read_stop(int rc)
     int read_fileno = -1;
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
+    map<u_long,struct syscall_check>::iterator it = syscall_checks.find(ri->clock);
+    long max_taint = 0;
+    if (it != syscall_checks.end()) {
+	printf ("Record found, type=%lu, clock=%lu, value=%ld\n", it->second.type, it->second.clock, it->second.value);
+	max_taint = it->second.value;
+    }
+
     if (ri->recheck_handle) {
 	printf ("[SLICE] #00000000 #push edx [SLICE_INFO] count argument to read\n");
 	printf ("[SLICE] #00000000 #call read_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
@@ -577,13 +585,13 @@ static inline void sys_read_stop(int rc)
 	    size_t start = 0;
 	    size_t end = 0;
 	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, ri->clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
 		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
+		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
 	    }
 	} else {
-             recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, ri->clock);
+	    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
 	}
     }
 
@@ -625,11 +633,15 @@ static inline void sys_read_stop(int rc)
         //fprintf(stderr, "inst_count = %lld\n", inst_count);
 	//clear mem taints: if we don't taint this input buffer, then the memory region should be untainted
 	clear_mem_taints ((u_long)ri->buf, rc);
-        create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
-	//track control flow taints for retvals	
 	tci.fileno = -1;
 	tci.type = TOK_READ_RET;
-	create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
+	if (max_taint > 0) {
+	    create_taints_from_buffer_unfiltered (ri->buf, max_taint, &tci, tokens_fd);
+	    create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+	} else {
+	    create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+	    create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
+	}
     }
 
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
@@ -1737,17 +1749,30 @@ static inline void sys_futex_start (struct thread_data* tdata, int* uaddr, int o
 static inline void sys_rt_sigaction_start (struct thread_data* tdata, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize)
 {
     if (tdata->recheck_handle) {
-	printf ("[SLICE] #00000000 #call rt_sigaction_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_rt_sigaction (tdata->recheck_handle, sig, act, oact, sigsetsize, *ppthread_log_clock);
-	if (oact) clear_mem_taints ((u_long)oact, 20);
+	printf ("[SLICE] #00000000 #call rt_sigaction_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock-1);
+	recheck_rt_sigaction (tdata->recheck_handle, sig, act, oact, sigsetsize, *ppthread_log_clock-1);
+	struct sigaction_info* sfi = (struct sigaction_info*) &current_thread->op.sigaction_info_cache;
+	if (oact) {
+	    sfi->oact = oact;
+	} else {
+	    sfi->oact = 0;
+	}
+    }
+}
+
+static inline void sys_rt_sigaction_stop (int rc)
+{
+    struct sigaction_info* sfi = (struct sigaction_info*) &current_thread->op.sigaction_info_cache;
+    if (rc == 0 && sfi->oact) {
+	taint_syscall_memory_out ("rt_sigaction", (char *)sfi->oact, 20);
     }
 }
 
 static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize)
 {
     if (tdata->recheck_handle) {
-	printf ("[SLICE] #00000000 #call rt_sigprocmask_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
-	recheck_rt_sigprocmask (tdata->recheck_handle, how, set, oset, sigsetsize, *ppthread_log_clock);
+	printf ("[SLICE] #00000000 #call rt_sigprocmask_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock-1);
+	recheck_rt_sigprocmask (tdata->recheck_handle, how, set, oset, sigsetsize, *ppthread_log_clock-1);
 	if (oset) clear_mem_taints ((u_long)oset, sigsetsize);
     }
 }
@@ -2971,7 +2996,6 @@ void instrument_compare_string(INS ins, uint32_t mask)
 		    IARG_FAST_ANALYSIS_CALL,
 		    IARG_MEMORYREAD_EA,
 		    IARG_MEMORYREAD2_EA,
-		    IARG_UINT32, INS_MemoryOperandSize (ins,0),
 		    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
 		    IARG_FIRST_REP_ITERATION,
 		    IARG_END);
@@ -4204,15 +4228,19 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
     }
 }
 
-void instrument_jump (INS ins, uint32_t flags) {
-	fw_slice_src_flag (ins, flags);
-	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_REG_VALUE, REG_EFLAGS,
-			IARG_UINT32, flags, 
-			IARG_ADDRINT, INS_Address(ins),
-			IARG_BRANCH_TAKEN,
-			IARG_END);
+void instrument_jump (INS ins, uint32_t flags) 
+{
+    if (INS_IsIndirectBranchOrCall(ins)) {
+	fprintf (stderr, "Instruction 0x%x is an indirect branch\n", INS_Address(ins));
+    } 
+    fw_slice_src_flag (ins, flags);
+    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_REG_VALUE, REG_EFLAGS,
+		    IARG_UINT32, flags, 
+		    IARG_ADDRINT, INS_Address(ins),
+		    IARG_BRANCH_TAKEN,
+		    IARG_END);
 }
 
 void instrument_jump_ecx (INS ins) {
@@ -4375,10 +4403,11 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #ifdef EXTRA_DEBUG_STOP
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
+    //if (current_thread->ctrl_flow_info.index > 20000) return; 
 
     //static u_char old_val = 0;
     //if (*((u_char *) 0x8700b15) != old_val) {
-      printf ("#%x %s,mem %lx %lx\n", ip, ins, mem_loc1, mem_loc2);
+    printf ("#%x %s, %ld,%lld mem %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
       PIN_LockClient();
       if (IMG_Valid(IMG_FindByAddress(ip))) {
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
@@ -5541,6 +5570,7 @@ void init_ctrl_flow_info (struct thread_data* ptdata)
 	       index.extra_loop_iterations = 0;
 	       index.orig_path_nonempty = false;
 	       index.alt_path_nonempty = false;
+	       index.iter_count = i.iter_count;
 	       ptdata->ctrl_flow_info.diverge_insts->insert(i.ip);
           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
 	       index.merge_ip = i.ip;

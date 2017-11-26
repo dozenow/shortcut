@@ -149,7 +149,7 @@ long calculate_partial_read_size (int is_cache_file, int partial_read, size_t st
 	}
 }
 
-int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
+int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long max_bound, u_long clock)
 {
     struct read_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_read);
@@ -175,8 +175,10 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
 	    rrchk.partial_read = 1;
 	    rrchk.partial_read_start = partial_read_start;
 	    rrchk.partial_read_end = partial_read_end;
-    } else 
+    } else {
 	    rrchk.partial_read = 0;
+    }
+    rrchk.max_bound = max_bound;
 
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, res->retparams, rrchk.readlen);
@@ -993,7 +995,6 @@ int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct s
     if (act && is_mem_arg_tainted ((u_long) act, 20)) fprintf (stderr, "[ERROR] rt_sigaction input structure is tainted\n");
 
     if (act) size += 20;
-    if (oact) size += 20;
     write_header_into_recheck_log (handle->recheckfd, SYS_rt_sigaction, res->retval, size, clock);
 
     sachk.sig = sig;
@@ -1002,10 +1003,6 @@ int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct s
     sachk.sigsetsize = sigsetsize;
     write_data_into_recheck_log (handle->recheckfd, &sachk, sizeof(sachk));
     if (act) write_data_into_recheck_log (handle->recheckfd, act, 20);
-    if (res->retparams_size > 0) {
-	assert (oact);
-	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams, 20);
-    }
 
     return 0;
 }

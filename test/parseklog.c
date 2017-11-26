@@ -267,6 +267,13 @@ static void print_read(FILE *out, struct klog_result *res) {
 		fprintf(out, "         is_cache_read: %x\n", is_cache_read);
 		buf += sizeof(int);
 
+		if (!is_cache_read && res->retval == 11) {
+		  int i;
+		  for (i = 0; i < 11; i++) {
+		    fprintf (out, "JNF: output %c (%x)\n", buf[i], buf[i]);
+		  }
+		}
+
 		if (is_cache_read & READ_NEW_CACHE_FILE) {
 			struct open_retvals *orets = (void *)(buf + sizeof(int) + sizeof(loff_t));
 			fprintf(out, "         Updating cache file to {%lu, %lu, (%ld, %ld)}",
@@ -356,9 +363,9 @@ static void print_stat(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct stat64* pst = (struct stat64 *) res->retparams;
 
-		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld\n"
+		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld rdev %Lx\n"
 			     "                ctime %ld.%ld mtime %ld.%ld atime %ld.%ld\n",
-			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino,
+			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino, pst->st_rdev,
 			pst->st_ctim.tv_sec, pst->st_ctim.tv_nsec,
 			pst->st_mtim.tv_sec, pst->st_mtim.tv_nsec,
 			pst->st_atim.tv_sec, pst->st_atim.tv_nsec);

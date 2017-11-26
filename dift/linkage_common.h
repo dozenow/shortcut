@@ -200,6 +200,10 @@ struct getdents64_info {
     u_int count;
 };
 
+struct sigaction_info {
+    struct sigaction* oact;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -217,6 +221,7 @@ struct ctrl_flow_block_index {
     queue<pair<u_long,char> > alt_path; // List of branches taken and not
     bool orig_path_nonempty; // For loops 
     bool alt_path_nonempty; // For loops
+    uint32_t iter_count; // For loops - maximum number of iterations to add
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
@@ -234,6 +239,7 @@ struct ctrl_flow_param {
     uint64_t index;
     uint32_t ip;
     int pid;
+    int iter_count;
     char branch_flag;
 };
 
@@ -313,6 +319,7 @@ struct thread_data {
 	struct prlimit64_info prlimit64_info_cache;
 	struct ioctl_info ioctl_info_cache;
 	struct getdents64_info getdents64_info_cache;
+	struct sigaction_info sigaction_info_cache;
     } op;
 
     void* save_syscall_info;
@@ -338,6 +345,14 @@ struct memcpy_header {
     u_long dst;
     u_long src;
     u_long len;
+};
+
+// For syscall return divergences
+#define SYSCALL_READ_EXTRA 0
+struct syscall_check {
+    u_long type;
+    u_long clock;
+    long   value;
 };
 
 #endif

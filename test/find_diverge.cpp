@@ -102,9 +102,9 @@ int main (int argc, char* argv[])
 	    line2++;
 	} else {
 	    if (line1 == 0) {
-		printf ("Divrge before first block\n");
+		printf ("Diverge before first block\n");
 	    } else {
-		printf ("%s ctrl_diverge %s,%s,%d orig_branch %s\n", bb1[line1-1].address.c_str(), bb1[line1-1].pid.c_str(),
+		printf ("%s ctrl_diverge %s,%s,%d orig_branch %s iter 1\n", bb1[line1-1].address.c_str(), bb1[line1-1].pid.c_str(),
 			bb1[line1-1].clock.c_str(), atoi(bb1[line1-1].blockno.c_str())+1, bb1[line1-1].branch_flag.c_str());
 	    }
 	    DPRINT ("Mismatch: %s %s\n", bb1[line1].address.c_str(), bb2[line2].address.c_str());
@@ -113,12 +113,19 @@ int main (int argc, char* argv[])
 	    int bestline1 = bb1.size();
 	    int bestline2 = bb2.size();
 	    long weight1 = 0;
-	    for (int mline1 = line1; mline1 < size1; mline1++) {
+	    for (int mline1 = line1-1; mline1 < size1; mline1++) {
 		DPRINT ("Try %d:%s\n", mline1, bb1[mline1].address.c_str());
+
 		weight1 += (bb1[mline1].branch_flag != "-");
+		if (bb1[mline1].weight > 1) weight1 += bb1[mline1].weight;
+
 		long weight2 = 0;
-		for (int mline2 = line2; mline2 < size2; mline2++) {
+		int startat = (mline1 == line1-1) ? line2 : line2-1;
+		for (int mline2 = startat; mline2 < size2; mline2++) {
+
 		    weight2 += (bb2[mline2].branch_flag != "-");
+		    if (bb2[mline2].weight > 1) weight2 += bb2[mline2].weight;
+
 		    if (bb1[mline1].address == bb2[mline2].address) {
 			DPRINT ("Match found for %d:%s at %d:%s\n", mline1, bb1[mline1].address.c_str(), 
 				mline2, bb2[mline2].address.c_str());

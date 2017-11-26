@@ -19,7 +19,8 @@ using namespace std;
 #include "taintbuf.h"
 #include "util.h"
 
-#define DPRINT
+//#define DPRINT printf
+#define DPRINT(x,...)
 
 void print_usage(FILE *out, char *progname) {
 	fprintf(out, "Usage: %s [-h] logfile\n", progname);
@@ -56,14 +57,21 @@ static void handle_retbuf (int fd, struct taint_retval* trv, struct klog_result*
 
 static void handle_read (int fd, struct taint_retval* trv, struct klog_result* res) 
 {
-    char* newentry = (char *) malloc (trv->size + sizeof(u_int));
-    assert (newentry);
-    *((u_int *) newentry) = 0; // Not a cached file
-    int rc = read (fd, newentry + sizeof(u_int), trv->size);
-    assert (rc == trv->size);
-    free (res->retparams); 
-    res->retparams_size = trv->size + sizeof(u_int);
-    res->retparams = newentry;
+    if (trv->rettype == RETVAL) {
+	int rc = read (fd, &res->retval, sizeof(long));
+	DPRINT ("read rc is %ld\n", res->retval);
+	assert (rc == sizeof(long));
+    } else {
+	char* newentry = (char *) malloc (trv->size + sizeof(u_int));
+	assert (newentry);
+	*((u_int *) newentry) = 0; // Not a cached file
+	int rc = read (fd, newentry + sizeof(u_int), trv->size);
+	assert (rc == trv->size);
+	free (res->retparams); 
+	res->retparams_size = trv->size + sizeof(u_int);
+	res->retparams = newentry;
+	DPRINT ("read buffer replaced\n");
+    }
 }
 
 static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result* res)
@@ -91,6 +99,9 @@ static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result*
     } else if (trv->rettype == STAT64_BLOCKS) {
 	rc = read (fd, &((struct stat64 *) res->retparams)->st_blocks, sizeof(((struct stat64 *) res->retparams)->st_blocks));
 	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_blocks));
+    } else if (trv->rettype == STAT64_RDEV) {
+	rc = read (fd, &((struct stat64 *) res->retparams)->st_rdev, sizeof(((struct stat64 *) res->retparams)->st_rdev));
+	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_rdev));
     } else {
 	assert (0);
     }
@@ -153,6 +164,19 @@ static void handle_newselect (int fd, struct taint_retval* trv, struct klog_resu
     }
 }
 
+static void handle_rt_sigaction (int fd, struct taint_retval* trv, struct klog_result* res)
+{
+    int rc;
+
+    if (trv->rettype == SIGACTION_ACTION) {
+	rc = read (fd, res->retparams, 20);
+	assert (rc == 20);
+    } else {
+	assert (0);
+    }
+}
+
+
 static char* map_pinout (const char* filename, u_long& mapsize)
 {
     // Try to find the nth jump in the file
@@ -180,6 +204,39 @@ static char* map_pinout (const char* filename, u_long& mapsize)
     return p;
 }
 
+static int run_and_redirect (const char* execpath, const char* filename, char * const argv[])
+{
+    pid_t cpid = fork ();
+    int rc;
+    if (cpid == 0) {
+	// Redirect output to a file
+	int fd = open (filename, O_CREAT | O_TRUNC | O_RDWR, 0644);
+	if (fd < 0) {
+	    fprintf (stderr, "Cannot open %s, errno=%d\n", filename, errno);
+	    return fd;
+	}
+	rc = dup2 (fd, 1);
+	if (rc < 0) {
+	    fprintf (stderr, "Cannot dup2 %s, errno=%d\n", filename, errno);
+	    return fd;
+	}
+	close(fd);
+	
+	rc = execv(execpath, argv);
+	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
+	return -1;
+    } else {
+	int status;
+	rc = waitpid (cpid, &status, 0);
+	if (rc < 0) {
+	    fprintf (stderr, "waipid failed, rc=%d\n", rc);
+	    return -1;
+	}
+	rc = WEXITSTATUS(status);
+    }
+    return rc;
+}
+
 static int replay_and_redirect (int dev_fd, char* outfilename, string recpidstr, u_long last_clock, const char* dirname)
 {
     int rc;
@@ -204,13 +261,13 @@ static int replay_and_redirect (int dev_fd, char* outfilename, string recpidstr,
 	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     } 
-    printf ("Waiting until we can attach\n");
+    DPRINT ("Waiting until we can attach\n");
 
     // Wait until we can attach pin
     do {
 	rc = get_attach_status (dev_fd, cpid);
     } while (rc <= 0);
-    printf ("Go ahead\n");
+    DPRINT ("Go ahead\n");
 
     return cpid;
 }
@@ -233,6 +290,43 @@ static int run_tool (int dev_fd, const char* tool, pid_t cpid, const char* addre
 	args[argcnt++] = "-s";
 	sprintf (end_str, "%lu", resume_clock);
 	args[argcnt++] = end_str;
+	args[argcnt++] = NULL;
+	long rc = execv ("../../pin/pin", (char **) args);
+	fprintf (stderr, "execv of pin tool failed, rc=%ld, errno=%d\n", rc, errno);
+	return -1;
+    }
+
+    wait_for_replay_group(dev_fd, cpid);
+    
+    int status;
+    long rc = waitpid (cpid, &status, 0);
+    if (rc < 0) {
+	fprintf (stderr, "waitpid returns %ld, errno %d for pid %d\n", rc, errno, cpid);
+    }
+
+    return 0;
+}
+
+static int run_tool_args (int dev_fd, const char* tool, pid_t cpid, const char* address, u_long resume_clock, const char* arg1, const char* arg2)
+{
+    if (fork() == 0) {
+	const char* args[256];
+	char cpids[64], end_str[64];
+	u_int argcnt = 0;
+	
+	args[argcnt++] = "pin";
+	args[argcnt++] = "-pid";
+	sprintf (cpids, "%d", cpid);
+	args[argcnt++] = cpids;
+	args[argcnt++] = "-t";
+	args[argcnt++] = tool;
+	args[argcnt++] = "-i";
+	args[argcnt++] = address;
+	args[argcnt++] = "-s";
+	sprintf (end_str, "%lu", resume_clock);
+	args[argcnt++] = end_str;
+	args[argcnt++] = arg1;
+	args[argcnt++] = arg2;
 	args[argcnt++] = NULL;
 	long rc = execv ("../../pin/pin", (char **) args);
 	fprintf (stderr, "execv of pin tool failed, rc=%ld, errno=%d\n", rc, errno);
@@ -299,9 +393,7 @@ int main(int argc, char **argv)
     char buf[4096];
     long rc = readlink (last_altex.c_str(), buf, sizeof(buf));
     u_long altno = 0;
-    if (rc < 0) {
-	printf ("No alternate paths yet %s,errno=%d\n", last_altex.c_str(), errno);
-    } else {
+    if (rc >= 0) {
 	rc = unlink (last_altex.c_str());
 	if (rc != 0) fprintf (stderr, "Cannot unlink symlink %s\n", last_altex.c_str());
     }
@@ -395,6 +487,9 @@ int main(int argc, char **argv)
 		case SYS__newselect:
 		    handle_newselect (tfd, &trv, res);
 		    break;
+		case SYS_rt_sigaction:
+		    handle_rt_sigaction (tfd, &trv, res);
+		    break;
 		default:
 		    printf ("syscall %d unhandled\n", trv.syscall);
 		    return -1;
@@ -429,6 +524,11 @@ int main(int argc, char **argv)
 	return fd;
     }
 
+    string checks_file = dir + "/checks";
+    struct stat st;
+    rc = stat (checks_file.c_str(), &st);
+    bool checks_file_exists = (rc == 0);
+
     if (hdr.diverge_type == DIVERGE_JUMP) {
 	printf ("Looking for jump index %lu\n", hdr.diverge_ndx);
 
@@ -458,18 +558,26 @@ int main(int argc, char **argv)
 	printf ("Should resume from clock %lu and stop at %lu\n", hdr.last_clock, resume_clock);
 
 	// First run alternate execution
-	char outfilename[256];
-	sprintf (outfilename, "%s/altpath_bbs", altdirname);
-	pid_t cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, altdirname);
+	char altfilename[256], origfilename[256];
+	sprintf (altfilename, "%s/altpath_bbs", altdirname);
+	pid_t cpid = replay_and_redirect (fd, altfilename, recpidstr,hdr.last_clock, altdirname);
 	if (cpid < 0) return cpid;
 	run_tool (fd, "../dift/obj-ia32/ctrl_flow_bb_trace.so", cpid, address, resume_clock);
 
 	// Now original one
-	sprintf (outfilename, "%s/origpath_bbs", altdirname);
-	cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, dir.c_str());
+	sprintf (origfilename, "%s/origpath_bbs", altdirname);
+	cpid = replay_and_redirect (fd, origfilename, recpidstr,hdr.last_clock, dir.c_str());
 	if (cpid < 0) return cpid;
 	run_tool (fd, "../dift/obj-ia32/ctrl_flow_bb_trace.so", cpid, address, resume_clock);
 	
+	// Now we need to find the differences
+	char * args[4];
+	args[0] = (char *) "find_diverge";
+	args[1] = origfilename;
+	args[2] = altfilename;
+	args[3] = NULL;
+	rc = run_and_redirect ("./find_diverge", "/tmp/new_checks.out", args);
+
     } else if (hdr.diverge_type == DIVERGE_INDEX) {
 	printf ("Looking for diverge index 0x%lx\n", hdr.diverge_ndx);
 
@@ -487,16 +595,16 @@ int main(int argc, char **argv)
 	sprintf (inst_str, "0x%lx", inst);
 
 	// Start with original execution
-	char outfilename[256];
-	sprintf (outfilename, "%s/orig_rws", altdirname);
-	pid_t cpid = replay_and_redirect (fd, outfilename, recpidstr, hdr.last_clock, dir.c_str());
+	char origfilename[256], altfilename[256];
+	sprintf (origfilename, "%s/orig_rws", last_altex.c_str());
+	pid_t cpid = replay_and_redirect (fd, origfilename, recpidstr, hdr.last_clock, dir.c_str());
 	if (cpid < 0) return cpid;
-	run_tool (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock);
+	run_tool_args (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock, "-c", checks_file.c_str());
 	
 	// First check if all examples are read only 
-	FILE* file = fopen(outfilename, "r");
+	FILE* file = fopen(origfilename, "r");
 	if (file == NULL) {
-	    fprintf (stderr, "Cannot open file: %s\n", outfilename);
+	    fprintf (stderr, "Cannot open file: %s\n", origfilename);
 	    return -1;
 	}
 
@@ -520,17 +628,59 @@ int main(int argc, char **argv)
 
 	if (is_readonly) {
 	    printf ("All accesses are to read-only region\n");
-	    printf ("0x%lx rangev mm\n", inst); 
-	    return 0;
-	} 
 
-	// OK, so do the alternate path, too
-	sprintf (outfilename, "%s/alt_rws", altdirname);
-	cpid = replay_and_redirect (fd, outfilename, recpidstr,hdr.last_clock, altdirname);
-	if (cpid < 0) return cpid;
-	run_tool (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock);
+	    FILE* file = fopen("/tmp/new_checks.out", "w");
+	    if (file == NULL) {
+		fprintf (stderr, "Cannot open new checks file\n");
+		return -1;
+	    }
+	    fprintf (file, "0x%lx rangev mm\n", inst); 
+	    fclose (file);
 
+	}  else {
+
+	    // OK, so do the alternate path, too
+	    sprintf (altfilename, "%s/alt_rws", last_altex.c_str());
+	    cpid = replay_and_redirect (fd, altfilename, recpidstr,hdr.last_clock, altdirname);
+	    if (cpid < 0) return cpid;
+	    run_tool_args (fd, "../dift/obj-ia32/data_flow_ndx.so", cpid, inst_str, resume_clock, "-c", checks_file.c_str());
+	    
+	    // Now we need to find the differences
+	    char * args[4];
+	    args[0] = (char *) "find_range";
+	    args[1] = origfilename;
+	    args[2] = altfilename;
+	    args[3] = NULL;
+	    rc = run_and_redirect ("./find_range", "/tmp/new_checks.out", args);
+	    if (rc != 0) {
+		printf ("./find_range %s %s %s failed with status %ld\n", args[0], args[1], args[2], rc);
+		return rc;
+	    }
+	}
     }
+
+    // Save old checks file as backup
+    char checks_backup[256];
+    if (checks_file_exists) {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	sprintf (checks_backup, "%s/checks.%ld.%ld", dir.c_str(), tv.tv_sec, tv.tv_usec);
+	if (rename (checks_file.c_str(), checks_backup)) {
+	    fprintf (stderr, "Unable to back up checks file\n");
+	    return -1;
+	}
+    }
+
+    // Canonicalize 
+    char * args[4];
+    int argcnt = 0;
+    args[argcnt++] = (char *) "canonicalize";
+    args[argcnt++] = (char *) "/tmp/new_checks.out";
+    if (checks_file_exists) {
+	args[argcnt++] = checks_backup;
+    }
+    args[argcnt++] = NULL;
+    rc = run_and_redirect ("./canonicalize", checks_file.c_str(), args);
 
     return 0;
 }

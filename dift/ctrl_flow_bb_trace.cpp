@@ -249,9 +249,6 @@ TAINTSIGN monitor_control_flow_tail (ADDRINT ip)
 { 
     if (tracing && subroutine == "") trace_bbl (current_thread->ctrl_flow_info.bbl_addr);
     ++ current_thread->ctrl_flow_info.count;
-    if (current_thread->ctrl_flow_info.count > 17100 && current_thread->ctrl_flow_info.count < 17150) {
-	printf ("[XXX] at ip 0x%x set count to %lld\n", ip, current_thread->ctrl_flow_info.count); // For debugging
-    }
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
         current_thread->ctrl_flow_info.count = 0;

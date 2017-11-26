@@ -9,9 +9,22 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <iostream>
+#include <unordered_set>
+#include <unordered_map>
 using namespace std;
 
 #include "mmap_regions.h"
+
+//#define DPRINT printf
+#define DPRINT(x,...) 
+
+struct cf_diverge {
+    u_long divergence;
+    u_long merge;
+    bool orig_taken;
+    bool orig_branch;
+    bool alt_branch;
+};
 
 /* Globals */
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
@@ -20,9 +33,13 @@ unsigned int inst_start = 0;
 int child = 0;
 int fd; // File descriptor for the replay device
 TLS_KEY tls_key; // Key for accessing TLS. 
+unordered_map<u_long, struct cf_diverge> divergences;
+unordered_set<u_long> merges;
+u_long need_merge = 0;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "1000000000", "clock to stop");
 KNOB<unsigned int> KnobInstStart(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "start at this instruction");
+KNOB<string> KnobChecksFile(KNOB_MODE_WRITEONCE, "pintool", "c", "", "checks file");
 
 u_long* ppthread_log_clock = NULL; //clock value
 
@@ -61,8 +78,6 @@ static int trace_done ()
     }    
     terminated = 1;
     PIN_UnlockClient();
-    fprintf(stderr, "%d: in trace_done, clock %lu\n",PIN_GetTid(), *ppthread_log_clock);
-
     return 1; //we are the one that acutally did the dift done
 }
 
@@ -121,7 +136,6 @@ inline void increment_syscall_cnt (struct thread_data* ptdata, int syscall_num)
         while (!calling_dd || is_pin_attaching(fd)) {
 		usleep (1000);
 	}
-	fprintf(stderr, "%d: calling try_to_exit\n", PIN_GetTid());
 	try_to_exit(fd, PIN_GetPid());
 	PIN_ExitApplication(0); 
     }
@@ -218,10 +232,16 @@ ADDRINT find_static_address(ADDRINT ip)
 TAINTSIGN monitor_control_flow_head (ADDRINT ip)
 {
     ++ current_thread->ctrl_flow_info.count;
+    DPRINT ("New basic block at %x: %lld\n", ip, current_thread->ctrl_flow_info.count);
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
         current_thread->ctrl_flow_info.count = 0;
     }
+}
+
+TAINTSIGN monitor_stutter (ADDRINT ip)
+{
+    printf ("[STUTTER]0x%x #%llu,%lu (clock)\n", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
 }
 
 TAINTSIGN monitor_read (ADDRINT ip, ADDRINT ea, UINT32 len)
@@ -239,6 +259,50 @@ TAINTSIGN monitor_write (ADDRINT ip, ADDRINT ea)
     printf ("[WRITE]0x%x, 0x%x, #%llu,%lu (clock)\n", ip, ea, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
 }
 
+TAINTSIGN monitor_cf_merge (ADDRINT ip, BOOL taken)
+{
+    if (ip == need_merge) {
+	printf ("[MERGE]0x%x, #%llu,%lu (clock)\n", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock);
+	need_merge = 0;
+    }
+}
+
+TAINTSIGN monitor_cf_diverge (ADDRINT ip, BOOL taken, UINT32 merge, BOOL is_loop, BOOL taken_has_insts)
+{
+    //printf ("taken_has_insts %d taken %d\n", taken_has_insts, taken);
+    bool is_null_branch = is_loop && ((taken_has_insts && !taken) || (!taken_has_insts && taken));
+    printf ("[DIVERGE]0x%x branch %d, #%llu,%lu (clock) merge %x loop %d null branch %d\n", ip, taken, current_thread->ctrl_flow_info.count, *ppthread_log_clock, merge, is_loop, is_null_branch);
+    if (!is_null_branch) need_merge = merge;
+}
+
+#ifdef EXTRA_DEBUG
+TAINTSIGN jnf_debug_r (ADDRINT ip, char* ins, u_long mem_loc, u_long mem_size, ADDRINT eax_val, ADDRINT ecx_val, ADDRINT edx_val) 
+{
+    if (*ppthread_log_clock == 5130 && current_thread->ctrl_flow_info.count < 20000) {
+	printf ("[DEBUG] ip %x %s clock %ld bb %lld: mem read 0x%lx has value 0x%lx, eax 0x%x, ecx 0x%x edx 0x%x\n", 
+		ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.count, mem_loc, *((u_long *) mem_loc), eax_val, ecx_val, edx_val);
+    }
+}
+
+TAINTSIGN jnf_debug_w (ADDRINT ip, char* ins, u_long mem_loc, u_long mem_size, ADDRINT eax_val, ADDRINT ecx_val, ADDRINT edx_val) 
+{
+    if (*ppthread_log_clock == 5130 && current_thread->ctrl_flow_info.count < 20000) {
+	printf ("[DEBUG] ip %x %s clock %ld bb %lld: mem write 0x%lx has value 0x%lx, eax 0x%x, ecx 0x%x edx 0x%x\n", 
+		ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.count, mem_loc, *((u_long *) mem_loc), eax_val, ecx_val, edx_val);
+    }
+}
+
+static inline char* get_copy_of_disasm (INS ins) { 
+	const char* tmp = INS_Disassemble (ins).c_str();
+	char* str = NULL;
+	assert (tmp != NULL);
+	str = (char*) malloc (strlen (tmp) + 1);
+	assert (str != NULL);
+	strcpy (str, tmp);
+	return str;
+}
+#endif
+
 void track_trace(TRACE trace, void* data)
 {
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
@@ -251,6 +315,32 @@ void track_trace(TRACE trace, void* data)
 			IARG_END);
 
 	for (INS ins = head; INS_Valid(ins); ins = INS_Next(ins)) {
+#ifdef EXTRA_DEBUG
+	    char* str = get_copy_of_disasm (ins);
+	    if (INS_IsMemoryRead(ins)) {
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(jnf_debug_r),
+				IARG_FAST_ANALYSIS_CALL,
+				IARG_INST_PTR, 
+				IARG_PTR, str, 
+				IARG_MEMORYREAD_EA,
+				IARG_MEMORYREAD_SIZE,
+				IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+				IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+				IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+				IARG_END);
+	    } else if (INS_IsMemoryWrite(ins)) {
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(jnf_debug_w),
+				IARG_FAST_ANALYSIS_CALL,
+				IARG_INST_PTR, 
+				IARG_PTR, str, 
+				IARG_MEMORYWRITE_EA,
+				IARG_MEMORYWRITE_SIZE,
+				IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+				IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+				IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+				IARG_END);
+	    }
+#endif
 	    if (INS_Address(ins) == inst_start) {
 		if (INS_IsMemoryRead(ins)) {
 		    if (INS_HasMemoryRead2(ins)) {
@@ -277,6 +367,44 @@ void track_trace(TRACE trace, void* data)
 				   IARG_END);
 		}
 
+	    }
+	    if (INS_Stutters(ins)) {
+		INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(monitor_stutter),
+				IARG_INST_PTR, 
+				IARG_END);
+
+	    }
+	    if (merges.find(INS_Address(ins)) != merges.end()) {
+		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_cf_merge),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_INST_PTR,
+			       IARG_BRANCH_TAKEN,
+			       IARG_END);
+	    }
+	    auto iter = divergences.find(INS_Address(ins));
+	    if (iter != divergences.end()) {
+		struct cf_diverge cfd = iter->second;
+		bool is_loop = false;
+		bool taken_has_insts = false;
+		if (cfd.merge == cfd.divergence) {
+		    is_loop = true;
+		    taken_has_insts = false;
+		    //printf ("Instruction %x orig taken %d orig branch %d alt branch %d\n", INS_Address(ins), cfd.orig_taken, cfd.orig_branch, cfd.alt_branch);
+		    if (cfd.orig_taken && cfd.orig_branch) {
+			taken_has_insts = true;
+		    } 
+		    if (!cfd.orig_taken && cfd.alt_branch) {
+			taken_has_insts = true;
+		    }
+		}
+		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(monitor_cf_diverge),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_INST_PTR,
+			       IARG_BRANCH_TAKEN,
+			       IARG_UINT32, cfd.merge,
+			       IARG_BOOL, is_loop,
+			       IARG_BOOL, taken_has_insts,
+			       IARG_END);
 	    }
 	    if (INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
@@ -448,6 +576,50 @@ int main(int argc, char** argv)
     // Read in knob parameters
     print_stop = atoi(KnobPrintStop.Value().c_str());
     inst_start = KnobInstStart.Value();
+
+    string checks_file = KnobChecksFile.Value();
+    struct cf_diverge cfd;
+    if (checks_file != "") {
+	FILE* file = fopen (checks_file.c_str(), "r");
+	while (!feof(file)) {
+	    char line[256];
+	    if (fgets (line, sizeof(line), file)) {
+		if (strstr (line, "ctrl_diverge")) {
+		    char* p = strstr (line, " ");
+		    if (p) {
+			*p = '\0';
+			p++;
+			cfd.divergence = strtoul(line, 0, 16);
+			char* ptaken;
+			ptaken = strstr (p, "orig_branch");
+			if (ptaken) {
+			    ptaken += 12;
+			    cfd.orig_taken = (*ptaken == 't');
+			    DPRINT ("addr %lx orig_branch %c taken %d\n", cfd.divergence, *ptaken, cfd.orig_taken);
+			} else {
+			    fprintf (stderr, "malformed diverge line: %s", p);
+			    return -1;
+			}
+			cfd.orig_branch = cfd.alt_branch = false;
+		    }
+		} else if (strstr (line, "ctrl_merge")) {
+		    char* p = strstr (line, " ");
+		    if (p) {
+			*p = '\0';
+			u_long merge = strtoul(line, 0, 16); 
+			cfd.merge = merge;
+			divergences[cfd.divergence] = cfd;
+			merges.insert(merge);
+		    }
+		} else if (strstr (line, "ctrl_block_instrument_alt")) {
+		    cfd.alt_branch = true;
+		} else if (strstr (line, "ctrl_block_instrument_orig")) {
+		    cfd.orig_branch = true;
+		}
+	    }
+	}
+	fclose (file);
+    }
 
     ppthread_log_clock = map_shared_clock(fd);
     

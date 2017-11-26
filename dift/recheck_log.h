@@ -23,6 +23,7 @@ struct read_recheck {
     size_t count;
     int is_count_tainted;
     size_t readlen;
+    u_long max_bound; // Variable length read allowed up to this bound - results are tainted
     int partial_read; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
     size_t partial_read_start;
     size_t partial_read_end;
@@ -232,7 +233,7 @@ struct rt_sigaction_recheck {
     struct sigaction* oact;
     size_t sigsetsize;
 };
-/* Followed by contents of act and oact as applicable */
+/* Followed by contents of act as applicable */
 
 struct rt_sigprocmask_recheck {
     int how;
@@ -247,7 +248,7 @@ struct recheck_handle;
 
 struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
-int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long clock);
+int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);
 int recheck_close (struct recheck_handle* handle, int fd, u_long clock);

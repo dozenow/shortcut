@@ -18,7 +18,7 @@
 #define STATFS64_BFREE    10
 #define STATFS64_BAVAIL   11
 #define STATFS64_FFREE    12
-
+#define SIGACTION_ACTION  10
 
 struct taint_retval {
     short syscall;

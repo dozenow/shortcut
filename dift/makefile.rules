@@ -151,7 +151,7 @@ $(OBJDIR)ctrl_flow_bb_trace$(PINTOOL_SUFFIX): $(OBJDIR)ctrl_flow_bb_trace$(OBJ_S
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
 
 $(OBJDIR)data_flow_ndx$(OBJ_SUFFIX): data_flow_ndx.cpp 
-	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
+	$(CXX) -std=c++0x -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
 
 $(OBJDIR)data_flow_ndx$(PINTOOL_SUFFIX): $(OBJDIR)data_flow_ndx$(OBJ_SUFFIX) $(OBJDIR)mmap_regions$(OBJ_SUFFIX)
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
