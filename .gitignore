@@ -30,6 +30,8 @@ file_server
 lib_fuse
 fuse
 server-client
+test/cmpklog
+test/find_range
 test/results
 test/wparserecheck
 test/cfg*
