@@ -5987,8 +5987,9 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
+    printf ("in thread_fini\n");
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
-    sync_slice_buffer (tdata);
+    //sync_slice_buffer (tdata);
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
     if (tdata->klog) parseklog_close (tdata->klog);
@@ -6040,6 +6041,7 @@ void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr)
     fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
+//TODO: I think this is super slow
 void routine (RTN rtn, VOID* v)
 { 
     const char *name;

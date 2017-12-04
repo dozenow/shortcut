@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <sys/queue.h>
 #include <sys/time.h>
+#include <time.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 
@@ -31,6 +32,7 @@ using namespace std;
 #define MAX_THREADS 128 //arbitrary... but works
 
 //#define LPRINT
+//#define LTIMING
 
 
 void print_help(const char *program) {
@@ -213,11 +215,6 @@ int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthre
 {
     char filename[256], mapname[256], procname[256], buf[256];
 
-#ifdef LTIMING
-    struct timeval tv1, tv2;
-    gettimeofday(&tv1, NULL);
-#endif
-
     list<pair<u_long,u_long>> maps;
     sprintf (procname, "/proc/%d/maps", getpid());
     FILE* file = fopen(procname, "r");
@@ -398,11 +395,6 @@ again:
 #endif
     }
 
-#ifdef LTIMING
-    gettimeofday(&tv2, NULL);
-    printf ("load time: %ld\n", tv2.tv_usec-tv1.tv_usec+(tv2.tv_sec-tv1.tv_sec)*1000000);
-#endif
-
     return 0;
 }
 
@@ -436,10 +428,16 @@ int main (int argc, char* argv[])
 	struct ckpt_hdr hdr;
 	struct ckpt_data cd; 
 	pthread_t thread[MAX_THREADS];
+        pid = getpid();
 
 	//fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 
-	sprintf(uniqueid,"%d",getpid()); //use the parent's pid as the uniqueid
+	sprintf(uniqueid,"%d",pid); //use the parent's pid as the uniqueid
+#ifdef LTIMING
+	gettimeofday (&tv, NULL);
+	fprintf (stderr, "Resume start %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
+#endif
+
 
 	struct option long_options[] = {
 		{"pthread", required_argument, 0, 0},
@@ -598,8 +596,6 @@ int main (int argc, char* argv[])
         close (fd);
         fd = 1019; //TODO: we need a better open syscall to avoid unclosed fd
 
-	pid = getpid();
-
 	if (from_ckpt > 0) {
 	    
 	    sprintf (filename, "ckpt.%d", from_ckpt);
@@ -640,7 +636,11 @@ int main (int argc, char* argv[])
 
 	    if (slice_filename) {
 		load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
-		}
+	    }
+#ifdef LTIMING
+	gettimeofday (&tv, NULL);
+	fprintf (stderr, "slice loaded %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
+#endif
 	    
 	    cd.fd = fd;
 	    cd.attach_pin = attach_pin;

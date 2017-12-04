@@ -4686,21 +4686,24 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 	if (go_live) {
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
+                struct replay_group* replay_group = current->replay_thrd->rp_group;
 
                 if (pthread_clock_addr == 0) {
                         pthread_clock_addr = current->replay_thrd->rp_group->rg_pthread_clock_addr;
-                        BUG_ON (pthread_clock_addr == 0);
+                        //BUG_ON (pthread_clock_addr == 0);
                 }
 		current->replay_thrd = NULL;
                 printk ("replay pid %d goes live\n", current->pid);
 		{
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("ending replay_go_live %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("ending replay_go_live %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
 
 		if (execute_slice_name) { 
                         char recheckname[256];
+			struct timeval tv;
+			
                         snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
 			if (slice_addr == 0) {
 				printk ("Cannot find forward slice library\n");
@@ -4709,7 +4712,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 			//run slice jumps back to the user space
 			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
-                        printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
+			do_gettimeofday (&tv);
+                        printk ("Pid %d returns from start_fw_slice, now executing slice, %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+                        go_live_clock->replay_group = replay_group;
 		}
 
 		if (attach_device) {

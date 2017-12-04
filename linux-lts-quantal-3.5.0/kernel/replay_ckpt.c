@@ -1105,7 +1105,6 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 	if (fpu_is_allocated) { 
 		//allocate the new fpu if we need it and it isn't setup
 		if (!fpu_allocated(fpu)) {
-			printk("allocating fpu\n");
 			fpu_alloc(fpu);
 		}
 
@@ -1135,6 +1134,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
         if (!is_thread) {
                 char slice_fullname[256];
                 snprintf (slice_fullname, 256, "%s.%d.so", slicelib, record_pid);
+		DPRINT ("Pid %d (record pid %d) slice fullname is %s\n", current->pid, record_pid, slice_fullname);
                 // restore the replay cache state (this is going to be done on per process)
                 restore_replay_cache_files (file, ppos, slicelib != NULL);
 
@@ -1596,8 +1596,9 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	struct fw_slice_info info;
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
-
-        int index = atomic_add_return (1, &go_live_clock->num_threads);
+        int index;
+        struct timeval tv;
+        index = atomic_add_return (1, &go_live_clock->num_threads);
         printk ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");
@@ -1667,7 +1668,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	regs->bp = regs->sp;
 	set_thread_flag (TIF_IRET);
 	printk ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
-	
+
 	return 0;
 }
 
@@ -1760,7 +1761,11 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		struct fw_slice_info* slice_info = NULL;
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
-		
+
+                if (PRINT_TIME) {
+                        do_gettimeofday (&tv);
+                        printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+                }
 		//pop the filename from the stack
 		regs->sp += RECHECK_FILE_NAME_LEN + sizeof(long);
 		regs->bp += RECHECK_FILE_NAME_LEN + sizeof(long);
@@ -1780,11 +1785,13 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		if (replay_debug) dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
                 //destroy replay group if necessary
-                if (atomic_sub_return  (1, &slice_info->slice_clock->num_remaining_threads) == 0) {
-                    printk ("finnish executing the last slice.\n");
-                    //TODO unmap the libc from resume
-                    destroy_replay_group (slice_info->slice_clock->replay_group);
-                }
+                if (slice_info->slice_clock) {
+                    if (atomic_sub_return  (1, &slice_info->slice_clock->num_remaining_threads) == 0) {
+                        printk ("Pid %d finish executing the last slice.\n", current->pid);
+                        //TODO unmap the libc from resume
+                        destroy_replay_group (slice_info->slice_clock->replay_group);
+                    }
+                } 
 
 		//unmap the slice
 		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
@@ -1798,8 +1805,10 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			return -1;
 		}
 
-                do_gettimeofday (&tv);
-		printk ("Pid %d end execute_slice %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+                if (PRINT_TIME) {
+                        do_gettimeofday (&tv);
+                        printk ("Pid %d end execute_slice %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+                }
 		return 0;
 	}
 }
