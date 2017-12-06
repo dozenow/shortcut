@@ -160,6 +160,22 @@ void print_fpu_state(struct fpu *f, pid_t record_pid)
 	printk("\n");
 }
 
+inline int is_memory_zero (void* start, void* end)
+{
+	char empty[4096];
+	int is_zero = 1;
+
+	BUG_ON (end-start < 4096); 
+	memset (empty, 0, 4096);
+	while (start < end) { 
+		if (memcmp (start, empty, 4096)) { 
+			is_zero = 0;
+			break;
+		}
+		start += 4096;
+	}
+	return is_zero;
+}
 
 // File format:
 // pid
@@ -784,6 +800,7 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			struct file* mmap_file = NULL;
 			int mmap_fd = 0;
 			loff_t mmap_ppos = 0;
+			int is_zero = 1;
 
 			sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, vma->vm_start);
 			old_fs = get_fs();
@@ -820,15 +837,25 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				rc = copied;
 				goto freemem;
 			}
-                        printk ("replay_full_checkpoint_proc_to_disk: mmap file %s\n", pvmas->vmas_file);
 			
 			if(!strncmp(pvmas->vmas_file, "/dev/zero", 9)) continue; /* Skip writing this one */
 
-			if (!(pvmas->vmas_flags & VM_READ) || 
+			if (/*!(pvmas->vmas_flags & VM_READ) || */
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     (strncmp(pvmas->vmas_file, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) { //why is this in here...? 
                                 printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;
+			}
+			if (!(pvmas->vmas_flags&VM_READ)){
+				struct vm_area_struct *prev = NULL;
+				// force it to readable temproarilly
+				//sys_mprotect won't work here
+				rc = mprotect_fixup (vma, &prev, vma->vm_start, vma->vm_end, vma->vm_flags | VM_READ); 
+                                printk ("Pid %d change region to readable file %s, range %lx to %lx, flags read %d, shared %d\n", current->pid, pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+				if (rc) { 
+					printk ("Pid %d replay_full_checkpoint_hdr_to_disk: mprotect_fixup fails %d\n", current->pid, rc);
+				}
+				BUG_ON(prev != vma);
 			}
 			
 			if (current->pid != tsk->pid) {
@@ -852,6 +879,9 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				for (i = 0; i < nr_pages; i++) {
 					char* p = kmap (ppages[i]);
 					copied = vfs_write(mmap_file, p, PAGE_SIZE, &mmap_ppos);
+					if (is_zero && !is_memory_zero (p, p+PAGE_SIZE)) { 
+						is_zero = 0;
+					}
 					kunmap (ppages[i]);
 					if (copied != PAGE_SIZE) {
 						printk ("replay_full_checkpoint_proc_to_disk: tried to write vma page, got rc %d\n", copied);
@@ -868,6 +898,8 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			} else {
 				set_fs(old_fs);
 				copied = vfs_write(mmap_file, (char *) pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, &mmap_ppos);
+				if (is_zero && !is_memory_zero ((void*) pvmas->vmas_start, (void*) pvmas->vmas_end))
+					is_zero = 0;
 				set_fs(KERNEL_DS);
 				if (copied != pvmas->vmas_end - pvmas->vmas_start) {
 					printk ("replay_full_checkpoint_proc_to_disk: tried to write vma data, got rc %d\n", copied);
@@ -880,6 +912,19 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			if (mmap_fd > 0) {
 				rc = sys_close (mmap_fd);
 				if (rc < 0) printk ("replay_checkpoint_proc_to_disk: close returns %d\n", rc);
+			}
+			if (!(pvmas->vmas_flags&VM_READ)) {
+				struct vm_area_struct *prev = NULL;
+				printk ("Pid %d finds a non-readable region, tsk pid %d\n", current->pid, tsk->pid);
+				// restore old protections		
+				rc = mprotect_fixup (vma, &prev, vma->vm_start, vma->vm_end, pvmas->vmas_flags); 
+				if (rc) { 
+					printk ("Pid %d replay_full_checkpoint_hdr_to_disk: mprotect_fixup fails %d\n", current->pid, rc);
+				}
+				BUG_ON(prev != vma);
+			}
+			if (is_zero) { 
+				printk ("Pid %d memory region %lx %lx is all zeros, size %ld\n", current->pid, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_end - pvmas->vmas_start);
 			}
 		}
 
@@ -1206,8 +1251,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
-			printk ("VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
+			printk ("Pid %d replay_full_resume_proc_from_disk before mapping files %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+			printk ("\t VM_GROWSDOWN: %x, MAP_FIXED: %x, MAP_PRIVATE %x, MAP_SHARED %x, MAP_GROWSDOWN %x\n", VM_GROWSDOWN, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, MAP_GROWSDOWN);
 		}
 
 		// Map each VMA and copy data from the file - assume VDSO handled separately - so use map_count-1
@@ -1395,7 +1440,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			}
 			
 			if (!strncmp(pvmas->vmas_file, "/dev/zero", 9)) continue; /* Skip writing this one */
-			if (!(pvmas->vmas_flags&VM_READ) || 
+			if (/*!(pvmas->vmas_flags&VM_READ) || */
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     (strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) {
                                 printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);

@@ -4417,7 +4417,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4549,7 +4549,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("replay_full_ckpt_wakeup from_disk starts %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
 	}
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
@@ -4823,6 +4823,11 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	rg_unlock (pckpt_waiter->prepg->rg_rec_group); 
 
 	mutex_lock(&ckpt_mutex); 
+	if (PRINT_TIME) {
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
+	}
 	record_pid = replay_full_resume_proc_from_disk (pckpt_waiter->ckpt, pckpt_waiter->clock_pid, is_thread,&retval, &prect->rp_read_log_pos, 
 							&prept->rp_out_ptr, &consumed, &prept->rp_expected_clock, 
 							&prept->rp_ckpt_pthread_block_clock, 
@@ -4832,6 +4837,11 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 							(u_long *)&current->clear_child_tid,
 							(u_long *)&prept->rp_replay_hook,
 							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size, &current->replay_thrd->rp_group->rg_pthread_clock_addr);
+	if (PRINT_TIME) {
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 	MPRINT ("Pid %d gets record_pid %ld consumed %ld exp clock %lu retval %ld\n", current->pid, record_pid, consumed, prept->rp_expected_clock, retval);
 
 

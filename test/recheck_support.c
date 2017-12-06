@@ -180,9 +180,7 @@ void recheck_start(char* filename, void* clock_addr)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
-#ifdef PRINT_TIMING
     fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
-#endif
     go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
