@@ -36,7 +36,7 @@ using namespace std;
 
 
 void print_help(const char *program) {
-	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
+	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [-r] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
 			program);
 }
 struct ckpt_data { 
@@ -86,6 +86,7 @@ public:
 };
 
 std::map<int, Ckpt_Proc*> ckpt_procs; 
+int generated_mm_region_fd = 0;
 
 Ckpt_Proc * get_ckpt_proc(int pid) {
     std::map<int, Ckpt_Proc*>::iterator i =  ckpt_procs.find(pid);
@@ -243,28 +244,47 @@ int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthre
     sprintf (filename, "ckpt.%ld.ckpt_mmap.", from_ckpt);
     u_long len = strlen(filename);
     struct stat st;
+    DIR* dir = NULL;
+    struct dirent* pent = NULL;
 
-    DIR* dir = opendir(dirname);
+    if (!generated_mm_region_fd) { 
+        dir = opendir(dirname);
 
-    if (dir == NULL) {
-	fprintf (stderr, "Cannot open directory %s\n", dirname);
-	return -1;
+        if (dir == NULL) {
+            fprintf (stderr, "Cannot open directory %s\n", dirname);
+            return -1;
+        }
+
+        pent = readdir(dir);
     }
-    
-    struct dirent* pent = readdir(dir);
-    while (pent != NULL) {
-	if (!strncmp(pent->d_name, filename, strlen(filename))) {
-	    sprintf (mapname, "%s/%s", dirname, pent->d_name);
-	    int rc = stat(mapname, &st);
-	    if (rc < 0) {
-		fprintf (stderr, "Cannot stat %s\n", mapname);
-		return -1;
-	    }
-	    *(pent->d_name+len-2) = '0';
-	    *(pent->d_name+len-1) = 'x';
-	    u_long start = strtold(pent->d_name+len-2, NULL);
-	    if (st.st_size == 0) st.st_size = 4096;
-	    u_long end = start + st.st_size;
+    while (1) {
+	if (generated_mm_region_fd > 0 || !strncmp(pent->d_name, filename, strlen(filename))) {
+            u_long start = 0;
+            u_long end = 0;
+            int rc = 0;
+            if (generated_mm_region_fd) { 
+                //get the memory regions from memory region files
+                rc = read (generated_mm_region_fd, &start, sizeof(start));
+                if (rc != sizeof(start)) {
+                    printf ("Already mmap all memory regions.\n");
+                    break;
+                }
+                rc = read (generated_mm_region_fd, &end, sizeof(end));
+                assert (rc == sizeof(end));
+            } else { 
+                //get the memory regions from checkpoint filenames
+                sprintf (mapname, "%s/%s", dirname, pent->d_name);
+                rc = stat(mapname, &st);
+                if (rc < 0) {
+                    fprintf (stderr, "Cannot stat %s\n", mapname);
+                    return -1;
+                }
+                *(pent->d_name+len-2) = '0';
+                *(pent->d_name+len-1) = 'x';
+                start = strtold(pent->d_name+len-2, NULL);
+                if (st.st_size == 0) st.st_size = 4096;
+                end = start + st.st_size;
+            }
 #ifdef LPRINT
 	    printf ("%lx %lx\n", start, end);
 #endif
@@ -322,10 +342,14 @@ again:
 		}
 	    }
 	}
-	pent = readdir(dir);
+        if (generated_mm_region_fd) { 
+        } else { 
+            pent = readdir(dir);
+            if (!pent) break;
+        }
     }
 	
-    closedir(dir);
+    if (!generated_mm_region_fd) closedir(dir);
 
 #ifdef LPRINT
     printf ("Before libc\n");
@@ -455,7 +479,7 @@ int main (int argc, char* argv[])
 		char opt;
 		int option_index = 0;
 
-		opt = getopt_long(argc, argv, "fpmhgtl", long_options, &option_index);
+		opt = getopt_long(argc, argv, "fpmhgtlr", long_options, &option_index);
 		//printf("getopt_long returns %c (%d)\n", opt, opt);
 
 		if (opt == -1) {
@@ -554,6 +578,10 @@ int main (int argc, char* argv[])
 		case 'l':
 			go_live = 1;
 			break;
+		case 'r':
+			//use generated memory region information
+			generated_mm_region_fd = 1;
+			break;
 		default:
 			fprintf(stderr, "Unrecognized option\n");
 			print_help(argv[0]);
@@ -597,9 +625,23 @@ int main (int argc, char* argv[])
         fd = 1019; //TODO: we need a better open syscall to avoid unclosed fd
 
 	if (from_ckpt > 0) {
+            char generated_mm_filename[4096];
 	    
 	    sprintf (filename, "ckpt.%d", from_ckpt);
 	    sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
+	    if (generated_mm_region_fd) {
+                sprintf (generated_mm_filename, "%s/ckpt.%d.mm", argv[base], from_ckpt);
+                generated_mm_region_fd = open (generated_mm_filename, O_RDONLY);
+                if (generated_mm_region_fd < 0) { 
+                    perror ("open generated memory region file");
+                    return generated_mm_region_fd;
+                }
+                //TODO: fix this
+                rc = dup2 (generated_mm_region_fd, 1011);
+                assert (rc > 0);
+                close (generated_mm_region_fd);
+                generated_mm_region_fd = 1011;
+            }
 	    cfd = open (pathname, O_RDONLY);
 	    if (cfd < 0) {
 		perror ("open checkpoint file");
