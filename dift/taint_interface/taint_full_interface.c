@@ -990,6 +990,8 @@ static int init_check_map (const char* check_filename)
 	struct taint_check tc;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
+            if (line[0] == '#')  //for comments
+                continue;
 	    if (sscanf(line, "%63s %63s %63s", addr, type, value) == 3) {
 		u_long ip = strtoul(addr, NULL, 0);
 		if (ip == 0 && strlen (addr) == 0) {
@@ -3294,11 +3296,11 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
-        if (ip == 0xb6c1a4e0) { 
+        //TODO : xdou fix this
+        if (ip == 0xb6d743a2) { 
             //randomization of JVM stack
-            fprintf (stderr, "A special JVM function!!!\n");
-            fflush (stderr);
-            print_extra_move_reg_4 (ip, src_reg, src_value, 1);
+            fprintf (stderr, "A special JVM function!!!!!!!\n");
+            print_extra_move_reg_4 (ip, src_reg, src_value, 0, "[SLICE_VERIFICATION]");
         }
 	verify_register (ip, src_reg, src_size, src_value, src_u8);
 

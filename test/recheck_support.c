@@ -258,7 +258,7 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort();
@@ -267,7 +267,7 @@ void handle_jump_diverge()
 void handle_index_diverge(u_long foo)
 {
     int i;
-    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n\n\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort ();
@@ -289,7 +289,7 @@ static inline void check_retval (const char* name, int expected, int actual) {
                     r = readlink(proclnk, filename, 255);
                     if (r < 0)
                     {
-                        fprintf (stderr, "[BUG] failed to readlink\n");
+                        fprintf (stderr, "[BUG] failed to readlink\n\n\n");
                         sleep (2);
                     }
                     filename[r] = '\0';
@@ -973,7 +973,7 @@ void ugetrlimit_recheck ()
     end_timing (SYS_ugetrlimit, rc);
     check_retval ("ugetrlimit", pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
-	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
+	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld, while in recheck log %ld %ld\n", rlim.rlim_cur, rlim.rlim_max, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max);
 	handle_mismatch();
     }
     end_timing_func (SYS_ugetrlimit);
@@ -1126,6 +1126,70 @@ void gettimeofday_recheck () {
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
     }
     end_timing_func (SYS_gettimeofday);
+}
+
+void clock_gettime_recheck () 
+{
+    struct recheck_entry* pentry;
+    struct clock_getx_recheck *pget;
+    struct timespec tp;
+    int rc;
+    
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pget = (struct clock_getx_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("clock_gettime: clockid %d, tp %p clock %lu\n", pget->clk_id, pget->tp, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall (SYS_clock_gettime, pget->clk_id, &tp);
+    end_timing (SYS_clock_gettime, rc);
+    check_retval ("clock_gettime", pentry->retval, rc);
+    
+    if (pget->tp) {
+        memcpy (pget->tp, &tp, sizeof(tp));
+        add_to_taintbuf (pentry, CLOCK_GETTIME, &tp, sizeof(tp));
+    }
+    end_timing_func (SYS_clock_gettime);
+}
+
+void clock_getres_recheck (int clock_id) 
+{
+    struct recheck_entry* pentry;
+    struct clock_getx_recheck *pget;
+    clockid_t clk_id;
+    struct timespec tp;
+    int rc;
+    
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pget = (struct clock_getx_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("clock_getres: clockid %d, id tainted? %d, new clock id %d, tp %p clock %lu\n", pget->clk_id, pget->clock_id_tainted, clock_id, pget->tp, pentry->clock);
+#endif
+    if (pget->clock_id_tainted) { 
+        clk_id = clock_id;
+    } else { 
+        clk_id = pget->clk_id;
+    }
+    start_timing();
+    rc = syscall (SYS_clock_getres, clk_id, &tp);
+    end_timing (SYS_clock_getres, rc);
+    check_retval ("clock_getres", pentry->retval, rc);
+    
+    if (pget->tp) {
+        memcpy (pget->tp, &tp, sizeof(tp));
+        add_to_taintbuf (pentry, CLOCK_GETRES, &tp, sizeof(tp));
+    }
+    end_timing_func (SYS_clock_getres);
 }
 
 long time_recheck () { 
@@ -1907,10 +1971,25 @@ void recheck_add_clock_by_1 ()
 void recheck_wait_clock_init ()
 {
     if (go_live_clock) {
-        //TODO: eliminate this syscall unless debugging
+        //TODO: eliminate this getpid syscall unless debugging
         int pid = syscall(SYS_gettid);
         printf ("Pid %d recheck_wait_clock_init: %lu mutex %p\n", pid, go_live_clock->slice_clock, &go_live_clock->mutex);
         go_live_clock->mutex = 0;
+        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
+        while (go_live_clock->wait_for_other_threads) { 
+            //wait until all threads are ready for slice execution
+        }
+        printf ("Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
+    }
+}
+
+void recheck_wait_clock_proc_init ()
+{
+    if (go_live_clock) { 
+        //TODO: eliminate this getpid syscall unless debugging
+        int pid = syscall (SYS_gettid);
+        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
+        printf ("Pid %d recheck_wait_clock_proc_init: ready to continue!\n", pid);
     }
 }
 
@@ -1930,11 +2009,11 @@ void recheck_wait_clock (unsigned long wait_clock)
             syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
             //wait for its own clock
             while (go_live_clock->slice_clock < wait_clock) {
-                printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
-                fflush (stdout);
+                //printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+                //fflush (stdout);
                 syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAIT, go_live_clock->mutex, NULL, NULL, 0);
-                printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
-                fflush (stdout);
+                //printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+                //fflush (stdout);
             }
         }
     }

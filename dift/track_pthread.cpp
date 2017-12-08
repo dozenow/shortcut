@@ -46,7 +46,8 @@ void track_pthread_mutex_lock_before (ADDRINT mutex)
         if (state->state != MUTEX_AFTER_LOCK) //someone is holding the lock
             state->state = MUTEX_BEFORE_LOCK; 
         active_mutex[mutex] = state;
-        fprintf (stderr, "unfound mutex to lock\n");
+        //TODO
+        //fprintf (stderr, "unfound mutex to lock\n");
     }
 }
 
@@ -69,7 +70,8 @@ static inline void change_mutex_state (ADDRINT mutex, int mutex_state)
     if (active_mutex.find (mutex) != active_mutex.end()) {
         state = active_mutex[mutex];
     } else { 
-        fprintf (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
+        //TODO
+        //fprintf (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
         return;
     }
     state->pid = current_thread->record_pid;

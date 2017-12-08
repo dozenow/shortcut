@@ -493,6 +493,35 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     return 0;
 }
 
+int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_gettime);
+
+    check_reg_arguments ("clock_gettime", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_gettime, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_getres);
+
+    check_reg_arguments ("clock_getres", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_getres, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    chk.clock_id_tainted = clock_id_tainted;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
 int recheck_time (struct recheck_handle* handle, time_t* t, u_long clock) 
 {
     struct time_recheck chk;

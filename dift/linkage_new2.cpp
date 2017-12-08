@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 3600
+#define EXTRA_DEBUG 8960 //well, I turn off all pthread printing in this file and track_pthread.cpp
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -839,6 +839,7 @@ static inline void sys_pread_stop(int rc)
     int read_fileno = -1;
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
+    fprintf (stderr, "[ERROR] sys_pread hasn't been put into recheck log.\n");
     // If global_syscall_cnt == 0, then handled in previous epoch
     if (rc > 0) {
         struct taint_creation_info tci;
@@ -1175,6 +1176,7 @@ static inline void sys_write_stop(int rc)
 static inline void sys_writev_start(struct thread_data* tdata, int fd, struct iovec* iov, int count)
 {
     struct writev_info* wvi;
+    fprintf (stderr, "[ERROR] sys_writev hasn't been put into recheck log.\n");
     wvi = (struct writev_info *) &tdata->op.writev_info_cache;
     wvi->fd = fd;
     wvi->count = count;
@@ -1371,6 +1373,7 @@ static void sys_recv_start(thread_data* tdata, int fd, char* buf, int size)
 {
     // recv and read are similar so they can share the same info struct
     struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
+    fprintf (stderr, "[ERROR] sys_recv hasn't been put into recheck log.\n");
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
@@ -1429,6 +1432,7 @@ static void sys_recv_stop(int rc)
 static void sys_recvmsg_start(struct thread_data* tdata, int fd, struct msghdr* msg, int flags) 
 {
     struct recvmsg_info* rmi;
+    fprintf (stderr, "[ERROR] sys_recvmsg hasn't been put into recheck log.\n");
     rmi = (struct recvmsg_info *) malloc(sizeof(struct recvmsg_info));
     if (rmi == NULL) {
 	fprintf (stderr, "Unable to malloc recvmsg_info\n");
@@ -1484,6 +1488,7 @@ static void sys_recvmsg_stop(int rc)
 static void sys_sendmsg_start(struct thread_data* tdata, int fd, struct msghdr* msg, int flags)
 {
     struct sendmsg_info* smi;
+    fprintf (stderr, "[ERROR] sys_sendmsg hasn't been put into recheck log.\n");
     smi = (struct sendmsg_info *) malloc(sizeof(struct sendmsg_info));
     if (smi == NULL) {
 	fprintf (stderr, "Unable to malloc sendmsg_info\n");
@@ -1536,6 +1541,7 @@ static void sys_sendmsg_stop(int rc)
 static void sys_send_start(struct thread_data* tdata, int fd, char* msg, size_t len, int flags)
 {
     struct write_info* si;
+    fprintf (stderr, "[ERROR] sys_send hasn't been put into recheck log.\n");
     si = (struct write_info *) malloc(sizeof(struct write_info));
     if (si == NULL) {
 	fprintf (stderr, "Unable to malloc sendmsg_info\n");
@@ -1630,30 +1636,50 @@ static inline void sys_time_stop (int rc)
     if (rc >= 0 && t != NULL) taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
 }
 
-static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
-	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
-	struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
-	info->tp = tp;
-	tdata->save_syscall_info = (void*) info;
+static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
+    LOG_PRINT ("start to handle clock_gettime %p\n", tp);
+    struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
+    info->tp = tp;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE ("[SLICE] #0000000 #call clock_gettime_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
+	recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_clock_gettime_stop (int rc) { 
-	struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
-	if (rc == 0) { 
-		struct taint_creation_info tci;
-		char* channel_name = (char*) "clock_gettime";
-		tci.type = TOK_CLOCK_GETTIME;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = -1;
-		tci.data = 0;
-		create_taints_from_buffer(ri->tp, sizeof(struct timespec), &tci, tokens_fd, channel_name);
-	}
-	memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
-	current_thread->save_syscall_info = 0;
-	LOG_PRINT ("Done with clock_gettime.\n");
+    struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
+    if (rc == 0) { 
+        taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
+    }
+    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+    current_thread->save_syscall_info = 0;
+    LOG_PRINT ("Done with clock_gettime.\n");
+}
+
+static inline void sys_clock_getres_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
+    LOG_PRINT ("start to handle clock_getres clk_id %d, %p\n", clk_id, tp);
+    struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache; //share the structure with clock_gettime
+    info->tp = tp;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+        int clock_id_tainted = is_reg_arg_tainted (LEVEL_BASE:: REG_EBX, 4, 0);
+        OUTPUT_SLICE ("[SLICE] #00000000 #push ebx [SLICE_INFO] the clockid may be tainted\n");
+	OUTPUT_SLICE ("[SLICE] #0000000 #call clock_getres_recheck [SLICE_INFO] %lu\n", *ppthread_log_clock);
+        OUTPUT_SLICE ("[SLICE] #00000000 #pop ebx [SLICE_INFO]\n");
+	recheck_clock_getres (tdata->recheck_handle, clk_id, tp, clock_id_tainted, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_clock_getres_stop (int rc) { 
+    struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
+    if (rc == 0) { 
+        taint_syscall_memory_out ("clock_getres", (char*) ri->tp, sizeof(struct timespec));
+    }
+    printf ("clock_getres result %ld, %ld\n", ri->tp->tv_sec, ri->tp->tv_nsec);
+    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+    current_thread->save_syscall_info = 0;
+    LOG_PRINT ("Done with clock_getres.\n");
 }
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
@@ -1900,6 +1926,7 @@ static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage
 	struct getrusage_info* info = &tdata->op.getrusage_info_cache;
 	info->usage = usage;
 	tdata->save_syscall_info = (void*) info;
+        fprintf (stderr, "[ERROR] sys_getrusage hasn't been put into recheck log.\n");
 }
 
 static inline void sys_getrusage_stop (int rc) {
@@ -2125,7 +2152,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_set_robust_list (tdata, (struct robust_list_head *) syscallarg0, (size_t) syscallarg1);
 	    break;
 	case SYS_clock_gettime:
-	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
+	    sys_clock_gettime_start (tdata, (clockid_t) syscallarg0, (struct timespec*) syscallarg1);
+	    break;
+        case SYS_clock_getres:
+	    sys_clock_getres_start (tdata, (clockid_t) syscallarg0, (struct timespec*) syscallarg1);
 	    break;
 	case SYS_access:
 	    if (tdata->recheck_handle) {
@@ -2254,6 +2284,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	    break;
 	case SYS_clock_gettime:
 	    sys_clock_gettime_stop(rc);
+	    break;
+        case SYS_clock_getres:
+	    sys_clock_getres_stop(rc);
 	    break;
         case SYS_socketcall:
         {
@@ -5977,8 +6010,13 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
             //init mutex and condition var 
             OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock_init [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
             OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
-
         } else {
+
+            //init for other threads
+            OUTPUT_SLICE ("[SLICE] #00000000 #pushfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #call recheck_wait_clock_proc_init [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE ("[SLICE] #00000000 #popfd [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", current_thread->expected_clock, *ppthread_log_clock);
+
             //wait for the clock until it should start
             slice_wait_clock (current_thread->expected_clock - 1);
         }
@@ -6038,7 +6076,8 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
 
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
-    fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
+    //TODO
+    //fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
 //TODO: I think this is super slow

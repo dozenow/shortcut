@@ -4508,6 +4508,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
         if (num_procs) { 
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 atomic_set (&go_live_clock->num_remaining_threads, num_procs);
+                atomic_set (&go_live_clock->wait_for_other_threads, num_procs);
                 go_live_clock->mutex = 0;
         }
 	if (num_procs > 1) {
