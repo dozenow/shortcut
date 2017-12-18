@@ -174,6 +174,7 @@ for asm_file in input_asm_file:
     os.system(linkstr)
 
 # Generate a checkpoint
-p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])
-p.wait()
+if args.compile_only is None:
+    p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])
+    p.wait()
 

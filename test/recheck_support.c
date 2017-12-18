@@ -245,6 +245,11 @@ void recheck_start(char* filename, void* clock_addr)
 #define LPRINT printf
 #endif
 
+void print_value (u_long foo) 
+{
+    fprintf (stderr, "print_value: %lu (0x%lx)\n", foo, foo);
+}
+
 void handle_mismatch()
 {
     static int cnt = 0;
@@ -268,7 +273,7 @@ void handle_index_diverge(u_long foo)
 {
     int i;
     fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "str at b66c8f64 %s, b66c8f54 %s, b66c87a4 %s\n", (char*) 0xb66c8f64, (char*)0xb66c8f54, (char*) 0xb66c87a4);
+    fprintf (stderr, "str at b66c8f64 %s, b66c8f54 %s, b66c87a4 %s b66c8f6c %s\n", (char*) 0xb66c8f64, (char*)0xb66c8f54, (char*) 0xb66c87a4, (char*)0xb66c8f6c);
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort ();

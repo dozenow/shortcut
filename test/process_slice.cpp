@@ -563,9 +563,9 @@ int main (int argc, char* argv[]) {
 	println ("push ecx");
 	println ("push edx");
 	println ("call handle_jump_diverge");
-	println ("push edx");
-	println ("push ecx");
-	println ("push eax");
+	println ("pop edx");
+	println ("pop ecx");
+	println ("pop eax");
 
 	//index divergence
 	println ("/* function that handles index divergence */");
@@ -574,9 +574,9 @@ int main (int argc, char* argv[]) {
 	println ("push ecx");
 	println ("push edx");
 	println ("call handle_index_diverge");
-	println ("push edx");
-	println ("push ecx");
-	println ("push eax");
+	println ("pop edx");
+	println ("pop ecx");
+	println ("pop eax");
 
 	return 0;
 }

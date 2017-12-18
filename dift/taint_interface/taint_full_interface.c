@@ -2716,11 +2716,12 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
     if (mem_tainted || still_tainted) {
 	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, ins_str);
 	OUTPUT_SLICE ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+        if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
     }
     if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
-TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
+TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
 { 
     char slice[256]; //convert the output instruction format
     char ch = ' ';
@@ -2736,6 +2737,14 @@ TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32
     fw_slice_mem (ip, slice, mem_loc, mem_size, BASE_INDEX_PARAMS);
 }
 
+TAINTSIGN fw_slice_track_fp_stack_top (ADDRINT ip, const CONTEXT* ctx) 
+{
+    PIN_REGISTER value;
+    PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
+
+    printf ("Stack top is at %d\n", (int) ((*value.word >> 11 )& 0x7));
+}
+
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX_WRITE_RANGE;
@@ -2743,6 +2752,7 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
     if (mem_tainted || still_tainted) {
 	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, ins_str);
 	OUTPUT_SLICE ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+        if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
     }
     if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
@@ -2756,6 +2766,7 @@ TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, uint3
 	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, ins_str);
 	OUTPUT_SLICE ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", src_mem_loc, tainted, src_mem_size, dst_mem_loc, 0, dst_size, get_mem_value32 (src_mem_loc, src_mem_size), get_mem_value32 (dst_mem_loc, dst_size));
 	print_immediate_addr (src_mem_loc, ip);
+        if (tainted != 1) print_extra_move_mem (ip, src_mem_loc, src_mem_size, tainted);
 	if (src_mem_loc != dst_mem_loc || src_mem_size != dst_size) print_immediate_addr (dst_mem_loc, ip);
 	add_modified_mem_for_final_check (dst_mem_loc, dst_size);
     }
@@ -2772,7 +2783,7 @@ TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const
     }
 }
 
-TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8) 
+TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, uint32_t fp_stack_change) 
 {
     char slice[256]; //convert the output instruction format
     PIN_REGISTER regvalue;
@@ -2791,6 +2802,27 @@ TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, co
     }
 
     fw_slice_reg (ip, slice, reg, size, &regvalue, reg_u8);
+}
+
+TAINTSIGN fw_slice_fpureg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
+{
+    char slice[256]; //convert the output instruction format
+    PIN_REGISTER regvalue;
+    PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
+    int index = strrchr (ins_str, ',') - ins_str;
+    char i = 0;
+
+    memset (slice, 0, 256);
+    memcpy (slice, ins_str, index);
+    //gcc representation of st register: st(0) instead st0 (pin representation)
+    if (slice[index - 3] == 's' && slice[index - 2] == 't') {
+        i = slice[index - 1];
+        slice[index - 1] = '(';
+        slice[index] = i;
+        slice[index + 1] = ')';
+    }
+
+    fw_slice_reg2mem (ip, slice, reg, size, &regvalue, reg_u8, mem_loc, mem_size, BASE_INDEX_PARAMS);
 }
 
 TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
@@ -2820,7 +2852,7 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_
     }
 }
 
-TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize,  uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t src_reg_u8) 
+TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize,  uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t src_reg_u8, uint32_t fp_stack_change) 
 {
     PIN_REGISTER dst_regvalue;
     PIN_REGISTER src_regvalue;
@@ -2862,7 +2894,7 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size
     if (!still_tainted && (reg_tainted || mem_tainted)) print_immediate_addr (mem_loc, ip);
 }
 
-TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
+TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
 {
     PIN_REGISTER regvalue;
     PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
@@ -2962,6 +2994,7 @@ TAINTSIGN fw_slice_regmemflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
 		OUTPUT_SLICE ("[SLICE] #%x #%.*smov%s\t", ip, (int)((u_long)p-(u_long)ins_str), ins_str, e);
 		OUTPUT_SLICE ("    [SLICE_INFO] #src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d\n", 
 			base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value32 (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
+                if (mem_tainted2 != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted2);
 	    }
             if (!still_tainted && mem_tainted2) print_immediate_addr (mem_loc, ip);
 	}
@@ -3067,6 +3100,7 @@ TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u
 	OUTPUT_SLICE ("    [SLICE_INFO] #src_regmem_pcmp[i_or_e]stri[%d:%d:%u,%lx:%d:%u] #dst_reg_value %.16s, src_mem_value %u\n", 
 		reg1, reg1_taint, reg1_size, mem_loc2, mem_taints, mem_size, reg1_val, get_mem_value32(mem_loc2, mem_size));
 	if (reg1_taint != 1) add_imm_load_to_slice (reg1, 16, reg1_val, ip);
+        if (mem_taints == 2) fprintf (stderr, "[BUG] pcmpistri has partially tainted memory?\n");
         if (!mem_taints) { 
             OUTPUT_SLICE ("[BUG][SLICE] cannot handle tainted mem for pcmpistri for now, because we didn't init the untainted mem values correctly\n");
         }

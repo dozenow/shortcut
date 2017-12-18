@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 32468 //well, I turn off all pthread printing in this file and track_pthread.cpp
+//#define EXTRA_DEBUG 59199 //well, I turn off all pthread printing in this file and track_pthread.cpp
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -2546,7 +2546,7 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg)
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_fpureg (INS ins, REG srcreg) 
+static inline void fw_slice_src_fpureg (INS ins, REG srcreg, int fp_stack_change) 
 {
     char* str = get_copy_of_disasm (ins);
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -2558,6 +2558,28 @@ static inline void fw_slice_src_fpureg (INS ins, REG srcreg)
 		   IARG_UINT32, REG_Size(srcreg),
                    IARG_CONST_CONTEXT,
 		   IARG_UINT32, REG_is_Upper8(srcreg),
+                   IARG_ADDRINT, fp_stack_change,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_fpureg2mem (INS ins, REG srcreg, REG base_reg, REG index_reg, int fp_stack_change) 
+{
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_fpureg2mem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(srcreg), 
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_MEMORYWRITE_EA,
+		   IARG_UINT32, INS_MemoryWriteSize(ins),
+                   IARG_ADDRINT, fp_stack_change,
+		   PASS_BASE_INDEX,
 		   IARG_END);
     put_copy_of_disasm (str);
 }
@@ -2653,7 +2675,7 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, REG srcreg)
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_fpuregfpureg (INS ins, REG dstreg, REG srcreg) 
+static inline void fw_slice_src_fpuregfpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change) 
 { 
     char* str = get_copy_of_disasm (ins);
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -2668,6 +2690,7 @@ static inline void fw_slice_src_fpuregfpureg (INS ins, REG dstreg, REG srcreg)
 		   IARG_UINT32, REG_Size(srcreg),
                    IARG_CONST_CONTEXT,
 		   IARG_UINT32, REG_is_Upper8(srcreg),
+                   IARG_ADDRINT, fp_stack_change,
 		   IARG_END);
     put_copy_of_disasm (str);
 }
@@ -2692,7 +2715,7 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
     put_copy_of_disasm (str);
 }
 
-static inline void fw_slice_src_fpuregmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg, REG index_reg) 
+static inline void fw_slice_src_fpuregmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg, REG index_reg, int fp_stack_change) 
 { 
     char* str = get_copy_of_disasm (ins);
     SETUP_BASE_INDEX(base_reg, index_reg);
@@ -2707,6 +2730,7 @@ static inline void fw_slice_src_fpuregmem (INS ins, REG reg, uint32_t reg_size, 
 		   IARG_UINT32, REG_is_Upper8(reg),
 		   mem_ea, 
 		   IARG_UINT32, memsize,
+                   IARG_INST_PTR, fp_stack_change,
 		   PASS_BASE_INDEX,
 		   IARG_END);
     put_copy_of_disasm (str);
@@ -4647,6 +4671,16 @@ void instrument_bit_scan (INS ins)
     }
 }
 
+inline void instrument_track_fp_stack_top (INS ins) 
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(fw_slice_track_fp_stack_top),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_INST_PTR,
+            IARG_CONST_CONTEXT,
+            IARG_END);
+}
+
 void instrument_fpu_load (INS ins) 
 {
     assert (INS_OperandCount(ins) >= 2);
@@ -4663,35 +4697,40 @@ void instrument_fpu_load (INS ins)
                 IARG_PTR, str,
                 IARG_MEMORYREAD_EA,
                 IARG_UINT32, INS_MemoryReadSize(ins),
+                IARG_ADDRINT, FP_PUSH, 
                 PASS_BASE_INDEX,
                 IARG_END);
         put_copy_of_disasm (str);
-	instrument_taint_mem2reg (ins, dst_reg, 0, base_reg, index_reg);
+	instrument_taint_mem2reg (ins, dst_reg, 1, base_reg, index_reg);
     } else {
         REG src_reg = INS_OperandReg (ins, 1);
-        fw_slice_src_fpureg (ins, src_reg);
-        instrument_taint_reg2reg (ins, dst_reg, src_reg, 0);
+        fw_slice_src_fpureg (ins, src_reg, FP_PUSH);
+        instrument_taint_reg2reg (ins, dst_reg, src_reg, 1);
     }
     //This is necessary as we convert interger/float/double into double extended format here
     //Technically, we don't have to do this for FLD with ST registers as destination operand (TODO)
     instrument_taint_mix_reg (ins, dst_reg, -1, -1);
+    instrument_track_fp_stack_top (ins);
 }
 
 void instrument_fpu_store (INS ins)
 {
     assert (INS_OperandCount(ins) >= 2);
     REG src_reg = INS_OperandReg (ins, 1);
-    fw_slice_src_fpureg (ins, src_reg);
-    if (INS_OperandIsMemory(ins, 0)) {	
+    if (INS_IsMemoryWrite(ins)) {	
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
-        instrument_taint_reg2mem (ins, src_reg, 0);
+        fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, FP_POP);
+        instrument_taint_reg2mem (ins, src_reg, 1);
         instrument_taint_mix_mem (ins, -1, -1, base_reg, index_reg); //may involve convertion from double extented to double/float here
     } else {
+        fw_slice_src_fpureg (ins, src_reg, FP_POP);
         REG dst_reg = INS_OperandReg (ins, 0);
         assert (REG_is_st (dst_reg)); //per the intel manual
-        instrument_taint_reg2reg (ins, dst_reg, src_reg, 0);
+        instrument_taint_reg2reg (ins, dst_reg, src_reg, 1);
+        //copy st* to st*: we don't need to mix taints
     }
+    instrument_track_fp_stack_top (ins);
 }
 
 void instrument_cwde (INS ins) 
@@ -4726,6 +4765,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
       if (IMG_Valid(IMG_FindByAddress(ip))) {
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
         //printf ("str at b66c8f54 %s\n", (char*)0xb66c8f54);
+        //printf ("edx value %u (0x%x)\n", val, val);
       }
       PIN_UnlockClient();
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d thread id %d\n", 
@@ -5296,6 +5336,8 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
+            case XED_ICLASS_FISTP:
+            case XED_ICLASS_FIST:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
                 instrument_fpu_store (ins);
                 slice_handled = 1;
@@ -5319,12 +5361,12 @@ void instruction_instrumentation(INS ins, void *v)
                     REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
                     REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
                     REG dst_reg = INS_OperandReg (ins, 0);
-                    fw_slice_src_fpuregmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize (ins), base_reg, index_reg);
+                    fw_slice_src_fpuregmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize (ins), base_reg, index_reg, FP_NO_STACK_CHANGE);
                     instrument_taint_mix_mem2reg (ins, INS_OperandReg(ins, 0), -1, -1, base_reg, index_reg); //FPU flags are not tainted for now
                 } else if (INS_OperandIsReg (ins, 1)) {
                     REG dst_reg = INS_OperandReg (ins, 0);
                     REG src_reg = INS_OperandReg (ins, 1);
-                    fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg);
+                    fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, FP_NO_STACK_CHANGE);
                     instrument_taint_mix_reg2reg (ins, dst_reg, src_reg, -1, -1);
                 } else { 
                     assert (0);
@@ -5338,8 +5380,6 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FXCH:
             case XED_ICLASS_FNSTCW:
             case XED_ICLASS_FLDCW:
-            case XED_ICLASS_FISTP:
-            case XED_ICLASS_FIST:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
 	    case XED_ICLASS_FRNDINT:

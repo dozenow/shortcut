@@ -350,7 +350,13 @@ struct thread_data {
         struct mutex_info_cache mutex_info_cache;
         struct wait_info_cache wait_info_cache;
     } pthread_info; //for remembering input parameters to pthread functions
+
+    int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
 };
+
+#define FP_POP   1
+#define FP_PUSH  2
+#define FP_NO_STACK_CHANGE 0
 
 struct memcpy_header {
     u_long dst;
