@@ -228,7 +228,9 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
+
 #define TAINTSIGN void PIN_FAST_ANALYSIS_CALL
+
 TAINTSIGN monitor_control_flow_head (ADDRINT ip)
 {
     ++ current_thread->ctrl_flow_info.count;

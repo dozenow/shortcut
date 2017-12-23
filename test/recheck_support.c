@@ -152,8 +152,8 @@ void recheck_start(char* filename)
 
 void handle_mismatch()
 {
-    fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     dump_taintbuf (DIVERGE_MISMATCH, 0);
+    fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     DELAY;
     abort();
 }
@@ -161,8 +161,8 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     DELAY;
     abort();
 }
@@ -170,17 +170,17 @@ void handle_jump_diverge()
 void handle_delayed_jump_diverge()
 {
     int i;
-    fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     DELAY;
     abort();
 }
 
-void handle_index_diverge(u_long foo)
+void handle_index_diverge(u_long foo, u_long bar, u_long baz)
 {
     int i;
-    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx val = %lx.\n\n\n", *((u_long *) ((u_long) &i + 32)), baz);
     DELAY;
     abort ();
 }

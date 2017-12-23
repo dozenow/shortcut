@@ -1525,8 +1525,8 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	return (struct fw_slice_info*) regs->sp;
 }
 
-#define SLICE_INFO_SIZE  4096
-#define STACK_SIZE      65536
+#define SLICE_INFO_SIZE     4096
+#define STACK_SIZE        131072
 #define RECHECK_FILE_NAME_LEN 64
 
 long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
@@ -1571,7 +1571,7 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 	regs->sp = extra_space_addr + STACK_SIZE;
 
 	printk ("start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", slice_addr, entry, regs->ip);
-	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
+	printk ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {

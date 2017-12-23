@@ -1607,7 +1607,7 @@ TAINTSIGN taint_regreg2flag_offset (uint32_t dst_reg_off, uint32_t dst_reg_size,
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 	struct taint_creation_info tci;
         taint_t t = merge_flag_taints (flags);
-
+	
 	tci.type = TAINT_DATA_INST;
 	tci.record_pid = current_thread->record_pid;
 	tci.rg_id = current_thread->rg_id;
@@ -2047,7 +2047,8 @@ static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint
 {
     printf ("[SLICE_VERIFICATION] pushfd //comes with %x (move upwards)\n", ip); //save flags
     printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %x (move upwards)\n", reg, reg_size, reg_value, ip);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x expected address %lx\n", debug_counter++, ip, mem_loc);
+    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x clock %ld bb %lld expected address %lx\n", 
+	    debug_counter++, ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc);
     printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] popfd //comes with %x (move upwards)\n", ip); 
@@ -2066,8 +2067,8 @@ static inline void print_range_verification (ADDRINT ip, char* ins_str, u_long s
     printf ("[SLICE_VERIFICATION] push eax //comes with %x address %lx, %s\n", ip, mem_loc, ins_str);
     printf ("[SLICE_VERIFICATION] lea eax, %.*s  //comes with %x\n", end_index-start_index+1, start_index, ip);
     printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", start, ip);
-    //printf ("[SLICE_VERIFICATION] push eax //comes with %x, input params to index_diverge\n", ip);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x\n", debug_counter++, ip);
+    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %x clock %ld bb %lld expected range %lx to %lx\n", 
+	    debug_counter++, ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, start, end-1);
     printf ("[SLICE_VERIFICATION] jb index_diverge //comes with %x\n", ip);
     printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %x\n", end, ip);
     printf ("[SLICE_VERIFICATION] jae index_diverge //comes with %x\n", ip);
@@ -2097,8 +2098,8 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 		print_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
 		return true;
 	    } else {
+		// This could be ok if some instructions read mmap region and some do not - handle non-mm regions as we normally do, I guess...
 		fprintf (stderr, "Check file specifies mmap region, but addres not in such a region\n");
-		assert (0);
 	    }
 	} else if (iter->second.type == CHECK_TYPE_RANGE || iter->second.type == CHECK_TYPE_SPECIFIC_RANGE) {
             if (iter->second.type == CHECK_TYPE_RANGE) {
@@ -2122,12 +2123,11 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    print_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
 	    return true;
 	}
-    } else {
-	if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc);
-	if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc);
-	return false;
-    }
-    assert (0); // To make compiler happy
+    } 
+
+    if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc);
+    if (index_tainted) verify_register (ip, index_reg, index_reg_size, index_reg_value, index_reg_u8, mem_loc);
+    return false;
 }
 
 // Only called if base or index register is tainted.  Returns true if register(s) are still tainted after verification due to range check */
@@ -2526,10 +2526,12 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		    tainted = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+OF_INDEX] ? 1 : 0;
 		} else if (!strncmp(ins_str, "je ", 3) || !strncmp(ins_str, "jz ", 3) || !strncmp(ins_str, "jne ", 4) || !strncmp(ins_str, "jnz ", 4)) {
 		    tainted = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+ZF_INDEX] ? 1 : 0;
+		} else if (!strncmp(ins_str, "jb ", 3) || !strncmp(ins_str, "jnae ", 5) || !strncmp(ins_str, "jc ", 3) || !strncmp(ins_str, "jnb ", 4) || !strncmp(ins_str, "jae ", 4) || !strncmp(ins_str, "jnc ", 4)) {
+		    tainted = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+CF_INDEX] ? 1 : 0;
 		} else if (!strncmp(ins_str, "jle ", 4) || !strncmp(ins_str, "jng ", 4) || !strncmp(ins_str, "jnle ", 5) || !strncmp(ins_str, "jg ", 3)) {
 		    tainted = (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+ZF_INDEX] | current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+OF_INDEX] | current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+SF_INDEX]) ? 1 : 0;
 		} else {
-		    fprintf (stderr, "monitor_control_flow_tail: unrecognized jump type\n");
+		    fprintf (stderr, "monitor_control_flow_tail: unrecognized jump type: %s\n", ins_str);
 		    assert (0);
 		}
 
@@ -2960,6 +2962,20 @@ static void change_jump (uint32_t mask, const CONTEXT* ctx, char* ins_str)
     current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
     current_thread->ctrl_flow_info.changed_jump = true;
     PIN_ExecuteAt (&save_ctx);
+}
+
+TAINTSIGN fw_slice_jmp_reg (ADDRINT ip, char* ins_str, uint32_t reg, uint32_t reg_size, uint32_t is_upper8, ADDRINT target) 
+{
+    if (is_reg_tainted(reg, reg_size, is_upper8)) {
+	verify_register (ip, reg, reg_size, target, is_upper8, target);
+    }
+}
+
+TAINTSIGN fw_slice_jmp_mem (ADDRINT ip, char* ins_str, uint32_t mem_addr, uint32_t mem_size, ADDRINT target) 
+{
+    if (is_mem_tainted(mem_addr, mem_size)) {
+	verify_memory (ip, mem_addr, mem_size);
+    }
 }
 
 TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, ADDRINT target, const CONTEXT* ctx) 

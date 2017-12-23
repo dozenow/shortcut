@@ -4,6 +4,7 @@ import os
 from subprocess import Popen, PIPE
 import sys
 import argparse
+import datetime
 
 instr_jumps = True
 
@@ -44,6 +45,8 @@ if args.outputdir:
 
 usage = "Usage: ./gen_ckpt.py rec_group_id checkpoint_clock [-o outputdir] [-taint_syscall SYSCALL_INDEX] [-taint_byterange RECORD_PID,SYSCALL_INDEX,START,END] [-taint_byterange_file filename] [-comiple_only input_asm_filename]" 
 
+ts_start = datetime.datetime.now()
+
 if input_asm_file is None:
 # Run the pin tool to generate slice info and the recheck log
         outfd = open(outputdir+"/pinout", "w")
@@ -68,12 +71,16 @@ if input_asm_file is None:
         p.wait()
         outfd.close()
 
+        ts_pin = datetime.datetime.now()
+
         # Refine the slice with grep
         outfd = open(outputdir+"/slice", "w")
         p = Popen (["grep", "SLICE", outputdir+"/pinout"], stdout=outfd)
         p.wait()
         outfd.close()
         input_asm_file = outputdir + "/exslice.asm"
+
+        ts_grep = datetime.datetime.now()
 
         # Run scala tool
         outfd = open(input_asm_file, "w")
@@ -83,6 +90,9 @@ if input_asm_file is None:
         #Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
         p.wait()
         outfd.close()
+
+        ts_scala = datetime.datetime.now()
+
 
 # Convert asm to c file
 fcnt = 1;
@@ -157,6 +167,8 @@ mainfd.write (");\n")
 mainfd.close()
 infd.close()
 
+ts_convert = datetime.datetime.now()
+
 # And compile it
 os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice.c -o "+outputdir+"/exslice.o")
 linkstr = "gcc -shared "+outputdir+"/exslice.o -o "+outputdir+"/exslice.so recheck_support.o"
@@ -166,7 +178,19 @@ for i in range(fcnt):
     linkstr += " " + outputdir + "/exslice" + strno + ".o"
 os.system(linkstr)
 
+ts_compile = datetime.datetime.now()
+
 # Generate a checkpoint
 p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])
 p.wait()
+
+# Print timing info
+ts_end = datetime.datetime.now()
+print "Time to run pin tool: ", ts_pin - ts_start
+print "Time to run grep: ", ts_grep - ts_pin
+print "Time to run scala tool: ", ts_scala - ts_grep
+print "Time to convert: ", ts_convert - ts_scala
+print "Time to compile: ", ts_compile - ts_convert
+print "Time to ckpt: ", ts_end - ts_compile
+print "Total time: ", ts_end - ts_start
 

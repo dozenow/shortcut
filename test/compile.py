@@ -2,8 +2,8 @@
 
 import os
 
-outputdir="/replay_logdb/rec_61464"
-fcnt = 4
+outputdir="/replay_logdb/rec_65582"
+fcnt = 12
 
 # And compile it
 os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice.c -o "+outputdir+"/exslice.o")

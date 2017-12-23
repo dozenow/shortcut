@@ -10,8 +10,11 @@
 #include <vector>
 using namespace std;
 
-//#define DPRINT printf
+#ifdef DEBUG
+#define DPRINT printf
+#else
 #define DPRINT(x,...)
+#endif
 
 struct linedata {
     string address;
@@ -157,6 +160,10 @@ int main (int argc, char* argv[])
 	    line2 = bestline2;
 	}
     }
-    
+
+#ifdef DEBUG
+    return 1;
+#else
     return 0;
+#endif
 }

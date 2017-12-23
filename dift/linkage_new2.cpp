@@ -2415,7 +2415,33 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 
 static inline void fw_slice_src_flag (INS ins, uint32_t mask) 
 { 
-	char* str = get_copy_of_disasm (ins);
+    char* str = get_copy_of_disasm (ins);
+
+    if (INS_IsIndirectBranchOrCall(ins) && mask == 0) {
+	if (INS_OperandIsReg(ins, 0)) {
+	    REG reg = INS_OperandReg(ins, 0);
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			   AFUNPTR(fw_slice_jmp_reg),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR,
+			   IARG_PTR, str,
+			   IARG_ADDRINT, translate_reg(reg),
+			   IARG_UINT32, REG_Size(reg),
+			   IARG_UINT32, REG_is_Upper8(reg),
+			   IARG_BRANCH_TARGET_ADDR,
+			   IARG_END);
+	} else if (INS_OperandIsMemory(ins, 0)) {
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			   AFUNPTR(fw_slice_jmp_mem),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR,
+			   IARG_PTR, str,
+			   IARG_MEMORYREAD_EA,
+			   IARG_UINT32, INS_MemoryReadSize(ins),
+			   IARG_BRANCH_TARGET_ADDR,
+			   IARG_END);
+	}
+    } else {
 	INS_InsertCall(ins, IPOINT_BEFORE,
 		       AFUNPTR(fw_slice_flag),
 		       IARG_FAST_ANALYSIS_CALL,
@@ -2424,9 +2450,10 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 		       IARG_UINT32, mask,
 		       IARG_BRANCH_TAKEN,
 		       IARG_BRANCH_TARGET_ADDR,
-                       IARG_CONST_CONTEXT, 
+		       IARG_CONST_CONTEXT, 
 		       IARG_END);
-	put_copy_of_disasm (str);
+    }
+    put_copy_of_disasm (str);
 }
 
 static inline void fw_slice_src_flag2mem (INS ins, uint32_t mask, REG base_reg, REG index_reg) { 
@@ -4230,9 +4257,6 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 
 void instrument_jump (INS ins, uint32_t flags) 
 {
-    if (INS_IsIndirectBranchOrCall(ins)) {
-	fprintf (stderr, "Instruction 0x%x is an indirect branch\n", INS_Address(ins));
-    } 
     fw_slice_src_flag (ins, flags);
     INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
 		    IARG_FAST_ANALYSIS_CALL,
@@ -4403,20 +4427,21 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #ifdef EXTRA_DEBUG_STOP
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
-    //if (current_thread->ctrl_flow_info.index > 20000) return; 
+    if (current_thread->ctrl_flow_info.index > 20000) return; 
 
     //static u_char old_val = 0;
-    //if (*((u_char *) 0x8700b15) != old_val) {
-    printf ("#%x %s, %ld,%lld mem %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
+    //if (*((u_char *) 0x8ace130) != old_val) {
+      printf ("#%x %s, %ld,%lld mem %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
       PIN_LockClient();
       if (IMG_Valid(IMG_FindByAddress(ip))) {
 	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
       }
       PIN_UnlockClient();
+      printf ("0x8ace130 tainted: %d new value: %x\n", is_mem_arg_tainted(0x8ace130, 1), *((u_char *) 0x8ace130));
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-	//old_val = *((u_char *) 0x8700b15);
+      //old_val = *((u_char *) 0x8ace130);
     //printf ("reg xmm1 tainted? ");
     //for (int i = 0; i < 16; i++) {
     //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM1*REG_SIZE + i] != 0));
@@ -4427,8 +4452,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 //	printf ("%d", (current_thread->shadow_reg_table[LEVEL_BASE::REG_XMM2*REG_SIZE + i] != 0));
     //}
 	printf ("\n");
-	fflush (stdout);
-    //}
+	//fflush (stdout);
+	//}
 }
 
 void debug_print (INS ins) 
