@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 59199 //well, I turn off all pthread printing in this file and track_pthread.cpp
+//#define EXTRA_DEBUG 0 //well, I turn off all pthread printing in this file and track_pthread.cpp
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -2620,6 +2620,24 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
     put_copy_of_disasm (str);
 }
 
+static inline void fw_slice_src_mem2fpureg (INS ins, REG base_reg, REG index_reg, int fp_stack_change) 
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(fw_slice_mem2fpureg),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_INST_PTR,
+            IARG_PTR, str,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change, 
+            PASS_BASE_INDEX,
+            IARG_END);
+    put_copy_of_disasm (str);
+}
+
 //If we move an imm value to an memory address, we still need to verify the base and index registers if they're tainted. Therefore, at least the verifications need to be in the slice
 static inline void fw_slice_src_dst_mem (INS ins, REG base_reg, REG index_reg)  
 {
@@ -2730,7 +2748,7 @@ static inline void fw_slice_src_fpuregmem (INS ins, REG reg, uint32_t reg_size, 
 		   IARG_UINT32, REG_is_Upper8(reg),
 		   mem_ea, 
 		   IARG_UINT32, memsize,
-                   IARG_INST_PTR, fp_stack_change,
+                   IARG_UINT32, fp_stack_change,
 		   PASS_BASE_INDEX,
 		   IARG_END);
     put_copy_of_disasm (str);
@@ -2900,6 +2918,21 @@ void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
     } 
 }
 
+void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
+{
+    assert (REG_is_st (dstreg));
+    assert (REG_is_st (srcreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_fpureg2fpureg),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_UINT32, dstreg, //no need to translate_reg
+            IARG_UINT32, srcreg,
+            IARG_UINT32, REG_Size (dstreg),
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change,
+            IARG_END);
+}
+
 void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 {
     UINT32 regsize = REG_Size(reg);
@@ -2924,6 +2957,23 @@ void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 		       IARG_UINT32, size,
 		       IARG_END);
     }
+}
+
+void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
+{
+    UINT32 regsize = REG_Size(reg);
+    UINT32 memsize = INS_MemoryWriteSize(ins);
+
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR (taint_fpureg2mem),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYWRITE_EA,
+            IARG_UINT32, memsize,
+            IARG_UINT32, reg,
+            IARG_UINT32, regsize,
+            IARG_CONST_CONTEXT,
+            IARG_UINT32, fp_stack_change,
+            IARG_END);
 }
 
 #define SETUP_BASE_INDEX_TAINT			\
@@ -2975,6 +3025,22 @@ static void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_
     }
 }
 
+static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_change, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    assert (REG_is_st (dstreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_mem2fpureg_offset),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, get_reg_off (dstreg),
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            PASS_BASE_INDEX_TAINT,
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change,
+            IARG_END);
+}
+
 void instrument_taint_mem2mem (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -3013,6 +3079,20 @@ static inline void instrument_taint_mix_reg2reg (INS ins, REG dstreg, REG srcreg
 		   IARG_UINT32, clear_flags,
 		   IARG_END);
 }
+
+static inline void instrument_taint_mix_fpureg2fpureg (INS ins, REG dstreg, REG srcreg)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_mix_fpureg2fpureg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, dstreg, 
+		   IARG_UINT32, REG_Size(dstreg),
+		   IARG_UINT32, srcreg, 
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT, 
+		   IARG_END);
+}
+
 
 static inline void instrument_taint_mix_regreg2reg (INS ins, REG dstreg, REG srcreg1, REG srcreg2, int set_flags, int clear_flags)
 {
@@ -3074,6 +3154,23 @@ static inline void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags
 		    IARG_END);
 }
 
+static inline void instrument_taint_mix_fpuregmem2fpureg (INS ins, REG src_reg, REG dst_reg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    INS_InsertCall (ins, IPOINT_BEFORE,
+		    AFUNPTR (taint_mix_fpuregmem2fpureg),
+		    IARG_FAST_ANALYSIS_CALL,
+                    IARG_MEMORYREAD_EA,
+		    IARG_UINT32, INS_MemoryReadSize(ins),
+                    IARG_UINT32, src_reg,
+                    IARG_UINT32, REG_Size (src_reg),
+                    IARG_UINT32, dst_reg, 
+                    IARG_UINT32, REG_Size (dst_reg),
+                    IARG_CONST_CONTEXT, 
+                    PASS_BASE_INDEX_TAINT,
+                    IARG_END);
+}
+
 static inline void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 dst_regsize = REG_Size(dstreg);
@@ -3119,6 +3216,20 @@ static void instrument_taint_clear_reg (INS ins, REG reg, int set_flags, int cle
 		   IARG_UINT32, REG_Size(reg),
 		   IARG_UINT32, set_flags,
 		   IARG_UINT32, clear_flags,
+		   IARG_END);
+}
+
+static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int fp_stack_change)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_clear_fpureg_offset),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, get_reg_off(reg), 
+		   IARG_UINT32, REG_Size(reg),
+		   IARG_UINT32, set_flags,
+		   IARG_UINT32, clear_flags,
+                   IARG_CONST_CONTEXT, 
+                   IARG_UINT32, fp_stack_change,
 		   IARG_END);
 }
 
@@ -4671,16 +4782,6 @@ void instrument_bit_scan (INS ins)
     }
 }
 
-inline void instrument_track_fp_stack_top (INS ins) 
-{
-    INS_InsertCall(ins, IPOINT_BEFORE,
-            AFUNPTR(fw_slice_track_fp_stack_top),
-            IARG_FAST_ANALYSIS_CALL,
-            IARG_INST_PTR,
-            IARG_CONST_CONTEXT,
-            IARG_END);
-}
-
 void instrument_fpu_load (INS ins) 
 {
     assert (INS_OperandCount(ins) >= 2);
@@ -4688,49 +4789,59 @@ void instrument_fpu_load (INS ins)
     if (INS_OperandIsMemory(ins, 1)) {	
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-        char* str = get_copy_of_disasm (ins);
-        SETUP_BASE_INDEX(base_reg, index_reg);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(fw_slice_mem2fpureg),
-                IARG_FAST_ANALYSIS_CALL,
-                IARG_INST_PTR,
-                IARG_PTR, str,
-                IARG_MEMORYREAD_EA,
-                IARG_UINT32, INS_MemoryReadSize(ins),
-                IARG_ADDRINT, FP_PUSH, 
-                PASS_BASE_INDEX,
-                IARG_END);
-        put_copy_of_disasm (str);
-	instrument_taint_mem2reg (ins, dst_reg, 1, base_reg, index_reg);
+        fw_slice_src_mem2fpureg (ins, base_reg, index_reg, FP_PUSH);
+        instrument_taint_mem2fpureg (ins, dst_reg, FP_PUSH, base_reg, index_reg);
     } else {
         REG src_reg = INS_OperandReg (ins, 1);
         fw_slice_src_fpureg (ins, src_reg, FP_PUSH);
-        instrument_taint_reg2reg (ins, dst_reg, src_reg, 1);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, FP_PUSH);
     }
-    //This is necessary as we convert interger/float/double into double extended format here
-    //Technically, we don't have to do this for FLD with ST registers as destination operand (TODO)
-    instrument_taint_mix_reg (ins, dst_reg, -1, -1);
-    instrument_track_fp_stack_top (ins);
 }
 
 void instrument_fpu_store (INS ins)
 {
     assert (INS_OperandCount(ins) >= 2);
     REG src_reg = INS_OperandReg (ins, 1);
+    int fp_stack_change = FP_NO_STACK_CHANGE;
+    if (INS_Opcode (ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode(ins) == XED_ICLASS_FISTTP)
+        fp_stack_change = FP_POP;
+    
     if (INS_IsMemoryWrite(ins)) {	
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
-        fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, FP_POP);
-        instrument_taint_reg2mem (ins, src_reg, 1);
-        instrument_taint_mix_mem (ins, -1, -1, base_reg, index_reg); //may involve convertion from double extented to double/float here
+        fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, fp_stack_change);
+        instrument_taint_fpureg2mem (ins, src_reg, fp_stack_change);
     } else {
-        fw_slice_src_fpureg (ins, src_reg, FP_POP);
+        fw_slice_src_fpureg (ins, src_reg, fp_stack_change);
         REG dst_reg = INS_OperandReg (ins, 0);
         assert (REG_is_st (dst_reg)); //per the intel manual
-        instrument_taint_reg2reg (ins, dst_reg, src_reg, 1);
-        //copy st* to st*: we don't need to mix taints
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, fp_stack_change);
     }
-    instrument_track_fp_stack_top (ins);
+    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode (ins) == XED_ICLASS_FISTTP) {
+        //pop the register and empty st(0)
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
+}
+
+void instrument_fpu_calc (INS ins, int fp_stack_change)
+{
+    if (INS_IsMemoryRead(ins)) {
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+        REG dst_reg = INS_OperandReg (ins, 0);
+        fw_slice_src_fpuregmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize (ins), base_reg, index_reg, fp_stack_change);
+        instrument_taint_mix_fpuregmem2fpureg (ins, dst_reg, dst_reg, base_reg, index_reg);
+    } else if (INS_OperandIsReg (ins, 1)) {
+        REG dst_reg = INS_OperandReg (ins, 0);
+        REG src_reg = INS_OperandReg (ins, 1);
+        fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, fp_stack_change);
+        instrument_taint_mix_fpureg2fpureg (ins, dst_reg, src_reg);
+    } else { 
+        assert (0);
+    }
+    if (fp_stack_change == FP_POP) { 
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
 }
 
 void instrument_cwde (INS ins) 
@@ -4795,6 +4906,8 @@ void debug_print (INS ins)
     int mem1read = 0;
     int mem2read = 0;
     
+    /*printf ("debug_print: ins %s\n", str);
+    fflush (stdout);*/
     if (count >= 1) {
 	mem1read = INS_MemoryOperandIsRead (ins, 0);
 	if (count == 2) {
@@ -5322,6 +5435,7 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_FLD:
             case XED_ICLASS_FILD:
+            case XED_ICLASS_FBLD:
 		instrument_fpu_load (ins);
 		slice_handled = 1;
 		break;
@@ -5332,45 +5446,39 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
             case XED_ICLASS_FISTP:
             case XED_ICLASS_FIST:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
+            case XED_ICLASS_FBSTP:
+            case XED_ICLASS_FISTTP:
                 instrument_fpu_store (ins);
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FMULP:
+            case XED_ICLASS_FADDP:
+            case XED_ICLASS_FSUBP:
+            case XED_ICLASS_FSUBRP:
+            case XED_ICLASS_FDIVP:
+            case XED_ICLASS_FDIVRP:
+                instrument_fpu_calc (ins, FP_POP);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FMUL:
             case XED_ICLASS_FIMUL:
             case XED_ICLASS_FADD:
-            case XED_ICLASS_FADDP:
             case XED_ICLASS_FSUB:
-            case XED_ICLASS_FISUB:
-            case XED_ICLASS_FSUBP:
             case XED_ICLASS_FSUBR:
+            case XED_ICLASS_FISUB:
             case XED_ICLASS_FISUBR:
-            case XED_ICLASS_FSUBRP:
             case XED_ICLASS_FDIV:
+            case XED_ICLASS_FDIVR:
             case XED_ICLASS_FIDIV:
-            case XED_ICLASS_FDIVP:
-                INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
-                if (INS_IsMemoryRead(ins)) {
-                    REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
-                    REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-                    REG dst_reg = INS_OperandReg (ins, 0);
-                    fw_slice_src_fpuregmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize (ins), base_reg, index_reg, FP_NO_STACK_CHANGE);
-                    instrument_taint_mix_mem2reg (ins, INS_OperandReg(ins, 0), -1, -1, base_reg, index_reg); //FPU flags are not tainted for now
-                } else if (INS_OperandIsReg (ins, 1)) {
-                    REG dst_reg = INS_OperandReg (ins, 0);
-                    REG src_reg = INS_OperandReg (ins, 1);
-                    fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, FP_NO_STACK_CHANGE);
-                    instrument_taint_mix_reg2reg (ins, dst_reg, src_reg, -1, -1);
-                } else { 
-                    assert (0);
-                }
+            case XED_ICLASS_FIDIVR:
+                instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
@@ -5386,7 +5494,6 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FSQRT:
 	    case XED_ICLASS_FABS:
 	    case XED_ICLASS_FPATAN:
-	    case XED_ICLASS_FDIVR:
 	    case XED_ICLASS_FCHS:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
