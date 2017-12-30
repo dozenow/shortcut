@@ -5,6 +5,13 @@ from subprocess import Popen, PIPE
 import sys
 import argparse
 import datetime
+from multiprocessing import Pool
+
+def compMain (outputdir):
+    return os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice.c -o "+outputdir+"/exslice.o")
+
+def compSlice (outputdir, strno):
+    return os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice" + strno + ".c -o "+outputdir+"/exslice" + strno + ".o")
 
 instr_jumps = True
 
@@ -74,17 +81,17 @@ if input_asm_file is None:
         ts_pin = datetime.datetime.now()
 
         # Refine the slice with grep
-        outfd = open(outputdir+"/slice", "w")
-        p = Popen (["grep", "SLICE", outputdir+"/pinout"], stdout=outfd)
-        p.wait()
-        outfd.close()
-        input_asm_file = outputdir + "/exslice.asm"
+        #outfd = open(outputdir+"/slice", "w")
+        #p = Popen (["grep", "SLICE", outputdir+"/pinout"], stdout=outfd)
+        #p.wait()
+        #outfd.close()
 
-        ts_grep = datetime.datetime.now()
+        #ts_grep = datetime.datetime.now()
 
         # Run scala tool
+        input_asm_file = outputdir + "/exslice.asm"
         outfd = open(input_asm_file, "w")
-        p = Popen (["./process_slice", outputdir+"/slice"],stdout=outfd)
+        p = Popen (["./process_slice", outputdir+"/pinout"],stdout=outfd)
         #Note: Try to avoid recompilation, but this requires you to run make if you change preprocess_asm.scala file
         #If this hangs for a long time, it's probably because your environment configuration is wrong
         #Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
@@ -170,12 +177,16 @@ infd.close()
 ts_convert = datetime.datetime.now()
 
 # And compile it
-os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice.c -o "+outputdir+"/exslice.o")
+pool = Pool(processes=7)
 linkstr = "gcc -shared "+outputdir+"/exslice.o -o "+outputdir+"/exslice.so recheck_support.o"
+pool.apply_async (compMain, (outputdir, ))
 for i in range(fcnt):
     strno = str(i + 1)
-    os.system("gcc -masm=intel -c -fpic -Wall -Werror "+outputdir+"/exslice" + strno + ".c -o "+outputdir+"/exslice" + strno + ".o")
+    pool.apply_async (compSlice, (outputdir, strno))
     linkstr += " " + outputdir + "/exslice" + strno + ".o"
+
+pool.close()
+pool.join()
 os.system(linkstr)
 
 ts_compile = datetime.datetime.now()
@@ -187,8 +198,7 @@ p.wait()
 # Print timing info
 ts_end = datetime.datetime.now()
 print "Time to run pin tool: ", ts_pin - ts_start
-print "Time to run grep: ", ts_grep - ts_pin
-print "Time to run scala tool: ", ts_scala - ts_grep
+print "Time to run scala tool: ", ts_scala - ts_pin
 print "Time to convert: ", ts_convert - ts_scala
 print "Time to compile: ", ts_compile - ts_convert
 print "Time to ckpt: ", ts_end - ts_compile

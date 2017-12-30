@@ -28,7 +28,7 @@ preprocess_asm.class: preprocess_asm.scala
 	scalac preprocess_asm.scala
 
 process_slice: process_slice.cpp
-	g++ -g -o process_slice process_slice.cpp -std=c++0x
+	g++ -O3 -o process_slice process_slice.cpp -std=c++0x
 
 diverge_and_merge_point: diverge_and_merge_point.cpp
 	g++ -g -o diverge_and_merge_point diverge_and_merge_point.cpp -std=c++0x

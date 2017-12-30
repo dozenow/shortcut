@@ -911,11 +911,6 @@ int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds
     struct newselect_recheck nschk;
     struct klog_result *res = skip_to_syscall (handle, SYS__newselect);
 
-    printf ("select nfds %d readfds %lx writefds %lx exceptfds %lx, timeout %lx\n", nfds, (u_long) readfds, (u_long) writefds, (u_long) exceptfds, (u_long) timeout);
-    printf ("size of fd_set is %d\n", sizeof(fd_set));
-    printf ("retparams_size is %d\n", res->retparams_size);
-    printf ("size of struct timeval is %u\n", sizeof(struct timeval));
-
     u_long numsets = (readfds != NULL) + (writefds != NULL) + (exceptfds != NULL);
     nschk.setsize = res->retparams_size-sizeof(u_long);
     if (timeout) nschk.setsize -= sizeof(struct timeval);

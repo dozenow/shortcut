@@ -444,7 +444,6 @@ void create_taints_from_buffer(void* buf, int size,
     }
 
     start = taint_num;
-    printf( "create_taints_from_buffer_filtered: taint num %u(%x), buf %p, size %d\n", start, start, buf, size);
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
                 !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
@@ -474,7 +473,6 @@ void create_taints_from_buffer_unfiltered(void* buf, int size,
     if(outfd == -99999) { 
 	return;
     }
-    printf( "create_taints_from_buffer_unfiltered: taint num %u(%x), buf %p, size %d\n", start, start, buf, size);
 
     start = taint_num;
     for (i = 0; i < size; i++) {

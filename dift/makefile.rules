@@ -11,7 +11,7 @@ TAINTS_OBJ=$(OBJDIR)
 TAINTS_INTERFACE=taint_interface
 REPLAY_LIB += $(SDEV)/libutil.a 
 TOOL_LIBS += $(SDEV)/libutil.a
-TOOL_CXXFLAGS += -I$(SDEV) -g
+TOOL_CXXFLAGS += -I$(SDEV) -O3
 #TOOL_CXXFLAGS += -I$(SDEV) -DDEBUGTRACE=0x201e42 -DDEBUGTRACE_OUTPUT=0xcc1f
 #TOOL_CXXFLAGS += -I$(SDEV) -DDEBUGTRACE=0x201e42 -DDEBUGTRACE_OUTPUT=0x0000
 GLIB_INCLUDES=-I/usr/include/glib-2.0 -I/usr/lib/i386-linux-gnu/glib-2.0/include
@@ -103,7 +103,7 @@ $(OBJDIR)parse_outputs: xray_slab_alloc.h parse_outputs.c $(OBJDIR)xray_token$(O
 	$(APP_CC) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -o $(OBJDIR)parse_outputs $(GLIB_INCLUDES) $(OBJDIR)xray_token$(OBJ_SUFFIX) parse_outputs.c maputil.c -lglib-2.0 -lrt
 
 $(OBJDIR)showall: showall.c maputil.c maputil.h
-	$(APP_CC) -Wall -Werror -g -o $(OBJDIR)showall $(GLIB_INCLUDES) showall.c maputil.c -lglib-2.0
+	$(APP_CC) -Wall -Werror -o $(OBJDIR)showall $(GLIB_INCLUDES) showall.c maputil.c -lglib-2.0
 
 $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX): xray_slab_alloc.h xray_slab_alloc.c
 	$(APP_CC) -Wall -Werror -O2 -c -o $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX) xray_slab_alloc.c

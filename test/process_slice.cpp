@@ -127,19 +127,30 @@ string cleanupSliceLine (string s) {
     if (s == "") return s;
     size_t index = s.find("[SLICE_INFO]");
     if (index == string::npos) {
+	index = s.length();
+#if 0
         cerr << "cannot find SLICE_INFO: " << s << endl;
         assert (0);
-    }
+#endif
+    } 
     vector<string> strs = split (s.substr(0, index), '#');
+#if 0
     if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
         strs[2] = strs[2].substr (0, strs[2].find("dword"));
-    } else if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
+    } else 
+      if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
         int index = strs[2].find("scas");
         strs[2] = strs[2].substr (0, strs[2].find(" ", index));
-    } else if (strs[2].find("lea ") != string::npos) {
+    } else 
+    if (strs[2].find("lea ") != string::npos) {
         strs[2].erase (strs[2].find (" ptr "), 4);	
     }
-    return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(s.find("[SLICE_INFO]")) + "*/";
+#endif
+    if (index == s.length()) {
+	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " */";
+    } else {
+	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " " + s.substr(index) + "*/"; 
+    }
 }
 
 string cleanupExtraline (string s) {
@@ -180,6 +191,7 @@ string memSizeToPrefix(int size){
 	}
 }
 
+#if 0
 string rewriteInst (string s) {
 	if (s.empty()) return string();
 	size_t push_pos = s.find ("#push");
@@ -194,13 +206,23 @@ string rewriteInst (string s) {
 		if (push_pos != string::npos) { 
 			string tmp = s.replace (push_pos, 6, "#mov " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "], ");
 			size_t index = tmp.find ("[SLICE_INFO]");
-			return tmp.replace(index, 12, "[SLICE_INFO] push instruction (rewrite)");
+			if (index == string::npos) {
+			    return tmp;
+			} else {
+			    return tmp.replace(index, 12, "[SLICE_INFO] push instruction (rewrite)");
+			}
 		} 
 		if (pop_pos != string::npos) { 
 			string tmp = s.replace (pop_pos, 5, "#mov ");
-			return tmp.replace (tmp.find("    [SLICE_INFO]"), 16, ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)");
+			size_t index = tmp.find ("    [SLICE_INFO]");
+			if (index == string::npos) {
+			    return tmp + ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]";
+			} else {
+			    return tmp.replace (index, 16, ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)");
+			}
 		}
-	} else if (s.find ("#j") != string::npos) { //change jump instruction
+	} 
+	if (s.find ("#j") != string::npos) { //change jump instruction
 		size_t index = s.find ("#j");
 		size_t spaceIndex = s.find (" ", index);
 		string inst = s.substr (index +1, spaceIndex - index - 1);
@@ -228,6 +250,7 @@ string rewriteInst (string s) {
 	}
 	return s;
 }
+#endif
 
 string replaceReg (string s) {
 	size_t index = s.find ("$reg(");
@@ -299,7 +322,9 @@ void printerr (string s) {
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
 #define SLICE_VERIFICATION 5
+#ifdef PRINT_DEBUG_INFO
 #define SLICE_TAINT 6
+#endif
 #define SLICE_CTRL_FLOW 7
 
 inline int getLineType (string line) { 
@@ -311,16 +336,16 @@ inline int getLineType (string line) {
 		return SLICE_ADDRESSING;
 	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
+#ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
+#endif
         else if (line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) 
                 return SLICE_CTRL_FLOW;
 	else if (line.compare (0, 23, "[SLICE_RESTORE_ADDRESS]") == 0) 
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
 		return SLICE_RESTORE_REG;
-	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
-		return SLICE_TAINT;
         else if (line.compare (0, 5, "[BUG]") == 0) {
                 cerr <<"BUG line: " <<line <<endl;
                 return -1;
@@ -379,7 +404,9 @@ int main (int argc, char* argv[]) {
 				lastAddr = s.substr(9);
 				lastAddr = lastAddr.substr(0,lastAddr.find(" "));
 				break;
+#ifdef PRINT_DEBUG_INFO
 		        case SLICE_TAINT:
+#endif
                         case -1:
                                 //ignore this line
                                 break;
@@ -457,7 +484,7 @@ int main (int argc, char* argv[]) {
 				//first step, convert instructions
 				 //special case: to avoid affecting esp, we change pos/push to mov instructions
 				 //special case: convert jumps
-				 s = rewriteInst (s);
+				 //s = rewriteInst (s);
 				//processs SLICE_ADDRESSING
 				while (!address.empty()) {
 					string line = address.front();
@@ -525,9 +552,11 @@ int main (int argc, char* argv[]) {
                         case SLICE_CTRL_FLOW:
                             println (cleanupCtrlFlowLine(replaceReg(s)));
                             break;
+#ifdef PRINT_DEBUG_INFO
                         case SLICE_TAINT:
                                 println ("/*Eliminated " + s + "*/");
                                 break;
+#endif
 			default:
 				println ("unrecognized: " + s);
 				assert (0);
