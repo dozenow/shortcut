@@ -2358,11 +2358,6 @@ static inline void taint_base_index_to_range_memwrite (ADDRINT ip, u_long mem_lo
     }
 }
 
-static void inline print_immediate_addr (u_long mem_loc, ADDRINT ip)
-{
-    printf ("[SLICE_ADDRESSING] immediate_address $addr(0x%lx)  //comes with %08x (move upwards)\n", mem_loc, ip);
-}
-
 char tmpbuf[20], tmpbuf2[20], tmpbuf3[20]; // Ugly hack that works because only one thread runs at a time 
 inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_t reg_size)
 {
@@ -2898,17 +2893,32 @@ static inline const char* memSizeToPrefix (int size)
     }
 }
 
-//#define PRINT(x) fprintf(stderr, x)
-#define PRINT(x)
+static inline void print_abs_address (ADDRINT ip, char* ins_str, u_long mem_loc)
+{
+    // Put absolute memory addres in here
+    char changed_str[64];
+    char* s = strstr(ins_str, " ptr ");
+    char* t = changed_str;
+    char* p = ins_str;
+    while (p != s+5) *t++ = *p++;
+    t += sprintf (t, "[0x%lx]", mem_loc);
+    while (*p++ != ']');
+    strcpy (t, p);
+    OUTPUT_SLICE (ip, "%s", changed_str);
+}
+
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     if (mem_tainted || still_tainted) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	if (!still_tainted && mem_tainted) {
+	    print_abs_address (ip, ins_str, mem_loc);
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value (mem_loc, mem_size));
     }
-    if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
 TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t mem_size) 
@@ -2925,10 +2935,13 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
     VERIFY_BASE_INDEX_WRITE_RANGE;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     if (mem_tainted || still_tainted) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	if (!still_tainted && mem_tainted) {
+	    print_abs_address (ip, ins_str, mem_loc);	    
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value (mem_loc, mem_size));
     }
-    if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
 TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8) 
@@ -2958,13 +2971,14 @@ TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, c
     VERIFY_BASE_INDEX_WRITE_RANGE;
     int tainted = is_reg_tainted (reg, size, reg_u8);
     if (tainted || still_tainted) {
-	OUTPUT_SLICE (ip, "%s\t", ins_str);
+	if (!still_tainted && tainted) {
+	    print_abs_address (ip, ins_str, mem_loc);
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s, dst_mem_value %u\n", reg, tainted, size, mem_loc, mem_size, print_regval(tmpbuf, regvalue, size), get_mem_value (mem_loc, mem_size));
 	if (tainted != 1) print_extra_move_reg (ip, reg, size, regvalue, reg_u8, tainted);
 	add_modified_mem_for_final_check (mem_loc, mem_size);
-    }
-    if (!still_tainted && tainted) {
-	print_immediate_addr (mem_loc, ip);
     }
 }
 
@@ -2972,11 +2986,10 @@ TAINTSIGN fw_slice_push_reg (ADDRINT ip, int reg, const PIN_REGISTER* regvalue, 
 {
     int tainted = is_reg_tainted (reg, size, reg_u8);
     if (tainted) {
-	OUTPUT_SLICE (ip, "mov %s [%lx], %s", memSizeToPrefix(size), mem_loc, regName(reg,size));
+	OUTPUT_SLICE (ip, "mov %s [0x%lx], %s", memSizeToPrefix(size), mem_loc, regName(reg,size));
 	OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s, dst_mem_value %u", reg, tainted, size, mem_loc, size, print_regval(tmpbuf, regvalue, size), get_mem_value (mem_loc, size));
 	if (tainted != 1) print_extra_move_reg (ip, reg, size, regvalue, reg_u8, tainted);
 	add_modified_mem_for_final_check (mem_loc, size);
-	print_immediate_addr (mem_loc, ip);
     }
 }
 
@@ -2987,15 +3000,12 @@ TAINTSIGN fw_slice_push_mem (ADDRINT ip, u_long mem_loc, u_long dst_mem_loc, uin
     int tainted = is_mem_tainted (mem_loc, mem_size);
     if (tainted || still_tainted) {
 	// Need to do this in two steps as no mem to mem move
-	OUTPUT_SLICE (ip, "push %s [%lx]", memSizeToPrefix(mem_size), mem_loc);
+	OUTPUT_SLICE (ip, "push %s [0x%lx]", memSizeToPrefix(mem_size), mem_loc);
 	OUTPUT_SLICE_INFO ("(former push instruction)");
-	OUTPUT_SLICE (ip, "pop %s [%lx]", memSizeToPrefix(mem_size), dst_mem_loc);
+	OUTPUT_SLICE (ip, "pop %s [0x%lx]", memSizeToPrefix(mem_size), dst_mem_loc);
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s", mem_loc, tainted, mem_size, dst_mem_loc, tainted, mem_size, get_mem_value (mem_loc, mem_size));
 	if (tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, tainted);
 	add_modified_mem_for_final_check (dst_mem_loc, mem_size);
-    }
-    if (!still_tainted && tainted) {
-	print_immediate_addr (dst_mem_loc, ip);
     }
 }
 
@@ -3046,12 +3056,15 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size
     int reg_tainted = is_reg_tainted (reg, reg_size, reg_u8);
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     if (still_tainted || reg_tainted || mem_tainted) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	if (!still_tainted && (reg_tainted || mem_tainted)) {
+	    print_abs_address (ip, ins_str, mem_loc);
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s", mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value (mem_loc, mem_size), print_regval(tmpbuf, reg_value, reg_size));
 	if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, reg_value, reg_u8, reg_tainted);
 	if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
     }
-    if (!still_tainted && (reg_tainted || mem_tainted)) print_immediate_addr (mem_loc, ip);
 }
 
 TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, const PIN_REGISTER* reg1_value, uint32_t reg1_u8, 
@@ -3062,14 +3075,17 @@ TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1
     int tainted2 = is_mem_tainted (mem_loc, mem_size);
     int tainted3 = is_reg_tainted (reg2, reg2_size, reg2_u8);
     if (still_tainted || tainted1 || tainted2 || tainted3) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	if (!still_tainted && (tainted1 || tainted2 || tainted3)) {
+	    print_abs_address (ip, ins_str, mem_loc);
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_regmemreg[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %s, mem_value %u, reg_value %s", 
 			   reg1, tainted1, reg1_size, mem_loc, tainted2, mem_size, reg2, tainted3, reg2_size, print_regval(tmpbuf, reg1_value, reg1_size), get_mem_value (mem_loc, mem_size), print_regval(tmpbuf2, reg2_value, reg2_size));
 	if (tainted1 != 1) print_extra_move_reg (ip, reg1, reg1_size, reg1_value, reg1_u8, tainted1);
 	if (tainted2 != 1) print_extra_move_mem (ip, mem_loc, mem_size, tainted2);
 	if (tainted3 != 1) print_extra_move_reg (ip, reg2, reg2_size, reg2_value, reg2_u8, tainted3);
     }
-    if (!still_tainted && (tainted1 || tainted2 || tainted3)) print_immediate_addr (mem_loc, ip);
 }
 
 //only used for cmov
@@ -3119,28 +3135,42 @@ TAINTSIGN fw_slice_regmemflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
     int tainted4 = is_flag_tainted (flag);
 
     if (tainted4) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	VERIFY_BASE_INDEX;
+	if (!still_tainted) {
+	    print_abs_address (ip, ins_str, mem_loc);
+	} else {
+	    OUTPUT_SLICE (ip, "%s", ins_str);
+	}
 	OUTPUT_SLICE_INFO ("#src_memregregflag[%d:%d:%u,%d:%d:%u,%lx:%d:%u,%d:%d:%u] #dest_reg_value %u base_reg_value %u, mem_value %u, index_reg_value %u, flag %x, flag tainted %d executed %d", 
 			   dest_reg, dest_reg_tainted, dest_reg_size, base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, *dest_reg_value->dword, base_reg_value, 
 			   get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
-	VERIFY_BASE_INDEX;
 	if (mem_tainted2 != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted2);
 	if (dest_reg_tainted != 1) print_extra_move_reg (ip, dest_reg, dest_reg_size, dest_reg_value, dest_reg_u8, dest_reg_tainted);
-        if (!still_tainted) print_immediate_addr (mem_loc, ip);
     } else {
 	if (executed) {
 	    VERIFY_BASE_INDEX;
             //this should be equivalent to  the condition in fw_slice_memregreg_mov 
 	    if (mem_tainted2 || still_tainted) {
-		char* e;
+		char changed_str[64];
 		char* p = strstr (ins_str, "cmov");
-		assert (p);
-		for (e = p; !isspace(*e); e++);
-		OUTPUT_SLICE (ip, "%.*smov%s", (int)((u_long)p-(u_long)ins_str), ins_str, e);
+		char* s = ins_str;
+		char* t = changed_str;
+		while (s != p) *t++ = *s++;
+
+		*t++ = 'm'; *t++ = 'o'; *t++ = 'v';
+		while (!isspace(*s)) s++;
+
+		if (!still_tainted && mem_tainted2) {
+		    char* p = strstr(s, " ptr ");
+		    while (s != p+5) *t++ = *s++;
+		    t += sprintf (t, "[0x%lx]", mem_loc);
+		    while (*p++ != ']');
+		}
+		while (*s != '\0') *t++ = *s++;
+		OUTPUT_SLICE (ip, "%s", changed_str);
 		OUTPUT_SLICE_INFO ("#src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d", 
 				   base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
 	    }
-            if (!still_tainted && mem_tainted2) print_immediate_addr (mem_loc, ip);
 	}
 	// If flag not tainted and mov not executed, then this is a noop in the slice
     }
@@ -3307,9 +3337,8 @@ TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long me
 {
     VERIFY_BASE_INDEX_WRITE;
     if (is_flag_tainted (mask)) {
-	OUTPUT_SLICE (ip, "%s", ins_str);
+	print_abs_address (ip, ins_str, mem_loc);
 	OUTPUT_SLICE_INFO ("#src_flag[FM%x:1:4] #dst_mem[%lx:0:%u]", mask, mem_loc, mem_size);
-	print_immediate_addr (mem_loc, ip);
 	add_modified_mem_for_final_check (mem_loc, mem_size);
     }
 }

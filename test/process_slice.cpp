@@ -144,12 +144,6 @@ string cleanupExtraline (string s) {
 	return s.substr(start_index, end_index - start_index) + " /* [SLICE_EXTRA]" + s.substr(end_index) + "*/";
 }
 
-string cleanupAddressingLine (string s) {
-	size_t start_index = s.find("]") + 2;
-	size_t end_index = s.find("//");
-	return s.substr(start_index, end_index - start_index) + " /* [SLICE_ADDRESSING]" + s.substr(end_index) + "*/";
-}
-
 string cleanupCtrlFlowLine (string s) {
 	size_t start_index = s.find("]") + 2;
 	size_t end_index = s.find("//");
@@ -222,7 +216,6 @@ void printerr (string s) {
 
 #define SLICE 0
 #define SLICE_EXTRA 1
-#define SLICE_ADDRESSING 2
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
 #ifdef PRINT_DEBUG_INFO
@@ -236,8 +229,6 @@ inline int getLineType (string line) {
 		return SLICE;
 	else if (line.compare (0, 13, "[SLICE_EXTRA]") == 0)
 		return SLICE_EXTRA;
-	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
-		return SLICE_ADDRESSING;
 #ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
@@ -382,7 +373,6 @@ int main (int argc, char* argv[]) {
 	//switch posistion and generate compilable assembly
 	//println ("**************************")
 	queue<string> extraLines;
-	queue<string> address; //here I can handle multiple address convertion
 	while (!buffer.empty()) {
 		auto p = buffer.front();
 		string s= p.second;
@@ -391,69 +381,12 @@ int main (int argc, char* argv[]) {
 			case SLICE_EXTRA:
 				extraLines.push(s);
 				break;
-			case SLICE_ADDRESSING:
-				address.push (s);
-				break;
 			case SLICE:
 				//here, we need to convert instruction, init addressing registers and init source operands if they're not tainted;
 				//immediate addresses are converted
 				//first step, convert instructions
 				 //special case: to avoid affecting esp, we change pos/push to mov instructions
 				 //special case: convert jumps
-				 //s = rewriteInst (s);
-				//processs SLICE_ADDRESSING
-				while (!address.empty()) {
-					string line = address.front();
-					//replace reg
-					//line = replaceReg (line);
-					//replace mem 
-					if (line.find("immediate_address") != string::npos) {
-						println ("/*Eliminated " + line + "*/");
-						//replace the mem operand in the SLICE instead of this line
-						size_t immAddressIndex = line.find("$addr(");
-						if (immAddressIndex == string::npos || line.find (")") == string::npos) {
-							cout << line << endl;
-							assert (0);
-						}
-						string immAddress = line.substr(immAddressIndex + 6, line.find(")") - immAddressIndex - 6);
-						if (s.find (" ptr ") == s.rfind (" ptr ")){ 
-							size_t memPtrIndex = s.find (" ptr ");
-							size_t memPtrEnd = s.find ("]", memPtrIndex);
-							if (memPtrIndex == string::npos || memPtrEnd == string::npos) {
-								cerr<< line <<endl;
-								cerr << s << endl;
-								assert (0);
-							}
-							//special case: we need to replace string instructions
-							if (s.find ("scas") != string::npos || s.find("stos") != string::npos) {
-								println ("mov edi, " + immAddress + "   /*string inst converted:" + line + "*/");
-							} else 
-								s = s.substr(0, memPtrIndex) + " ptr [" + immAddress + s.substr(memPtrEnd);
-						} else {
-							//special case: we need to replace two memory operands 
-							//TODO: change this to regex for cmps and so on
-							if (s.find("movsd ") != string::npos || s.find("movs ") != string::npos || s.find("movsq ") != string::npos
-									|| s.find("movsw ") != string::npos || s.find("movsb ") != string::npos
-                                                            || s.find("cmpsd ") != string::npos || s.find("cmps ") != string::npos || s.find("cmpsq ") != string::npos
-									|| s.find("cmpsw ") != string::npos || s.find("cmpsb ") != string::npos) {
-
-								println ("mov edi, " + immAddress + "   /*string inst converted: " + line + "*/");
-								address.pop();
-								line = address.front();
-								immAddressIndex = line.find("$addr(");
-								immAddress = line.substr(immAddressIndex + 6, line.find(")") - immAddressIndex - 6);
-								println ("mov esi, " + immAddress + "   /*string inst converted: " + line + "*/");
-							} else {
-								printerr ("unhandled two memory operands: " + s);
-								assert (0);
-							}
-						}
-					} else {
-						println (cleanupAddressingLine(line));
-					}
-					address.pop();
-				}
-
 				//process SLICE_EXTRA
 				while (!extraLines.empty()) {
                                     //replace reg and mems 
