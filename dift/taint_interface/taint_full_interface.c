@@ -135,6 +135,116 @@ extern int s;
 #endif
 extern int outfd;
 
+static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
+{
+    switch (reg_num) {
+    case 3:
+	switch (reg_size) {
+	case 4: return "edi";
+	case 2: return "di";
+	}
+	break;
+    case 4:
+	switch (reg_size) {
+	case 4: return "esi";
+	case 2: return "si";
+	}
+	break;
+    case 5:
+	switch (reg_size) {
+	case 4: return "ebp";
+	case 2: return "bp";
+	}
+	break;
+    case 6:
+	switch (reg_size) {
+	case 4: return "esp";
+	case 2: return "sp";
+	}
+	break;
+    case 7:
+	switch (reg_size) {
+	case 4: return "ebx";
+	case 2: return "bx";
+	case 1: return "bl";
+	case -1: return "bh";
+	}
+	break;
+    case 8:
+	switch (reg_size) {
+	case 4: return "edx";
+	case 2: return "dx";
+	case 1: return "dl";
+	case -1: return "dh";
+	}
+	break;
+    case 9:
+	switch (reg_size) {
+	case 4: return "ecx";
+	case 2: return "cx";
+	case 1: return "cl";
+	case -1: return "ch";
+	}
+	break;
+    case 10:
+	switch (reg_size) {
+	case 4: return "eax";
+	case 2: return "ax";
+	case 1: return "al";
+	case -1: return "ah";
+	}
+	break;
+    case 17:
+	switch (reg_size) {
+	case 4: return "eflag";
+	}
+	break;
+    case 54:
+	switch (reg_size) {
+	case 16: return "xmm0";
+	}
+	break;
+    case 55:
+	switch (reg_size) {
+	case 16: return "xmm1";
+	}
+	break;
+    case 56:
+	switch (reg_size) {
+	case 16: return "xmm2";
+	}
+	break;
+    case 57:
+	switch (reg_size) {
+	case 16: return "xmm3";
+	}
+	break;
+    case 58:
+	switch (reg_size) {
+	case 16: return "xmm4";
+	}
+	break;
+    case 59:
+	switch (reg_size) {
+	case 16: return "xmm5";
+	}
+	break;
+    case 60:
+	switch (reg_size) {
+	case 16: return "xmm6";
+	}
+	break;
+    case 61:
+	switch (reg_size) {
+	case 16: return "xmm7";
+	}
+	break;
+    }
+    fprintf (stderr, "regName: unrecognized reg %d size %d\n", reg_num, reg_size);
+    assert (0);
+    return NULL;
+}
+
 static void taint_reg2reg (int dst_reg, int src_reg, uint32_t size);
 static UINT32 get_mem_value (u_long mem_loc, uint32_t size);
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size);
@@ -1934,16 +2044,21 @@ static inline void copy_value_to_pin_register (PIN_REGISTER* reg, uint32_t reg_v
 static inline void print_extra_move_reg_1 (ADDRINT ip, int reg, uint32_t value, uint32_t is_upper8, string prefix = "[SLICE_EXTRA]") 
 {
     if (is_upper8) {
-	printf ("%s mov $reg(%d,-1), %u //comes with %08x\n", prefix.c_str(), reg, value, ip);
+	printf ("%s mov %s, %u //comes with %08x\n", prefix.c_str(), regName(reg,-1), value, ip);
     } else {
-	printf ("%s mov $reg(%d,1), %u //comes with %08x\n", prefix.c_str(), reg, value, ip);
+	printf ("%s mov %s, %u //comes with %08x\n", prefix.c_str(), regName(reg,1), value, ip);
     }
 }
  
 static inline void print_extra_move_reg_4 (ADDRINT ip, int reg, uint32_t value, int tainted, string prefix = "[SLICE_EXTRA]") 
 {
     if (!tainted) {
-	printf ("%s mov $reg(%d,4), %u //comes with %08x\n", prefix.c_str(), reg, value, ip);
+	if (prefix == "[SLICE_VERIFICATION]") {
+	    OUTPUT_SLICE_VERIFICATION ("mov %s, %u", regName(reg,4), value);
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);	    
+	} else {
+	    printf ("%s mov %s, %u //comes with %08x\n", prefix.c_str(), regName(reg,4), value, ip);
+	}
     } else {
 	u_long mask = 0, valmask = 0;
 	int j;
@@ -1957,10 +2072,21 @@ static inline void print_extra_move_reg_4 (ADDRINT ip, int reg, uint32_t value, 
 		valmask |= 0xff;
 	    }
 	}
-	printf ("%s pushfd // comes with %08x\n", prefix.c_str(), ip);
-	printf ("%s and $reg(%d,4), 0x%lx // comes with %08x\n", prefix.c_str(), reg, mask, ip);
-	printf ("%s or $reg(%d,4), 0x%lx // comes with %08x\n", prefix.c_str(), reg, (value&valmask), ip);
-	printf ("%s popfd // comes with %08x\n", prefix.c_str(), ip);
+	if (prefix == "[SLICE_VERIFICATION]") {
+	    OUTPUT_SLICE_VERIFICATION ("pushfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("and %s, 0x%lx", regName(reg,4), mask);
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("or %s, 0x%lx", regName(reg,4), (value&valmask));
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("popfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	} else {
+	    printf ("%s pushfd // comes with %08x\n", prefix.c_str(), ip);
+	    printf ("%s and %s, 0x%lx // comes with %08x\n", prefix.c_str(), regName(reg,4), mask, ip);
+	    printf ("%s or %s, 0x%lx // comes with %08x\n", prefix.c_str(), regName(reg,4), (value&valmask), ip);
+	    printf ("%s popfd // comes with %08x\n", prefix.c_str(), ip);
+	}
     }
 }
  
@@ -1974,7 +2100,7 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
 		print_extra_move_reg_1 (ip, reg, *regvalue->byte, is_upper8);
             break;
         case 2:
-            printf ("%s mov $reg(%d,%u), %u //comes with %08x\n", prefix.c_str(), reg, reg_size, *regvalue->word, ip);
+            printf ("%s mov %s, %u //comes with %08x\n", prefix.c_str(), regName(reg,reg_size), *regvalue->word, ip);
             break;
         case 4:
 	    print_extra_move_reg_4 (ip, reg, *regvalue->dword, tainted, prefix);
@@ -2030,28 +2156,39 @@ u_long debug_counter = 0;
 
 static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
 {
-    printf ("[SLICE_VERIFICATION] pushfd //comes with %08x (move upwards)\n", ip); //save flags
+    OUTPUT_SLICE_VERIFICATION ("pushfd"); //save flags
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
     for (uint32_t i = 0; i < mem_size; i++) {
 	if (is_mem_tainted(mem_loc+i, 1)) {
-	    printf ("[SLICE_VERIFICATION] cmp byte ptr [0x%lx], 0x%x //comes with %08x (move upwards)\n", mem_loc+i, *(u_char *) (mem_loc+i), ip);
-	    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %08x\n", debug_counter++, ip);
-	    printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %08x\n", ip);
-	    printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %08x\n", ip);
+	    OUTPUT_SLICE_VERIFICATION ("cmp byte ptr [0x%lx], 0x%x", mem_loc+i, *(u_char *) (mem_loc+i));
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip);
+	    OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++);
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("jne index_diverge");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 	}
     }
-    printf ("[SLICE_VERIFICATION] popfd //comes with %08x (move upwards)\n", ip); 
+    OUTPUT_SLICE_VERIFICATION ("popfd");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
     clear_mem_taints (mem_loc, mem_size);
 }
 
 static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint32_t reg_value, uint32_t reg_u8, u_long mem_loc)
 {
-    printf ("[SLICE_VERIFICATION] pushfd //comes with %08x (move upwards)\n", ip); //save flags
-    printf ("[SLICE_VERIFICATION] cmp $reg(%d,%u),0x%x //comes with %08x (move upwards)\n", reg, reg_size, reg_value, ip);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %08x clock %ld bb %lld expected address %lx\n", 
-	    debug_counter++, ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc);
-    printf ("[SLICE_VERIFICATION] jne index_diverge //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] popfd //comes with %08x (move upwards)\n", ip); 
+    OUTPUT_SLICE_VERIFICATION ("pushfd"); //save flags
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
+    OUTPUT_SLICE_VERIFICATION ("cmp %s,0x%x", regName(reg, reg_size), reg_value);
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip);
+    OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++);
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x clock %ld bb %lld expected address %lx", ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc);
+    OUTPUT_SLICE_VERIFICATION ("jne index_diverge");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("popfd");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
     memset (&current_thread->shadow_reg_table[reg*REG_SIZE+reg_u8], 0, reg_size*sizeof(taint_t)); // No longer tainted because we verified it
 }
 
@@ -2063,18 +2200,28 @@ static inline void print_range_verification (ADDRINT ip, char* ins_str, u_long s
         start_index = strchr (ins_str, '[');
     } while (operand_index > 0);
     char* end_index = strchr (start_index, ']');
-    printf ("[SLICE_VERIFICATION] pushfd //comes with %08x (move upwards), address %lx\n", ip, mem_loc); //save flags
-    printf ("[SLICE_VERIFICATION] push eax //comes with %08x address %lx, %s\n", ip, mem_loc, ins_str);
-    printf ("[SLICE_VERIFICATION] lea eax, %.*s  //comes with %08x\n", end_index-start_index+1, start_index, ip);
-    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %08x\n", start, ip);
-    printf ("[SLICE_VERIFICATION] push 0x%lx //comes with %08x clock %ld bb %lld expected range %lx to %lx\n", 
-	    debug_counter++, ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, start, end-1);
-    printf ("[SLICE_VERIFICATION] jb index_diverge //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] cmp eax, 0x%lx //comes with %08x\n", end, ip);
-    printf ("[SLICE_VERIFICATION] jae index_diverge //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] add esp, 4 //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] pop eax //comes with %08x\n", ip);
-    printf ("[SLICE_VERIFICATION] popfd //comes with %08x (move upwards), address %lx\n", ip, mem_loc); 
+    OUTPUT_SLICE_VERIFICATION ("pushfd"); //save flags
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards), address %lx", ip, mem_loc); 
+    OUTPUT_SLICE_VERIFICATION ("push eax");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x address %lx, %s", ip, mem_loc, ins_str);
+    OUTPUT_SLICE_VERIFICATION ("lea eax, %.*s", end_index-start_index+1, start_index); 
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("cmp eax, 0x%lx", start);
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++); 
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x clock %ld bb %lld expected range %lx to %lx", ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, start, end-1);
+    OUTPUT_SLICE_VERIFICATION ("jb index_diverge");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("cmp eax, 0x%lx", end);
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x\n", ip);
+    OUTPUT_SLICE_VERIFICATION ("jae index_diverge");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("pop eax");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+    OUTPUT_SLICE_VERIFICATION ("popfd");
+    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards), address %lx", ip, mem_loc); 
 }
 
 // Only called if base or index register is tainted.  Returns true if register(s) are still tainted after verification due to range check */
@@ -2740,125 +2887,15 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 static inline const char* memSizeToPrefix (int size)
 { 
     switch (size) {
-    case 1: return " byte ptr ";
-    case 2: return " word ptr ";
-    case 4: return " dword ptr ";
-    case 8: return " qdword ptr ";
-    case 16: return " xmmword ptr ";
+    case 1: return " byte ptr";
+    case 2: return " word ptr";
+    case 4: return " dword ptr";
+    case 8: return " qdword ptr";
+    case 16: return " xmmword ptr";
     default:
 	fprintf (stderr, "memSizeToPrefix: unrecognized mem size %d\n", size);
 	assert (0);
     }
-}
-
-static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
-{
-    switch (reg_num) {
-    case 3:
-	switch (reg_size) {
-	case 4: return "edi";
-	case 2: return "di";
-	}
-	break;
-    case 4:
-	switch (reg_size) {
-	case 4: return "esi";
-	case 2: return "si";
-	}
-	break;
-    case 5:
-	switch (reg_size) {
-	case 4: return "ebp";
-	case 2: return "bp";
-	}
-	break;
-    case 6:
-	switch (reg_size) {
-	case 4: return "esp";
-	case 2: return "sp";
-	}
-	break;
-    case 7:
-	switch (reg_size) {
-	case 4: return "ebx";
-	case 2: return "bx";
-	case 1: return "bl";
-	case -1: return "bh";
-	}
-	break;
-    case 8:
-	switch (reg_size) {
-	case 4: return "edx";
-	case 2: return "dx";
-	case 1: return "dl";
-	case -1: return "dh";
-	}
-	break;
-    case 9:
-	switch (reg_size) {
-	case 4: return "ecx";
-	case 2: return "cx";
-	case 1: return "cl";
-	case -1: return "ch";
-	}
-	break;
-    case 10:
-	switch (reg_size) {
-	case 4: return "eax";
-	case 2: return "ax";
-	case 1: return "al";
-	case -1: return "ah";
-	}
-	break;
-    case 17:
-	switch (reg_size) {
-	case 4: return "eflag";
-	}
-	break;
-    case 54:
-	switch (reg_size) {
-	case 16: return "xmm0";
-	}
-	break;
-    case 55:
-	switch (reg_size) {
-	case 16: return "xmm1";
-	}
-	break;
-    case 56:
-	switch (reg_size) {
-	case 16: return "xmm2";
-	}
-	break;
-    case 57:
-	switch (reg_size) {
-	case 16: return "xmm3";
-	}
-	break;
-    case 58:
-	switch (reg_size) {
-	case 16: return "xmm4";
-	}
-	break;
-    case 59:
-	switch (reg_size) {
-	case 16: return "xmm5";
-	}
-	break;
-    case 60:
-	switch (reg_size) {
-	case 16: return "xmm6";
-	}
-	break;
-    case 61:
-	switch (reg_size) {
-	case 16: return "xmm7";
-	}
-	break;
-    }
-    fprintf (stderr, "regName: unrecognized reg %d size %d\n", reg_num, reg_size);
-    assert (0);
-    return NULL;
 }
 
 //#define PRINT(x) fprintf(stderr, x)
@@ -2878,10 +2915,9 @@ TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t m
 { 
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     if (mem_tainted) {
-	OUTPUT_SLICE (ip, "mov %s, %s [%lx]", regName(reg,mem_size), memSizeToPrefix(mem_size), mem_loc);
+	OUTPUT_SLICE (ip, "mov %s, %s [0x%lx]", regName(reg,mem_size), memSizeToPrefix(mem_size), mem_loc);
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value (mem_loc, mem_size));
     }
-    if (mem_tainted) print_immediate_addr (mem_loc, ip);
 }
 
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 

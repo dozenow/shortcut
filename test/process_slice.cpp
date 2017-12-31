@@ -128,24 +128,8 @@ string cleanupSliceLine (string s) {
     size_t index = s.find("[SLICE_INFO]");
     if (index == string::npos) {
 	index = s.length();
-#if 0
-        cerr << "cannot find SLICE_INFO: " << s << endl;
-        assert (0);
-#endif
     } 
     vector<string> strs = split (s.substr(0, index), '#');
-#if 0
-    if (strs[2].find("movsd") != string::npos) { //gcc won't recognize this format
-        strs[2] = strs[2].substr (0, strs[2].find("dword"));
-    } else 
-      if (strs[2].find("scas") != string::npos) { //gcc won't recognize this format
-        int index = strs[2].find("scas");
-        strs[2] = strs[2].substr (0, strs[2].find(" ", index));
-    } else 
-    if (strs[2].find("lea ") != string::npos) {
-        strs[2].erase (strs[2].find (" ptr "), 4);	
-    }
-#endif
     if (index == s.length()) {
 	return strs[2] + "   /* [ORIGINAL_SLICE] " +  strs[1]  + " */";
     } else {
@@ -189,86 +173,6 @@ string memSizeToPrefix(int size){
 			cerr <<"unrecognized mem size "  <<  size << endl;
 			assert (0);
 	}
-}
-
-#if 0
-string rewriteInst (string s) {
-	if (s.empty()) return string();
-	size_t push_pos = s.find ("#push");
-	size_t pop_pos = s.find ("#pop");
-	if ((push_pos != string::npos || pop_pos != string::npos) && s.find("#00000000") == string::npos) { 
-		size_t index = s.find("_mem[");
-		vector<string> memParams = split (s.substr(index+5, s.find("]", index) - index - 5), ':');
-		if (memParams.size() != 3) cout << s;
-		string addr = memParams[0];
-		string size = memParams[2];
-		string newInst;
-		if (push_pos != string::npos) { 
-			string tmp = s.replace (push_pos, 6, "#mov " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "], ");
-			size_t index = tmp.find ("[SLICE_INFO]");
-			if (index == string::npos) {
-			    return tmp;
-			} else {
-			    return tmp.replace(index, 12, "[SLICE_INFO] push instruction (rewrite)");
-			}
-		} 
-		if (pop_pos != string::npos) { 
-			string tmp = s.replace (pop_pos, 5, "#mov ");
-			size_t index = tmp.find ("    [SLICE_INFO]");
-			if (index == string::npos) {
-			    return tmp + ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]";
-			} else {
-			    return tmp.replace (index, 16, ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)");
-			}
-		}
-	} 
-	if (s.find ("#j") != string::npos) { //change jump instruction
-		size_t index = s.find ("#j");
-		size_t spaceIndex = s.find (" ", index);
-		string inst = s.substr (index +1, spaceIndex - index - 1);
-		string address = s.substr (spaceIndex + 1, s.find (" ", spaceIndex + 1) - spaceIndex - 1);
-		//assert (jumpMap.contains(inst))
-		if (s.find ("branch_taken 1") != string::npos) {
-			//if the original branch is taken, then we jump to error if not taken as before
-			string tmp = s.replace (index + 1, inst.length(), jumpMap(inst));
-                        if (s.find ("block_index") == string::npos) {
-                                spaceIndex = s.find (" ", s.find("#j"));
-                                return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
-                        } else 
-                                return tmp;
-		} else if (s.find ("branch_taken 0") != string::npos) 
-                        if (s.find ("block_index") == string::npos)
-			        return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
-                        else 
-                                return s;
-		else if (inst.compare("jecxz") == 0) {
-			return s.replace(spaceIndex + 1, address.length(), "not handled");
-		} else {
-                        if (s.find ("_branch_") == string::npos)
-			        cerr << "jump instruction? " + s << endl;
-		}
-	}
-	return s;
-}
-#endif
-
-string replaceReg (string s) {
-	size_t index = s.find ("$reg(");
-	if (index != string::npos) { 
-		//replace reg
-		size_t lastIndex = s.find (")", index +1);
-		string regIndex = s.substr (index + 4, lastIndex + 1 - index - 4);
-		if (regMap.find (regIndex) != regMap.end()) {
-			string out = s.replace (index, lastIndex + 1 - index, regMap[regIndex]);
-			//println (out)
-			return out;
-		} else  {
-			cerr << "cannot find corresponding reg!!!!!!." << s << endl;
-			cerr << s << endl;
-                        assert (0);
-		}
-	} 
-	return s;
 }
 
 string replaceMem (string s, string instStr) {
@@ -321,8 +225,8 @@ void printerr (string s) {
 #define SLICE_ADDRESSING 2
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
-#define SLICE_VERIFICATION 5
 #ifdef PRINT_DEBUG_INFO
+#define SLICE_VERIFICATION 5
 #define SLICE_TAINT 6
 #endif
 #define SLICE_CTRL_FLOW 7
@@ -334,9 +238,9 @@ inline int getLineType (string line) {
 		return SLICE_EXTRA;
 	else if (line.compare (0, 18, "[SLICE_ADDRESSING]") == 0) 
 		return SLICE_ADDRESSING;
+#ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
-#ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
 #endif
@@ -350,7 +254,9 @@ inline int getLineType (string line) {
                 cerr <<"BUG line: " <<line <<endl;
                 return -1;
         } else { 
+#ifdef PRINT_DEBUG_INFO
 		cerr << "Unrecognized line: " << line <<endl;
+#endif
                 return -1;
 	}
 }
@@ -408,7 +314,15 @@ int main (int argc, char* argv[]) {
 		        case SLICE_TAINT:
 #endif
                         case -1:
+#ifdef PRINT_DEBUG_INFO
                                 //ignore this line
+#else 
+			    if (!lastLine.empty()) {
+				buffer.push (make_pair(SLICE, lastLine));
+				lastLine.clear();
+			    }
+			    buffer.push (make_pair(-1, s));
+#endif
                                 break;
 			default: 
 			    size_t addrstart = s.find("comes with ");
@@ -423,9 +337,11 @@ int main (int argc, char* argv[]) {
 					lastLine.clear();
 				    }
 				}
+#ifdef PRINT_DEBUG_INFO
 			    } else {
 				cout << "lastAddr check fails" << endl;
                                 cout << s <<endl;
+#endif
 			    }
 			    buffer.push (make_pair(type, s));
 		}
@@ -489,7 +405,7 @@ int main (int argc, char* argv[]) {
 				while (!address.empty()) {
 					string line = address.front();
 					//replace reg
-					line = replaceReg (line);
+					//line = replaceReg (line);
 					//replace mem 
 					if (line.find("immediate_address") != string::npos) {
 						println ("/*Eliminated " + line + "*/");
@@ -541,25 +457,31 @@ int main (int argc, char* argv[]) {
 				//process SLICE_EXTRA
 				while (!extraLines.empty()) {
                                     //replace reg and mems 
-                                    println (cleanupExtraline(replaceReg(replaceMem(extraLines.front(), s))));
+                                    //println (cleanupExtraline(replaceReg(replaceMem(extraLines.front(), s))));
+                                    println (cleanupExtraline(replaceMem(extraLines.front(), s)));
                                     extraLines.pop();
 				}
 				println (cleanupSliceLine(s));
 				break;
+#ifdef PRINT_DEBUG_INFO
 			case SLICE_VERIFICATION:
-			    println (cleanupVerificationLine(replaceReg(s)));
+			    println (cleanupVerificationLine(s));
 			    break;
+#endif
                         case SLICE_CTRL_FLOW:
-                            println (cleanupCtrlFlowLine(replaceReg(s)));
+                            println (cleanupCtrlFlowLine(s));
                             break;
 #ifdef PRINT_DEBUG_INFO
                         case SLICE_TAINT:
                                 println ("/*Eliminated " + s + "*/");
                                 break;
-#endif
 			default:
 				println ("unrecognized: " + s);
 				assert (0);
+#else
+		        default:
+			        println (s);
+#endif
 		}
 		buffer.pop();
 	}
