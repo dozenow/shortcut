@@ -137,6 +137,7 @@ string cleanupSliceLine (string s) {
     }
 }
 
+#ifdef PRINT_DEBUG_INFO
 string cleanupExtraline (string s) {
 	size_t start_index = s.find("]") + 2;
 	size_t end_index = s.find("//");
@@ -155,6 +156,7 @@ string cleanupVerificationLine (string s) {
 	size_t end_index = s.find("//");
 	return s.substr(start_index, end_index - start_index) + "/*" + s.substr (0, start_index) + s.substr(end_index) + "*/";
 }
+#endif
 
 string memSizeToPrefix(int size){ 
 	switch(size){
@@ -167,35 +169,6 @@ string memSizeToPrefix(int size){
 			cerr <<"unrecognized mem size "  <<  size << endl;
 			assert (0);
 	}
-}
-
-string replaceMem (string s, string instStr) {
-	size_t addrIndex = s.find("$addr(");
-	if (addrIndex != string::npos) {
-		//replace the mem operand in this line
-		//copy the original slice code's addressing mode
-		if (instStr.find (" ptr " ) == string::npos) {
-                    cerr << "error line: " <<s <<endl;
-                    assert (0);
-                }
-		//I haven't handled the case where more than one operand is mem
-		assert (instStr.find (" ptr " ) == instStr.rfind(" ptr "));
-		assert (instStr.find ("[SLICE]") == 0);
-		string inst = split(instStr.substr(0, instStr.find("[SLICE_INFO]")), '#')[2];
-		vector<string> operands = split(inst.substr (inst.find(" ") + 1), ',');
-		string out;
-		//println ("replaceMem: " + instStr + ", " + s + ", " + operands)
-		//replace address with base+index registers
-		for (string op: operands) {
-			//println ("replaceMem: " + op)
-			size_t index = op.find("ptr");
-			if(index != string::npos) {
-				out = s.replace (addrIndex, s.find(")", addrIndex + 1) + 1 - addrIndex, op);
-			}
-		}
-		return out;
-	}
-	return s;
 }
 
 AddrToRestore parseRestoreAddress (string s) {
@@ -215,28 +188,30 @@ void printerr (string s) {
 }
 
 #define SLICE 0
+#ifdef PRINT_DEBUG_INFO
 #define SLICE_EXTRA 1
+#endif
 #define SLICE_RESTORE_ADDRESS 3
 #define SLICE_RESTORE_REG 4
 #ifdef PRINT_DEBUG_INFO
 #define SLICE_VERIFICATION 5
 #define SLICE_TAINT 6
-#endif
 #define SLICE_CTRL_FLOW 7
+#endif
 
 inline int getLineType (string line) { 
 	if (line.compare (0, 7, "[SLICE]") == 0)
 		return SLICE;
+#ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 13, "[SLICE_EXTRA]") == 0)
 		return SLICE_EXTRA;
-#ifdef PRINT_DEBUG_INFO
 	else if (line.compare (0, 20, "[SLICE_VERIFICATION]") == 0)
 		return SLICE_VERIFICATION;
 	else if (line.compare (0, 13, "[SLICE_TAINT]") == 0)
                 return SLICE_TAINT;
-#endif
         else if (line.compare(0, 17, "[SLICE_CTRL_FLOW]") == 0) 
                 return SLICE_CTRL_FLOW;
+#endif
 	else if (line.compare (0, 23, "[SLICE_RESTORE_ADDRESS]") == 0) 
 		return SLICE_RESTORE_ADDRESS;
 	else if (line.compare (0, 19, "[SLICE_RESTORE_REG]") == 0)
@@ -261,12 +236,11 @@ int main (int argc, char* argv[]) {
 		cerr << "cannot open input file" << endl;
 	}
 
-	string lastLine;
 	queue<pair<int,string>> buffer; //type and the content of the string
 	list<AddrToRestore> restoreAddress;
 	list<string> restoreReg;
 	int totalRestoreSize = 0;
-	string s, lastAddr;
+	string s;
 	while (!in.eof()) {
 		if (in.fail() || in.bad()) assert (0);
 		getline (in, s);
@@ -293,55 +267,13 @@ int main (int argc, char* argv[]) {
 					totalRestoreSize += 4;
 					break;
 				}
-			case SLICE:
-				//printerr (lastLine);
-				if (!lastLine.empty())
-					buffer.push (make_pair(SLICE, lastLine));
-				lastLine = s;
-				lastAddr = s.substr(9);
-				lastAddr = lastAddr.substr(0,lastAddr.find(" "));
+			default:
+				buffer.push (make_pair(type, s));
 				break;
-#ifdef PRINT_DEBUG_INFO
-		        case SLICE_TAINT:
-#endif
-                        case -1:
-#ifdef PRINT_DEBUG_INFO
-                                //ignore this line
-#else 
-			    if (!lastLine.empty()) {
-				buffer.push (make_pair(SLICE, lastLine));
-				lastLine.clear();
-			    }
-			    buffer.push (make_pair(-1, s));
-#endif
-                                break;
-			default: 
-			    size_t addrstart = s.find("comes with ");
-			    if (addrstart != string::npos) {
-				string addr = s.substr(addrstart+11);
-				size_t addrend = addr.find(" ");
-				if (addrend != string::npos) addr = addr.substr(0,addrend);
-				if (addr != lastAddr) {
-				    // This doesn't go with prior slice
-				    if (!lastLine.empty()) {
-					buffer.push (make_pair(SLICE, lastLine));
-					lastLine.clear();
-				    }
-				}
-#ifdef PRINT_DEBUG_INFO
-			    } else {
-				cout << "lastAddr check fails" << endl;
-                                cout << s <<endl;
-#endif
-			    }
-			    buffer.push (make_pair(type, s));
 		}
 	}
-	//printerr (lastLine);
-	buffer.push(make_pair(SLICE, lastLine));
 	if (totalRestoreSize >= 65536) fprintf (stderr, "Total restore size: %d\n", totalRestoreSize);
 	assert (totalRestoreSize < 65536); //currently we only allocated 65536 bytes for this restore stack
-
 
 	//second round
 	//write out headers
@@ -372,39 +304,26 @@ int main (int argc, char* argv[]) {
 
 	//switch posistion and generate compilable assembly
 	//println ("**************************")
-	queue<string> extraLines;
 	while (!buffer.empty()) {
 		auto p = buffer.front();
 		string s= p.second;
 		//SLICE_ADDRESSING comes first, then SLICE_EXTRA then SLICE
 		switch (p.first) { 
+#ifdef PRINT_DEBUG_INFO
 			case SLICE_EXTRA:
-				extraLines.push(s);
-				break;
+			    println (cleanupExtraline(s));
+			    break;
+#endif
 			case SLICE:
-				//here, we need to convert instruction, init addressing registers and init source operands if they're not tainted;
-				//immediate addresses are converted
-				//first step, convert instructions
-				 //special case: to avoid affecting esp, we change pos/push to mov instructions
-				 //special case: convert jumps
-				//process SLICE_EXTRA
-				while (!extraLines.empty()) {
-                                    //replace reg and mems 
-                                    //println (cleanupExtraline(replaceReg(replaceMem(extraLines.front(), s))));
-                                    println (cleanupExtraline(replaceMem(extraLines.front(), s)));
-                                    extraLines.pop();
-				}
-				println (cleanupSliceLine(s));
-				break;
+			    println (cleanupSliceLine(s));
+			    break;
 #ifdef PRINT_DEBUG_INFO
 			case SLICE_VERIFICATION:
 			    println (cleanupVerificationLine(s));
 			    break;
-#endif
                         case SLICE_CTRL_FLOW:
                             println (cleanupCtrlFlowLine(s));
                             break;
-#ifdef PRINT_DEBUG_INFO
                         case SLICE_TAINT:
                                 println ("/*Eliminated " + s + "*/");
                                 break;

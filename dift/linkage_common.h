@@ -21,12 +21,16 @@
 #ifdef PRINT_DEBUG_INFO
 #define OUTPUT_SLICE(addr,format,...) printf ("[SLICE] %08x #" format "\t", addr, ## __VA_ARGS__)
 #define OUTPUT_SLICE_INFO(format,...) printf ("[SLICE_INFO] " format "\n", ## __VA_ARGS__)
+#define OUTPUT_SLICE_EXTRA(ip,format,...) printf ("[SLICE_EXTRA] " format " // comes with %08x\n", ## __VA_ARGS__, ip);
+#define OUTPUT_SLICE_CTRL_FLOW(ip,format,...) printf ("[SLICE_CTRL_FLOW] " format " // comes with %08x\n", ## __VA_ARGS__, ip);
 #define OUTPUT_SLICE_VERIFICATION(format,...) printf ("[SLICE_VERIFICATION] " format "\t", ## __VA_ARGS__)
 #define OUTPUT_SLICE_VERIFICATION_INFO(format,...) printf ("// " format "\n", ## __VA_ARGS__)
 #define DEBUG_INFO printf
 #else
 #define OUTPUT_SLICE(addr,format,...) printf ("[SLICE] #%08x #" format "\n", addr, ## __VA_ARGS__)
 #define OUTPUT_SLICE_INFO(x,...)
+#define OUTPUT_SLICE_EXTRA(ip,format,...) printf (format "\n", ## __VA_ARGS__);
+#define OUTPUT_SLICE_CTRL_FLOW(ip,format,...) printf (format "\n", ## __VA_ARGS__);
 #define OUTPUT_SLICE_VERIFICATION(format,...) printf (format "\n", ## __VA_ARGS__)
 #define OUTPUT_SLICE_VERIFICATION_INFO(x,...)
 #define DEBUG_INFO(x,...)
