@@ -24,6 +24,10 @@ using namespace boost::icl;
 #define USE_MERGE_HASH
 #define TAINT_STATS
 
+// For slice generation - output to these files
+FILE* mainfile = NULL;
+FILE* slicefile = NULL;
+
 extern struct thread_data* current_thread;
 extern int splice_output;
 extern unsigned long global_syscall_cnt;
@@ -88,8 +92,6 @@ struct taint_stats_profile tsp;
 
 struct slab_alloc leaf_alloc;
 struct slab_alloc node_alloc;
-
-extern FILE* slice_f;
 
 // use taint numbers instead
 taint_t taint_num;
@@ -1944,7 +1946,7 @@ static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size)
     return dst_value;
 }
 
-static const char* translate_mmx (uint32_t reg)
+static inline const char* translate_mmx (uint32_t reg)
 {
     switch (reg) {
     case 54: return "xmm0";
@@ -3163,7 +3165,7 @@ static void change_jump (uint32_t mask, const CONTEXT* ctx, char* ins_str)
 
 TAINTSIGN fw_slice_jmp_reg (ADDRINT ip, char* ins_str, uint32_t reg, uint32_t reg_size, uint32_t is_upper8, ADDRINT target) 
 {
-    if (is_reg_tainted(reg, reg_size, is_upper8)) {
+    if (is_reg_tainted (reg, reg_size, is_upper8)) {
 	verify_register (ip, reg, reg_size, target, is_upper8, target);
     }
 }
@@ -4323,17 +4325,41 @@ taint_t create_and_taint_option (u_long mem_addr)
     return t;
 }
 
-void fw_slice_print_header ()
+int fw_slice_print_header (u_long recheck_group)
 {
-    printf (".section	.text\n");
-    printf (".globl _start\n");
-    printf ("_start:\n");
-    printf ("push ebp\n");
-    printf ("call recheck_start\n");
-    printf ("pop ebp\n");
-    printf ("jmp ckpt_mem\n");
-    printf ("slice_begins:\n");
+    char filename[256];
+    sprintf (filename, "/replay_logdb/rec_%ld/exslice.c", recheck_group);
+    mainfile = fopen(filename, "w");
+    if (mainfile == NULL) {
+	fprintf (stderr, "Cannot open %s\n", filename);
+	return -1;
+    }
+
+    fprintf (mainfile, "asm (\n");
+    OUTPUT_MAIN (".section	.text");
+    OUTPUT_MAIN (".globl _start");
+    OUTPUT_MAIN ("_start:");
+    OUTPUT_MAIN ("push ebp");
+    OUTPUT_MAIN ("call recheck_start");
+    OUTPUT_MAIN ("pop ebp");
+    OUTPUT_MAIN ("jmp ckpt_mem");
+    OUTPUT_MAIN ("slice_begins:");
+    OUTPUT_MAIN ("call _section1"); 
     // TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)
+
+    char slicename[256];
+    sprintf (slicename, "/replay_logdb/rec_%ld/exslice1.c", recheck_group);
+    slicefile = fopen(slicename, "w");
+    if (slicefile == NULL) {
+	fprintf (stderr, "Cannot open %s\n", slicename);
+	return -1;
+    }
+    fprintf (slicefile, "asm (\n");
+    OUTPUT_SLICE_EXTRA (0, ".section	.text");
+    OUTPUT_SLICE_EXTRA (0, ".globl _section1");
+    OUTPUT_SLICE_EXTRA (0, "_section1:");
+
+    return 0;
 }
 
 class AddrToRestore {
@@ -4350,30 +4376,30 @@ class AddrToRestore {
 
     void printPush() {
 	if (size == 2 || size == 4) //qword and xmmword are not suported for push on 32-bit
-	    printf ("push %s [0x%lx]\n", memSizeToPrefix(size), loc);
+	    OUTPUT_MAIN ("push %s [0x%lx]", memSizeToPrefix(size), loc);
 	else {
 	    //use movsb
 	    cout <<"/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
-	    printf ("sub esp, %d\n", size);
-	    printf ("mov ecx, %d\n", size);
-	    printf ("lea edi, [esp]\n");
-	    printf ("lea esi, [0x%lx]\n", loc);
-	    printf ("rep movsb\n");
+	    OUTPUT_MAIN ("sub esp, %d", size);
+	    OUTPUT_MAIN ("mov ecx, %d", size);
+	    OUTPUT_MAIN ("lea edi, [esp]");
+	    OUTPUT_MAIN ("lea esi, [0x%lx]", loc);
+	    OUTPUT_MAIN ("rep movsb");
 	}
 	pushed += size;
     }
 
     void printPop () { 
 	if (size == 2 || size == 4)
-	    printf ("pop %s [0x%lx]\n", memSizeToPrefix(size), loc);
+	    OUTPUT_MAIN ("pop %s [0x%lx]", memSizeToPrefix(size), loc);
 	else {
 	    //use movsb
 	    cout << "/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
-	    printf ("mov ecx, %d\n", size);
-	    printf ("lea edi, [0x%lx]\n", loc);
-	    printf ("lea esi, [esp]\n");
-	    printf ("rep movsb\n");
-	    printf ("add esp, %d\n", size);
+	    OUTPUT_MAIN ("mov ecx, %d", size);
+	    OUTPUT_MAIN ("lea edi, [0x%lx]", loc);
+	    OUTPUT_MAIN ("lea esi, [esp]");
+	    OUTPUT_MAIN ("rep movsb");
+	    OUTPUT_MAIN ("add esp, %d", size);
 	}
     }
 };
@@ -4406,31 +4432,31 @@ static void fw_slice_check_final_mem_taint ()
     }
 
     // Now write out the ckpt code
-    printf ("ckpt_mem:\n");
+    OUTPUT_MAIN ("ckpt_mem:");
     for (AddrToRestore addrRestore: restoreAddress) 
 	addrRestore.printPush();
 
     // Stack must be aligned for use during slice
     // Adjust for 4 byte return address pushed for call of sections (needed for large slices)
-    printf ("sub esp, %ld\n", (28-(AddrToRestore::pushed%16))%16);
-    printf ("jmp slice_begins\n");
+    OUTPUT_MAIN ("sub esp, %ld", (28-(AddrToRestore::pushed%16))%16);
+    OUTPUT_MAIN ("jmp slice_begins");
 
     // And write out the restore code
-    printf ("restore_mem:\n");
-    printf ("add esp, %ld\n", (28-(AddrToRestore::pushed%16))%16);
+    OUTPUT_MAIN ("restore_mem:");
+    OUTPUT_MAIN ("add esp, %ld", (28-(AddrToRestore::pushed%16))%16);
 
     for (auto addrRestore = restoreAddress.rbegin(); addrRestore != restoreAddress.rend(); ++addrRestore) {
 	addrRestore->printPop();
     }
 
-    printf ("jmp slice_ends\n");
+    OUTPUT_MAIN ("jmp slice_ends");
 
 #if 0
     // JNF - XXX - This was broken we should fix
     /* Assume 1 thread for now */
     for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
 	if (pregs[i]) {
-	    printf ("[CHECK_REG] $reg(%d) is tainted, index %d\n", i/REG_SIZE, i);
+	    OUTPUT_MAIN ("[CHECK_REG] $reg(%d) is tainted, index %d", i/REG_SIZE, i);
 	}
     }
 #endif
@@ -4438,28 +4464,35 @@ static void fw_slice_check_final_mem_taint ()
 
 void fw_slice_print_footer ()
 {
-    printf ("/* restoring address and registers */\n");
-    printf ("jmp restore_mem\n");
-    printf ("slice_ends:\n");
-    printf ("mov ebx, 1\n");
-    printf ("mov eax, 350\n");
-    printf ("int 0x80\n");
+    OUTPUT_MAIN ("jmp restore_mem");
+    OUTPUT_MAIN ("slice_ends:");
+    OUTPUT_MAIN ("mov ebx, 1");
+    OUTPUT_MAIN ("mov eax, 350");
+    OUTPUT_MAIN ("int 0x80");
     
+    fw_slice_check_final_mem_taint ();
+
+    fprintf (mainfile, ");\n");
+    fclose (mainfile);
+
     //control flow divergence - deosn't return
-    printf("jump_diverge:\n");
-    printf("push eax\n");
-    printf("push ecx\n");
-    printf("push edx\n");
-    printf("call handle_jump_diverge\n");
+    OUTPUT_SLICE_EXTRA(0, "ret");
+    OUTPUT_SLICE_EXTRA(0, "jump_diverge:");
+    OUTPUT_SLICE_EXTRA(0, "push eax");
+    OUTPUT_SLICE_EXTRA(0, "push ecx");
+    OUTPUT_SLICE_EXTRA(0, "push edx");
+    OUTPUT_SLICE_EXTRA(0, "call handle_jump_diverge");
     
     //index divergence - doesn't return
-    printf("index_diverge:\n");
-    printf("push eax\n");
-    printf("push ecx\n");
-    printf("push edx\n");
-    printf("call handle_index_diverge\n");
+    OUTPUT_SLICE_EXTRA(0, "index_diverge:");
+    OUTPUT_SLICE_EXTRA(0, "push eax");
+    OUTPUT_SLICE_EXTRA(0, "push ecx");
+    OUTPUT_SLICE_EXTRA(0, "push edx");
+    OUTPUT_SLICE_EXTRA(0, "call handle_index_diverge");
+    
+    fprintf (slicefile, ");\n");
+    fclose (slicefile);
 
-    fw_slice_check_final_mem_taint ();
     fflush (stdout);
 }
 

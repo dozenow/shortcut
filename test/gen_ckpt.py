@@ -103,71 +103,70 @@ if input_asm_file is None:
 
 # Convert asm to c file
 fcnt = 1;
-infd = open(outputdir+"/pinout", "r")
-mainfd = open(outputdir+"/exslice.c", "w")
-mainfd.write ("asm (\n")
-for line in infd:
-    mainfd.write ("\"" + line.strip() + "\\n\"\n")
-    if line.strip() == "slice_begins:":
-        break
-mainfd.write("\"call _section1\\n\"\n")
+#infd = open(outputdir+"/pinout", "r")
+#mainfd = open(outputdir+"/exslice.c", "w")
+#mainfd.write ("asm (\n")
+#for line in infd:
+#    mainfd.write ("\"" + line.strip() + "\\n\"\n")
+#    if line.strip() == "slice_begins:":
+#        break
+#mainfd.write("\"call _section1\\n\"\n")
      
-outfd = open(outputdir+"/exslice1.c", "w")
-outfd.write ("asm (\n")
-outfd.write ("\".section	.text\\n\"\n")
-outfd.write ("\".globl _section1\\n\"\n")
-outfd.write ("\"_section1:\\n\"\n")
+#outfd = open(outputdir+"/exslice1.c", "w")
+#outfd.write ("asm (\n")
+#outfd.write ("\".section	.text\\n\"\n")
+#outfd.write ("\".globl _section1\\n\"\n")
+#outfd.write ("\"_section1:\\n\"\n")
 
-def write_jump_index ():
-    outfd.write ("\"ret\\n\"\n");
-    outfd.write ("\"jump_diverge:\\n\"\n");
-    outfd.write ("\"push eax\\n\"\n");
-    outfd.write ("\"push ecx\\n\"\n");
-    outfd.write ("\"push edx\\n\"\n");
-    outfd.write ("\"call handle_jump_diverge\\n\"\n");
-    outfd.write ("\"push edx\\n\"\n");
-    outfd.write ("\"push ecx\\n\"\n");
-    outfd.write ("\"push eax\\n\"\n");
-    outfd.write ("\"index_diverge:\\n\"\n");
-    outfd.write ("\"push eax\\n\"\n");
-    outfd.write ("\"push ecx\\n\"\n");
-    outfd.write ("\"push edx\\n\"\n");
-    outfd.write ("\"call handle_index_diverge\\n\"\n");
-    outfd.write ("\"push edx\\n\"\n");
-    outfd.write ("\"push ecx\\n\"\n");
-    outfd.write ("\"push eax\\n\"\n");
-    outfd.write (");\n")
-    outfd.close()
+#def write_jump_index ():
+#    outfd.write ("\"ret\\n\"\n");
+#    outfd.write ("\"jump_diverge:\\n\"\n");
+#    outfd.write ("\"push eax\\n\"\n");
+#    outfd.write ("\"push ecx\\n\"\n");
+#    outfd.write ("\"push edx\\n\"\n");
+#    outfd.write ("\"call handle_jump_diverge\\n\"\n");
+#    outfd.write ("\"push edx\\n\"\n");
+#    outfd.write ("\"push ecx\\n\"\n");
+#    outfd.write ("\"push eax\\n\"\n");
+#    outfd.write ("\"index_diverge:\\n\"\n");
+#    outfd.write ("\"push eax\\n\"\n");
+#    outfd.write ("\"push ecx\\n\"\n");
+#    outfd.write ("\"push edx\\n\"\n");
+#    outfd.write ("\"call handle_index_diverge\\n\"\n");
+#    outfd.write ("\"push edx\\n\"\n");
+#    outfd.write ("\"push ecx\\n\"\n");
+#    outfd.write ("\"push eax\\n\"\n");
+#    outfd.write (");\n")
+#    outfd.close()
 
-jcnt = 0
-linecnt = 0
-for line in infd:
-    if line.strip() == "/* restoring address and registers */":
-        write_jump_index ()
-        break
-    if linecnt > 1000000 and "recheck" in line:
-	outfd.write ("\"" + line.strip() + "\\n\"\n")
-        write_jump_index ()
-        fcnt += 1
-        linecnt = 0
-        mainfd.write("\"call _section" + str(fcnt) + "\\n\"\n")
-        outfd = open(outputdir+"/exslice" + str(fcnt) + ".c", "w")
-        outfd.write ("asm (\n")
-        outfd.write ("\".section	.text\\n\"\n")
-        outfd.write ("\".globl _section" + str(fcnt) + "\\n\"\n")
-        outfd.write ("\"_section" + str(fcnt) +":\\n\"\n")
-    else:
-	outfd.write ("\"" + line.strip() + "\\n\"\n")
-        linecnt += 1
+#jcnt = 0
+#linecnt = 0
+#for line in infd:
+#    if linecnt > 1000000 and "recheck" in line:
+#	outfd.write ("\"" + line.strip() + "\\n\"\n")
+#        write_jump_index ()
+#        fcnt += 1
+#        linecnt = 0
+#        #mainfd.write("\"call _section" + str(fcnt) + "\\n\"\n")
+#        outfd = open(outputdir+"/exslice" + str(fcnt) + ".c", "w")
+#        outfd.write ("asm (\n")
+#        outfd.write ("\".section	.text\\n\"\n")
+#        outfd.write ("\".globl _section" + str(fcnt) + "\\n\"\n")
+#        outfd.write ("\"_section" + str(fcnt) +":\\n\"\n")
+#    else:
+#	outfd.write ("\"" + line.strip() + "\\n\"\n")
+#        linecnt += 1
+
+#write_jump_index ()
         
-for line in infd:
-    mainfd.write ("\"" + line.strip() + "\\n\"\n")
+#for line in infd:
+#    mainfd.write ("\"" + line.strip() + "\\n\"\n")
 
-mainfd.write (");\n")
-mainfd.close()
-infd.close()
+#mainfd.write (");\n")
+#mainfd.close()
+#infd.close()
 
-ts_convert = datetime.datetime.now()
+#ts_convert = datetime.datetime.now()
 
 # And compile it
 pool = Pool(processes=7)
@@ -191,8 +190,7 @@ p.wait()
 # Print timing info
 ts_end = datetime.datetime.now()
 print "Time to run pin tool: ", ts_pin - ts_start
-print "Time to convert: ", ts_convert - ts_pin
-print "Time to compile: ", ts_compile - ts_convert
+print "Time to compile: ", ts_compile - ts_pin
 print "Time to ckpt: ", ts_end - ts_compile
 print "Total time: ", ts_end - ts_start
 

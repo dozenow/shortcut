@@ -246,8 +246,7 @@ extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
 extern vector<struct ctrl_flow_param> ctrl_flow_params;
 extern map<u_long,syscall_check> syscall_checks;
-
-FILE* slice_f;
+extern FILE* slicefile;
 
 #ifdef TAINT_STATS
 struct timeval begin_tv, end_tv;
@@ -5898,13 +5897,6 @@ void init_logs(void)
 	//log_f = stdout;
     }
 
-    char slice_file_name[256];
-    if (!slice_f) { 
-	    snprintf (slice_file_name, 256, "%s/slice", group_directory);
-	    slice_f = fopen (slice_file_name, "w");
-	    assert (slice_f != NULL);
-    }
-
 #ifdef TAINT_STATS
     {
         char stats_log_name[256];
@@ -6085,7 +6077,7 @@ int main(int argc, char** argv)
 #endif
 
     init_taint_structures(group_directory, check_filename);
-    fw_slice_print_header();
+    if (fw_slice_print_header(recheck_group) < 0) return -1;
 
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(dev_fd);

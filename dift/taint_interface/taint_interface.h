@@ -99,7 +99,7 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
   TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
-void fw_slice_print_header ();
+  int fw_slice_print_header (u_long recheck_group);
 void fw_slice_print_footer ();
 
 
