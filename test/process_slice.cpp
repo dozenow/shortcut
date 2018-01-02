@@ -278,6 +278,7 @@ int main (int argc, char* argv[]) {
 	//second round
 	//write out headers
 	//println	(".intel_syntax noprefix")
+#if 0
 	println (".section	.text");
 	println (".globl _start");
 	println ("_start:");
@@ -287,7 +288,7 @@ int main (int argc, char* argv[]) {
 	println ("call recheck_start");
 	println ("pop ebp");
 	println ("/*TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)*/");
-
+#endif
 	//write out all restore address
 	println ("/*first checkpoint necessary addresses and registers*/");
 	for (string reg: restoreReg) { 
@@ -337,6 +338,7 @@ int main (int argc, char* argv[]) {
 		}
 		buffer.pop();
 	}
+#if 0
 	println ("/* restoring address and registers */");
 	cout << "add esp, " << (28-(pushed%16))%16 << endl;
 
@@ -372,6 +374,7 @@ int main (int argc, char* argv[]) {
 	println ("push edx");
 	println ("push ecx");
 	println ("push eax");
+#endif
 
 	return 0;
 }

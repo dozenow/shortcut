@@ -302,7 +302,8 @@ long read_recheck (size_t count)
                     handle_mismatch();
                 }
             } else {
-                printf ("[BUG] - read file times mismatch but counld check actual file content to see if it still matches\n");
+                printf ("[BUG] - read file times mismatch but could check actual file content to see if it still matches\n");
+		printf ("]BUG] - file system time %ld.%ld cache time %ld.%ld\n", st.st_mtim.tv_sec, st.st_mtim.tv_nsec, cache_files_opened[pread->fd].orv.mtime.tv_sec, cache_files_opened[pread->fd].orv.mtime.tv_nsec);
                 handle_mismatch();
             }
         } else {

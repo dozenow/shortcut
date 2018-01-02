@@ -2135,6 +2135,7 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 }
 
 u_long debug_counter = 0;
+u_long jump_count = 0;
 
 static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
 {
@@ -2395,44 +2396,6 @@ void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size)
 { 
     interval<unsigned long>::type mem_interval = interval<unsigned long>::closed(mem_loc, mem_loc+size-1);
     current_thread->address_taint_set->insert (mem_interval);
-}
-
-int fw_slice_check_final_mem_taint (taint_t* pregs) 
-{ 
-	int has_mem = 0;
-	int i;
-       
-        for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
-                iter != current_thread->address_taint_set->end(); ++iter) {
-	    // We need to deal with partial taint
-	    u_long bytes_to_restore = 0;
-	    u_long addr;
-	    for (addr = iter->lower(); addr <= iter->upper(); addr++) {
-		if (is_mem_tainted (addr, 1)) {
-		    if (bytes_to_restore) {
-			printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
-			has_mem = 1;
-			bytes_to_restore = 0;
-		    }
-		} else {
-		    bytes_to_restore++;
-		}
-	    }
-	    if (bytes_to_restore) {
-		printf ("[SLICE_RESTORE_ADDRESS] mem_loc,is_imm,size: %lx, 1, %lu\n", addr-bytes_to_restore, bytes_to_restore);
-		has_mem = 1;
-	    }
-        }
-
-	/* Assume 1 thread for now */
-	for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
-	    if (pregs[i]) {
-		printf ("[CHECK_REG] $reg(%d) is tainted, index %d\n", i/REG_SIZE, i);
-	    }
-	}
-        fflush (stdout);
-
-	return has_mem;
 }
 
 TAINTSIGN ctrl_flow_init_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t* reg_table) 
@@ -2724,8 +2687,17 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 
 		CFDEBUG ("[CTRL_FLOW] now the branch is taken %d\n", !taken);
 		char changed_inst[64] = {0};
-		char* start = strchr (ins_str, ' ');
-		memcpy (changed_inst, ins_str, start-ins_str);
+		char *t = changed_inst;
+		char *p = ins_str;
+		if (!taken) {
+		    *t++ = *p++;
+		    if (*p != 'n') {
+			*t++ = 'n';
+		    } else {
+			p++;
+		    }
+		}
+		for (; *p != ' '; p++, t++) *t = *p;
 
 		char prefix[64];
 		make_label_prefix (prefix, current_thread->ctrl_flow_info.diverge_point->front());
@@ -3182,7 +3154,7 @@ static void change_jump (uint32_t mask, const CONTEXT* ctx, char* ins_str)
 	if (mask & OF_FLAG) value ^= OF_MASK;
 	if (mask & DF_FLAG) value ^= DF_MASK;
     }
-    printf ("[CTRL_FLOW] %s force to jump: eflag value after %x\n", ins_str, value);
+    CFDEBUG ("[CTRL_FLOW] %s force to jump: eflag value after %x\n", ins_str, value);
     PIN_SetContextReg (&save_ctx, LEVEL_BASE::REG_EFLAGS, value);
     current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
     current_thread->ctrl_flow_info.changed_jump = true;
@@ -3299,8 +3271,16 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	    for (; *p != ' '; p++, t++) *t = *p;
 	    *t++ = ' ';
 	    strcpy (t, "jump_diverge");
+	    OUTPUT_SLICE_VERIFICATION ("pushfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("push %ld", jump_count++);
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
             OUTPUT_SLICE (ip, "%s", change_str);
             OUTPUT_SLICE_INFO ("#src_flag[FM%x:1:4] #branch_taken %d", mask, (int) taken);
+	    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("popfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 #ifdef TRACK_CTRL_FLOW_DIVERGE
         }
 #endif 
@@ -4342,3 +4322,144 @@ taint_t create_and_taint_option (u_long mem_addr)
     taint_mem_internal(mem_addr, t);
     return t;
 }
+
+void fw_slice_print_header ()
+{
+    printf (".section	.text\n");
+    printf (".globl _start\n");
+    printf ("_start:\n");
+    printf ("push ebp\n");
+    printf ("call recheck_start\n");
+    printf ("pop ebp\n");
+    printf ("jmp ckpt_mem\n");
+    printf ("slice_begins:\n");
+    // TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)
+}
+
+class AddrToRestore {
+  private: 
+    u_long loc;
+    int size;
+  public:
+    static u_long pushed;
+
+    AddrToRestore(u_long loc, int size) { 
+	this->loc = loc;
+	this->size = size;
+    }
+
+    void printPush() {
+	if (size == 2 || size == 4) //qword and xmmword are not suported for push on 32-bit
+	    printf ("push %s [0x%lx]\n", memSizeToPrefix(size), loc);
+	else {
+	    //use movsb
+	    cout <<"/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
+	    printf ("sub esp, %d\n", size);
+	    printf ("mov ecx, %d\n", size);
+	    printf ("lea edi, [esp]\n");
+	    printf ("lea esi, [0x%lx]\n", loc);
+	    printf ("rep movsb\n");
+	}
+	pushed += size;
+    }
+
+    void printPop () { 
+	if (size == 2 || size == 4)
+	    printf ("pop %s [0x%lx]\n", memSizeToPrefix(size), loc);
+	else {
+	    //use movsb
+	    cout << "/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
+	    printf ("mov ecx, %d\n", size);
+	    printf ("lea edi, [0x%lx]\n", loc);
+	    printf ("lea esi, [esp]\n");
+	    printf ("rep movsb\n");
+	    printf ("add esp, %d\n", size);
+	}
+    }
+};
+u_long AddrToRestore::pushed = 0;
+
+static void fw_slice_check_final_mem_taint () 
+{ 
+    /* First build up a list of ranges to restore */
+    list<AddrToRestore> restoreAddress;
+    for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
+	iter != current_thread->address_taint_set->end(); ++iter) {
+	// We need to deal with partial taint
+	u_long bytes_to_restore = 0;
+	u_long addr;
+	for (addr = iter->lower(); addr <= iter->upper(); addr++) {
+	    if (is_mem_tainted (addr, 1)) {
+		if (bytes_to_restore) {
+		    AddrToRestore tmp(addr-bytes_to_restore, bytes_to_restore);
+		    restoreAddress.push_back(tmp);
+		    bytes_to_restore = 0;
+		}
+	    } else {
+		bytes_to_restore++;
+	    }
+	}
+	if (bytes_to_restore) {
+	    AddrToRestore tmp(addr-bytes_to_restore, bytes_to_restore);
+	    restoreAddress.push_back(tmp);
+	}
+    }
+
+    // Now write out the ckpt code
+    printf ("ckpt_mem:\n");
+    for (AddrToRestore addrRestore: restoreAddress) 
+	addrRestore.printPush();
+
+    // Stack must be aligned for use during slice
+    // Adjust for 4 byte return address pushed for call of sections (needed for large slices)
+    printf ("sub esp, %ld\n", (28-(AddrToRestore::pushed%16))%16);
+    printf ("jmp slice_begins\n");
+
+    // And write out the restore code
+    printf ("restore_mem:\n");
+    printf ("add esp, %ld\n", (28-(AddrToRestore::pushed%16))%16);
+
+    for (auto addrRestore = restoreAddress.rbegin(); addrRestore != restoreAddress.rend(); ++addrRestore) {
+	addrRestore->printPop();
+    }
+
+    printf ("jmp slice_ends\n");
+
+#if 0
+    // JNF - XXX - This was broken we should fix
+    /* Assume 1 thread for now */
+    for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
+	if (pregs[i]) {
+	    printf ("[CHECK_REG] $reg(%d) is tainted, index %d\n", i/REG_SIZE, i);
+	}
+    }
+#endif
+}
+
+void fw_slice_print_footer ()
+{
+    printf ("/* restoring address and registers */\n");
+    printf ("jmp restore_mem\n");
+    printf ("slice_ends:\n");
+    printf ("mov ebx, 1\n");
+    printf ("mov eax, 350\n");
+    printf ("int 0x80\n");
+    
+    //control flow divergence - deosn't return
+    printf("jump_diverge:\n");
+    printf("push eax\n");
+    printf("push ecx\n");
+    printf("push edx\n");
+    printf("call handle_jump_diverge\n");
+    
+    //index divergence - doesn't return
+    printf("index_diverge:\n");
+    printf("push eax\n");
+    printf("push ecx\n");
+    printf("push edx\n");
+    printf("call handle_index_diverge\n");
+
+    fw_slice_check_final_mem_taint ();
+    fflush (stdout);
+}
+

@@ -99,7 +99,9 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
   TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
-int fw_slice_check_final_mem_taint (taint_t* pregs);
+void fw_slice_print_header ();
+void fw_slice_print_footer ();
+
 
 TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8);
 TAINTSIGN fw_slice_reg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);

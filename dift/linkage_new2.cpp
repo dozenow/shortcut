@@ -2136,10 +2136,8 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	}
 	//let's scan over all memory address included in the slice
 #endif
-        if (fw_slice_check_final_mem_taint (current_thread->shadow_reg_table) == 0) { 
-		printf ("all mem address in the slice are also tainted in the final checkpoint\n");
-	}
-	
+	fw_slice_print_footer ();
+
 	//stop tracing after this 
 	int calling_dd = dift_done ();
 	while (!calling_dd || is_pin_attaching(dev_fd)) {
@@ -6087,6 +6085,7 @@ int main(int argc, char** argv)
 #endif
 
     init_taint_structures(group_directory, check_filename);
+    fw_slice_print_header();
 
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(dev_fd);

@@ -89,27 +89,27 @@ if input_asm_file is None:
         #ts_grep = datetime.datetime.now()
 
         # Run scala tool
-        input_asm_file = outputdir + "/exslice.asm"
-        outfd = open(input_asm_file, "w")
-        p = Popen (["./process_slice", outputdir+"/pinout"],stdout=outfd)
+        #input_asm_file = outputdir + "/exslice.asm"
+        #outfd = open(input_asm_file, "w")
+        #p = Popen (["./process_slice", outputdir+"/pinout"],stdout=outfd)
         #Note: Try to avoid recompilation, but this requires you to run make if you change preprocess_asm.scala file
         #If this hangs for a long time, it's probably because your environment configuration is wrong
         #Add  127.0.0.1 YOUR_HOST_NAME to /etc/hosts, where YOUR_HOST_NAME comes from running command: hostname
-        p.wait()
-        outfd.close()
+        #p.wait()
+        #outfd.close()
 
-        ts_scala = datetime.datetime.now()
+        #ts_scala = datetime.datetime.now()
 
 
 # Convert asm to c file
 fcnt = 1;
-infd = open(input_asm_file, "r")
+infd = open(outputdir+"/pinout", "r")
 mainfd = open(outputdir+"/exslice.c", "w")
 mainfd.write ("asm (\n")
 for line in infd:
-    if line.strip() == "/*slice begins*/":
-        break
     mainfd.write ("\"" + line.strip() + "\\n\"\n")
+    if line.strip() == "slice_begins:":
+        break
 mainfd.write("\"call _section1\\n\"\n")
      
 outfd = open(outputdir+"/exslice1.c", "w")
@@ -145,7 +145,8 @@ for line in infd:
     if line.strip() == "/* restoring address and registers */":
         write_jump_index ()
         break
-    if linecnt > 2500000 and "[ORIGINAL_SLICE]" in line:
+    if linecnt > 1000000 and "recheck" in line:
+	outfd.write ("\"" + line.strip() + "\\n\"\n")
         write_jump_index ()
         fcnt += 1
         linecnt = 0
@@ -155,14 +156,6 @@ for line in infd:
         outfd.write ("\".section	.text\\n\"\n")
         outfd.write ("\".globl _section" + str(fcnt) + "\\n\"\n")
         outfd.write ("\"_section" + str(fcnt) +":\\n\"\n")
-    if instr_jumps and " jump_diverge" in line:
-        outfd.write ("\"" + "pushfd" + "\\n\"\n")
-        outfd.write ("\"" + "push " + str(jcnt) + "\\n\"\n")
-	outfd.write ("\"" + line.strip() + "\\n\"\n")
-        outfd.write ("\"" + "add esp, 4" + "\\n\"\n")
-        outfd.write ("\"" + "popfd" + "\\n\"\n")
-        jcnt = jcnt + 1
-        linecnt += 5
     else:
 	outfd.write ("\"" + line.strip() + "\\n\"\n")
         linecnt += 1
@@ -198,8 +191,7 @@ p.wait()
 # Print timing info
 ts_end = datetime.datetime.now()
 print "Time to run pin tool: ", ts_pin - ts_start
-print "Time to run scala tool: ", ts_scala - ts_pin
-print "Time to convert: ", ts_convert - ts_scala
+print "Time to convert: ", ts_convert - ts_pin
 print "Time to compile: ", ts_compile - ts_convert
 print "Time to ckpt: ", ts_end - ts_compile
 print "Total time: ", ts_end - ts_start
