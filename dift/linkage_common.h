@@ -19,12 +19,13 @@
 
 //#define PRINT_DEBUG_INFO
 #ifdef PRINT_DEBUG_INFO
-#define OUTPUT_SLICE(addr,format,...) printf (format " // [SLICE] #%08x ", ## __VA_ARGS__, addr)
-#define OUTPUT_SLICE_INFO(format,...) printf ("[SLICE_INFO] " format "\n", ## __VA_ARGS__)
-#define OUTPUT_SLICE_EXTRA(ip,format,...) printf (format " // [SLICE_EXTRA] comes with %08x\n", ## __VA_ARGS__, ip);
-#define OUTPUT_SLICE_CTRL_FLOW(ip,format,...) printf (format " // [SLICE_CTRL_FLOW] comes with %08x\n", ## __VA_ARGS__, ip);
-#define OUTPUT_SLICE_VERIFICATION(format,...) printf (format " // ", ## __VA_ARGS__)
-#define OUTPUT_SLICE_VERIFICATION_INFO(format,...) printf ("[SLICE_VERIFICATION] " format "\n", ## __VA_ARGS__)
+#define OUTPUT_MAIN(format,...) fprintf (mainfile, "\"" format "\\n\"\n", ## __VA_ARGS__)
+#define OUTPUT_SLICE(addr,format,...) fprintf (slicefile, "\"" format " // [SLICE] #%08x ", ## __VA_ARGS__, addr)
+#define OUTPUT_SLICE_INFO(format,...) fprintf (slicefile, "[SLICE_INFO] " format "\\n\"\n", ## __VA_ARGS__)
+#define OUTPUT_SLICE_EXTRA(ip,format,...) fprintf (slicefile, "\"" format " // [SLICE_EXTRA] comes with %08x\\n\"\n", ## __VA_ARGS__, ip);
+#define OUTPUT_SLICE_CTRL_FLOW(ip,format,...) fprintf (slicefile, "\"" format " // [SLICE_CTRL_FLOW] comes with %08x\\n\"\n", ## __VA_ARGS__, ip);
+#define OUTPUT_SLICE_VERIFICATION(format,...) fprintf (slicefile, "\"" format " // ", ## __VA_ARGS__)
+#define OUTPUT_SLICE_VERIFICATION_INFO(format,...) fprintf (slicefile, "[SLICE_VERIFICATION] " format "\\n\"\n", ## __VA_ARGS__)
 #define DEBUG_INFO printf
 #else
 #define OUTPUT_MAIN(format,...) fprintf (mainfile, "\"" format "\\n\"\n", ## __VA_ARGS__)
