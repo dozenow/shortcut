@@ -31,8 +31,8 @@ int logfd;
 #endif
 
 // This pauses for a while to let us see what went wrong
-//#define DELAY
-#define DELAY sleep(2);
+#define DELAY
+//#define DELAY sleep(2);
 
 char buf[1024*1024];
 char tmpbuf[1024*1024];
@@ -155,6 +155,8 @@ void handle_mismatch()
     dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     DELAY;
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    fprintf (stderr, "handle_jump_diverge: should not get here\n");
     abort();
 }
 
@@ -164,6 +166,8 @@ void handle_jump_diverge()
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
     DELAY;
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    fprintf (stderr, "handle_jump_diverge: should not get here\n");
     abort();
 }
 
@@ -173,6 +177,8 @@ void handle_delayed_jump_diverge()
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     DELAY;
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    fprintf (stderr, "handle_jump_diverge: should not get here\n");
     abort();
 }
 
@@ -182,6 +188,8 @@ void handle_index_diverge(u_long foo, u_long bar, u_long baz)
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] index diverges at 0x%lx val = %lx.\n\n\n", *((u_long *) ((u_long) &i + 32)), baz);
     DELAY;
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    fprintf (stderr, "handle_jump_diverge: should not get here\n");
     abort ();
 }
 

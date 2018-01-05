@@ -49,9 +49,9 @@ int resume(int fd_spec, int attach_pin, int attach_gdb, int follow_splits, int s
 	   char* logdir, char* linker, loff_t attach_index, int attach_pid, int record_timing,
 	   u_long nfake_calls, u_long* fake_calls);
 int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
-		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at, int record_timing,
+		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at,
+		      int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, 
 		      u_long nfake_calls, u_long* fake_calls);
-
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename, char *uniqueid, loff_t attach_index, int attach_pid
 		       ,u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename, char* recheck_filename);

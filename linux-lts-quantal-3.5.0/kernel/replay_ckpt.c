@@ -1515,6 +1515,32 @@ exit:
 	return record_pid;
 }
 
+#define SLICE_INFO_SIZE     4096
+#define STACK_SIZE        131072
+#define RECHECK_FILE_NAME_LEN 64
+
+
+struct slice_task {
+	pid_t slice_pid;
+	pid_t daemon_pid;
+	char recheck_filename[256];
+	struct list_head list;
+};
+
+DEFINE_MUTEX(slice_task_mutex);
+int slice_handling_initialized = 0;
+struct list_head slice_task_list;
+struct list_head slice_processing_list;
+wait_queue_head_t daemon_waitq;
+
+void init_slice_handling (void)
+{
+	init_waitqueue_head (&daemon_waitq);
+	INIT_LIST_HEAD(&slice_task_list);
+	INIT_LIST_HEAD(&slice_processing_list);
+	slice_handling_initialized = 1;
+}
+
 static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	//the start addr of the stack is also the start of fw_slice_info (one region grows upwards and the other downwards)
 	if (regs->sp %4096 != 0) {
@@ -1525,18 +1551,22 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	return (struct fw_slice_info*) regs->sp;
 }
 
-#define SLICE_INFO_SIZE     4096
-#define STACK_SIZE        131072
-#define RECHECK_FILE_NAME_LEN 64
 
 long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
 	struct pt_regs* regs = get_pt_regs(current);
-	struct fw_slice_info info;
+	struct fw_slice_info* pinfo;
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
+
+	// Too big - so allocate on the stack
+	pinfo = KMALLOC (sizeof(struct fw_slice_info), GFP_KERNEL);
+	if (pinfo == NULL) {
+		printk ("Cannot allocate fw_slice_info\n");
+		return -ENOMEM;
+	}
 
 	// Allocate space for the restore stack and also for storing some fw slice info
 	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -1548,21 +1578,22 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
 
 	//second page: extra info for the slice (grows upwards)
-	info.text_addr = slice_addr;
-	info.text_size = slice_size;
-	info.extra_addr = extra_space_addr;
-	info.extra_size = STACK_SIZE + SLICE_INFO_SIZE;
+	pinfo->text_addr = slice_addr;
+	pinfo->text_size = slice_size;
+	pinfo->extra_addr = extra_space_addr;
+	pinfo->extra_size = STACK_SIZE + SLICE_INFO_SIZE;
 
 	//checkpoint the current registers
-	memcpy (&info.regs, regs, sizeof(struct pt_regs));
-	info.fpu_is_allocated = fpu_allocated (&(current->thread.fpu));
-	if (info.fpu_is_allocated) { 
+	memcpy (&pinfo->regs, regs, sizeof(struct pt_regs));
+	pinfo->fpu_is_allocated = fpu_allocated (&(current->thread.fpu));
+	if (pinfo->fpu_is_allocated) { 
 		struct fpu* fpu = &(current->thread.fpu);
-		info.fpu_last_cpu = fpu->last_cpu;
-		info.fpu_has_fpu = fpu->has_fpu;
-		memcpy (&info.fpu_state, fpu->state, sizeof(union thread_xstate));
+		pinfo->fpu_last_cpu = fpu->last_cpu;
+		pinfo->fpu_has_fpu = fpu->has_fpu;
+		memcpy (&pinfo->fpu_state, fpu->state, sizeof(union thread_xstate));
 	}
-	copy_to_user ((char __user *) extra_space_addr + STACK_SIZE, &info, sizeof(info));
+	copy_to_user ((char __user *) extra_space_addr + STACK_SIZE, pinfo, sizeof(struct fw_slice_info));
+	KFREE (pinfo);
 
 	//change instruction pointer to the start of slice
 	get_user (entry, (unsigned int __user *) (slice_addr + 0x18));
@@ -1594,9 +1625,15 @@ long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long 
 	return 0;
 }
 
-asmlinkage long sys_execute_fw_slice (int finish, char* filename) { 
+asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long retval) 
+{ 
 	int stack_size = 4096;
-	printk ("sys_execute_fw_slice: %d, %p\n", finish, filename);
+	DPRINT ("sys_execute_fw_slice: %d, %p\n", finish, filename);
+
+	if (!slice_handling_initialized) {
+		init_slice_handling();
+	}
+
 	if (finish == 0) { 
 		//start to execute the slice
 		long addr = 0;
@@ -1608,6 +1645,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		unsigned long size = 0;
 		unsigned int entry = 0;
 		struct fw_slice_info* slice_info = NULL;
+
+		DPRINT ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
 
 		fd = sys_open (filename, O_RDONLY, 0);
 		if (fd < 0) { 
@@ -1672,8 +1711,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 			printk ("sys_execute_fw_slice: cannot close file.\n");
 			return -EIO;
 		}
-		return 0;
-	} else {
+
+	} else if (finish == 1) {
 		//finish executing the slice and restore register states
 		long rc = 0;
 		//struct mm_info* pmminfo = &mm_info;
@@ -1714,7 +1753,201 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		}
 		//TODO unmap the libc from resume
 		do_gettimeofday (&tv);
-		printk ("end execute_slice %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-		return 0;
+		DPRINT ("end execute_slice %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		
+	} else if (finish == 2) {
+
+		struct slice_task* pstask;
+		struct timeval tv;
+		long retval;
+
+		do_gettimeofday (&tv);
+		DPRINT ("Execute slice fails predicate check %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+
+		pstask = KMALLOC (sizeof(struct slice_task), GFP_KERNEL);
+		if (pstask == NULL) {
+			printk ("sys_execute_fw_slice: cannot allocate slice task\n");
+			return -ENOMEM;
+		}
+
+		retval = strncpy_from_user(pstask->recheck_filename, filename, sizeof(pstask->recheck_filename));
+		if (retval < 0) {
+			printk ("sys_execute_fw_slice: strncpy_from_user returns %ld\n", retval);
+			return -EINVAL;
+		}
+		DPRINT ("recheck_filename is %s address %p\n", pstask->recheck_filename, filename);
+
+		pstask->slice_pid = current->pid;
+		mutex_lock(&slice_task_mutex);
+		list_add(&pstask->list, &slice_task_list);
+		wake_up (&daemon_waitq);
+		mutex_unlock(&slice_task_mutex);
+		
+		DPRINT ("Sleeping %d until we can generate correct memory state\n", current->pid);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule();
+		DPRINT ("Sleeping slice %d woken up.\n", current->pid);   
+
+		// We should have correct address space and register values now
+		set_thread_flag (TIF_IRET); // Make sure we restore the new registers
+	
+		return get_pt_regs(current)->orig_ax; // We stuffed actual return value in here.
+
+	} else if (finish == 3) {
+
+		struct slice_task* pstask;
+		long retval;
+		
+		DPRINT ("Slice daemon thread %d registered for upcall\n", current->pid);
+
+		mutex_lock(&slice_task_mutex);
+		while (list_empty (&slice_task_list)) {
+			mutex_unlock(&slice_task_mutex);
+			wait_event_interruptible (daemon_waitq, !list_empty (&slice_task_list));
+			if (signal_pending(current)) {
+				DPRINT ("Daemon wait interrupted by signal\n");
+				return -EINTR;
+			}
+			mutex_lock(&slice_task_mutex);
+		}
+		pstask = list_first_entry (&slice_task_list, struct slice_task, list);
+		list_del (&pstask->list);
+		pstask->daemon_pid = current->pid;
+		list_add(&pstask->list, &slice_processing_list);
+		mutex_unlock(&slice_task_mutex);
+
+		DPRINT ("Slice daemon thread %d gets task pid %d recheck file %s\n", current->pid, pstask->slice_pid, pstask->recheck_filename);
+
+		retval = copy_to_user (filename, pstask->recheck_filename, sizeof(pstask->recheck_filename));
+		if (retval < 0) {
+			printk ("sys_execute_fw_slice: copy_to_user returns %ld\n", retval);
+			return -EINVAL;
+		}
+
+	} else if (finish == 4) {
+
+		if (retval < 0) {
+			// Slice deamon reports success or failure here
+			// If failure, responsible for cleanup here
+			struct slice_task* pstask;
+			struct task_struct* tsk;
+			int found = 0;
+			
+			mutex_lock(&slice_task_mutex);
+			list_for_each_entry (pstask, &slice_processing_list, list) {		
+				if (pstask->daemon_pid == current->pid) {
+					list_del(&pstask->list);
+					found = 1;
+					break;
+				}
+			}
+			mutex_unlock(&slice_task_mutex);
+			if (!found) {
+				printk ("Cannot find slice task for damon pid %d\n", current->pid);
+				return -1;
+			}
+			
+			DPRINT ("Recovery failure reported by pid %d\n", current->pid);
+			DPRINT ("Killing task %d\n", pstask->slice_pid);
+			sys_kill (9, pstask->slice_pid); // Terminate the sleeping task
+			tsk = find_task_by_vpid(pstask->slice_pid);
+			if (!tsk) {
+				printk ("fw_slice_recover: cannot find target slice pid %d\n", pstask->slice_pid);
+			}
+			wake_up_process (tsk);
+			KFREE (pstask);
+		}
 	}
+	return 0;
+}
+
+void fw_slice_recover (pid_t daemon_pid, long retval)
+{
+	struct mm_struct* tmp_mm;
+	struct task_struct* tsk;
+	struct fpu* fpu, *tsk_fpu;
+	struct task_rss_stat tmp_stat;
+	pid_t slice_pid = 0;
+	int i;
+
+	// Find the task in the list
+	struct slice_task* pstask;
+	mutex_lock(&slice_task_mutex);
+	list_for_each_entry (pstask, &slice_processing_list, list) {		
+		if (pstask->daemon_pid == daemon_pid) {
+			slice_pid = pstask->slice_pid;
+			list_del(&pstask->list);
+			KFREE (pstask);
+			break;
+		}
+	}
+	mutex_unlock(&slice_task_mutex);
+
+	if (slice_pid == 0) {
+		printk ("fw_slice_recover: cannot find slice pid corresponding to deamon pid %d\n", daemon_pid);
+		sys_exit_group (0);
+	}
+
+	tsk = find_task_by_vpid(slice_pid);
+	if (!tsk) {
+		printk ("fw_slice_recover: cannot find target slice pid %d\n", slice_pid);
+		sys_exit_group (0);  
+	}
+	DPRINT ("fw_slice_recover: found slice task %d\n", slice_pid);
+
+	if (replay_debug) {
+		// Debug info - let's print out the vmas of source and dest
+		printk ("VMAs for source task %d\n", current->pid);
+		print_vmas (current);
+		printk ("VMAs for destination task %d\n", tsk->pid);
+		print_vmas (tsk);
+		for (i = 0; i < NR_MM_COUNTERS; i++) {
+			printk ("RSS counter %d for source %d: %d\n", i, current->pid, current->rss_stat.count[i]);
+		}
+		for (i = 0; i < NR_MM_COUNTERS; i++) {
+			printk ("RSS counter %d for destination %d: %d\n", i, tsk->pid, tsk->rss_stat.count[i]);
+		}
+	}
+
+	// Our address spaces should be identical
+	// Move memory from this task to the sleeping task
+	// Wouldn't it be neat if this worked?  But, it probably won't ... in which case we can copy (sigh)
+	tmp_mm = current->mm;
+	current->mm = current->active_mm = tsk->mm;
+	tsk->mm = tsk->active_mm = tmp_mm;
+	tsk->mm->owner = tsk;
+	current->mm->owner = current;
+
+	tmp_stat = current->rss_stat;
+	current->rss_stat = tsk->rss_stat;
+	tsk->rss_stat = tmp_stat;
+
+	DPRINT ("fw_slice_recover: swapped address spaces\n");
+
+	// Change register state in sleeping task to match this one
+	DPRINT ("Current esi register %lx target esi register %lx\n", get_pt_regs(current)->si, get_pt_regs(tsk)->si);
+	memcpy (get_pt_regs(tsk), get_pt_regs(current), sizeof (struct pt_regs));
+	DPRINT ("Target esi register now %lx\n", get_pt_regs(tsk)->si);
+	DPRINT ("Changing return value in eax %ld to %ld\n", get_pt_regs(tsk)->orig_ax, retval);
+	get_pt_regs(tsk)->orig_ax = retval; // This is what we want to return from the kernel - will be returned in eax
+	unlazy_fpu(current);
+	fpu = &(current->thread.fpu);
+	if (fpu_allocated(fpu)) {
+		//allocate the new fpu if we need it and it isn't setup
+		tsk_fpu = &(current->thread.fpu);
+		if (!fpu_allocated(tsk_fpu)) {
+			DPRINT ("allocating fpu\n");
+			fpu_alloc(tsk_fpu);
+		}
+		tsk_fpu->last_cpu = fpu->last_cpu;
+		tsk_fpu->has_fpu = fpu->has_fpu;
+		tsk_fpu->state = fpu->state;
+	}
+
+	DPRINT ("fw_slice_recover: modified registers - about to wake up pid %d\n", tsk->pid);
+
+	// Wake up the sleeping task
+	wake_up_process (tsk);
+
+	sys_exit_group (0);  // No longer need this task
 }

@@ -786,6 +786,8 @@ struct replay_group {
 	ds_list_t* rg_used_address_list; // List of addresses that will be used by the application (and hence, not by pin)
 	int rg_follow_splits;       // Ture if we should replay any split-off replay groups
 	int rg_checkpoint_at;       // Checkpoint at first syscall on or after this clock value
+	int rg_ckpt_memory_only;    // True if this is a memory-only checkpoint (for slice recovery)
+	int rg_ckpt_mem_slice_pid;  // And this communicates the slice tasks's pid
 	int finished_ckpt;          // Detects if we've already checkpointed
 	u_long rg_attach_clock;     // If Pin is being attached, do it before this clock value
 	int rg_attach_pid;          // If Pin is being attached, set to the pid to attach to
@@ -1261,7 +1263,7 @@ is_pin_attached (void)
 		return 0;
 	}
 	if (current->replay_thrd->rp_group == NULL) {
-		printk ("pid %dis_pin_attached: NULL replay group\n", current->pid);
+		printk ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
 		return 0;
 	}
 	return (current->replay_thrd->rp_group->rg_attach_device == ATTACH_PIN 
@@ -1945,6 +1947,7 @@ new_replay_group (struct record_group* prec_group, int follow_splits)
 	prg->rg_used_address_list = NULL;
 
 	prg->rg_checkpoint_at = -1;
+	prg->rg_ckpt_memory_only = 0;
 	prg->finished_ckpt = 0; 
 
 	prg->rg_attach_device = 0;
@@ -3054,8 +3057,6 @@ static int copy_sysv_mappings(struct replay_thread *src, struct replay_thread *d
 	return ret; 
 }
 
-
-
 int
 checkpoint_sysv_mappings (struct task_struct* tsk, struct file* cfile, loff_t* ppos){
 
@@ -3804,13 +3805,9 @@ get_linker (void)
 	}
 }
 
-
-
-
 long
-replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
-		    int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, int ckpt_at, int record_timing,
-		    u_long nfake_calls, u_long* fake_call_points)
+replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
+		    int ckpt_at, int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, u_long nfake_calls, u_long* fake_call_points)
 {
 	struct record_group* precg; 
 	struct record_thread* prect;
@@ -3879,8 +3876,12 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
 		}
 	}
 
-	if (ckpt_at > 0) prepg->rg_checkpoint_at = ckpt_at;
-	printk("ckpt_at is %d, rg_checkpoint_at is %d\n",ckpt_at, prepg->rg_checkpoint_at);
+	if (ckpt_at > 0) {
+		prepg->rg_checkpoint_at = ckpt_at;
+		prepg->rg_ckpt_memory_only = ckpt_memory_only;
+		prepg->rg_ckpt_mem_slice_pid = ckpt_mem_slice_pid;
+		printk ("ckpt_at is %d (mem only is %d slice pid is %d)\n", ckpt_at, ckpt_memory_only, ckpt_mem_slice_pid);
+	}
 
 	prept = new_replay_thread (prepg, prect, current->pid, 0, NULL, NULL);
 	if (prept == NULL) {
@@ -4001,7 +4002,7 @@ should_take_checkpoint (void)
 
 		retval = 1;
 		current->replay_thrd->rp_group->finished_ckpt = 1;
-}              
+	}              
 	return retval;
 }
 
@@ -4218,13 +4219,15 @@ replay_full_ckpt (long rc)
 	//a btree which indexes from replay_pid-> ckpt_task
 	struct btree_head32 proc_btree;
 	struct ckpt_tsk *curr_ckpt_tsk, *parent_ckpt_tsk;
-			       
+
+	prepg = prept->rp_group;
+	if (prepg->rg_ckpt_memory_only) fw_slice_recover (prepg->rg_ckpt_mem_slice_pid, rc); // This function should not return
+
 	btree_init32(&proc_btree);	
 	if (!prept) {
 		printk ("Only a replaying process can take a checkpoint\n");
 		return -EINVAL;
 	}
-	prepg = prept->rp_group;
 	precg = prepg->rg_rec_group;
 	clock = atomic_read (precg->rg_pkrecord_clock);
 	//the file name always contains the clock value after a system call is finished, instead of the expected clock value
@@ -9748,8 +9751,7 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 				
 				// Now start a new group if needed
 				get_logdir_for_replay_id(logid, logdir);
-				return replay_ckpt_wakeup(app_syscall_addr, logdir, linker, -1,
-							  follow_splits, prg->rg_rec_group->rg_save_mmap_flag, -1, -1, 0,
+				return replay_ckpt_wakeup(app_syscall_addr, logdir, linker, -1, follow_splits, prg->rg_rec_group->rg_save_mmap_flag, -1, -1, 0, 0, 0,
 							  (prg->rg_timebuf != NULL), 0, NULL);
 			} else {
 				DPRINT("Don't follow splits - so just exit\n");

@@ -28,12 +28,13 @@ int fork_replay (char __user * logdir, const char __user *const __user *args,
 
 /* Restore ckpt from disk - replaces AS of current process (like exec) */
 /* Linker may be NULL - otherwise points to special libc linker */
-long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
-			 int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, int ckpt_at, int record_timing, u_long nfake_calls, u_long* fake_call_points);
+long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
+			 int ckpt_at, int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, u_long nfake_calls, u_long* fake_call_points);
 long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      
 			      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, 
 			      int go_live, char* execute_slice_name, char* recheck_filename);
 long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name);
+void fw_slice_recover (pid_t daemon_pid, long retval);
 
 /* Returns linker for exec to use */
 char* get_linker (void);

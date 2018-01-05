@@ -32,6 +32,8 @@ struct wakeup_data {
 	int             attach_pid;
 	int	        save_mmap;
 	int             ckpt_at;
+	int             ckpt_memory_only;
+	int             ckpt_mem_slice_pid;
 	int             record_timing;
 	u_long          nfake_calls;
 	u_long __user * fake_calls;

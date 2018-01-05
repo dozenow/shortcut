@@ -32,8 +32,9 @@ using namespace std;
 //#define LPRINT
 
 void print_help(const char *program) {
-	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
-			program);
+    fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val]\n"
+                     "                    [--recover_at=replay_clock_val] [--recover_pid=daemon_pid] [--from_ckpt=replay_clock-val]\n"
+	             "                    [--fake_calls=c1,c2...] \n", program);
 }
 struct ckpt_data { 
     int fd;
@@ -412,6 +413,9 @@ int main (int argc, char* argv[])
 	int follow_splits = 0;
 	int save_mmap = 0;
 	int ckpt_at = 0;
+	int ckpt_memory_only = 0;
+	int recover_at = 0;
+	int recover_pid = 0;
 	int from_ckpt = 0;
 	int record_timing = 0;
 	int first_proc = -1;
@@ -438,6 +442,8 @@ int main (int argc, char* argv[])
 		{"attach_pin_later", optional_argument, 0, 0},
 		{"attach_offset", optional_argument, 0, 0},
 		{"ckpt_at", required_argument, 0, 0},
+		{"recover_at", required_argument, 0, 0},
+		{"recover_pid", required_argument, 0, 0},
 		{"from_ckpt", required_argument, 0, 0},
 		{"fake_calls", required_argument, 0, 0},
 		{"slice", required_argument, 0, 0},
@@ -474,12 +480,17 @@ int main (int argc, char* argv[])
 				break;
 			case 3:
 				ckpt_at = atoi(optarg);
-				printf ("Checkpointing at %d\n", ckpt_at);
 				break;
 			case 4:
+				recover_at = atoi(optarg);
+				break;
+			case 5:
+				recover_pid = atoi(optarg);
+				break;
+			case 6:
 				from_ckpt = atoi(optarg);
 				break;	
-			case 5:
+			case 7:
 			{
 				char* p, *last;
 				u_long i = 0;
@@ -504,12 +515,12 @@ int main (int argc, char* argv[])
 				fake_calls[i++] = atoi(last);
 				break;
 			}
-			case 6:
+			case 8:
 			{
 				slice_filename = optarg;
 				break;
 			}
-			case 7:
+			case 9:
 			{
 				recheck_filename = optarg;
 				break;
@@ -570,6 +581,16 @@ int main (int argc, char* argv[])
 	if (attach_pin && attach_gdb) {
 		fprintf(stderr, "Cannot attach both pin (-p) and gdb (-g).\n");
 		exit(EXIT_FAILURE);
+	}
+
+	if (ckpt_at && recover_at) {
+	    fprintf (stderr, "Cannot set both ckpt_at and revoer_at\n");
+	    exit (EXIT_FAILURE);
+	}
+
+	if (recover_at) {
+	    ckpt_at = recover_at; 
+	    ckpt_memory_only = 1;
 	}
 
 	if (libdir) {
@@ -644,7 +665,8 @@ int main (int argc, char* argv[])
 	    recheck_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
 	} else {
 	    rc = resume_with_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir,
-				   attach_index, attach_pid, ckpt_at, record_timing, nfake_calls, fake_calls);
+				   attach_index, attach_pid, ckpt_at, ckpt_memory_only, recover_pid, 
+				   record_timing, nfake_calls, fake_calls);
 	}
 	if (rc < 0) {
 		perror("resume");
