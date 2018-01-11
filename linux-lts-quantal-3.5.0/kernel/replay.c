@@ -119,13 +119,14 @@ int verify_debug = 0;
 		  replay_min_debug_high >= *(current->replay_thrd->rp_preplay_clock))) printk
 //#define MPRINT(x,...)
 #define MCPRINT
+#define SLICE_DEBUG(x,...)
 
 //#define JNF_HACK
 
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-//#define TRACE_TIMINGS //analysis for how much we can save on startup
+#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int check_startup_db = 1;
 
@@ -4080,21 +4081,21 @@ static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int i
 	int copyed;
 	int is_main_thread = 0; 
 
-	printk("%d ",parent_pid);
+	SLICE_DEBUG ("%d ",parent_pid);
 	copyed = vfs_write(cfile, (char *) &parent_pid, sizeof(parent_pid), ppos);
 	if (copyed != sizeof(parent_pid)) {
 		printk ("checkpoint_replay_cache_files: tried to write parent_pid, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	printk("%d ",ct->record_pid);
+	SLICE_DEBUG ("%d ",ct->record_pid);
 	copyed = vfs_write(cfile, (char *) &ct->record_pid, sizeof(ct->record_pid), ppos);
 	if (copyed != sizeof(ct->record_pid)) {
 		printk ("checkpoint_replay_cache_files: tried to write record_pid, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	printk("%d ",is_thread);
+	SLICE_DEBUG ("%d ",is_thread);
 	copyed = vfs_write(cfile, (char *) &is_thread, sizeof(is_thread), ppos);
 	if (copyed != sizeof(is_thread)) {
 		printk ("checkpoint_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
@@ -4104,14 +4105,14 @@ static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int i
 	if (current->replay_thrd->rp_record_thread->rp_record_pid == ct->record_pid) 
 		is_main_thread = 1;
 
-	printk("%d ",is_main_thread);
+	SLICE_DEBUG ("%d ",is_main_thread);
 	copyed = vfs_write(cfile, (char *) &is_main_thread, sizeof(is_main_thread), ppos);	
 	if (copyed != sizeof(is_main_thread)) {
 		printk ("checkpoint_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	printk("%d\n", ct->ckpt_pos);
+	SLICE_DEBUG ("%d\n", ct->ckpt_pos);
 	copyed = vfs_write(cfile, (char *) &ct->ckpt_pos, sizeof(ct->ckpt_pos), ppos);	
 	if (copyed != sizeof(ct->ckpt_pos)) {
 		printk ("checkpoint_replay_cache_files: tried to write ckpt_pos, got rc %d\n", copyed);
@@ -4172,31 +4173,31 @@ restore_ckpt_tsks_header(u_long num_procs, struct file *cfile, loff_t *ppos)
 			printk ("restore_replay_cache_files: tried to write parent_pid, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		MPRINT("%d ",unused);
+		SLICE_DEBUG("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write record_pid, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		MPRINT("%d ",unused);
+		SLICE_DEBUG("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		MPRINT("%d ",unused);
+		SLICE_DEBUG("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write is_main_thread got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		MPRINT("%d ",unused);
+		SLICE_DEBUG("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write ckpt_pos, got rc %d\n", copyed);
 			return -EINVAL;
 		}		
-		MPRINT("%d\n",unused);
+		SLICE_DEBUG("%d\n",unused);
 	}       
 	return 0; 		
 }
@@ -4236,7 +4237,7 @@ replay_full_ckpt (long rc)
 		sprintf (ckpt, "%s/ckpt.%d", precg->rg_logdir, clock-1);
 	}
 	MPRINT ("replay_full_ckpt saving rc %ld\n", rc);
-	printk("starting checkpoint at pid %d, just after clock %d\n",prept->rp_record_thread->rp_record_pid,clock - 1);
+	SLICE_DEBUG ("starting checkpoint at pid %d, just after clock %d\n",prept->rp_record_thread->rp_record_pid,clock - 1);
 
 	// Determine how many processes to checkpoint
 	iter = ds_list_iter_create(current->replay_thrd->rp_group->rg_replay_threads);
@@ -4417,7 +4418,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 1
+#define PRINT_TIME 0
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4547,11 +4548,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	if (PRINT_TIME) {
+	//if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
-	}
+	//}
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4570,7 +4571,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
-	printk ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
+	SLICE_DEBUG ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
 
 
 	if (record_pid < 0) {
@@ -4694,8 +4695,8 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                         //BUG_ON (pthread_clock_addr == 0);
                 }
 		current->replay_thrd = NULL;
-                printk ("replay pid %d goes live\n", current->pid);
-		{
+                SLICE_DEBUG ("replay pid %d goes live\n", current->pid);
+		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
 			printk ("ending replay_go_live %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
@@ -4713,8 +4714,16 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 			//run slice jumps back to the user space
 			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
-			do_gettimeofday (&tv);
-                        printk ("Pid %d returns from start_fw_slice, now executing slice, %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+			if (PRINT_TIME) {
+				struct rusage ru;
+				mm_segment_t old_fs = get_fs();
+				set_fs (KERNEL_DS);
+				sys_getrusage (RUSAGE_SELF, &ru);
+				set_fs (old_fs);
+
+				do_gettimeofday (&tv);
+				printk ("Pid %d returns from start_fw_slice, now executing slice, %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			}
                         go_live_clock->replay_group = replay_group;
 		}
 
@@ -4899,13 +4908,13 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
         }
 
-	printk ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
 
 	if (go_live) {
             struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
-            printk ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+            SLICE_DEBUG ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
             if (pthread_clock_addr == 0) {
                 pthread_clock_addr = (u_long) current->replay_thrd->rp_group->rg_pthread_clock_addr;
                 BUG_ON (pthread_clock_addr == 0);
@@ -4926,7 +4935,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
-                printk ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
+                SLICE_DEBUG ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
             }
             // TODO: wait for the main thread to destroy the replay group
         }
@@ -6963,7 +6972,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 		}
 		printk("Pid %d recpid ----- PTHREAD:%ld:%ld.%06ld:%d:%s", current->pid, clock, tv.tv_sec, tv.tv_usec, ignore_flag, buf);
 	} else {
-		printk ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
+		SLICE_DEBUG("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
 		return -EINVAL;
 	}
 
@@ -7315,7 +7324,7 @@ asmlinkage long sys_pthread_full (void)
 		read_user_log (current->replay_thrd->rp_record_thread);	
 		return 0;
 	} else {
-		printk ("Pid %d: pthread_log_full only valid for replay processes\n", current->pid);
+		SLICE_DEBUG ("Pid %d: pthread_log_full only valid for replay processes\n", current->pid);
 		return -EINVAL;
 	}
 }
@@ -7380,7 +7389,7 @@ asmlinkage long sys_pthread_sysign (void)
         if (current->replay_thrd)
 	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
         else { 
-                printk ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
+                SLICE_DEBUG ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
                 //msleep (3000);
                 return -EINVAL;
         }
@@ -9419,11 +9428,20 @@ static asmlinkage long
 trace_open (const char __user* filename, int flags, int mode) {
 	long rc = sys_open (filename, flags, mode);
 	//printk ("trace_open called %d\n", trace_timings);
-	if (trace_timings && rc > 0) {
-		struct timespec tp;
-		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
-	}
+	//if (strstr (filename, ".class")) {
+	//if (strstr (filename, "currency.data")) {
+		if (trace_timings && rc > 0) {
+			struct timespec tp;
+			struct rusage ru;
+			mm_segment_t old_fs = get_fs();
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("user %ld, kernel %ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	//}
 	return rc;
 }
 asmlinkage long shim_open (const char __user * filename, int flags, int mode) SHIM_CALL_MAIN(5, record_open(filename, flags, mode), replay_open(filename, flags, mode), trace_open(filename, flags, mode));

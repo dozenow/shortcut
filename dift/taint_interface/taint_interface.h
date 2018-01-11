@@ -241,6 +241,7 @@ TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, u
 TAINTSIGN taint_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx, uint32_t fp_stack_change);
 TAINTSIGN taint_mix_fpuregmem2fpureg (u_long mem_loc, uint32_t memsize, int src_reg, uint32_t src_regsize, int dst_reg, uint32_t dst_regsize, const CONTEXT* ctx, TAINT_BASE_INDEX_ARGS);
 TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, uint32_t src_size, const CONTEXT* ctx);
+TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx);
 #ifdef __cplusplus
 }
 #endif

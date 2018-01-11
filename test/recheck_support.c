@@ -28,8 +28,9 @@
 
 struct go_live_clock* go_live_clock;
 
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
+//#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
@@ -180,7 +181,7 @@ void recheck_start(char* filename, void* clock_addr)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
-    fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+    //fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
     go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
@@ -214,7 +215,7 @@ void recheck_start(char* filename, void* clock_addr)
 	}
     }
     strcat (taintbuf_filename, "taintbuf");
-    printf ("taintbuf is: %s\n", taintbuf_filename);
+    //printf ("taintbuf is: %s\n", taintbuf_filename);
 
 #ifdef PRINT_VALUES
 #ifdef PRINT_TO_LOG
@@ -273,7 +274,6 @@ void handle_index_diverge(u_long foo)
 {
     int i;
     fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "str at b66c8f64 %s, b66c8f54 %s, b66c87a4 %s b66c8f6c %s\n", (char*) 0xb66c8f64, (char*)0xb66c8f54, (char*) 0xb66c87a4, (char*)0xb66c8f6c);
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     sleep(2);
     abort ();
@@ -1962,6 +1962,31 @@ void rt_sigprocmask_recheck ()
     end_timing_func (SYS_rt_sigprocmask);
 }
 
+void mkdir_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct mkdir_recheck* pmkdir;
+    int rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pmkdir = (struct mkdir_recheck *) bufptr;
+    char* fileName = bufptr+sizeof(struct mkdir_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "mkdir: filename %s mode %d", fileName, pmkdir->mode);
+    LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall(SYS_mkdir, fileName, pmkdir->mode);
+    end_timing (SYS_mkdir, rc);
+    check_retval ("mkdir", pentry->retval, rc);
+    end_timing_func (SYS_mkdir);
+}
+
 void recheck_add_clock_by_2 ()
 {
     if (go_live_clock)
@@ -1977,40 +2002,47 @@ void recheck_add_clock_by_1 ()
 void recheck_wait_clock_init ()
 {
     if (go_live_clock) {
-        //TODO: eliminate this getpid syscall unless debugging
+#ifdef PRINT_SCHEDULING
         int pid = syscall(SYS_gettid);
         printf ("Pid %d recheck_wait_clock_init: %lu mutex %p\n", pid, go_live_clock->slice_clock, &go_live_clock->mutex);
+#endif
         go_live_clock->mutex = 0;
         __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
         while (go_live_clock->wait_for_other_threads) { 
             //wait until all threads are ready for slice execution
         }
+#ifdef PRINT_SCHEDULING
         printf ("Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
+#endif
     }
 }
 
 void recheck_wait_clock_proc_init ()
 {
     if (go_live_clock) { 
-        //TODO: eliminate this getpid syscall unless debugging
+#ifdef PRINT_SCHEDULING
         int pid = syscall (SYS_gettid);
-        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
         printf ("Pid %d recheck_wait_clock_proc_init: ready to continue!\n", pid);
+#endif
+        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
     }
 }
 
 void recheck_wait_clock (unsigned long wait_clock) 
 {
     if (go_live_clock) {
-        //TODO: eliminate this syscall unless debugging
+#ifdef PRINT_SCHEDULING
         int pid = syscall(SYS_gettid);
-
         printf ("Pid %d call recheck_wait_clock.\n", pid);
+#endif
         if (go_live_clock->slice_clock >= wait_clock) {
+#ifdef PRINT_SCHEDULING
             printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, go_live_clock->slice_clock, &go_live_clock->slice_clock, wait_clock);
+#endif
         } else {
+#ifdef PRINT_SCHEDULING
             printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p \n", pid, go_live_clock->slice_clock, wait_clock, &go_live_clock->mutex);
-            fflush (stdout);
+#endif
             //wake up other sleeping threads
             syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
             //wait for its own clock
@@ -2028,9 +2060,10 @@ void recheck_wait_clock (unsigned long wait_clock)
 void recheck_final_clock_wakeup () 
 {
     if (go_live_clock) { 
+#ifdef PRINT_SCHEDULING
         int pid = syscall(SYS_gettid);
         printf ("Pid %d finishes executing slice, now wake up other sleeping threads.\n", pid);
-        fflush (stdout);
+#endif
         syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
     }
 #ifdef PRINT_TIMING
@@ -2051,11 +2084,14 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
             }
             ++i;
         }
+#ifdef PRINT_VALUES
         printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
+#endif
         *ptid = ret;
         *ctid = ret;
+#ifdef PRINT_VALUES
         printf ("fake_clone ptid now has value %d, ctid %d\n", *ptid, *ctid);
-        fflush (stdout);
+#endif
 
         return ret;
     } else 

@@ -125,6 +125,7 @@ int pthread_sysign (void)
 
 void __pthread_go_live (void)
 {
+    fprintf (stderr, "pthread_go_live is called\n");
     pthread_log_status = PTHREAD_LOG_OFF;
 }
 strong_alias (__pthread_go_live, pthread_go_live);
@@ -2484,6 +2485,7 @@ void __pthread_log_lll_wait_tid (int* ptid)
     pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
     pthread_log_debug ("after pthread_log_lll_wait_tid ptid %p, %d\n", ptid, *ptid);
   } else {
+    fprintf (stderr, "pthread_log_lll_wait_tid, ptid %p, %d\n", ptid, *ptid);
     lll_wait_tid(*ptid);
   }
 }

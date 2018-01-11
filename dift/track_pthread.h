@@ -35,8 +35,8 @@ struct wait_state {
 void track_pthread_mutex_params_1 (ADDRINT mutex);
 void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr);
 void track_pthread_mutex_init (ADDRINT rtn_addr);
-void track_pthread_mutex_lock_before (ADDRINT mutex);
-void track_pthread_mutex_lock_after (ADDRINT rtn_addr);
+void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mutex);
+void track_pthread_mutex_lock_after (char* name, ADDRINT rtn_addr);
 void track_pthread_mutex_unlock (ADDRINT rtn_addr);
 void track_pthread_mutex_destroy (ADDRINT rtn_addr);
 void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime);

@@ -7,6 +7,8 @@
 #include "../linux-lts-quantal-3.5.0/include/linux/pthread_log.h"
 #include "parseulib.h"
 
+#define DPRINT(x,...)
+
 using namespace std;
 struct ulog* parseulib_open (char* filename)
 {
@@ -49,7 +51,7 @@ u_long parseulib_get_next_clock (struct ulog* log)
                 perror("Could not read the count\n");
                 return -1;
             }
-            printf ("** reading %d bytes ***\n", num_bytes);
+            DPRINT ("** reading %d bytes ***\n", num_bytes);
             log->bytes_read += rc;
 
             while (count < num_bytes) {
@@ -60,7 +62,7 @@ u_long parseulib_get_next_clock (struct ulog* log)
                     perror ("read log record\n");
                     return rc;
                 }
-                printf ("clock %lu type %lu check %lx retval %d (%x)\n", rec.clock, rec.type, rec.check, rec.retval, rec.retval);
+                DPRINT ("clock %lu type %lu check %lx retval %d (%x)\n", rec.clock, rec.type, rec.check, rec.retval, rec.retval);
                 count += rc;
                 log->bytes_read += rc;
                 log->clocks->push (rec.clock);
@@ -76,10 +78,10 @@ u_long parseulib_get_next_clock (struct ulog* log)
                 }
                 count += rc;
                 log->bytes_read += rc;
-                printf ("   entry %lx usual recs %ld non-zero retval? %d errno change? %d fake calls? %d skip? %d\n", entry, (entry&CLOCK_MASK), !!(entry&NONZERO_RETVAL_FLAG), !!(entry&ERRNO_CHANGE_FLAG), !!(entry&FAKE_CALLS_FLAG), !!(entry&SKIPPED_CLOCK_FLAG));
+                DPRINT ("   entry %lx usual recs %ld non-zero retval? %d errno change? %d fake calls? %d skip? %d\n", entry, (entry&CLOCK_MASK), !!(entry&NONZERO_RETVAL_FLAG), !!(entry&ERRNO_CHANGE_FLAG), !!(entry&FAKE_CALLS_FLAG), !!(entry&SKIPPED_CLOCK_FLAG));
                 for (i = 0; i < (entry&CLOCK_MASK); i++) {
                     log->total_clock++;
-                    printf ("clock %lu fake calls 0 retval 0\n", log->total_clock-1);
+                    DPRINT ("clock %lu fake calls 0 retval 0\n", log->total_clock-1);
                     log->clocks->push (log->total_clock - 1);
                 }
                 if (entry&SKIPPED_CLOCK_FLAG) {
@@ -88,7 +90,7 @@ u_long parseulib_get_next_clock (struct ulog* log)
                         perror ("read skip value\n");
                         return rc;
                     }
-                    printf ("     skip %d records\n", skip);
+                    DPRINT ("     skip %d records\n", skip);
                     count += rc;
                     log->bytes_read += rc;
                     log->total_clock += skip + 1;
@@ -129,7 +131,7 @@ u_long parseulib_get_next_clock (struct ulog* log)
                     fake_calls = 0;
                 }
                 if (entry&(SKIPPED_CLOCK_FLAG|NONZERO_RETVAL_FLAG|FAKE_CALLS_FLAG|ERRNO_CHANGE_FLAG)) {
-                    printf ("clock %lu fake calls %d retval %d \n", log->total_clock-1, fake_calls, retval);
+                    DPRINT ("clock %lu fake calls %d retval %d \n", log->total_clock-1, fake_calls, retval);
                     log->clocks->push (log->total_clock - 1);
                 }
 #endif

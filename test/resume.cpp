@@ -370,10 +370,11 @@ again:
 	    char libc_filename[256];
 	    sprintf (libc_filename, "%s/libc-2.15.so", pthread_dir);
 	    hndl = dlopen (libc_filename, RTLD_NOW);
-    } else 
+    } else  {
     	hndl = dlopen ("../eglibc-2.15/prefix/lib/libc-2.15.so", RTLD_NOW);
+    }
     if (hndl == NULL) {
-	perror ("dlopen libc");
+	fprintf (stderr, "dlopen libc %s", dlerror ());
 	exit (0);
     }
 

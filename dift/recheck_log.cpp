@@ -1069,3 +1069,20 @@ int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* se
     return 0;
 }
 
+int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock)
+{
+    struct mkdir_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_mkdir);
+
+    check_reg_arguments ("mkdir", 2);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1))
+            fprintf (stderr, "[ERROR] mkdir pathname is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_mkdir, res->retval, sizeof(struct mkdir_recheck) + strlen(pathname) + 1, clock);
+    chk.mode = mode;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
+
+    return 0;
+}
+

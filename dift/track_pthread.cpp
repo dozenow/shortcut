@@ -31,10 +31,10 @@ void track_pthread_mutex_init (ADDRINT rtn_addr)
     }
 }
 
-void track_pthread_mutex_lock_before (ADDRINT mutex) 
+void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mutex) 
 {
     current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-    printf ("record pid %d, before lock %p\n", current_thread->record_pid, (void*)mutex);
+    printf ("record pid %d, before lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
     if (active_mutex.find (mutex) != active_mutex.end()) {
         struct mutex_state* state = active_mutex[mutex];
         state->pid = current_thread->record_pid;
@@ -51,10 +51,10 @@ void track_pthread_mutex_lock_before (ADDRINT mutex)
     }
 }
 
-void track_pthread_mutex_lock_after (ADDRINT rtn_addr)
+void track_pthread_mutex_lock_after (char* name, ADDRINT rtn_addr)
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    printf ("record pid %d, after lock %p\n", current_thread->record_pid, (void*)mutex);
+    printf ("record pid %d, after lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
     struct mutex_state* state = active_mutex[mutex];
     state->pid = current_thread->record_pid;
     if (state->state == MUTEX_AFTER_LOCK) {  //we have a deadlock?

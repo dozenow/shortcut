@@ -267,6 +267,13 @@ struct rt_sigprocmask_recheck {
 };
 /* Followed by contents of act and oact as applicable */
 
+struct mkdir_recheck {
+    int mode;
+    char pathname[0];
+};
+/* Followed by filename */
+
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -315,4 +322,5 @@ int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct s
 int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock);
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
+int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 #endif

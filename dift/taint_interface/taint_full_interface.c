@@ -3743,6 +3743,18 @@ TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t 
     memcpy(&shadow_reg_table[src_reg_off], (char*)&tmp, size * sizeof(taint_t));
 }
 
+TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx) 
+{ 
+    taint_t tmp[REG_SIZE];
+    int sp = get_fp_stack_top (ctx);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy((char*)&tmp, &shadow_reg_table[dst_reg*REG_SIZE], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[src_reg*REG_SIZE], (char*)&tmp, size * sizeof(taint_t));
+}
+
 // Assumes 16->4 for now
 TAINTSIGN taint_mask_reg2reg (int dst_reg, int src_reg)
 {

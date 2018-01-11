@@ -60,7 +60,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 0 //well, I turn off all pthread printing in this file and track_pthread.cpp
+//#define EXTRA_DEBUG 153 //well, I turn off all pthread printing in this file and track_pthread.cpp
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -237,7 +237,6 @@ inline void sync_slice_buffer (struct thread_data* tdata)
                     print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
                     break;
                 case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "sleep", 1, 10);
                     print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
                     break;
                 default: 
@@ -936,6 +935,14 @@ static inline void taint_syscall_retval (const char* sysname)
     tci.data = 0;
     create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
     OUTPUT_SLICE ("[SLICE_TAINT] %s #eax\n", sysname);
+}
+
+static inline void sys_mkdir_start(struct thread_data* tdata, char* filename, int mode)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE ("[SLICE] #00000000 #call mkdir_recheck [SLICE_INFO] clock %lu\n", *ppthread_log_clock);
+	recheck_mkdir (tdata->recheck_handle, filename, mode, *ppthread_log_clock);
+    } 
 }
 
 static inline void sys_clone_start (struct thread_data* tdata, int flags, pid_t* ptid, pid_t* ctid)  //don't trust the manual page on clone, it's different than the clone syscall
@@ -2051,6 +2058,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS__newselect:
             sys__newselect_start(tdata, (int) syscallarg0, (fd_set *) syscallarg1, (fd_set *) syscallarg2,
 				 (fd_set *) syscallarg3, (struct timeval *) syscallarg4);
+            break;
+        case SYS_mkdir:
+            sys_mkdir_start (tdata, (char*) syscallarg0, (int) syscallarg1);
             break;
         case SYS_socketcall:
         {
@@ -4844,6 +4854,25 @@ void instrument_fpu_calc (INS ins, int fp_stack_change)
     }
 }
 
+void instrument_fpu_exchange (INS ins)
+{
+    int op1reg = INS_OperandIsReg(ins, 0);
+    int op2reg = INS_OperandIsReg(ins, 1);
+    if (op1reg && op2reg) {
+        REG reg1 = INS_OperandReg(ins, 0);
+        REG reg2 = INS_OperandReg(ins, 1);
+	fw_slice_src_fpuregfpureg (ins, reg1, reg2, FP_NO_STACK_CHANGE);
+        INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_xchg_fpureg2fpureg),
+			IARG_FAST_ANALYSIS_CALL,
+                        IARG_UINT32, reg1, 
+                        IARG_UINT32, reg2, 
+			IARG_UINT32, REG_Size(reg1),
+                        IARG_CONST_CONTEXT,
+			IARG_END);
+    } else
+        assert (0);
+}
+
 void instrument_cwde (INS ins) 
 {
     fw_slice_src_reg (ins, LEVEL_BASE::REG_AX);
@@ -4862,6 +4891,11 @@ void instrument_bswap (INS ins)
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_UINT32, get_reg_off(reg),
 		   IARG_END);
+}
+
+void PIN_FAST_ANALYSIS_CALL count_instructions ()
+{
+    ++ inst_count;
 }
 
 void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT val)
@@ -5481,11 +5515,14 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
                 slice_handled = 1;
                 break;
+            case XED_ICLASS_FXCH:
+                instrument_fpu_exchange (ins);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FCOMI:
             case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
             case XED_ICLASS_FUCOMIP:
-            case XED_ICLASS_FXCH:
             case XED_ICLASS_FNSTCW:
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FCMOVNBE:
@@ -5644,6 +5681,9 @@ void trace_instrumentation(TRACE trace, void* v)
         put_copy_of_disasm (str);
 #endif
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+            /*INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) count_instructions,
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_END);*/
 #ifdef EXTRA_DEBUG
             //DEBUG: print out dynamic instructions and their mem read/write
             debug_print (ins);
@@ -6327,10 +6367,10 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
     //TODO
-    //fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
+    fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
-//TODO: I think this is super slow
+//TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
 void routine (RTN rtn, VOID* v)
 { 
     const char *name;
@@ -6360,14 +6400,17 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_init, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock")) {
+        } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_lock_before,
+                    IARG_PTR, name,
+                IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock_after, 
+                    IARG_PTR, name,
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
@@ -6397,7 +6440,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_create") || !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || !strcmp (name, "pthread_log_mutex_lock_rep") || !strcmp (name, "__pthread_mutex_unlock_rep") || !strcmp (name, "pthread_log_mutex_unlock_rep")) {
+        } else if (!strcmp (name, "pthread_create") || !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || !strcmp (name, "pthread_log_mutex_lock_rep") || !strcmp (name, "__pthread_mutex_unlock_rep") || !strcmp (name, "pthread_log_mutex_unlock_rep") || !strcmp (name, "__pthread_mutex_lock_rep")) {
             printf ("ignored pthread operation %s\n", name);
         } else {
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 

@@ -44,7 +44,8 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 1
+#define PRINT_TIME 0
+#define SLICE_DEBUG(x,...)
 
 /* Prototypes not in header files */
 void set_tls_desc(struct task_struct *p, int idx, const struct user_desc *info, int n); /* In tls.c */
@@ -1278,11 +1279,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				if (pvmas->vmas_file[0] && 
 				    !strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
                                     *pthread_clock_addr = pvmas->vmas_start;
-                                    printk ("Pid %d pthread_clock_addr %lx\n", current->pid, *pthread_clock_addr);
+                                    SLICE_DEBUG ("Pid %d pthread_clock_addr %lx\n", current->pid, *pthread_clock_addr);
 				} else {
-                                    printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
-                                    printk ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
-                                    printk ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
+                                    SLICE_DEBUG ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+                                    SLICE_DEBUG ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
+                                    SLICE_DEBUG ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
 
                                     shared_file = 1;
                                     //BUG();
@@ -1443,11 +1444,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (/*!(pvmas->vmas_flags&VM_READ) || */
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     (strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) {
-                                printk ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+                                SLICE_DEBUG ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;  // Not in checkpoint - so skip writing this one
 			}				
                         if (pvmas->vmas_flags & VM_MAYSHARE && !strncmp (pvmas->vmas_file, "/replay_cache/", 14)) { 
-                            printk ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
+                            SLICE_DEBUG ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
                         }
 			if (!(pvmas->vmas_flags&VM_WRITE)){
                                 // force it to writable temproarilly
@@ -1475,7 +1476,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					rc = copied;
 					goto freemem;
 				}
-				printk ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
+				SLICE_DEBUG ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
 				filp_close (mmap_file, NULL);
 			}
 			if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections		
@@ -1644,7 +1645,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
         int index;
         struct timeval tv;
         index = atomic_add_return (1, &go_live_clock->num_threads);
-        printk ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
+        SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");
             BUG ();
@@ -1687,7 +1688,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	printk ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
+	SLICE_DEBUG ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {
@@ -1712,14 +1713,14 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
        	
 	regs->bp = regs->sp;
 	set_thread_flag (TIF_IRET);
-	printk ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
+	SLICE_DEBUG ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
 
 	return 0;
 }
 
 asmlinkage long sys_execute_fw_slice (int finish, char* filename) { 
 	int stack_size = 4096;
-	printk ("sys_execute_fw_slice: %d, %p\n", finish, filename);
+	SLICE_DEBUG ("sys_execute_fw_slice: %d, %p\n", finish, filename);
 	if (finish == 0) { 
             //following codes are deprecated; they have the same logic as start_fw_slice
 		//start to execute the slice
@@ -1851,8 +1852,14 @@ asmlinkage long sys_execute_fw_slice (int finish, char* filename) {
 		}
 
                 if (PRINT_TIME) {
-                        do_gettimeofday (&tv);
-                        printk ("Pid %d end execute_slice %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+			struct rusage ru;
+			mm_segment_t old_fs = get_fs();
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			set_fs (old_fs);
+
+			do_gettimeofday (&tv);
+                        printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
                 }
 		return 0;
 	}
