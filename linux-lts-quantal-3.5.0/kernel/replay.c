@@ -126,7 +126,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-#define TRACE_TIMINGS //analysis for how much we can save on startup
+//#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int check_startup_db = 1;
 

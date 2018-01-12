@@ -30,7 +30,7 @@ struct go_live_clock* go_live_clock;
 
 //#define PRINT_VALUES
 //#define PRINT_TO_LOG
-//#define PRINT_SCHEDULING
+#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
@@ -181,7 +181,7 @@ void recheck_start(char* filename, void* clock_addr)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
-    //fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+    fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
     go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
@@ -256,7 +256,7 @@ void handle_mismatch()
     static int cnt = 0;
     cnt++;
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     //sleep(2);
     //abort();
 }
