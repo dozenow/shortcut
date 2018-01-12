@@ -16,6 +16,9 @@
 #include <queue>
 #include <deque>
 #include <set>
+#include "../test/parseklib.h"
+#include "../test/parseulib.h"
+#include "track_pthread.h"
 
 //#define PRINT_DEBUG_INFO
 #ifdef PRINT_DEBUG_INFO
@@ -225,6 +228,12 @@ struct sigaction_info {
     struct sigaction* oact;
 };
 
+struct clone_info { 
+    int flags;
+    pid_t* ptid;
+    pid_t* ctid;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -262,6 +271,11 @@ struct ctrl_flow_param {
     int pid;
     int iter_count;
     char branch_flag;
+};
+
+struct check_syscall { 
+    int pid;
+    u_long index;
 };
 
 struct ctrl_flow_checkpoint { 
@@ -304,6 +318,18 @@ struct ctrl_flow_info {
     struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
 
+struct mutex_info_cache {
+    ADDRINT mutex;
+    ADDRINT attr;
+};
+
+struct wait_info_cache {
+    ADDRINT mutex;
+    ADDRINT cond;
+    ADDRINT abstime;
+    ADDRINT tid;
+};
+
 // Per-thread data structure
 // Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
 struct thread_data {
@@ -341,6 +367,7 @@ struct thread_data {
 	struct ioctl_info ioctl_info_cache;
 	struct getdents64_info getdents64_info_cache;
 	struct sigaction_info sigaction_info_cache;
+        struct clone_info clone_info_cache;
     } op;
 
     void* save_syscall_info;
@@ -360,7 +387,27 @@ struct thread_data {
     struct recheck_handle* recheck_handle;
     boost::icl::interval_set<unsigned long> *address_taint_set;
     struct ctrl_flow_info ctrl_flow_info;
+
+    queue<string>* slice_buffer;  //generated slice is put on this buffer first
+    int slice_output_file;        //and then written to this file
+
+    //slice ordering
+    u_long expected_clock; //the clock we're expecting
+    struct klogfile* klog;
+    struct ulog* ulog;
+    pid_t child_pid; //the recorded child pid returned from clone (the return value from clone is the actual child pid)
+
+    union {
+        struct mutex_info_cache mutex_info_cache;
+        struct wait_info_cache wait_info_cache;
+    } pthread_info; //for remembering input parameters to pthread functions
+
+    int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
 };
+
+#define FP_POP   1
+#define FP_PUSH  2
+#define FP_NO_STACK_CHANGE 0
 
 struct memcpy_header {
     u_long dst;

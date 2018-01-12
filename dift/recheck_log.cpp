@@ -19,13 +19,13 @@ struct recheck_handle {
     int recheckfd;
 };
 
-struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
+struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
     char recheck_filename[512];
 
     sprintf (klog_filename, "/replay_logdb/rec_%lu/klog.id.%d", record_grp, record_pid);
-    sprintf (recheck_filename, "/replay_logdb/rec_%lu/recheck", record_grp);
+    sprintf (recheck_filename, "/replay_logdb/rec_%lu/recheck.%d", record_grp, record_pid);
 
     struct recheck_handle* handle = (struct recheck_handle *) malloc(sizeof(struct recheck_handle));
     if (handle == NULL) {
@@ -147,6 +147,12 @@ long calculate_partial_read_size (int is_cache_file, int partial_read, size_t st
 		fprintf (stderr, "calculate_partial_read_size: size is %ld\n", result);
 		return  result;
 	}
+}
+
+int recheck_read_ignore (struct recheck_handle* handle) 
+{
+    skip_to_syscall (handle, SYS_read);
+    return 0;
 }
 
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long max_bound, u_long clock)
@@ -484,6 +490,35 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck), clock);
     chk.tv_ptr = tv;
     chk.tz_ptr = tz;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_gettime);
+
+    check_reg_arguments ("clock_gettime", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_gettime, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_getres);
+
+    check_reg_arguments ("clock_getres", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_getres, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    chk.clock_id_tainted = clock_id_tainted;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
     
     return 0;
@@ -1022,6 +1057,23 @@ int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* se
     write_data_into_recheck_log (handle->recheckfd, &spchk, sizeof(spchk));
     if (set) write_data_into_recheck_log (handle->recheckfd, set, sigsetsize);
     if (res->retparams_size > 0) write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams+sizeof(u_long), sigsetsize);
+
+    return 0;
+}
+
+int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock)
+{
+    struct mkdir_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_mkdir);
+
+    check_reg_arguments ("mkdir", 2);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1))
+            fprintf (stderr, "[ERROR] mkdir pathname is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_mkdir, res->retval, sizeof(struct mkdir_recheck) + strlen(pathname) + 1, clock);
+    chk.mode = mode;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
 
     return 0;
 }

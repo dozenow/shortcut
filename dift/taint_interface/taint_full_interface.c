@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include "../mmap_regions.h"
+#include <execinfo.h>
 
 #include <map>
 
@@ -25,8 +26,10 @@ using namespace boost::icl;
 #define TAINT_STATS
 
 // For slice generation - output to these files
+TODO
 FILE* mainfile = NULL;
 FILE* slicefile = NULL;
+end TODO
 
 extern struct thread_data* current_thread;
 extern int splice_output;
@@ -39,6 +42,11 @@ extern u_long* ppthread_log_clock;
 #define LEAF_TABLE_BITS 10
 #define ROOT_INDEX_MASK 0xfffffc00
 #define LEAF_INDEX_MASK 0x000003ff
+
+TODO
+extern void output_slice (struct thread_data* tdata, const char* format, ...);
+#define OUTPUT_SLICE(slice...) output_slice(current_thread, slice)
+end TODO
 
 taint_t* mem_root[ROOT_TABLE_SIZE];  // Top-level table for memory taints
 struct slab_alloc leaf_table_alloc;
@@ -78,6 +86,7 @@ struct taint_check {
 map<ADDRINT,taint_check> check_map;
 map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
+vector<struct check_syscall> ignored_syscall;
 
 #ifdef TAINT_STATS
 struct taint_stats_profile {
@@ -248,9 +257,10 @@ static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
 }
 
 static void taint_reg2reg (int dst_reg, int src_reg, uint32_t size);
-static UINT32 get_mem_value (u_long mem_loc, uint32_t size);
+static UINT32 get_mem_value32 (u_long mem_loc, uint32_t size);
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size);
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8);
+static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size);
 int is_flag_tainted (uint32_t flag) {
     int i = 0;	
     int tainted = 0;
@@ -1072,11 +1082,57 @@ static inline void set_clear_flags(taint_t* flagreg, taint_t t, uint32_t set_fla
     }
 }
 
+//manipulate top of stack for fpu registers 
+//top of stack range: 0-7
+int inline increment_fp_stack_top (int sp) 
+{
+    sp += 1;
+    return sp % 8;
+}
+
+int inline decrement_fp_stack_top (int sp)
+{
+    sp += 7;
+    return sp % 8;
+}
+
+int inline get_fp_stack_top (const CONTEXT* ctx)
+{
+    PIN_REGISTER value;
+    PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
+    return (int) ((*value.word >> 11 ) & 0x7);
+}
+
+int inline update_fp_stack_regoff (int reg_off, int sp/*stack top*/)
+{
+    return reg_off + (sp - reg_off/REG_SIZE + REG_ST0) * REG_SIZE;
+}
+
+int inline update_fp_stack_reg (int reg, int sp) 
+{
+    return sp + REG_ST0;
+}
+
 TAINTSIGN taint_clear_reg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags)
 {
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memset(&shadow_reg_table[offset], 0, size * sizeof(taint_t));
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], 0, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags, const CONTEXT* ctx, int fp_stack_change)
+{
+    int sp = get_fp_stack_top (ctx);
+    if (fp_stack_change == FP_PUSH) 
+        //first change top of stack and then clear
+        sp = decrement_fp_stack_top (sp);
+    else if (fp_stack_change == FP_POP) {
+        //do nothing
+        //first clear and then change top of stack
+    } else
+        assert (0);
+    offset = update_fp_stack_regoff (offset, sp);
+    taint_clear_reg_offset (offset, size, set_flags, clear_flags);
 }
 
 static inline void zero_partial_reg_until (int reg, int offset, int until)
@@ -1097,6 +1153,8 @@ static int init_check_map (const char* check_filename)
 	struct taint_check tc;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
+            if (line[0] == '#')  //for comments
+                continue;
 	  if (sscanf(line, "%63s %63s %63s %63s %63s %63s %63s", addr, type, value, 
 		     extra1, extra2, extra3, extra4) >= 3) {
 		u_long ip = strtoul(addr, NULL, 0);
@@ -1166,7 +1224,7 @@ static int init_check_map (const char* check_filename)
                     param.type = CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT;
 		    param.branch_flag = extra1[0];
                     param.ip = ip;
-		    ctrl_flow_params.push_back(param);
+                    ctrl_flow_params.push_back (param);
 		} else if (!strncmp(type, "syscall_read_extra", 18)) {
 		    syscall_check schk;
 		    schk.type = SYSCALL_READ_EXTRA;
@@ -1174,6 +1232,14 @@ static int init_check_map (const char* check_filename)
 		    schk.value = atoi(value);
 		    printf ("syscall read extra ip %ld value %ld\n", schk.clock, schk.value);
 		    syscall_checks[ip] = schk;
+                } else if (!strcmp (type, "ignore_syscall")) {
+                    /*
+                     * Currently only read syscall can be ignored
+                     */
+                    struct check_syscall param;
+                    param.index = atol (value); 
+                    param.pid = (int) ip;
+                    ignored_syscall.push_back (param);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type\n", line);
 		    return -1;
@@ -1187,6 +1253,25 @@ static int init_check_map (const char* check_filename)
     fclose (file);
     return 0;
 }
+
+int check_is_syscall_ignored (int pid, u_long index)
+{
+    vector<struct check_syscall>::iterator iter = ignored_syscall.begin();
+    int ret = 0;
+
+    while (iter != ignored_syscall.end()) { 
+        if (iter->pid == pid && iter->index == index) {
+            ret = 1;
+            break;
+        }
+        ++iter;
+    }
+    if (iter != ignored_syscall.end())
+        ignored_syscall.erase (iter);
+    return ret;
+}
+
+#endif
 
 void init_taint_structures (char* group_dir, const char* check_filename)
 {
@@ -1309,6 +1394,19 @@ TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, uint32_t reg_off, uint32_t si
     if (bi_taint) {
 	for (uint32_t i = 0; i < size; i++) shadow_reg_table[reg_off+i] = merge_taints(shadow_reg_table[reg_off+i], bi_taint);
     }
+}
+
+TAINTSIGN taint_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx, int fp_stack_change)
+{
+    int sp = get_fp_stack_top (ctx);
+    if (fp_stack_change == FP_PUSH)
+        sp = decrement_fp_stack_top (sp);
+    else 
+        assert (0);
+    reg_off = update_fp_stack_regoff (reg_off, sp);
+    taint_mem2reg_ext_offset (mem_loc, reg_off, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
+    //This is necessary as we convert interger/float/double into double extended format here
+    taint_mix_reg_offset (reg_off, REG_SIZE, -1, -1);
 }
 
 static inline void taint_mem2reg(u_long mem_loc, int reg, uint32_t size)
@@ -1768,7 +1866,7 @@ TAINTSIGN taint_cmpxchg_mem (ADDRINT cmp_value, u_long mem_loc, int src_reg, uin
 	    tflags = merge_taints(tflags, shadow_reg_table[src_reg*REG_SIZE+i]);
 	} 
     } else {
-	ADDRINT dst_value = get_mem_value (mem_loc, size);
+	ADDRINT dst_value = get_mem_value32 (mem_loc, size);
 	if (cmp_value == dst_value) {
 	    for (uint32_t i = 0; i < size; i++) {
 		if (shadow_reg_table[src_reg*REG_SIZE+i]) {
@@ -1854,6 +1952,21 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
     }
 }
 
+TAINTSIGN taint_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx, uint32_t fp_stack_change)
+{
+    int sp = get_fp_stack_top (ctx); //get the actual st register
+    reg = update_fp_stack_reg (reg, sp);
+
+    if (is_reg_zero (reg, reg_size)) {
+        clear_mem_taints (mem_loc, mem_size);
+    } else {
+        taint_t t = merge_reg_taints (reg, reg_size, 0); //because of the convertion from double-precision
+        uint32_t ret = set_cmem_taints_one (mem_loc, mem_size, t);
+        if (ret != mem_size)
+            fprintf (stderr, "taint_fpureg2mem: set_cmem_taints_one returns different size %u %u\n", ret, mem_size);
+    }
+}
+
 // Returns 2 for partial taint now.  Calling functions must handle this.
 static inline int is_reg_tainted_internal (int reg, uint32_t size, uint32_t is_upper8, taint_t* reg_table)
 { 
@@ -1928,8 +2041,21 @@ int is_mem_arg_tainted (u_long mem_loc, uint32_t size)
     return is_mem_tainted (mem_loc, size);
 }
 
+static void print_stack_trace ()
+{
+    char buffer[128][128];
+    int size = backtrace ((void**)buffer, 128);
+    char** sym = backtrace_symbols ((void**)buffer, size);
+    int i = 0;
+    fprintf (stderr, "----------------stack trace---------------\n");
+    for (; i<size; ++i) {
+        fprintf (stderr, "%d %s\n", i, sym[i]);
+    }
+    fprintf (stderr, "----------------end stack trace---------------\n");
+}
+
 // This should only be used for info msgs as it does not handle >4 byte regs
-static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size) 
+static inline UINT32 get_mem_value32 (u_long mem_loc, uint32_t size) 
 { 
     UINT32 dst_value = -1;
 
@@ -1941,9 +2067,15 @@ static inline UINT32 get_mem_value (u_long mem_loc, uint32_t size)
 	dst_value = (UINT32) tmp;
     } else if (size == 4) {
 	dst_value = *((UINT32*) mem_loc);
-    }
+    } 
 
     return dst_value;
+}
+
+static inline UINT64 get_mem_value64 (u_long mem_loc, uint32_t size)
+{
+    assert (size == 8);
+    return *((UINT64*) mem_loc);
 }
 
 static inline const char* translate_mmx (uint32_t reg)
@@ -1993,9 +2125,23 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
 	OUTPUT_SLICE_EXTRA (ip, "push 0x%lx", mask);
     }
 
-    // (2) And register with max to include only tainted values
-    OUTPUT_SLICE_EXTRA (ip, "pand %s, xmmword ptr [esp]", translate_mmx(reg));
+    // Debug
+    //printf ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    //printf ("[SLICE_EXTRA] call handle_jump_diverge // comes with %x\n", ip);
 
+    // (2) And register with max to include only tainted values
+    printf ("[SLICE_EXTRA] pand %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+TODO
+
+    // Debug
+    OUTPUT_SLICE ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    //OUTPUT_SLICE ("[SLICE_EXTRA] call handle_jump_diverge // comes with %x\n", ip);
+
+    // (2) And register with max to include only tainted values
+    // xdou: For some reason, pand and por with stack address will get me a general protection error; so avoid it with another movdqu
+    //OUTPUT_SLICE ("[SLICE_EXTRA] pand %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] pand %s, xmm0 // comes with %x\n", translate_mmx(reg), ip);
+end TODO
     // (3) Set up the non-tainted values in memory
     for (i = 3; i >= 0; i--) {
 	vals = 0;
@@ -2009,11 +2155,26 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     }
 
     // (4) Or with the register to load those values
+    printf ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+
+    // (5) Fix the stack
+    printf ("[SLICE_EXTRA] add esp, 32 // comes with %x\n", ip);
+TODO1:
+    // (4) Or with the register to load those values
     OUTPUT_SLICE_EXTRA (ip, "por %s, xmmword ptr [esp]", translate_mmx(reg));
 
     // (5) Fix the stack
     OUTPUT_SLICE_EXTRA (ip, "add esp, 44");
     OUTPUT_SLICE_EXTRA (ip, "popfd");
+TODO2:
+  // (4) Or with the register to load those values
+    //OUTPUT_SLICE ("[SLICE_EXTRA] por %s, xmmword ptr [esp] // comes with %x\n", translate_mmx(reg), ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] movdqu xmm0, xmmword ptr [esp] // comes with %x\n", ip);
+    OUTPUT_SLICE ("[SLICE_EXTRA] por %s, xmm0 // comes with %x\n", translate_mmx(reg), ip);
+
+    // (5) Fix the stack
+    OUTPUT_SLICE ("[SLICE_EXTRA] add esp, 32 // comes with %x\n", ip);
+end TODO
 }
 
 static inline void copy_value_to_pin_register (PIN_REGISTER* reg, uint32_t reg_value, uint32_t reg_size, uint32_t reg_u8) 
@@ -2103,13 +2264,24 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
     }
 }
 
+static inline void print_extra_move_reg_imm_value (ADDRINT ip, int reg, uint32_t reg_size, uint32_t regvalue, uint32_t is_upper8, int tainted) { 
+    PIN_REGISTER value;
+    copy_value_to_pin_register (&value, regvalue, reg_size, is_upper8);
+    print_extra_move_reg (ip, reg, reg_size, &value, is_upper8, tainted);
+}
+
 static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t mem_size, int tainted) 
 { 
-    if (is_readonly (mem_loc, mem_size)) return; // Don't prefill read-ony memory
+    if (is_readonly (mem_loc, mem_size)) {
+        // Don't prefill read-ony memory
+        // verify that we still have the same value during slice execution
+        verify_memory (ip, mem_loc, mem_size);
+        return;
+    }
     if (tainted == 2) {
 	for (uint32_t i = 0; i < mem_size; i++) {
 	    if (!is_mem_tainted(mem_loc+i, 1)) {
-		OUTPUT_SLICE_EXTRA (ip, "mov byte ptr [0x%lx], %u", mem_loc+i, get_mem_value(mem_loc+i,1));
+		OUTPUT_SLICE_EXTRA (ip, "mov byte ptr [0x%lx], %u", mem_loc+i, get_mem_value32(mem_loc+i,1));
 		add_modified_mem_for_final_check (mem_loc+i,1);   
 	    }
 	}
@@ -2120,9 +2292,15 @@ static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t me
 	    OUTPUT_SLICE_EXTRA (ip, "mov word ptr [0x%lx], %u", mem_loc, get_mem_value(mem_loc, mem_size));
 	} else if (mem_size == 1) {
 	    OUTPUT_SLICE_EXTRA (ip, "mov byte ptr [0x%lx], %u", mem_loc, get_mem_value(mem_loc, mem_size));
-	} else {
-	    assert (0);
-	}
+	}  else if (mem_size == 8) { 
+TODO
+            OUTPUT_SLICE_EXTRA ("%s mov dword ptr[0x%lx], %u  //comes with %x\n", prefix.c_str(), mem_loc, get_mem_value32(mem_loc, 4), ip);
+            OUTPUT_SLICE_EXTRA ("%s mov dword ptr[0x%lx], %u  //comes with %x\n", prefix.c_str(), mem_loc + 4, get_mem_value32(mem_loc + 4, 4), ip);
+        } else { 
+            fprintf (stderr, "not handled size for print_extra_move_mem %u \n", mem_size);
+            print_stack_trace ();
+            assert (0);
+        }
 	add_modified_mem_for_final_check (mem_loc,mem_size);   
     }
 }
@@ -2872,6 +3050,31 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
     }
 }
 
+TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, const CONTEXT* ctx, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
+{ 
+    VERIFY_BASE_INDEX;
+    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    if (mem_tainted || still_tainted) {
+        char slice[256]; //convert the output instruction format
+        char ch = ' ';
+        int index = strchr (ins_str, ch) - ins_str;
+        int len = 0;
+
+        memset (slice, 0, 256);
+        strncpy (slice, ins_str, index);
+        len = index;
+        index = strchr (ins_str + index + 1, ch) - ins_str;
+        strcpy (slice + len, ins_str + index);
+
+        fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
+TODO
+	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, slice);
+	OUTPUT_SLICE ("    [SLICE_INFO] #src_mem[%lx:%d:%u] #src_mem_value %u\n", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+        if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
+    }
+    if (!still_tainted && mem_tainted) print_immediate_addr (mem_loc, ip);
+}
+
 TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t mem_size) 
 { 
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
@@ -2895,6 +3098,22 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
     }
 }
 
+TOOD
+TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, uint32_t src_mem_size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS) 
+{ 
+    // This may be a write (for pop) - so just verify for now
+    VERIFY_BASE_INDEX_WRITE;
+    int tainted = is_mem_tainted (src_mem_loc, src_mem_size);
+    if (tainted) {
+	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, ins_str);
+	OUTPUT_SLICE ("    [SLICE_INFO] #src_mem[%lx:%d:%u],dst_mem[%lx:%d:%u] #src_mem_value %u, dst_mem_value %u\n", src_mem_loc, tainted, src_mem_size, dst_mem_loc, 0, dst_size, get_mem_value32 (src_mem_loc, src_mem_size), get_mem_value32 (dst_mem_loc, dst_size));
+	print_immediate_addr (src_mem_loc, ip);
+        if (tainted != 1) print_extra_move_mem (ip, src_mem_loc, src_mem_size, tainted);
+	if (src_mem_loc != dst_mem_loc || src_mem_size != dst_size) print_immediate_addr (dst_mem_loc, ip);
+	add_modified_mem_for_final_check (dst_mem_loc, dst_size);
+    }
+}
+
 TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const PIN_REGISTER* regvalue, uint32_t reg_u8) 
 {
     int tainted = is_reg_tainted (reg, size, reg_u8);
@@ -2914,6 +3133,68 @@ TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	}
 	OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%u] #src_reg_value %s\n", reg, tainted, size, print_regval(tmpbuf, regvalue, size));
+    }
+}
+
+TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, uint32_t fp_stack_change) 
+{
+    //get the actual st reg 
+    reg = update_fp_stack_reg (reg, get_fp_stack_top (ctx));
+    int tainted = is_reg_tainted (reg, size, reg_u8);
+    
+    if (tainted) {
+        char slice[256]; //convert the output instruction format
+        PIN_REGISTER regvalue;
+        PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
+        int index = strrchr (ins_str, ',') - ins_str;
+        char i = 0;
+
+        memset (slice, 0, 256);
+        memcpy (slice, ins_str, index);
+        //gcc representation of st register: st(0) instead st0 (pin representation)
+        if (slice[index - 3] == 's' && slice[index - 2] == 't') {
+            i = slice[index - 1];
+            slice[index - 1] = '(';
+            slice[index] = i;
+            slice[index + 1] = ')';
+        }
+
+        fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
+	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, slice);
+	OUTPUT_SLICE ("    [SLICE_INFO] #src_reg[%d:%d:%u] #src_reg_value %s\n", reg, tainted, size, print_regval(tmpbuf, &regvalue, size));
+	if (tainted != 1) print_extra_move_reg (ip, reg, size, &regvalue, reg_u8, tainted);
+    }
+}
+
+TAINTSIGN fw_slice_fpureg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
+{
+    VERIFY_BASE_INDEX_WRITE;
+    reg = update_fp_stack_reg (reg, get_fp_stack_top (ctx));
+    int tainted = is_reg_tainted (reg, size, reg_u8);
+
+    if (tainted) {
+        char slice[256]; //convert the output instruction format
+        PIN_REGISTER regvalue;
+        PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
+        int index = strrchr (ins_str, ',') - ins_str;
+        char i = 0;
+
+        memset (slice, 0, 256);
+        memcpy (slice, ins_str, index);
+        //gcc representation of st register: st(0) instead st0 (pin representation)
+        if (slice[index - 3] == 's' && slice[index - 2] == 't') {
+            i = slice[index - 1];
+            slice[index - 1] = '(';
+            slice[index] = i;
+            slice[index + 1] = ')';
+        }
+
+        fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
+        OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, slice);
+        OUTPUT_SLICE ("    [SLICE_INFO] #src_reg[%d:%d:%u], dst_mem[%lx:0:%u] #src_reg_value %s, dst_mem_value %u\n", reg, tainted, size, mem_loc, mem_size, print_regval(tmpbuf, &regvalue, size), get_mem_value32 (mem_loc, mem_size));
+        if (tainted != 1) print_extra_move_reg (ip, reg, size, &regvalue, reg_u8, tainted);
+        print_immediate_addr (mem_loc, ip);
+        add_modified_mem_for_final_check (mem_loc, mem_size);
     }
 }
 
@@ -2983,6 +3264,28 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_
     }
 }
 
+TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize,  uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t src_reg_u8, uint32_t fp_stack_change) 
+{
+    int sp = get_fp_stack_top (ctx);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
+    int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
+    if (tainted1 || tainted2){
+        PIN_REGISTER dst_regvalue;
+        PIN_REGISTER src_regvalue;
+        PIN_GetContextRegval (ctx, REG(dst_reg), (UINT8*)&dst_regvalue);
+        PIN_GetContextRegval (ctx, REG(src_reg), (UINT8*)&src_regvalue);
+
+        fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
+	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, ins_str);
+	OUTPUT_SLICE ("    [SLICE_INFO] #src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s\n", 
+		dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, print_regval(tmpbuf, &dst_regvalue, dst_regsize), print_regval(tmpbuf2, &src_regvalue, src_regsize));
+	if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
+	if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
+    }
+}
+
 TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, const PIN_REGISTER* dst_regvalue,
 			      const PIN_REGISTER* src_regvalue, const PIN_REGISTER* count_regvalue, uint32_t dst_reg_u8, uint32_t src_reg_u8, uint32_t count_reg_u8)
 {
@@ -3016,6 +3319,35 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size
 	}
 	OUTPUT_SLICE_INFO ("#src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s", mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value (mem_loc, mem_size), print_regval(tmpbuf, reg_value, reg_size));
     }
+}
+
+TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
+{
+    VERIFY_BASE_INDEX;
+
+    int reg_tainted = is_reg_tainted (reg, reg_size, reg_u8);
+    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    if (still_tainted || reg_tainted || mem_tainted) {
+        PIN_REGISTER regvalue;
+        PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
+        char slice[256]; //convert the output instruction format
+        int index = strchr (ins_str, ' ') - ins_str;
+        int len = 0;
+
+        memset (slice, 0, 256);
+        strncpy (slice, ins_str, index);
+        len = index;
+        index = strchr (ins_str + index + 1, ' ') - ins_str;
+        strcpy (slice + len, ins_str + index);
+
+        fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
+	OUTPUT_SLICE ("[SLICE] #%x #%s\t", ip, slice);
+	OUTPUT_SLICE ("    [SLICE_INFO] #src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s\n", 
+		mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value32 (mem_loc, mem_size), print_regval(tmpbuf, &regvalue, reg_size));
+	if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, &regvalue, reg_u8, reg_tainted);
+	if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
+    }
+    if (!still_tainted && (reg_tainted || mem_tainted)) print_immediate_addr (mem_loc, ip);
 }
 
 TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, const PIN_REGISTER* reg1_value, uint32_t reg1_u8, 
@@ -3326,7 +3658,7 @@ TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_regmem_pcmp[i_or_e]stri[%d:%d:%u,%lx:%d:%u] #dst_reg_value %.16s, src_mem_value %u", reg1, reg1_taint, reg1_size, mem_loc2, mem_taints, mem_size, reg1_val, get_mem_value(mem_loc2, mem_size));
         if (!mem_taints) { 
-            printf ("[BUG][SLICE] cannot handle tainted mem for pcmpistri for now, because we didn't init the untainted mem values correctly\n");
+            OUTPUT_SLICE ("[BUG][SLICE] cannot handle tainted mem for pcmpistri for now, because we didn't init the untainted mem values correctly\n");
         }
     }
     return 0;
@@ -3404,10 +3736,15 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
     if (first_iter) {
 
         int size = (int) (ecx_val*op_size);
+        ADDRINT origin_src_mem_loc = src_mem_loc;
         if (!size) return; 
 
 	assert (is_flag_tainted(DF_FLAG) == 0); // JNF: Not sure how to handle this flag?
-	assert ((eflags & DF_MASK) == 0); 
+	if (eflags & DF_MASK) { 
+            fprintf (stderr, "Well, fw_slice_string_move has DF flag set, let's verify if we handle it correctly, ip %x\n", ip);
+            src_mem_loc -= size;
+            dst_mem_loc -= size;
+        }
 
 	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, 4, 0);
@@ -3430,7 +3767,9 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	if (edi_tainted == 2 || (edi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_EDI, edi_val, edi_tainted);
 	if (esi_tainted == 2 || (esi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	// Always verify registers if not untainted
+        // TODO: xdou fix this
+	//if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
 	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
 	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0, 0);
 
@@ -3616,6 +3955,23 @@ TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t s
     memset(&shadow_reg_table[dst_reg_off+size], 0, (REG_SIZE-size) * sizeof(taint_t));
 }
 
+TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change)
+{
+    int sp = get_fp_stack_top (ctx);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    if (fp_stack_change == FP_PUSH) {
+        //per FLD specification
+        sp = decrement_fp_stack_top (sp);
+    } else if (fp_stack_change == FP_POP) {
+        //do nothing
+    } else
+        assert (0);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    taint_reg2reg_offset (dst_reg*REG_SIZE, src_reg*REG_SIZE, size);
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));
+}
+
 // reg2reg
 static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
 {
@@ -3657,6 +4013,12 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
+        //TODO : xdou fix this
+        if (ip == 0xb6d743a2) { 
+            //randomization of JVM stack
+            fprintf (stderr, "A special JVM function!!!!!!!\n");
+            print_extra_move_reg_4 (ip, src_reg, src_value, 0, "[SLICE_VERIFICATION]");
+        }
 	verify_register (ip, src_reg, src_size, src_value, src_u8, 0);
 
 	// Since we verified, src and flags are not tainted
@@ -3744,6 +4106,14 @@ TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off,
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
+TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, uint32_t src_size, const CONTEXT* ctx)
+{
+    int sp = get_fp_stack_top (ctx);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    taint_mix_reg2reg_offset (dst_reg*REG_SIZE, dst_size, src_reg*REG_SIZE, src_size, -1, -1);
+}
+
 TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size) 
 { 
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
@@ -3779,6 +4149,21 @@ TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_of
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags); 
 }
 
+TAINTSIGN taint_mix_fpuregmem2fpureg (u_long mem_loc, uint32_t memsize, int src_reg, uint32_t src_regsize, int dst_reg, uint32_t dst_regsize, const CONTEXT* ctx, TAINT_BASE_INDEX_ARGS)
+{
+    int sp = get_fp_stack_top (ctx);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size, index_reg_off, index_reg_size);
+    taint_t t = merge_mem_taints (mem_loc, memsize);
+    taint_t src_t = merge_reg_taints (src_reg, src_regsize, 0);
+    t = merge_taints (t, bi_taint);
+    t = merge_taints (t, src_t);
+    for (uint32_t i = 0; i < dst_regsize; i++) {
+	shadow_reg_table[dst_reg*REG_SIZE + i] = t;
+    }
+}
 
 TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size) 
 { 
@@ -3787,6 +4172,18 @@ TAINTSIGN taint_xchg_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t 
     memcpy((char*)&tmp, &shadow_reg_table[dst_reg_off], size * sizeof(taint_t));
     memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
     memcpy(&shadow_reg_table[src_reg_off], (char*)&tmp, size * sizeof(taint_t));
+}
+
+TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx) 
+{ 
+    taint_t tmp[REG_SIZE];
+    int sp = get_fp_stack_top (ctx);
+    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    src_reg = update_fp_stack_reg (src_reg, sp);
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy((char*)&tmp, &shadow_reg_table[dst_reg*REG_SIZE], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));
+    memcpy(&shadow_reg_table[src_reg*REG_SIZE], (char*)&tmp, size * sizeof(taint_t));
 }
 
 // Assumes 16->4 for now
@@ -4123,7 +4520,7 @@ TAINTSIGN taint_immval2mem (ADDRINT ip, u_long mem_loc, uint32_t size, int base_
     taint_base_index_to_range_memwrite (ip, mem_loc, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
 }
 
-TAINTSIGN taint_string_scan (u_long mem_loc, ADDRINT al_val, uint32_t ecx_val, uint32_t first_iter, uint32_t rep_type)
+TAINTSIGN taint_string_scan (u_long mem_loc, uint32_t size, ADDRINT al_val, ADDRINT ecx_val, uint32_t first_iter, uint32_t rep_type)
 {
     if (first_iter) {
 	// Accumulate taints from memory until we are sure that we will stop the scan
@@ -4173,7 +4570,7 @@ TAINTSIGN taint_string_move (u_long src_mem_loc, u_long dst_mem_loc, uint32_t op
     }
 }
 
-TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, ADDRINT ecx_val, uint32_t first_iter)
+TAINTSIGN taint_string_compare (u_long mem_loc1, u_long mem_loc2, uint32_t size, ADDRINT ecx_val, uint32_t first_iter)
 {
     if (first_iter) {
 	// Accumulate taints from memory until we are sure that we will stop the scan
@@ -4324,175 +4721,3 @@ taint_t create_and_taint_option (u_long mem_addr)
     taint_mem_internal(mem_addr, t);
     return t;
 }
-
-int fw_slice_print_header (u_long recheck_group)
-{
-    char filename[256];
-    sprintf (filename, "/replay_logdb/rec_%ld/exslice.c", recheck_group);
-    mainfile = fopen(filename, "w");
-    if (mainfile == NULL) {
-	fprintf (stderr, "Cannot open %s\n", filename);
-	return -1;
-    }
-
-    fprintf (mainfile, "asm (\n");
-    OUTPUT_MAIN (".section	.text");
-    OUTPUT_MAIN (".globl _start");
-    OUTPUT_MAIN ("_start:");
-    OUTPUT_MAIN ("push ebp");
-    OUTPUT_MAIN ("call recheck_start");
-    OUTPUT_MAIN ("pop ebp");
-    OUTPUT_MAIN ("jmp ckpt_mem");
-    OUTPUT_MAIN ("slice_begins:");
-    OUTPUT_MAIN ("call _section1"); 
-    // TODO: make sure we follow the calling conventions (preseve eax, edx, ecx when we call recheck-support func)
-
-    char slicename[256];
-    sprintf (slicename, "/replay_logdb/rec_%ld/exslice1.c", recheck_group);
-    slicefile = fopen(slicename, "w");
-    if (slicefile == NULL) {
-	fprintf (stderr, "Cannot open %s\n", slicename);
-	return -1;
-    }
-    fprintf (slicefile, "asm (\n");
-    OUTPUT_SLICE_EXTRA (0, ".section	.text");
-    OUTPUT_SLICE_EXTRA (0, ".globl _section1");
-    OUTPUT_SLICE_EXTRA (0, "_section1:");
-
-    return 0;
-}
-
-class AddrToRestore {
-  private: 
-    u_long loc;
-    int size;
-  public:
-    static u_long pushed;
-
-    AddrToRestore(u_long loc, int size) { 
-	this->loc = loc;
-	this->size = size;
-    }
-
-    void printPush() {
-	if (size == 2 || size == 4) //qword and xmmword are not suported for push on 32-bit
-	    OUTPUT_MAIN ("push %s [0x%lx]", memSizeToPrefix(size), loc);
-	else {
-	    //use movsb
-	    cout <<"/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
-	    OUTPUT_MAIN ("sub esp, %d", size);
-	    OUTPUT_MAIN ("mov ecx, %d", size);
-	    OUTPUT_MAIN ("lea edi, [esp]");
-	    OUTPUT_MAIN ("lea esi, [0x%lx]", loc);
-	    OUTPUT_MAIN ("rep movsb");
-	}
-	pushed += size;
-    }
-
-    void printPop () { 
-	if (size == 2 || size == 4)
-	    OUTPUT_MAIN ("pop %s [0x%lx]", memSizeToPrefix(size), loc);
-	else {
-	    //use movsb
-	    cout << "/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
-	    OUTPUT_MAIN ("mov ecx, %d", size);
-	    OUTPUT_MAIN ("lea edi, [0x%lx]", loc);
-	    OUTPUT_MAIN ("lea esi, [esp]");
-	    OUTPUT_MAIN ("rep movsb");
-	    OUTPUT_MAIN ("add esp, %d", size);
-	}
-    }
-};
-u_long AddrToRestore::pushed = 0;
-
-static void fw_slice_check_final_mem_taint () 
-{ 
-    /* First build up a list of ranges to restore */
-    list<AddrToRestore> restoreAddress;
-    for(interval_set<unsigned long>::iterator iter = current_thread->address_taint_set->begin();
-	iter != current_thread->address_taint_set->end(); ++iter) {
-	// We need to deal with partial taint
-	u_long bytes_to_restore = 0;
-	u_long addr;
-	for (addr = iter->lower(); addr <= iter->upper(); addr++) {
-	    if (is_mem_tainted (addr, 1)) {
-		if (bytes_to_restore) {
-		    AddrToRestore tmp(addr-bytes_to_restore, bytes_to_restore);
-		    restoreAddress.push_back(tmp);
-		    bytes_to_restore = 0;
-		}
-	    } else {
-		bytes_to_restore++;
-	    }
-	}
-	if (bytes_to_restore) {
-	    AddrToRestore tmp(addr-bytes_to_restore, bytes_to_restore);
-	    restoreAddress.push_back(tmp);
-	}
-    }
-
-    // Now write out the ckpt code
-    OUTPUT_MAIN ("ckpt_mem:");
-    for (AddrToRestore addrRestore: restoreAddress) 
-	addrRestore.printPush();
-
-    // Stack must be aligned for use during slice
-    // Adjust for 4 byte return address pushed for call of sections (needed for large slices)
-    OUTPUT_MAIN ("sub esp, %ld", (28-(AddrToRestore::pushed%16))%16);
-    OUTPUT_MAIN ("jmp slice_begins");
-
-    // And write out the restore code
-    OUTPUT_MAIN ("restore_mem:");
-    OUTPUT_MAIN ("add esp, %ld", (28-(AddrToRestore::pushed%16))%16);
-
-    for (auto addrRestore = restoreAddress.rbegin(); addrRestore != restoreAddress.rend(); ++addrRestore) {
-	addrRestore->printPop();
-    }
-
-    OUTPUT_MAIN ("jmp slice_ends");
-
-#if 0
-    // JNF - XXX - This was broken we should fix
-    /* Assume 1 thread for now */
-    for (i = 0; i < NUM_REGS*REG_SIZE; i++) {
-	if (pregs[i]) {
-	    OUTPUT_MAIN ("[CHECK_REG] $reg(%d) is tainted, index %d", i/REG_SIZE, i);
-	}
-    }
-#endif
-}
-
-void fw_slice_print_footer ()
-{
-    OUTPUT_MAIN ("jmp restore_mem");
-    OUTPUT_MAIN ("slice_ends:");
-    OUTPUT_MAIN ("mov ebx, 1");
-    OUTPUT_MAIN ("mov eax, 350");
-    OUTPUT_MAIN ("int 0x80");
-    
-    fw_slice_check_final_mem_taint ();
-
-    fprintf (mainfile, ");\n");
-    fclose (mainfile);
-
-    //control flow divergence - deosn't return
-    OUTPUT_SLICE_EXTRA(0, "ret");
-    OUTPUT_SLICE_EXTRA(0, "jump_diverge:");
-    OUTPUT_SLICE_EXTRA(0, "push eax");
-    OUTPUT_SLICE_EXTRA(0, "push ecx");
-    OUTPUT_SLICE_EXTRA(0, "push edx");
-    OUTPUT_SLICE_EXTRA(0, "call handle_jump_diverge");
-    
-    //index divergence - doesn't return
-    OUTPUT_SLICE_EXTRA(0, "index_diverge:");
-    OUTPUT_SLICE_EXTRA(0, "push eax");
-    OUTPUT_SLICE_EXTRA(0, "push ecx");
-    OUTPUT_SLICE_EXTRA(0, "push edx");
-    OUTPUT_SLICE_EXTRA(0, "call handle_index_diverge");
-    
-    fprintf (slicefile, ");\n");
-    fclose (slicefile);
-
-    fflush (stdout);
-}
-

@@ -171,6 +171,105 @@ string memSizeToPrefix(int size){
 	}
 }
 
+string rewriteInst (string s) {
+	if (s.empty()) return string();
+	size_t push_pos = s.find ("#push");
+	size_t pop_pos = s.find ("#pop");
+	if ((push_pos != string::npos || pop_pos != string::npos) && s.find("#00000000") == string::npos) { 
+		size_t index = s.find("_mem[");
+		vector<string> memParams = split (s.substr(index+5, s.find("]", index) - index - 5), ':');
+		if (memParams.size() != 3) cout << s;
+		string addr = memParams[0];
+		string size = memParams[2];
+		string newInst;
+		if (push_pos != string::npos) { 
+			string tmp = s.replace (push_pos, 6, "#mov " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "], ");
+			size_t index = tmp.find ("[SLICE_INFO]");
+			return tmp.replace(index, 12, "[SLICE_INFO] push instruction (rewrite)");
+		} 
+		if (pop_pos != string::npos) { 
+			string tmp = s.replace (pop_pos, 5, "#mov ");
+			return tmp.replace (tmp.find("    [SLICE_INFO]"), 16, ", " + memSizeToPrefix(atoi(size.c_str())) + "[" + addr + "]    [SLICE_INFO] pop instruction(rewrite)");
+		}
+	} else if (s.find ("#j") != string::npos) { //change jump instruction
+		size_t index = s.find ("#j");
+		size_t spaceIndex = s.find (" ", index);
+		string inst = s.substr (index +1, spaceIndex - index - 1);
+		string address = s.substr (spaceIndex + 1, s.find (" ", spaceIndex + 1) - spaceIndex - 1);
+		//assert (jumpMap.contains(inst))
+		if (s.find ("branch_taken 1") != string::npos) {
+			//if the original branch is taken, then we jump to error if not taken as before
+			string tmp = s.replace (index + 1, inst.length(), jumpMap(inst));
+                        if (s.find ("block_index") == string::npos) {
+                                spaceIndex = s.find (" ", s.find("#j"));
+                                return tmp.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        } else 
+                                return tmp;
+		} else if (s.find ("branch_taken 0") != string::npos) 
+                        if (s.find ("block_index") == string::npos)
+			        return s.replace(spaceIndex + 1, address.length(), "jump_diverge");
+                        else 
+                                return s;
+		else if (inst.compare("jecxz") == 0) {
+			//return s.replace(spaceIndex + 1, address.length(), "not handled");
+                        fprintf (stderr, "[ERROR] jecxz not handled yet.\n");
+                        return "";
+		} else {
+                        if (s.find ("_branch_") == string::npos)
+			        cerr << "jump instruction? " + s << endl;
+		}
+	}
+	return s;
+}
+
+string replaceReg (string s) {
+	size_t index = s.find ("$reg(");
+	if (index != string::npos) { 
+		//replace reg
+		size_t lastIndex = s.find (")", index +1);
+		string regIndex = s.substr (index + 4, lastIndex + 1 - index - 4);
+		if (regMap.find (regIndex) != regMap.end()) {
+			string out = s.replace (index, lastIndex + 1 - index, regMap[regIndex]);
+			//println (out)
+			return out;
+		} else  {
+			cerr << "cannot find corresponding reg!!!!!!." << s << endl;
+			cerr << s << endl;
+                        assert (0);
+		}
+	} 
+	return s;
+}
+
+string replaceMem (string s, string instStr) {
+	size_t addrIndex = s.find("$addr(");
+	if (addrIndex != string::npos) {
+		//replace the mem operand in this line
+		//copy the original slice code's addressing mode
+		if (instStr.find (" ptr " ) == string::npos) {
+                    cerr << "error line: " <<s <<endl;
+                    assert (0);
+                }
+		//I haven't handled the case where more than one operand is mem
+		assert (instStr.find (" ptr " ) == instStr.rfind(" ptr "));
+		assert (instStr.find ("[SLICE]") == 0);
+		string inst = split(instStr.substr(0, instStr.find("[SLICE_INFO]")), '#')[2];
+		vector<string> operands = split(inst.substr (inst.find(" ") + 1), ',');
+		string out;
+		//println ("replaceMem: " + instStr + ", " + s + ", " + operands)
+		//replace address with base+index registers
+		for (string op: operands) {
+			//println ("replaceMem: " + op)
+			size_t index = op.find("ptr");
+			if(index != string::npos) {
+				out = s.replace (addrIndex, s.find(")", addrIndex + 1) + 1 - addrIndex, op);
+			}
+		}
+		return out;
+	}
+	return s;
+}
+
 AddrToRestore parseRestoreAddress (string s) {
 	size_t index = s.find(":");
 	assert (index != string::npos);
@@ -360,9 +459,9 @@ int main (int argc, char* argv[]) {
 	println ("push ecx");
 	println ("push edx");
 	println ("call handle_jump_diverge");
-	println ("push edx");
-	println ("push ecx");
-	println ("push eax");
+	println ("pop edx");
+	println ("pop ecx");
+	println ("pop eax");
 
 	//index divergence
 	println ("/* function that handles index divergence */");
@@ -371,10 +470,9 @@ int main (int argc, char* argv[]) {
 	println ("push ecx");
 	println ("push edx");
 	println ("call handle_index_diverge");
-	println ("push edx");
-	println ("push ecx");
-	println ("push eax");
+	println ("pop edx");
+	println ("pop ecx");
+	println ("pop eax");
 #endif
-
 	return 0;
 }

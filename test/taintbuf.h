@@ -19,6 +19,9 @@
 #define STATFS64_BAVAIL   11
 #define STATFS64_FFREE    12
 #define SIGACTION_ACTION  10
+#define CLOCK_GETTIME     13
+#define CLOCK_GETRES      14
+
 
 struct taint_retval {
     short syscall;

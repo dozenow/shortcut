@@ -67,7 +67,7 @@ TAINTSIGN clear_flag_taint (uint32_t mask);
 
 /* shift the taints of the bytes of a reg by shift num of bytes */
 void shift_reg_taint_right(int reg, int shift);
-
+#define TAINT_BASE_INDEX_ARGS uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size
 // interface for different taint transfers
 TAINTSIGN taint_mem2reg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
@@ -94,6 +94,7 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str);
 extern struct thread_data* current_thread;
 
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
+#define BASE_INDEX_PARAMS base_reg,base_reg_size,base_reg_value,base_reg_u8,index_reg,index_reg_size,index_reg_value,index_reg_u8
 TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
 TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
   TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx);
@@ -111,6 +112,7 @@ TAINTSIGN fw_slice_push_mem (ADDRINT ip, u_long src_mem_loc, u_long dst_mem_loc,
 TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t mem_size); 
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
+TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int orig_reg, uint32_t reg_size, const PIN_REGISTER* reg_value, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1_size, const PIN_REGISTER* reg1_value, uint32_t reg1_u8, 
 			      int reg2, uint32_t reg2_size, const PIN_REGISTER* reg2_value, uint32_t reg2_u8, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
@@ -233,6 +235,21 @@ int is_mem_arg_tainted (u_long mem_loc, uint32_t size);
 int is_flag_tainted (uint32_t flag);
 void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size);
 
+int check_is_syscall_ignored (int pid, u_long index);
+
+TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, uint32_t fp_stack_change);
+TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize,  uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t src_reg_u8, uint32_t fp_stack_change);
+TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS);
+TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, const CONTEXT* ctx, uint32_t fp_stack_change, BASE_INDEX_ARGS) ;
+TAINTSIGN fw_slice_fpureg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS);
+TAINTSIGN fw_slice_track_fp_stack_top (ADDRINT ip, const CONTEXT* ctx);
+TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change);
+TAINTSIGN taint_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx, int fp_stack_change);
+TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags, const CONTEXT* ctx, int fp_stack_change);
+TAINTSIGN taint_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx, uint32_t fp_stack_change);
+TAINTSIGN taint_mix_fpuregmem2fpureg (u_long mem_loc, uint32_t memsize, int src_reg, uint32_t src_regsize, int dst_reg, uint32_t dst_regsize, const CONTEXT* ctx, TAINT_BASE_INDEX_ARGS);
+TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, uint32_t src_size, const CONTEXT* ctx);
+TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx);
 #ifdef __cplusplus
 }
 #endif

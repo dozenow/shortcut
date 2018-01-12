@@ -13,6 +13,7 @@ libc {
     pthread_mutex_init; pthread_mutex_lock; pthread_mutex_unlock;
     pthread_self; pthread_setcancelstate; pthread_setcanceltype;
     pthread_setschedparam;
+    pthread_go_live;
   }
   GLIBC_2.1 {
     pthread_attr_init;
@@ -120,6 +121,7 @@ libpthread {
     # helper functions
     __libc_current_sigrtmin; __libc_current_sigrtmax;
     __libc_allocate_rtsig;
+    pthread_go_live;
   }
   GLIBC_2.1.1 {
     sem_close; sem_open; sem_unlink;

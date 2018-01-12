@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt sdaemon \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range cmpklog
+	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range cmpklog parseulib.o parsecheckpoint
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -50,6 +50,8 @@ filemap: libutil.a
 
 parseckpt: libutil.a
 
+parsecheckpoint: libutil.a parsecheckpoint.o
+
 parserecheck: parserecheck.o
 
 wparserecheck: 
@@ -69,6 +71,9 @@ libutil.a: util.o parseklib.o
 	ranlib $@
 
 parseklib.o: $(KENREL_CONFIG) 
+
+parseulib.o: $(KENREL_CONFIG)  parseulib.cpp parseulib.h
+	c++ -c -std=c++0x parseulib.cpp -o parseulib.o
 
 reset_ndx: libutil.a
 
@@ -118,7 +123,7 @@ sync_files: sync_files.cpp streamserver.h parseklib.o streamnw.cpp streamnw.h
 	c++ -Wall -Werror -std=c++0x sync_files.cpp parseklib.o streamnw.cpp -o sync_files 
 
 recheck_support.o: recheck_support.c ../dift/recheck_log.h
-	gcc recheck_support.c -c -o recheck_support.o -Wall
+	gcc recheck_support.c -c -o recheck_support.o -Wall -lrt -lpthread
 
 .PHONY: clean
 clean:
