@@ -187,6 +187,9 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 	}
     }
     if (current->main_thread){ 
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	fprintf (stderr, "resume after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
 				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename,
@@ -198,6 +201,9 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 
     }
     else { 
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	fprintf (stderr, "resume proc after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
@@ -433,7 +439,8 @@ int main (int argc, char* argv[])
 	struct ckpt_data cd; 
 	pthread_t thread[MAX_THREADS];
 
-	//fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	gettimeofday(&tv, NULL);
+	fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 
 	sprintf(uniqueid,"%d",getpid()); //use the parent's pid as the uniqueid
 
@@ -644,7 +651,7 @@ int main (int argc, char* argv[])
 
 	    if (slice_filename) {
 		load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
-		}
+	    }
 	    
 	    cd.fd = fd;
 	    cd.attach_pin = attach_pin;
@@ -662,6 +669,8 @@ int main (int argc, char* argv[])
 	    cd.go_live = go_live;
 	    cd.slice_filename = slice_filename;
 	    cd.recheck_filename = recheck_filename;
+	    gettimeofday(&tv, NULL);
+	    fprintf (stderr, "resume main done: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	    recheck_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
 	} else {
 	    rc = resume_with_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir,

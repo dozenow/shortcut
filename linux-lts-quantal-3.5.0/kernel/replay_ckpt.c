@@ -1646,7 +1646,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		unsigned int entry = 0;
 		struct fw_slice_info* slice_info = NULL;
 
-		DPRINT ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
+		printk ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
 
 		fd = sys_open (filename, O_RDONLY, 0);
 		if (fd < 0) { 
@@ -1721,6 +1721,12 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
 		
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("slice finishes at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		}
+
 		//pop the filename from the stack
 		regs->sp += RECHECK_FILE_NAME_LEN;
 		regs->bp += RECHECK_FILE_NAME_LEN;
@@ -1755,14 +1761,23 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		do_gettimeofday (&tv);
 		DPRINT ("end execute_slice %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 		
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("resuming application after ckpt at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		}
+
+
 	} else if (finish == 2) {
 
 		struct slice_task* pstask;
-		struct timeval tv;
 		long retval;
 
-		do_gettimeofday (&tv);
-		DPRINT ("Execute slice fails predicate check %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("slice fails check at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		}
 
 		pstask = KMALLOC (sizeof(struct slice_task), GFP_KERNEL);
 		if (pstask == NULL) {
@@ -1783,10 +1798,18 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		wake_up (&daemon_waitq);
 		mutex_unlock(&slice_task_mutex);
 		
-		DPRINT ("Sleeping %d until we can generate correct memory state\n", current->pid);
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("Pid %d sleeping to generate correct memory state at %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule();
-		DPRINT ("Sleeping slice %d woken up.\n", current->pid);   
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("Pid %d woken up and going live after recovery at %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+		}
 
 		// We should have correct address space and register values now
 		set_thread_flag (TIF_IRET); // Make sure we restore the new registers

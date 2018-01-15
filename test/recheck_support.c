@@ -182,14 +182,21 @@ void handle_delayed_jump_diverge()
     abort();
 }
 
-void handle_index_diverge(u_long foo, u_long bar, u_long baz)
+void handle_index_diverge(u_long foo, u_long bar, u_long baz, u_long quux)
 {
     int i;
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] index diverges at 0x%lx val = %lx.\n\n\n", *((u_long *) ((u_long) &i + 32)), baz);
+    fprintf (stderr, "[MISMATCH] foo = 0x%lx", foo);
+    fprintf (stderr, "[MISMATCH] quux = 0x%lx", quux);
+    fprintf (stderr, "[MISMATCH] quux at %lx\n", (u_long) &quux);
+    fprintf (stderr, "[MISMATCH] foo at %lx\n", (u_long) &foo);
+    fprintf (stderr, "[MISMATCH] bar at %lx\n", (u_long) &bar);
+    fprintf (stderr, "[MISMATCH] baz at %lx\n", (u_long) &baz);
+    fprintf (stderr, "[MISMATCH] i at %lx\n", (u_long) &i);
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_jump_diverge: should not get here\n");
+    fprintf (stderr, "handle_index_diverge: should not get here\n");
     abort ();
 }
 
@@ -371,6 +378,8 @@ long write_recheck ()
     struct write_recheck* pwrite;
     char* data;
     int rc, i;
+
+    LPRINT ("write starts\n");
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
@@ -1377,6 +1386,7 @@ long ioctl_recheck ()
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
     }
+    LPRINT ("ioctl returns");
     return rc;
 }
 
