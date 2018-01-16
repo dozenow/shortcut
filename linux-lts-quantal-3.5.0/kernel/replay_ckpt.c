@@ -1666,7 +1666,6 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
         int index;
-        struct timeval tv;
         index = atomic_add_return (1, &go_live_clock->num_threads);
         SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
@@ -1677,10 +1676,10 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
             go_live_clock->process_map[index].record_pid = record_pid;
             go_live_clock->process_map[index].current_pid = current->pid;
         }
-        info.slice_clock = go_live_clock;
 
 	// Too big - so allocate on the stack
 	pinfo = KMALLOC (sizeof(struct fw_slice_info), GFP_KERNEL);
+        pinfo->slice_clock = go_live_clock;
 	if (pinfo == NULL) {
 		printk ("Cannot allocate fw_slice_info\n");
 		return -ENOMEM;
@@ -1733,7 +1732,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 		snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
 	}
 
-        DPRINT ("start_fw_slice: recheck filename %s\n", recheck_filename);
+        DPRINT ("start_fw_slice: recheck filename %s\n", recheck_log_name);
                 
         regs->sp -= RECHECK_FILE_NAME_LEN;
 	copy_to_user ((char __user*) regs->sp, recheck_log_name, RECHECK_FILE_NAME_LEN);

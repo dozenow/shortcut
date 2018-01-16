@@ -39,8 +39,6 @@ void print_help(const char *program) {
     fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [-r] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val]\n"
                      "                    [--recover_at=replay_clock_val] [--recover_pid=daemon_pid] [--from_ckpt=replay_clock-val]\n"
 	             "                    [--fake_calls=c1,c2...] \n", program);
-	fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [-r] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val] [--from_ckpt=replay_clock-val] [--fake_calls=c1,c2...] \n",
-			program);
 }
 struct ckpt_data { 
     int fd;

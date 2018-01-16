@@ -28,8 +28,8 @@
 
 struct go_live_clock* go_live_clock;
 
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 #define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
@@ -38,11 +38,9 @@ char logbuf[4096];
 int logfd;
 #endif
 
-<<<<<<< HEAD
 // This pauses for a while to let us see what went wrong
 #define DELAY
 //#define DELAY sleep(2);
-=======
 #ifdef PRINT_TIMING
 unsigned long long success_syscalls[512];
 unsigned long long failed_syscalls[512];
@@ -115,7 +113,6 @@ inline void print_timings (void)
 #define start_timing_func(x)
 #define end_timing_func(x)
 #endif
->>>>>>> forward_slicing_java
 
 char buf[1024*1024];
 char tmpbuf[1024*1024];
@@ -187,7 +184,7 @@ void recheck_start(char* filename, void* clock_addr)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
-    fprintf (stderr, "recheck_start time %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+    //fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p\n", tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename));
     go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
@@ -221,10 +218,6 @@ void recheck_start(char* filename, void* clock_addr)
 	}
     }
     strcat (taintbuf_filename, "taintbuf");
-<<<<<<< HEAD
-=======
-    //printf ("taintbuf is: %s\n", taintbuf_filename);
->>>>>>> forward_slicing_java
 
 #ifdef PRINT_VALUES
 #ifdef PRINT_TO_LOG
@@ -262,32 +255,20 @@ void print_value (u_long foo)
 
 void handle_mismatch()
 {
-<<<<<<< HEAD
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //TODO: uncomment this
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     DELAY;
-    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_jump_diverge: should not get here\n");
-    abort();
-=======
-    static int cnt = 0;
-    cnt++;
-    fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
-    //dump_taintbuf (DIVERGE_MISMATCH, 0);
-    //sleep(2);
+    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    //fprintf (stderr, "handle_jump_diverge: should not get here\n");
     //abort();
->>>>>>> forward_slicing_java
 }
 
 void handle_jump_diverge()
 {
     int i;
-<<<<<<< HEAD
-=======
-    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
->>>>>>> forward_slicing_java
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -308,12 +289,8 @@ void handle_delayed_jump_diverge()
 void handle_index_diverge(u_long foo, u_long bar, u_long baz)
 {
     int i;
-<<<<<<< HEAD
-=======
-    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
->>>>>>> forward_slicing_java
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx val = %lx.\n\n\n", *((u_long *) ((u_long) &i + 32)), baz);
+    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -323,10 +300,8 @@ void handle_index_diverge(u_long foo, u_long bar, u_long baz)
 static inline void check_retval (const char* name, u_long clock, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
-<<<<<<< HEAD
 	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, actual);
-=======
-	    fprintf (stderr, "[MISMATCH] retval for %s expected %d ret %d\n", name, expected, actual);
+            //if divergence happens on open, check what files are currently opened
             if (!strcmp (name, "open")) { 
                 int max = expected > actual?expected:actual;
                 int i = 0;
@@ -346,7 +321,6 @@ static inline void check_retval (const char* name, u_long clock, int expected, i
                     printf ("      file descript %d, filename %s\n", i, filename);
                 }
             }
->>>>>>> forward_slicing_java
 	    handle_mismatch();
 	}
     } else {
@@ -445,12 +419,6 @@ long read_recheck (size_t count)
 
     if (is_cache_file && pentry->retval >= 0) {
 	struct stat64 st;
-<<<<<<< HEAD
-=======
-#ifdef PRINT_VALUES
-	LPRINT ("Cache file\n");
-#endif
->>>>>>> forward_slicing_java
 	if (!cache_files_opened[pread->fd].is_open_cache_file) {
 	    printf ("[BUG] cache file should be opened but it is not\n");
 	    handle_mismatch();
@@ -493,7 +461,7 @@ long read_recheck (size_t count)
 	}
         start_timing();
 	rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
-<<<<<<< HEAD
+        end_timing (SYS_read, rc);
 	if (pread->max_bound > 0) {
 	    if (rc > pread->max_bound) {
 		printf ("[MISMATCH] read expected up to %d bytes, actually read %ld at clock %ld\n", 
@@ -516,29 +484,16 @@ long read_recheck (size_t count)
 			printf ("[MISMATCH] read returns different values\n");
 			printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
 			handle_mismatch();
+                        memcpy (pread->buf, readData, pentry->retval);
 		    }
-=======
-        end_timing (SYS_read, rc);
-	check_retval ("read", pentry->retval, rc);
-        if (!pread->partial_read) {
-	    if (rc > 0) {
-		if (memcmp (tmpbuf, readData, rc)) {
-		    printf ("[MISMATCH] read returns different values\n");
-		    printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
-		    handle_mismatch();
-                    memcpy (pread->buf, readData, pentry->retval);
->>>>>>> forward_slicing_java
 		}
 	    } else {
 		partial_read (pentry, pread, tmpbuf, readData, 0, rc);
 	    }
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_read);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long write_recheck ()
@@ -572,14 +527,10 @@ long write_recheck ()
 
     start_timing();
     rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
-<<<<<<< HEAD
-    check_retval ("write", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_write, rc);
-    check_retval ("write", pentry->retval, rc);
+    check_retval ("write", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_write);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long open_recheck ()
@@ -606,22 +557,15 @@ long open_recheck ()
 #endif
     start_timing();
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
-<<<<<<< HEAD
-    check_retval ("open", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_open, rc);
-    check_retval ("open", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("open", pentry->clock, pentry->retval, rc);
     if (rc >= MAX_FDS) abort ();
     if (rc >= 0 && popen->has_retvals) {
 	cache_files_opened[rc].is_open_cache_file = 1;
 	cache_files_opened[rc].orv = popen->retvals;
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_open);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long openat_recheck ()
@@ -643,16 +587,11 @@ long openat_recheck ()
 #endif
     start_timing();
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
-<<<<<<< HEAD
+    end_timing (SYS_openat, rc);
     check_retval ("openat", pentry->clock, pentry->retval, rc);
     if  (rc >= MAX_FDS) abort ();
-    return rc;
-=======
-    end_timing (SYS_openat, rc);
-    check_retval ("openat", pentry->retval, rc);
-    if  (rc >= MAX_FDS) abort ();
     end_timing_func (SYS_openat);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long close_recheck ()
@@ -677,13 +616,9 @@ long close_recheck ()
     rc = syscall(SYS_close, pclose->fd);
     end_timing (SYS_close, rc);
     cache_files_opened[pclose->fd].is_open_cache_file = 0;
-<<<<<<< HEAD
     check_retval ("close", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
-    check_retval ("close", pentry->retval, rc);
     end_timing_func (SYS_close);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long access_recheck ()
@@ -706,14 +641,10 @@ long access_recheck ()
 
     start_timing();
     rc = syscall(SYS_access, accessName, paccess->mode);
-<<<<<<< HEAD
-    check_retval ("access", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_access, rc);
-    check_retval ("access", pentry->retval, rc);
+    check_retval ("access", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_access);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long stat64_alike_recheck (char* syscall_name, int syscall_num)
@@ -746,12 +677,8 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
 
     start_timing();
     rc = syscall(syscall_num, pathName, &st);
-<<<<<<< HEAD
-    check_retval (syscall_name, pentry->clock, pentry->retval, rc);
-=======
     end_timing (syscall_num, rc);
-    check_retval (syscall_name, pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval (syscall_name, pentry->clock, pentry->retval, rc);
     if (pstat64->has_retvals) {
 	if (st.st_dev != pstat64->retvals.st_dev) {
 	    printf ("[MISMATCH] %s dev does not match %llu vs. recorded %llu\n", syscall_name, st.st_dev, pstat64->retvals.st_dev);
@@ -825,11 +752,8 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
 	    handle_mismatch();
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (syscall_num);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long stat64_recheck () { 
@@ -869,12 +793,8 @@ long fstat64_recheck ()
 
     start_timing();
     rc = syscall(SYS_fstat64, pfstat64->fd, &st);
-<<<<<<< HEAD
-    check_retval ("fstat64", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_fstat64, rc);
-    check_retval ("fstat64", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("fstat64", pentry->clock, pentry->retval, rc);
     if (pfstat64->has_retvals) {
 	if (st.st_dev != pfstat64->retvals.st_dev) {
 	    printf ("[MISMATCH] fstat64 dev does not match %llu vs. recorded %llu\n", st.st_dev, pfstat64->retvals.st_dev);
@@ -948,11 +868,8 @@ long fstat64_recheck ()
 	    handle_mismatch();
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_fstat64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long fcntl64_getfl_recheck ()
@@ -974,14 +891,10 @@ long fcntl64_getfl_recheck ()
 
     start_timing();
     rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
-<<<<<<< HEAD
-    check_retval ("fcntl64 getfl", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_fcntl64, rc);
-    check_retval ("fcntl64 getfl", pentry->retval, rc);
+    check_retval ("fcntl64 getfl", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_fcntl64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long fcntl64_setfl_recheck ()
@@ -1003,14 +916,10 @@ long fcntl64_setfl_recheck ()
 
     start_timing();
     rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
-<<<<<<< HEAD
-    check_retval ("fcntl64 setfl", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_fcntl64, rc);
-    check_retval ("fcntl64 setfl", pentry->retval, rc);
+    check_retval ("fcntl64 setfl", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_fcntl64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long fcntl64_getlk_recheck ()
@@ -1033,23 +942,16 @@ long fcntl64_getlk_recheck ()
 
     start_timing();
     rc = syscall(SYS_fcntl64, pgetlk->fd, F_GETLK, &fl);
-<<<<<<< HEAD
-    check_retval ("fcntl64 getlk", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_fcntl64, rc);
-    check_retval ("fcntl64 getlk", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("fcntl64 getlk", pentry->clock, pentry->retval, rc);
     if (pgetlk->has_retvals) {
 	if (memcmp(&fl, &pgetlk->flock, sizeof(fl))) {
 	    printf ("[MISMATCH] fcntl64 getlk does not match\n");
 	    handle_mismatch();
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_fcntl64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long fcntl64_getown_recheck ()
@@ -1071,14 +973,10 @@ long fcntl64_getown_recheck ()
 
     start_timing();
     rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
-<<<<<<< HEAD
-    check_retval ("fcntl64 getown", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_fcntl64, rc);
-    check_retval ("fcntl64 getown", pentry->retval, rc);
+    check_retval ("fcntl64 getown", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_fcntl64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long fcntl64_setown_recheck (long owner)
@@ -1107,14 +1005,10 @@ long fcntl64_setown_recheck (long owner)
 
     start_timing();
     rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, use_owner);
-<<<<<<< HEAD
-    check_retval ("fcntl64 setown", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_fcntl64, rc);
-    check_retval ("fcntl64 setown", pentry->retval, rc);
+    check_retval ("fcntl64 setown", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_fcntl64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long ugetrlimit_recheck ()
@@ -1137,21 +1031,14 @@ long ugetrlimit_recheck ()
 
     start_timing();
     rc = syscall(SYS_ugetrlimit, pugetrlimit->resource, &rlim);
-<<<<<<< HEAD
-    check_retval ("ugetrlimit", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_ugetrlimit, rc);
-    check_retval ("ugetrlimit", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("ugetrlimit", pentry->clock, pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
 	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld, while in recheck log %ld %ld\n", rlim.rlim_cur, rlim.rlim_max, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max);
 	handle_mismatch();
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_ugetrlimit);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long uname_recheck ()
@@ -1175,12 +1062,8 @@ long uname_recheck ()
 
     start_timing();
     rc = syscall(SYS_uname, &uname);
-<<<<<<< HEAD
-    check_retval ("uname", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_uname, rc);
-    check_retval ("uname", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("uname", pentry->clock, pentry->retval, rc);
 
     if (memcmp(&uname.sysname, &puname->utsname.sysname, sizeof(uname.sysname))) {
 	fprintf (stderr, "[MISMATCH] uname sysname does not match: %s\n", uname.sysname);
@@ -1205,11 +1088,8 @@ long uname_recheck ()
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
 	handle_mismatch();
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_uname);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long statfs64_recheck ()
@@ -1235,12 +1115,8 @@ long statfs64_recheck ()
 
     start_timing();
     rc = syscall(SYS_statfs64, path, pstatfs64->sz, &st);
-<<<<<<< HEAD
-    check_retval ("statfs64", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_statfs64, rc);
-    check_retval ("statfs64", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("statfs64", pentry->clock, pentry->retval, rc);
     if (rc == 0) {
 	if (pstatfs64->statfs.f_type != st.f_type) {
 	    fprintf (stderr, "[MISMATCH] statfs64 f_type does not match: %d\n", st.f_type);
@@ -1279,11 +1155,8 @@ long statfs64_recheck ()
 	    handle_mismatch();
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_statfs64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long gettimeofday_recheck () { 
@@ -1305,12 +1178,8 @@ long gettimeofday_recheck () {
 #endif
     start_timing();
     rc = syscall (SYS_gettimeofday, &tv, &tz);
-<<<<<<< HEAD
-    check_retval ("gettimeofday", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_gettimeofday, rc);
-    check_retval ("gettimeofday", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("gettimeofday", pentry->clock, pentry->retval, rc);
     
     if (pget->tv_ptr) { 
 	memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
@@ -1320,10 +1189,8 @@ long gettimeofday_recheck () {
 	memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_gettimeofday);
+    return rc;
 }
 
 void clock_gettime_recheck () 
@@ -1346,7 +1213,7 @@ void clock_gettime_recheck ()
     start_timing();
     rc = syscall (SYS_clock_gettime, pget->clk_id, &tp);
     end_timing (SYS_clock_gettime, rc);
-    check_retval ("clock_gettime", pentry->retval, rc);
+    check_retval ("clock_gettime", pentry->clock, pentry->retval, rc);
     
     if (pget->tp) {
         memcpy (pget->tp, &tp, sizeof(tp));
@@ -1381,14 +1248,13 @@ void clock_getres_recheck (int clock_id)
     start_timing();
     rc = syscall (SYS_clock_getres, clk_id, &tp);
     end_timing (SYS_clock_getres, rc);
-    check_retval ("clock_getres", pentry->retval, rc);
+    check_retval ("clock_getres", pentry->clock, pentry->retval, rc);
     
     if (pget->tp) {
         memcpy (pget->tp, &tp, sizeof(tp));
         add_to_taintbuf (pentry, CLOCK_GETRES, &tp, sizeof(tp));
     }
     end_timing_func (SYS_clock_getres);
->>>>>>> forward_slicing_java
 }
 
 long time_recheck () { 
@@ -1445,12 +1311,8 @@ long prlimit64_recheck ()
     }
     start_timing();
     rc = syscall(SYS_prlimit64, prlimit->pid, prlimit->resource, prlimit->new_limit, prlim);
-<<<<<<< HEAD
-    check_retval ("prlimit64", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_prlimit64, rc);
-    check_retval ("prlimit64", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("prlimit64", pentry->clock, pentry->retval, rc);
     if (prlimit->has_retvals) {
 	if (prlimit->retparams.rlim_cur != rlim.rlim_cur) {
 	    printf ("[MISMATCH] prlimit64 soft limit does not match: %lld\n", rlim.rlim_cur);
@@ -1459,11 +1321,8 @@ long prlimit64_recheck ()
 	    printf ("[MISMATCH] prlimit64 hard limit does not match: %lld\n", rlim.rlim_max);
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_prlimit64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long setpgid_recheck (int pid, int pgid)
@@ -1497,14 +1356,10 @@ long setpgid_recheck (int pid, int pgid)
 
     start_timing();
     rc = syscall(SYS_setpgid, use_pid, use_pgid);
-<<<<<<< HEAD
-    check_retval ("setpgid", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_setpgid, rc);
-    check_retval ("setpgid", pentry->retval, rc);
+    check_retval ("setpgid", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_setpgid);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long readlink_recheck ()
@@ -1543,23 +1398,16 @@ long readlink_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_readlink, path, tmpbuf, preadlink->bufsiz);
-<<<<<<< HEAD
-    check_retval ("readlink", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_readlink, rc);
-    check_retval ("readlink", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("readlink", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	if (memcmp(tmpbuf, linkdata, pentry->retval)) {
 	    printf ("[MISMATCH] readdata returns link data %s\n", linkdata);
 	    handle_mismatch();
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_readlink);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long socket_recheck ()
@@ -1585,14 +1433,10 @@ long socket_recheck ()
     block[2] = psocket->protocol;
     start_timing();
     rc = syscall(SYS_socketcall, SYS_SOCKET, &block);
-<<<<<<< HEAD
-    check_retval ("socket", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_socketcall, rc);
-    check_retval ("socket", pentry->retval, rc);
+    check_retval ("socket", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_socketcall);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 inline void process_taintmask (char* mask, u_long size, char* buffer)
@@ -1630,14 +1474,10 @@ inline long connect_or_bind_recheck (int call, char* call_name)
     block[2] = pconnect->addrlen;
     start_timing();
     rc = syscall(SYS_socketcall, call, &block);
-<<<<<<< HEAD
-    check_retval (call_name, pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_socketcall, rc);
-    check_retval (call_name, pentry->retval, rc);
+    check_retval (call_name, pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_socketcall);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long connect_recheck () { 
@@ -1701,14 +1541,10 @@ long getuid32_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_getuid32);
-<<<<<<< HEAD
-    check_retval ("getuid32", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_getuid32, rc);
-    check_retval ("getuid32", pentry->retval, rc);
+    check_retval ("getuid32", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_getuid32);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long geteuid32_recheck ()
@@ -1726,14 +1562,10 @@ long geteuid32_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_geteuid32);
-<<<<<<< HEAD
-    check_retval ("geteuid32", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing (SYS_geteuid32, rc);
-    check_retval ("geteuid32", pentry->retval, rc);
+    check_retval ("geteuid32", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_geteuid32);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long getgid32_recheck ()
@@ -1751,14 +1583,10 @@ long getgid32_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_getgid32);
-<<<<<<< HEAD
-    check_retval ("getgid32", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_getgid32, rc);
-    check_retval ("getgid32", pentry->retval, rc);
+    check_retval ("getgid32", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_getgid32);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long getegid32_recheck ()
@@ -1776,14 +1604,10 @@ long getegid32_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_getegid32);
-<<<<<<< HEAD
     check_retval ("getegid32", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_getegid32, rc);
-    check_retval ("getegid32", pentry->retval, rc);
     end_timing_func (SYS_getegid32);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long llseek_recheck ()
@@ -1811,21 +1635,14 @@ long llseek_recheck ()
 
     start_timing();
     rc = syscall(SYS__llseek, pllseek->fd, pllseek->offset_high, pllseek->offset_low, &off, pllseek->whence);
-<<<<<<< HEAD
-    check_retval ("llseek", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS__llseek, rc);
-    check_retval ("llseek", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("llseek", pentry->clock, pentry->retval, rc);
     if (rc >= 0 && off != pllseek->result) {
 	printf ("[MISMATCH] llseek returns offset %llu\n", off);
 	handle_mismatch();
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS__llseek);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long ioctl_recheck ()
@@ -1850,12 +1667,8 @@ long ioctl_recheck ()
     if (pioctl->dir == _IOC_WRITE) {
         start_timing();
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
-<<<<<<< HEAD
-	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
-=======
         end_timing(SYS_ioctl, rc);
-	check_retval ("ioctl", pentry->retval, rc);
->>>>>>> forward_slicing_java
+	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
 	add_to_taintbuf (pentry, RETBUF, tmpbuf, pioctl->arglen);
@@ -1875,20 +1688,13 @@ long ioctl_recheck ()
 	}
         start_timing();
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);
-<<<<<<< HEAD
+        end_timing (SYS_ioctl, rc);
 	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
     }
-    return rc;
-=======
-        end_timing (SYS_ioctl, rc);
-	check_retval ("ioctl", pentry->retval, rc);
-    } else {
-	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
-    }
     end_timing_func (SYS_ioctl);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 // Can I find this definition at user level?
@@ -1922,12 +1728,8 @@ long getdents64_recheck ()
 #endif 
     start_timing();
     rc = syscall(SYS_getdents64, pgetdents64->fd, tmpbuf, pgetdents64->count);
-<<<<<<< HEAD
-    check_retval ("getdents64", pentry->clock, pentry->retval, rc);
-=======
     end_timing (SYS_getdents64, rc);
-    check_retval ("getdents64", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("getdents64", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	int compared = 0;
 	char* p = dents; 
@@ -1949,11 +1751,8 @@ long getdents64_recheck ()
 	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_getdents64);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long eventfd2_recheck ()
@@ -1975,14 +1774,10 @@ long eventfd2_recheck ()
 
     start_timing();
     rc = syscall(SYS_eventfd2, peventfd2->count, peventfd2->flags);
-<<<<<<< HEAD
-    check_retval ("eventfd2", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_eventfd2, rc);
-    check_retval ("eventfd2", pentry->retval, rc);
+    check_retval ("eventfd2", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_eventfd2);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long poll_recheck ()
@@ -2031,11 +1826,8 @@ long poll_recheck ()
 	    }
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_poll);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long newselect_recheck ()
@@ -2073,12 +1865,8 @@ long newselect_recheck ()
 
     start_timing();
     rc = syscall(SYS__newselect, pnewselect->nfds, readfds, writefds, exceptfds, use_timeout);
-<<<<<<< HEAD
-    check_retval ("select", pentry->clock, pentry->retval, rc);
-=======
     end_timing(SYS__newselect, rc);
-    check_retval ("select", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("select", pentry->clock, pentry->retval, rc);
     if (readfds && memcmp (&pnewselect->readfds, readfds, pnewselect->setsize)) {
 	printf ("[MISMATCH] select returns different readfds\n");
 	handle_mismatch();
@@ -2094,11 +1882,8 @@ long newselect_recheck ()
     if (pnewselect->is_timeout_tainted) {
 	add_to_taintbuf (pentry, NEWSELECT_TIMEOUT, use_timeout, sizeof(struct timeval));
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS__newselect);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long set_robust_list_recheck ()
@@ -2120,14 +1905,10 @@ long set_robust_list_recheck ()
 
     start_timing();
     rc = syscall(SYS_set_robust_list, pset_robust_list->head, pset_robust_list->len);
-<<<<<<< HEAD
-    check_retval ("set_robust_list", pentry->clock, pentry->retval, rc);
-    return rc;
-=======
     end_timing(SYS_set_robust_list, rc);
-    check_retval ("set_robust_list", pentry->retval, rc);
+    check_retval ("set_robust_list", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_set_robust_list);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long set_tid_address_recheck ()
@@ -2149,11 +1930,8 @@ long set_tid_address_recheck ()
 
     start_timing();
     rc = syscall(SYS_set_tid_address, pset_tid_address->tidptr); 
-<<<<<<< HEAD
-    LPRINT ("set_tid_address returns %ld\n", rc);
-=======
     end_timing(SYS_set_tid_address, rc);
->>>>>>> forward_slicing_java
+    LPRINT ("set_tid_address returns %ld\n", rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
     end_timing_func (SYS_set_tid_address);
     return rc;
@@ -2180,48 +1958,15 @@ long rt_sigaction_recheck ()
 #endif 
 
     if (prt_sigaction->act) pact = (struct sigaction *) data;
-<<<<<<< HEAD
     rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, prt_sigaction->oact, prt_sigaction->sigsetsize); 
+    start_timing();
     check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
+    end_timing(SYS_rt_sigaction, rc);
     if (prt_sigaction->oact && rc == 0) {
 	add_to_taintbuf (pentry, SIGACTION_ACTION, prt_sigaction->oact, 20);
     }
-    return rc;
-=======
-    if (prt_sigaction->oact) poact = (struct sigaction *) tmpbuf; 
-    start_timing();
-    rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, poact, prt_sigaction->sigsetsize); 
-    end_timing(SYS_rt_sigaction, rc);
-    check_retval ("rt_sigaction", pentry->retval, rc);
-    if (prt_sigaction->oact) {
-	if (prt_sigaction->act) {
-	    if (memcmp (tmpbuf, data+20, 20)) {
-		u_long* pn = (u_long *) tmpbuf;
-		u_long* po = (u_long *) (data+20);
-		int i;
-		printf ("[MISMATCH] sigaction returns different values\n");
-		for (i = 0; i < 5; i++) {
-		  printf ("%lx vs. %lx (addr %p)", pn[i], po[i], &po[i]);
-		}
-		printf ("\n");
-		handle_mismatch();
-	    }
-	} else {
-	    if (memcmp (tmpbuf, data, 20)) {
-		u_long* pn = (u_long *) tmpbuf;
-		u_long* po = (u_long *) data;
-		int i;
-		printf ("[MISMATCH] sigaction returns different values (no set)\n");
-		for (i = 0; i < 5; i++) {
-		    printf ("%lx vs. %lx ", pn[i], po[i]);
-		}
-		printf ("\n");
-		handle_mismatch();
-	    }
-	}
-    }
     end_timing_func (SYS_rt_sigaction);
->>>>>>> forward_slicing_java
+    return rc;
 }
 
 long rt_sigprocmask_recheck ()
@@ -2250,12 +1995,8 @@ long rt_sigprocmask_recheck ()
     if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
     start_timing();
     rc = syscall(SYS_rt_sigprocmask, prt_sigprocmask->how, pset, poset, prt_sigprocmask->sigsetsize); 
-<<<<<<< HEAD
-    check_retval ("rt_sigprocmask", pentry->clock, pentry->retval, rc);
-=======
     end_timing(SYS_rt_sigprocmask, rc);
-    check_retval ("rt_sigprocmask", pentry->retval, rc);
->>>>>>> forward_slicing_java
+    check_retval ("rt_sigprocmask", pentry->clock, pentry->retval, rc);
     if (prt_sigprocmask->oset) {
 	if (prt_sigprocmask->set) {
 	    if (memcmp (tmpbuf, data+prt_sigprocmask->sigsetsize, prt_sigprocmask->sigsetsize)) {
@@ -2269,10 +2010,8 @@ long rt_sigprocmask_recheck ()
 	    }
 	}
     }
-<<<<<<< HEAD
-    return rc;
-=======
     end_timing_func (SYS_rt_sigprocmask);
+    return rc;
 }
 
 void mkdir_recheck ()
@@ -2296,7 +2035,7 @@ void mkdir_recheck ()
     start_timing();
     rc = syscall(SYS_mkdir, fileName, pmkdir->mode);
     end_timing (SYS_mkdir, rc);
-    check_retval ("mkdir", pentry->retval, rc);
+    check_retval ("mkdir", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_mkdir);
 }
 
@@ -2368,7 +2107,6 @@ void recheck_wait_clock (unsigned long wait_clock)
             }
         }
     }
->>>>>>> forward_slicing_java
 }
 
 void recheck_final_clock_wakeup () 

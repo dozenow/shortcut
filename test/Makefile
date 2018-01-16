@@ -10,9 +10,9 @@ KERN_CONFIG := replay_headers/include/linux/replay_configs.h
 
 DEPS_DIR := .deps
 
-TARGETS=parseklog parseulog parsemlog launcher resume parseckpt sdaemon \
+TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range cmpklog parseulib.o parsecheckpoint
+        recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range cmpklog parseulib.o parsecheckpoint
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
