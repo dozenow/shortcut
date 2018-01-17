@@ -2128,14 +2128,8 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     }
 
     // (2) And register with max to include only tainted values
-    // xdou: For some reason, pand and por with stack address will get me a general protection error; so avoid it with another movdqu 
-    // but make sure xmm0 is not tainted; otherwise, we need a better way to handle this
-    if (is_reg_tainted (LEVEL_BASE::REG_XMM0, 16, 0)) {
-        fprintf (stderr, "TODO: save xmm0 before write into it.\n");
-    }
-    OUTPUT_SLICE_EXTRA (ip, "movdqu xmm0, xmmword ptr [esp]");
-    //OUTPUT_SLICE_EXTRA (ip, "pand %s, xmmword ptr [esp]", translate_mmx(reg));
-    OUTPUT_SLICE_EXTRA (ip, "pand %s, xmm0", translate_mmx(reg));
+    // pand and por with stack address will cause a general protection error if memory is not align to 16
+    OUTPUT_SLICE_EXTRA (ip, "pand %s, xmmword ptr [esp]", translate_mmx(reg));
 
     // (3) Set up the non-tainted values in memory
     for (i = 3; i >= 0; i--) {
@@ -2150,12 +2144,7 @@ static inline void add_partial_load_to_slice (uint32_t reg, uint32_t size, char*
     }
 
     // (4) Or with the register to load those values
-    if (is_reg_tainted (LEVEL_BASE::REG_XMM0, 16, 0)) {
-        fprintf (stderr, "TODO: save xmm0 before write into it.\n");
-    }
-
-    OUTPUT_SLICE_EXTRA (ip, "movdqu xmm0, xmmword ptr [esp]");
-    OUTPUT_SLICE_EXTRA (ip, "por %s, xmm0", translate_mmx(reg));
+    OUTPUT_SLICE_EXTRA (ip, "por %s, xmmword ptr [esp]", translate_mmx(reg));
 
     // (5) Fix the stack
     OUTPUT_SLICE_EXTRA (ip, "add esp, 44");
@@ -4740,7 +4729,6 @@ class AddrToRestore {
     int size;
     struct thread_data* tdata;
   public:
-    static u_long pushed;
 
     AddrToRestore(struct thread_data* tdata, u_long loc, int size) { 
 	this->loc = loc;
@@ -4749,7 +4737,7 @@ class AddrToRestore {
         assert (tdata != NULL);
     }
 
-    void printPush() {
+    int printPush() {
 	if (size == 2 || size == 4) {//qword and xmmword are not suported for push on 32-bit
 	    OUTPUT_MAIN_THREAD (tdata, "push %s [0x%lx]", memSizeToPrefix(size), loc);
         } else {
@@ -4761,7 +4749,7 @@ class AddrToRestore {
 	    OUTPUT_MAIN_THREAD (tdata, "lea esi, [0x%lx]", loc);
 	    OUTPUT_MAIN_THREAD (tdata, "rep movsb");
 	}
-	pushed += size;
+        return size;
     }
 
     void printPop () { 
@@ -4778,10 +4766,10 @@ class AddrToRestore {
 	}
     }
 };
-u_long AddrToRestore::pushed = 0;
 
 static void fw_slice_check_final_mem_taint (struct thread_data* tdata) 
 { 
+    u_long pushed = 0;
     /* First build up a list of ranges to restore */
     list<AddrToRestore> restoreAddress;
     for(interval_set<unsigned long>::iterator iter = tdata->address_taint_set->begin();
@@ -4808,17 +4796,18 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
 
     // Now write out the ckpt code
     OUTPUT_MAIN_THREAD (tdata, "ckpt_mem:");
-    for (AddrToRestore addrRestore: restoreAddress) 
-	addrRestore.printPush();
+    for (AddrToRestore addrRestore: restoreAddress) {
+	pushed += addrRestore.printPush();
+    }
 
     // Stack must be aligned for use during slice
     // Adjust for 4 byte return address pushed for call of sections (needed for large slices)
-    OUTPUT_MAIN_THREAD (tdata, "sub esp, %ld", (28-(AddrToRestore::pushed%16))%16);
+    OUTPUT_MAIN_THREAD (tdata, "sub esp, %ld", (28-(pushed%16))%16);
     OUTPUT_MAIN_THREAD (tdata, "jmp slice_begins");
 
     // And write out the restore code
     OUTPUT_MAIN_THREAD (tdata, "restore_mem:");
-    OUTPUT_MAIN_THREAD (tdata, "add esp, %ld", (28-(AddrToRestore::pushed%16))%16);
+    OUTPUT_MAIN_THREAD (tdata, "add esp, %ld", (28-(pushed%16))%16);
 
     for (auto addrRestore = restoreAddress.rbegin(); addrRestore != restoreAddress.rend(); ++addrRestore) {
 	addrRestore->printPop();

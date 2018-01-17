@@ -1622,7 +1622,7 @@ exit:
 
 #define SLICE_INFO_SIZE     4096
 #define STACK_SIZE        131072
-#define RECHECK_FILE_NAME_LEN 128
+#define RECHECK_FILE_NAME_LEN 124 //make sure the stack address is aligned; recheck_start takes two arguments from the stack and RECHECK_FILE_NAME_LEN + sizeof(long) = 128
 
 
 struct slice_task {
