@@ -45,5 +45,6 @@ void track_pthread_cond_timedwait_after (ADDRINT rtn_addr);
 void track_pthread_lll_wait_tid_before (ADDRINT tid);
 void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr);
 
+#define PTHREAD_DEBUG(x,...)
 
 #endif

@@ -121,7 +121,7 @@ int verify_debug = 0;
 #define MCPRINT
 #define SLICE_DEBUG(x,...)
 
-//#define JNF_HACK
+//#define JNF_HACK //TODO it appears that java can't use this while emacs must
 
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
@@ -9861,7 +9861,7 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 			set_fs(KERNEL_DS);
 			prt->rp_exec_filename = filename;
 			MPRINT("%s %d: do_execve(%s, %p, %p, %p)\n", __func__, __LINE__, name, __argv, __envp, regs);
-                        //check if the current executable matches the one in the cache
+                        //The right way: check if the current executable matches the one in the cache
                         //if so, we open the actual executable instead in order to support java to go live
                         //TODO:xdou fix this 
                         rc = do_execve(filename, __argv, __envp, regs);

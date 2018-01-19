@@ -62,7 +62,6 @@ int s = -1;
 /* Set this to clock value where extra logging should begin */
 //#define EXTRA_DEBUG 4000
 //#define EXTRA_DEBUG_STOP 5132
-//TODO: //well, I turn off all pthread printing in this file and track_pthread.cpp
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -236,7 +235,7 @@ inline void sync_slice_buffer (struct thread_data* tdata)
                     print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
                     break;
                 default: 
-                    fprintf (stderr, "unhandled pthread operation.\n");
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
             }
             OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
             OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
@@ -256,7 +255,7 @@ inline void sync_slice_buffer (struct thread_data* tdata)
                     print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
                     break;
                 default: 
-                    fprintf (stderr, "unhandled pthread operation.\n");
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
             }
             OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
             OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
@@ -6545,8 +6544,7 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
 
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
-    //TODO
-    fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
+    PTHREAD_DEBUG (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
 //TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 

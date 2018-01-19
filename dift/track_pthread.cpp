@@ -46,8 +46,7 @@ void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mute
         if (state->state != MUTEX_AFTER_LOCK) //someone is holding the lock
             state->state = MUTEX_BEFORE_LOCK; 
         active_mutex[mutex] = state;
-        //TODO
-        //fprintf (stderr, "unfound mutex to lock\n");
+        PTHREAD_DEBUG (stderr, "unfound mutex to lock\n");
     }
 }
 
@@ -58,7 +57,7 @@ void track_pthread_mutex_lock_after (char* name, ADDRINT rtn_addr)
     struct mutex_state* state = active_mutex[mutex];
     state->pid = current_thread->record_pid;
     if (state->state == MUTEX_AFTER_LOCK) {  //we have a deadlock?
-        fprintf (stderr, "[ERROR] we have a deadlock in the original program or do we have unsupported unlock pthread operation?\n");
+        PTHREAD_DEBUG (stderr, "[ERROR] we have a deadlock in the original program or do we have unsupported unlock pthread operation?\n");
     }
     state->state = MUTEX_AFTER_LOCK;
 }
@@ -70,8 +69,7 @@ static inline void change_mutex_state (ADDRINT mutex, int mutex_state)
     if (active_mutex.find (mutex) != active_mutex.end()) {
         state = active_mutex[mutex];
     } else { 
-        //TODO
-        //fprintf (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
+        PTHREAD_DEBUG (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
         return;
     }
     state->pid = current_thread->record_pid;

@@ -18,6 +18,7 @@
 #include <execinfo.h>
 
 #include <map>
+#include <algorithm>
 
 using namespace std;
 using namespace boost::icl;
@@ -76,6 +77,7 @@ map<ADDRINT,taint_check> check_map;
 map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
 vector<struct check_syscall> ignored_syscall;
+vector<u_long> ignored_inst;
 
 #ifdef TAINT_STATS
 struct taint_stats_profile {
@@ -1160,7 +1162,7 @@ static int init_check_map (const char* check_filename)
             if (line[0] == '#')  //for comments
                 continue;
 	  if (sscanf(line, "%63s %63s %63s %63s %63s %63s %63s", addr, type, value, 
-		     extra1, extra2, extra3, extra4) >= 3) {
+		     extra1, extra2, extra3, extra4) >= 2) {
 		u_long ip = strtoul(addr, NULL, 0);
 		if (ip == 0 && strlen (addr) == 0) {
 		    fprintf (stderr, "check %s: invalid address\n", line);
@@ -1238,12 +1240,17 @@ static int init_check_map (const char* check_filename)
 		    syscall_checks[ip] = schk;
                 } else if (!strcmp (type, "ignore_syscall")) {
                     /*
-                     * Currently only read syscall can be ignored
+                     * Currently only read syscall can be ignored; both the content and retval from syscalls
                      */
                     struct check_syscall param;
                     param.index = atol (value); 
                     param.pid = (int) ip;
                     ignored_syscall.push_back (param);
+                } else if (!strcmp (type, "ignore_inst")) {
+                    // Currently only taint_add_reg2esp uses this
+                    // If set, the instruction uses the recorded value from previous runs and untaints the regs
+                    // This is a workaround for not modifying java's random stack addresses
+                    ignored_inst.push_back (ip);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type\n", line);
 		    return -1;
@@ -3724,8 +3731,8 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	if (esi_tainted == 2 || (esi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
 	// Always verify registers if not untainted
-        // TODO: xdou fix this
-	//if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+        // TODO: xdou: I remembered there was a case where ecx could change for java???
+	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
 	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
 	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0, 0);
 
@@ -3969,10 +3976,10 @@ TAINTSIGN taint_add_reg2esp (ADDRINT ip, int src_reg, uint32_t src_size, uint32_
     int src_tainted = is_reg_tainted (src_reg, src_size, src_u8);
     assert (src_tainted != 2); // Verification would fail for partial taint
     if (src_tainted) {
-        //TODO : xdou fix this
-        if (ip == 0xb6d743a2) { 
+        //if (ip == 0xb6d743a2) { 
+        if (find (ignored_inst.begin(), ignored_inst.end(), ip) != ignored_inst.end()) {
             //randomization of JVM stack
-            fprintf (stderr, "A special JVM function!!!!!!!\n");
+            fprintf (stderr, "Force to untaint esp (for JVM at first)\n");
             print_extra_move_reg_4 (ip, src_reg, src_value, 0);
         }
 	verify_register (ip, src_reg, src_size, src_value, src_u8, 0);
