@@ -1759,6 +1759,19 @@ static inline void sys_getpid_stop (int rc)
     taint_syscall_retval ("getpid");
 }
 
+static inline void sys_gettid_start (struct thread_data* tdata) {
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE(0, "call gettid_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	recheck_gettid (tdata->recheck_handle, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_gettid_stop (int rc) 
+{
+    taint_syscall_retval ("gettid");
+}
+
 static inline void sys_getpgrp_start (struct thread_data* tdata) 
 {    
     if (tdata->recheck_handle) {
@@ -2100,6 +2113,32 @@ static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how,
     }
 }
 
+static inline void sys_sched_getaffinity_start (struct thread_data* tdata, pid_t pid, size_t cpusetsize, cpu_set_t* mask) { 
+    struct sched_getaffinity_info* info = &tdata->op.sched_getaffinity_info_cache; 
+    info->mask = mask;
+    info->size = cpusetsize;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+        int pid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0);
+        OUTPUT_SLICE (0, "push ebx");
+        OUTPUT_SLICE_INFO ("pid is probably tainted");
+	OUTPUT_SLICE (0, "call sched_getaffinity_recheck");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+        OUTPUT_SLICE (0, "pop ebx");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	recheck_sched_getaffinity (tdata->recheck_handle, pid, cpusetsize, mask, pid_tainted, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_sched_getaffinity_stop (int rc) { 
+    struct sched_getaffinity_info* ri = &current_thread->op.sched_getaffinity_info_cache; 
+    if (rc == 0) { 
+        clear_mem_taints ((u_long)ri->mask, ri->size); //output will be verified
+    }
+    memset (&current_thread->op.sched_getaffinity_info_cache, 0, sizeof(struct sched_getaffinity_info));
+    current_thread->save_syscall_info = 0;
+}
+
 static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
 {
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
@@ -2221,6 +2260,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
 	    break;
+	case SYS_gettid:
+	    sys_gettid_start (tdata);
+            break;
 	case SYS_getpgrp:
 	    sys_getpgrp_start (tdata);
 	    break;
@@ -2297,6 +2339,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_rt_sigprocmask:
 	    sys_rt_sigprocmask_start (tdata, (int) syscallarg0, (sigset_t *) syscallarg1, (sigset_t *) syscallarg2, (size_t) syscallarg3);
 	    break;
+        case SYS_sched_getaffinity:
+            sys_sched_getaffinity_start (tdata, (pid_t)syscallarg0, (size_t)syscallarg1, (cpu_set_t*)syscallarg2);
+            break;
         case SYS_nanosleep:
             printf ("skipped syscall nanosleep.\n");
             break;
@@ -2362,6 +2407,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_gettid:
+	    sys_gettid_stop(rc);
+	    break;
 	case SYS_getpgrp:
 	    sys_getpgrp_stop(rc);
 	    break;
@@ -2395,6 +2443,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         case SYS_clock_getres:
 	    sys_clock_getres_stop(rc);
 	    break;
+        case SYS_sched_getaffinity:
+            sys_sched_getaffinity_stop (rc);
+            break;
         case SYS_socketcall:
         {
 	    
@@ -5618,6 +5669,10 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
                 slice_handled = 1;
                 break;
+            case XED_ICLASS_FFREE:
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_NO_STACK_CHANGE);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
             case XED_ICLASS_FISTP:
@@ -5658,8 +5713,6 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
             case XED_ICLASS_FUCOMIP:
-            case XED_ICLASS_FNSTCW:
-            case XED_ICLASS_FLDCW:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
 	    case XED_ICLASS_FRNDINT:
@@ -5670,6 +5723,12 @@ void instruction_instrumentation(INS ins, void *v)
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
                 //slice_handled = 1;
+                break;
+            case XED_ICLASS_FLDCW:
+            case XED_ICLASS_FNSTCW:
+            case XED_ICLASS_FNSTSW:
+                //ignored
+                slice_handled = 1;
                 break;
    	    case XED_ICLASS_CWDE:
 		instrument_cwde (ins);

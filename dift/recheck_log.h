@@ -274,6 +274,13 @@ struct mkdir_recheck {
 };
 /* Followed by filename */
 
+struct sched_getaffinity_recheck {
+    pid_t pid;
+    char is_pid_tainted;
+    size_t cpusetsize;
+    cpu_set_t mask[0];
+};
+/* Followed by contents of mask*/
 
 /* Prototypes */
 struct recheck_handle;
@@ -301,6 +308,7 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol, u_long clock);
 int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen, u_long clock);
 int recheck_getpid (struct recheck_handle* handle, u_long clock);
+int recheck_gettid (struct recheck_handle* handle, u_long clock);
 int recheck_getpgrp (struct recheck_handle* handle, u_long clock);
 int recheck_getuid32 (struct recheck_handle* handle, u_long clock);
 int recheck_geteuid32 (struct recheck_handle* handle, u_long clock);
@@ -324,5 +332,5 @@ int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* se
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
-
+int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 #endif

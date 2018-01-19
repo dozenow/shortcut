@@ -1135,7 +1135,8 @@ TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, u
     else if (fp_stack_change == FP_POP) {
         //do nothing
         //first clear and then change top of stack
-    } else
+    } else if (fp_stack_change == FP_NO_STACK_CHANGE) {
+    } else 
         assert (0);
     offset = update_fp_stack_regoff (offset, sp);
     taint_clear_reg_offset (offset, size, set_flags, clear_flags);
@@ -1972,7 +1973,7 @@ TAINTSIGN taint_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t
         taint_t t = merge_reg_taints (reg, reg_size, 0); //because of the convertion from double-precision
         uint32_t ret = set_cmem_taints_one (mem_loc, mem_size, t);
         if (ret != mem_size)
-            fprintf (stderr, "taint_fpureg2mem: set_cmem_taints_one returns different size %u %u\n", ret, mem_size);
+            fprintf (stderr, "[ERROR]taint_fpureg2mem: set_cmem_taints_one returns different size %u %u\n", ret, mem_size);
     }
 }
 

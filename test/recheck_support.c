@@ -259,6 +259,10 @@ void handle_mismatch()
     //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
+#ifdef PRINT_VALUES
+    fflush (stdout);
+    fflush (stderr);
+#endif
     DELAY;
     //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     //fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -270,6 +274,9 @@ void handle_jump_diverge()
     int i;
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+#ifdef PRINT_VALUES
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -281,6 +288,9 @@ void handle_delayed_jump_diverge()
     int i;
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
+#ifdef PRINT_VALUES
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -292,6 +302,9 @@ void handle_index_diverge(u_long foo, u_long bar, u_long baz)
     int i;
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+#ifdef PRINT_VALUES
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -554,7 +567,7 @@ long open_recheck ()
 	LPRINT ( " dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
     }
-    LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
+    LPRINT ( " rc %ld clock %lu, tid %ld, bufptr %p, buf %p\n", pentry->retval, pentry->clock, syscall (SYS_gettid), bufptr, buf);
 #endif
     start_timing();
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
@@ -1508,6 +1521,25 @@ long getpid_recheck ()
     return rc;
 }
 
+long gettid_recheck ()
+{
+    long rc;
+    struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
+    start_timing_func ();
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "gettid: rc %ld clock %lu\n", pentry->retval, pentry->clock);
+#endif 
+    start_timing();
+    rc = syscall(SYS_gettid);
+    end_timing (SYS_gettid, rc);
+    add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
+    end_timing_func (SYS_gettid);
+    return rc;
+}
+
 long getpgrp_recheck ()
 {
     long rc;
@@ -1990,6 +2022,7 @@ long rt_sigprocmask_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
 	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock);
+    fflush (stdout);
 #endif 
 
     if (prt_sigprocmask->set) pset = (sigset_t *) data;
@@ -2040,6 +2073,43 @@ void mkdir_recheck ()
     end_timing_func (SYS_mkdir);
 }
 
+void sched_getaffinity_recheck (int pid)
+{
+    struct recheck_entry* pentry;
+    struct sched_getaffinity_recheck* psched;
+    pid_t use_pid;
+    int rc;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    psched = (struct sched_getaffinity_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ( "sched_getaffinity: pid tainted? %d record pid %d passed pid %d clock %lu\n", 
+	     psched->is_pid_tainted, psched->pid, pid, pentry->clock);
+#endif 
+    if (psched->is_pid_tainted) {
+	use_pid = pid; 
+    } else {
+	use_pid = psched->pid;
+    }
+
+    start_timing();
+    rc = syscall(SYS_sched_getaffinity, use_pid, psched->cpusetsize, tmpbuf);
+    end_timing(SYS_sched_getaffinity, rc);
+    check_retval ("sched_getaffinity", pentry->clock, pentry->retval, rc);
+    if (rc == 0) {
+        if (memcmp (tmpbuf, psched->mask, psched->cpusetsize)) {
+            printf ("[MISMATCH] sched_getaffinity returns different cpu mask.\n");
+            handle_mismatch ();
+        }
+    }
+    end_timing_func (SYS_sched_getaffinity);
+}
+
 void recheck_add_clock_by_2 ()
 {
     if (go_live_clock)
@@ -2087,14 +2157,17 @@ void recheck_wait_clock (unsigned long wait_clock)
 #ifdef PRINT_SCHEDULING
         int pid = syscall(SYS_gettid);
         printf ("Pid %d call recheck_wait_clock.\n", pid);
+        fflush (stdout);
 #endif
         if (go_live_clock->slice_clock >= wait_clock) {
 #ifdef PRINT_SCHEDULING
             printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, go_live_clock->slice_clock, &go_live_clock->slice_clock, wait_clock);
+            fflush (stdout);
 #endif
         } else {
 #ifdef PRINT_SCHEDULING
             printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p \n", pid, go_live_clock->slice_clock, wait_clock, &go_live_clock->mutex);
+            fflush (stdout);
 #endif
             //wake up other sleeping threads
             syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);

@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sched.h>
 #include "taint_interface/taint.h"
 #include <boost/icl/interval_set.hpp>
 #include <list>
@@ -242,6 +243,11 @@ struct clone_info {
     pid_t* ctid;
 };
 
+struct sched_getaffinity_info {
+    cpu_set_t* mask;
+    size_t size;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -376,6 +382,7 @@ struct thread_data {
 	struct getdents64_info getdents64_info_cache;
 	struct sigaction_info sigaction_info_cache;
         struct clone_info clone_info_cache;
+        struct sched_getaffinity_info sched_getaffinity_info_cache;
     } op;
 
     void* save_syscall_info;
