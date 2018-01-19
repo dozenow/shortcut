@@ -33,6 +33,7 @@ server-client
 test/cmpklog
 test/find_range
 test/results
+test/canonicalize
 test/wparserecheck
 test/cfg*
 test/diverge_and_merge_point
@@ -43,6 +44,7 @@ test/process_slice
 test/streamserver
 test/fullsend
 test/traces
+test/sdaemon
 test/find_diverge
 test/dev/.tmp_versions
 test/dev/Module.symvers
