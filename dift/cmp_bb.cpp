@@ -229,7 +229,6 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
 
 void syscall_after (ADDRINT ip)
 {
-    struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     if (current_thread->app_syscall == 999) {
 	if (check_clock_after_syscall (fd)) {
 	    fprintf (stderr, "Check clock failed\n");

@@ -8,6 +8,8 @@
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
+#include <linux/futex.h>
+#include <sys/time.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -17,13 +19,19 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <poll.h>
+#include <pthread.h>
+#include <time.h>
 // Note assert requires locale, which does not work with our hacked libc - don't use it */
 
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
+struct go_live_clock* go_live_clock;
+
 #define PRINT_VALUES
 #define PRINT_TO_LOG
+//#define PRINT_SCHEDULING
+//#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
 char logbuf[4096];
@@ -33,6 +41,78 @@ int logfd;
 // This pauses for a while to let us see what went wrong
 #define DELAY
 //#define DELAY sleep(2);
+#ifdef PRINT_TIMING
+unsigned long long success_syscalls[512];
+unsigned long long failed_syscalls[512];
+unsigned long long success_functions[512];
+struct timeval global_start_time_tv;
+struct timeval global_end_time_tv;
+struct timeval global_start_time_tv_func;
+struct timeval global_end_time_tv_func;
+
+inline void start_timing (void) 
+{ 
+    syscall(SYS_gettimeofday, &global_start_time_tv, NULL);
+}
+
+inline void end_timing (int syscall_num, int retval) 
+{ 
+    unsigned long time;
+    syscall (SYS_gettimeofday, &global_end_time_tv, NULL);
+    time = global_end_time_tv.tv_usec;
+    if (global_end_time_tv.tv_usec < global_start_time_tv.tv_usec) {
+        time += 1000000;
+    }
+    time -= global_start_time_tv.tv_usec;
+    if (retval >= 0) { 
+        success_syscalls[syscall_num] += time;
+    } else { 
+        failed_syscalls[syscall_num] += time;
+    }
+}
+
+inline void start_timing_func (void) 
+{ 
+    syscall(SYS_gettimeofday, &global_start_time_tv_func, NULL);
+}
+
+inline void end_timing_func (int syscall_num) 
+{ 
+    unsigned long time;
+    syscall (SYS_gettimeofday, &global_end_time_tv_func, NULL);
+    time = global_end_time_tv_func.tv_usec;
+    if (global_end_time_tv_func.tv_usec < global_start_time_tv_func.tv_usec) {
+        time += 1000000;
+    }
+    time -= global_start_time_tv_func.tv_usec;
+    success_functions[syscall_num] += time;
+}
+
+inline void print_timings (void)
+{
+    int i = 0;
+    struct timeval tv;
+
+    syscall (SYS_gettimeofday, &tv, NULL);
+    fprintf (stderr, "successed syscalls %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+    for (i=0; i<512; ++i) { 
+        if (success_syscalls[i]) { 
+            fprintf (stderr, "%d:%llu\n", i, success_syscalls[i]);
+        }
+    }
+    fprintf (stderr, "failed syscalls\n");
+    for (i=0; i<512; ++i) { 
+        if (failed_syscalls[i]) { 
+            fprintf (stderr, "%d:%llu\n", i, failed_syscalls[i]);
+        }
+    }
+}
+#else
+#define start_timing(x)
+#define end_timing(x,y)
+#define start_timing_func(x)
+#define end_timing_func(x)
+#endif
 
 char buf[1024*1024];
 char tmpbuf[1024*1024];
@@ -97,21 +177,33 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
     return 0;
 }
 
-void recheck_start(char* filename)
+void recheck_start(char* filename, void* clock_addr)
 {
     int rc, i, fd;
+    struct timeval tv;
 
+    start_timing_func ();
+    syscall (SYS_gettimeofday, &tv, NULL);
+    //fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p\n", tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename));
+    go_live_clock = clock_addr;
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;
     }
-    rc = read (fd, buf, sizeof(buf));
+    rc = dup2 (fd, 1020); //this is necessary to avoid fd conflict; TODO: change the open syscall directly
+    if (rc < 0) {
+	fprintf (stderr, "[BUG] Cannot dup log file descriptor\n");
+        sleep (2);
+        exit (-1);
+    }
+    close (fd);
+    rc = read (1020, buf, sizeof(buf));
     if (rc <= 0) {
 	fprintf (stderr, "Cannot read recheck file\n");
 	return;
     }
-    close (fd);
+    close (1020);
 
     for (i = 0; i < MAX_FDS; i++) {
 	cache_files_opened[i].is_open_cache_file = 0;
@@ -142,6 +234,12 @@ void recheck_start(char* filename)
     close(fd);
 #endif
 #endif
+#ifdef PRINT_TIMING
+    memset (success_syscalls, 0, sizeof(unsigned long long)*512);
+    memset (failed_syscalls, 0, sizeof(unsigned long long)*512);
+    memset (success_functions, 0, sizeof(unsigned long long)*512);
+#endif
+    end_timing_func (0);
 }
 
 #ifdef PRINT_TO_LOG
@@ -150,10 +248,21 @@ void recheck_start(char* filename)
 #define LPRINT printf
 #endif
 
+void print_value (u_long foo) 
+{
+    fprintf (stderr, "print_value: %lu (0x%lx)\n", foo, foo);
+}
+
 void handle_mismatch()
 {
+    //TODO: uncomment this
     dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
+    LPRINT ("[MISMATCH] exiting.\n\n\n");
+#ifdef PRINT_VALUES
+    fflush (stdout);
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -164,7 +273,10 @@ void handle_jump_diverge()
 {
     int i;
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] control flow diverges at %ld.\n\n\n", *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+#ifdef PRINT_VALUES
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -176,6 +288,9 @@ void handle_delayed_jump_diverge()
     int i;
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
+#ifdef PRINT_VALUES
+    fflush (stderr);
+#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
@@ -186,14 +301,7 @@ void handle_index_diverge(u_long foo, u_long bar, u_long baz, u_long quux)
 {
     int i;
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] index diverges at 0x%lx val = %lx.\n\n\n", *((u_long *) ((u_long) &i + 32)), baz);
-    fprintf (stderr, "[MISMATCH] foo = 0x%lx", foo);
-    fprintf (stderr, "[MISMATCH] quux = 0x%lx", quux);
-    fprintf (stderr, "[MISMATCH] quux at %lx\n", (u_long) &quux);
-    fprintf (stderr, "[MISMATCH] foo at %lx\n", (u_long) &foo);
-    fprintf (stderr, "[MISMATCH] bar at %lx\n", (u_long) &bar);
-    fprintf (stderr, "[MISMATCH] baz at %lx\n", (u_long) &baz);
-    fprintf (stderr, "[MISMATCH] i at %lx\n", (u_long) &i);
+    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_index_diverge: should not get here\n");
@@ -204,6 +312,26 @@ static inline void check_retval (const char* name, u_long clock, int expected, i
     if (actual >= 0){
 	if (expected != actual) {
 	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, actual);
+            //if divergence happens on open, check what files are currently opened
+            if (!strcmp (name, "open")) { 
+                int max = expected > actual?expected:actual;
+                int i = 0;
+                for (i = 3; i<=max; ++i) {
+                    char proclnk[256];
+                    char filename[256];
+                    int r = 0;
+
+                    sprintf(proclnk, "/proc/self/fd/%d", i);
+                    r = readlink(proclnk, filename, 255);
+                    if (r < 0)
+                    {
+                        fprintf (stderr, "[BUG] failed to readlink\n\n\n");
+                        sleep (2);
+                    }
+                    filename[r] = '\0';
+                    printf ("      file descript %d, filename %s\n", i, filename);
+                }
+            }
 	    handle_mismatch();
 	}
     } else {
@@ -272,6 +400,7 @@ long read_recheck (size_t count)
     u_int is_cache_file = 0;
     size_t use_count;
     int rc;
+    start_timing_func ();
 
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
@@ -323,7 +452,9 @@ long read_recheck (size_t count)
             }
         } else {
             //read the new content that will be verified
+            start_timing();
             rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
+            end_timing (SYS_read, rc);
 	    if (rc != pentry->retval) {
 		printf ("[ERROR] retval %d instead of %ld for partial read\n", rc, pentry->retval);
 		handle_mismatch();
@@ -339,7 +470,9 @@ long read_recheck (size_t count)
 	    printf ("[ERROR] count %d is greater than temp buf size %d\n", use_count, sizeof(tmpbuf));
 	    handle_mismatch();
 	}
+        start_timing();
 	rc = syscall(SYS_read, pread->fd, tmpbuf, use_count);
+        end_timing (SYS_read, rc);
 	if (pread->max_bound > 0) {
 	    if (rc > pread->max_bound) {
 		printf ("[MISMATCH] read expected up to %d bytes, actually read %ld at clock %ld\n", 
@@ -362,6 +495,7 @@ long read_recheck (size_t count)
 			printf ("[MISMATCH] read returns different values\n");
 			printf ("---\n%s\n---\n%s\n---\n", tmpbuf, readData);
 			handle_mismatch();
+                        memcpy (pread->buf, readData, pentry->retval);
 		    }
 		}
 	    } else {
@@ -369,6 +503,7 @@ long read_recheck (size_t count)
 	    }
 	}
     }
+    end_timing_func (SYS_read);
     return rc;
 }
 
@@ -379,8 +514,7 @@ long write_recheck ()
     char* data;
     int rc, i;
 
-    LPRINT ("write starts\n");
-
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -402,8 +536,11 @@ long write_recheck ()
 	if (!tainted[i]) ((char *)(pwrite->buf))[i] = outbuf[i];
     }
 
+    start_timing();
     rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
+    end_timing(SYS_write, rc);
     check_retval ("write", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_write);
     return rc;
 }
 
@@ -413,6 +550,7 @@ long open_recheck ()
     struct open_recheck* popen;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -426,15 +564,18 @@ long open_recheck ()
 	LPRINT ( " dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
     }
-    LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
+    LPRINT ( " rc %ld clock %lu, tid %ld, bufptr %p, buf %p\n", pentry->retval, pentry->clock, syscall (SYS_gettid), bufptr, buf);
 #endif
+    start_timing();
     rc = syscall(SYS_open, fileName, popen->flags, popen->mode);
+    end_timing (SYS_open, rc);
     check_retval ("open", pentry->clock, pentry->retval, rc);
     if (rc >= MAX_FDS) abort ();
     if (rc >= 0 && popen->has_retvals) {
 	cache_files_opened[rc].is_open_cache_file = 1;
 	cache_files_opened[rc].orv = popen->retvals;
     }
+    end_timing_func (SYS_open);
     return rc;
 }
 
@@ -444,6 +585,7 @@ long openat_recheck ()
     struct openat_recheck* popen;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -454,9 +596,12 @@ long openat_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "openat: dirfd %d filename %s flags %x mode %d rc %ld clock %lu\n", popen->dirfd, fileName, popen->flags, popen->mode, pentry->retval, pentry->clock);
 #endif
+    start_timing();
     rc = syscall(SYS_openat, popen->dirfd, fileName, popen->flags, popen->mode);
+    end_timing (SYS_openat, rc);
     check_retval ("openat", pentry->clock, pentry->retval, rc);
     if  (rc >= MAX_FDS) abort ();
+    end_timing_func (SYS_openat);
     return rc;
 }
 
@@ -466,6 +611,7 @@ long close_recheck ()
     struct close_recheck* pclose;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -477,9 +623,12 @@ long close_recheck ()
 #endif
 
     if (pclose->fd >= MAX_FDS) abort();
+    start_timing();
     rc = syscall(SYS_close, pclose->fd);
+    end_timing (SYS_close, rc);
     cache_files_opened[pclose->fd].is_open_cache_file = 0;
     check_retval ("close", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_close);
     return rc;
 }
 
@@ -489,6 +638,7 @@ long access_recheck ()
     struct access_recheck* paccess;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -500,8 +650,11 @@ long access_recheck ()
     LPRINT ("acccess: mode %d pathname %s rc %ld clock %lu\n", paccess->mode, accessName, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_access, accessName, paccess->mode);
+    end_timing(SYS_access, rc);
     check_retval ("access", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_access);
     return rc;
 }
 
@@ -512,6 +665,7 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
     struct stat64 st;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -532,7 +686,9 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
     }
 #endif
 
+    start_timing();
     rc = syscall(syscall_num, pathName, &st);
+    end_timing (syscall_num, rc);
     check_retval (syscall_name, pentry->clock, pentry->retval, rc);
     if (pstat64->has_retvals) {
 	if (st.st_dev != pstat64->retvals.st_dev) {
@@ -607,6 +763,7 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
 	    handle_mismatch();
 	}
     }
+    end_timing_func (syscall_num);
     return rc;
 }
 
@@ -625,6 +782,7 @@ long fstat64_recheck ()
     struct stat64 st;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -644,7 +802,9 @@ long fstat64_recheck ()
     }
 #endif
 
+    start_timing();
     rc = syscall(SYS_fstat64, pfstat64->fd, &st);
+    end_timing (SYS_fstat64, rc);
     check_retval ("fstat64", pentry->clock, pentry->retval, rc);
     if (pfstat64->has_retvals) {
 	if (st.st_dev != pfstat64->retvals.st_dev) {
@@ -719,6 +879,7 @@ long fstat64_recheck ()
 	    handle_mismatch();
 	}
     }
+    end_timing_func (SYS_fstat64);
     return rc;
 }
 
@@ -728,6 +889,7 @@ long fcntl64_getfl_recheck ()
     struct fcntl64_getfl_recheck* pgetfl;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -738,8 +900,11 @@ long fcntl64_getfl_recheck ()
     LPRINT ( "fcntl64 getfl: fd %d rc %ld clock %lu\n", pgetfl->fd, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_fcntl64, pgetfl->fd, F_GETFL);
+    end_timing (SYS_fcntl64, rc);
     check_retval ("fcntl64 getfl", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_fcntl64);
     return rc;
 }
 
@@ -749,6 +914,7 @@ long fcntl64_setfl_recheck ()
     struct fcntl64_setfl_recheck* psetfl;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -759,8 +925,11 @@ long fcntl64_setfl_recheck ()
     LPRINT ( "fcntl64 setfl: fd %d flags %lx rc %ld clock %lu\n", psetfl->fd, psetfl->flags, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_fcntl64, psetfl->fd, F_SETFL, psetfl->flags);
+    end_timing (SYS_fcntl64, rc);
     check_retval ("fcntl64 setfl", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_fcntl64);
     return rc;
 }
 
@@ -771,6 +940,7 @@ long fcntl64_getlk_recheck ()
     struct flock fl;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -781,7 +951,9 @@ long fcntl64_getlk_recheck ()
     LPRINT ( "fcntl64 getlk: fd %d arg %lx rc %ld clock %lu\n", pgetlk->fd, (u_long) pgetlk->arg, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_fcntl64, pgetlk->fd, F_GETLK, &fl);
+    end_timing (SYS_fcntl64, rc);
     check_retval ("fcntl64 getlk", pentry->clock, pentry->retval, rc);
     if (pgetlk->has_retvals) {
 	if (memcmp(&fl, &pgetlk->flock, sizeof(fl))) {
@@ -789,6 +961,7 @@ long fcntl64_getlk_recheck ()
 	    handle_mismatch();
 	}
     }
+    end_timing_func (SYS_fcntl64);
     return rc;
 }
 
@@ -798,6 +971,7 @@ long fcntl64_getown_recheck ()
     struct fcntl64_getown_recheck* pgetown;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -808,8 +982,11 @@ long fcntl64_getown_recheck ()
     LPRINT ("fcntl64 getown: fd %d rc %ld clock %lu\n", pgetown->fd, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_fcntl64, pgetown->fd, F_GETOWN);
+    end_timing(SYS_fcntl64, rc);
     check_retval ("fcntl64 getown", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_fcntl64);
     return rc;
 }
 
@@ -820,6 +997,7 @@ long fcntl64_setown_recheck (long owner)
     long use_owner;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -836,8 +1014,11 @@ long fcntl64_setown_recheck (long owner)
 	use_owner = psetown->owner;
     }
 
+    start_timing();
     rc = syscall(SYS_fcntl64, psetown->fd, F_SETOWN, use_owner);
+    end_timing (SYS_fcntl64, rc);
     check_retval ("fcntl64 setown", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_fcntl64);
     return rc;
 }
 
@@ -848,6 +1029,7 @@ long ugetrlimit_recheck ()
     struct rlimit rlim;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -858,12 +1040,15 @@ long ugetrlimit_recheck ()
     LPRINT ( "ugetrlimit: resource %d rlimit %ld %ld rc %ld clock %lu\n", pugetrlimit->resource, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_ugetrlimit, pugetrlimit->resource, &rlim);
+    end_timing (SYS_ugetrlimit, rc);
     check_retval ("ugetrlimit", pentry->clock, pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
-	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld\n", rlim.rlim_cur, rlim.rlim_max);
+	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld, while in recheck log %ld %ld\n", rlim.rlim_cur, rlim.rlim_max, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max);
 	handle_mismatch();
     }
+    end_timing_func (SYS_ugetrlimit);
     return rc;
 }
 
@@ -874,6 +1059,7 @@ long uname_recheck ()
     struct utsname uname;
     int rc;
 
+    start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -885,7 +1071,9 @@ long uname_recheck ()
 	     puname->utsname.sysname, puname->utsname.nodename, puname->utsname.release, puname->utsname.version, puname->utsname.machine, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_uname, &uname);
+    end_timing (SYS_uname, rc);
     check_retval ("uname", pentry->clock, pentry->retval, rc);
 
     if (memcmp(&uname.sysname, &puname->utsname.sysname, sizeof(uname.sysname))) {
@@ -911,6 +1099,7 @@ long uname_recheck ()
 	fprintf (stderr, "[MISMATCH] uname machine does not match: %s\n", uname.machine);
 	handle_mismatch();
     }
+    end_timing_func (SYS_uname);
     return rc;
 }
 
@@ -921,6 +1110,7 @@ long statfs64_recheck ()
     struct statfs64 st;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -934,7 +1124,9 @@ long statfs64_recheck ()
 	     pstatfs64->statfs.f_ffree, pstatfs64->statfs.f_fsid.__val[0], pstatfs64->statfs.f_fsid.__val[1], pstatfs64->statfs.f_namelen, pstatfs64->statfs.f_frsize, pentry->retval, pentry->clock);
 #endif
 
+    start_timing();
     rc = syscall(SYS_statfs64, path, pstatfs64->sz, &st);
+    end_timing (SYS_statfs64, rc);
     check_retval ("statfs64", pentry->clock, pentry->retval, rc);
     if (rc == 0) {
 	if (pstatfs64->statfs.f_type != st.f_type) {
@@ -974,6 +1166,7 @@ long statfs64_recheck ()
 	    handle_mismatch();
 	}
     }
+    end_timing_func (SYS_statfs64);
     return rc;
 }
 
@@ -984,6 +1177,7 @@ long gettimeofday_recheck () {
     struct timezone tz;
     int rc;
     
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -993,7 +1187,9 @@ long gettimeofday_recheck () {
 #ifdef PRINT_VALUES
     LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
 #endif
+    start_timing();
     rc = syscall (SYS_gettimeofday, &tv, &tz);
+    end_timing (SYS_gettimeofday, rc);
     check_retval ("gettimeofday", pentry->clock, pentry->retval, rc);
     
     if (pget->tv_ptr) { 
@@ -1004,7 +1200,72 @@ long gettimeofday_recheck () {
 	memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
     }
+    end_timing_func (SYS_gettimeofday);
     return rc;
+}
+
+void clock_gettime_recheck () 
+{
+    struct recheck_entry* pentry;
+    struct clock_getx_recheck *pget;
+    struct timespec tp;
+    int rc;
+    
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pget = (struct clock_getx_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("clock_gettime: clockid %d, tp %p clock %lu\n", pget->clk_id, pget->tp, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall (SYS_clock_gettime, pget->clk_id, &tp);
+    end_timing (SYS_clock_gettime, rc);
+    check_retval ("clock_gettime", pentry->clock, pentry->retval, rc);
+    
+    if (pget->tp) {
+        memcpy (pget->tp, &tp, sizeof(tp));
+        add_to_taintbuf (pentry, CLOCK_GETTIME, &tp, sizeof(tp));
+    }
+    end_timing_func (SYS_clock_gettime);
+}
+
+void clock_getres_recheck (int clock_id) 
+{
+    struct recheck_entry* pentry;
+    struct clock_getx_recheck *pget;
+    clockid_t clk_id;
+    struct timespec tp;
+    int rc;
+    
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pget = (struct clock_getx_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ("clock_getres: clockid %d, id tainted? %d, new clock id %d, tp %p clock %lu\n", pget->clk_id, pget->clock_id_tainted, clock_id, pget->tp, pentry->clock);
+#endif
+    if (pget->clock_id_tainted) { 
+        clk_id = clock_id;
+    } else { 
+        clk_id = pget->clk_id;
+    }
+    start_timing();
+    rc = syscall (SYS_clock_getres, clk_id, &tp);
+    end_timing (SYS_clock_getres, rc);
+    check_retval ("clock_getres", pentry->clock, pentry->retval, rc);
+    
+    if (pget->tp) {
+        memcpy (pget->tp, &tp, sizeof(tp));
+        add_to_taintbuf (pentry, CLOCK_GETRES, &tp, sizeof(tp));
+    }
+    end_timing_func (SYS_clock_getres);
 }
 
 long time_recheck () { 
@@ -1012,6 +1273,7 @@ long time_recheck () {
     struct time_recheck *pget;
     int rc;
     
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1021,9 +1283,12 @@ long time_recheck () {
 #ifdef PRINT_VALUES
     printf ("time: pointer t %x clock %lu\n", (int)(pget->t), pentry->clock);
 #endif
+    start_timing();
     rc = syscall (SYS_time, pget->t);
+    end_timing (SYS_time, rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(long));
     if (rc >= 0 && pget->t) add_to_taintbuf (pentry, RETBUF, pget->t, sizeof(time_t));
+    end_timing_func (SYS_time);
     return rc;
 }
 
@@ -1035,6 +1300,7 @@ long prlimit64_recheck ()
     struct rlimit64* prlim;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1054,7 +1320,9 @@ long prlimit64_recheck ()
     } else {
 	prlim = NULL;
     }
+    start_timing();
     rc = syscall(SYS_prlimit64, prlimit->pid, prlimit->resource, prlimit->new_limit, prlim);
+    end_timing (SYS_prlimit64, rc);
     check_retval ("prlimit64", pentry->clock, pentry->retval, rc);
     if (prlimit->has_retvals) {
 	if (prlimit->retparams.rlim_cur != rlim.rlim_cur) {
@@ -1064,6 +1332,7 @@ long prlimit64_recheck ()
 	    printf ("[MISMATCH] prlimit64 hard limit does not match: %lld\n", rlim.rlim_max);
 	}
     }
+    end_timing_func (SYS_prlimit64);
     return rc;
 }
 
@@ -1074,6 +1343,7 @@ long setpgid_recheck (int pid, int pgid)
     pid_t use_pid, use_pgid;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1095,8 +1365,11 @@ long setpgid_recheck (int pid, int pgid)
 	use_pgid = psetpgid->pgid;
     }
 
+    start_timing();
     rc = syscall(SYS_setpgid, use_pid, use_pgid);
+    end_timing(SYS_setpgid, rc);
     check_retval ("setpgid", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_setpgid);
     return rc;
 }
 
@@ -1108,6 +1381,7 @@ long readlink_recheck ()
     char* path;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1133,7 +1407,9 @@ long readlink_recheck ()
     }
     LPRINT ( "path %s rc %ld clock %lu\n", path, pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_readlink, path, tmpbuf, preadlink->bufsiz);
+    end_timing (SYS_readlink, rc);
     check_retval ("readlink", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	if (memcmp(tmpbuf, linkdata, pentry->retval)) {
@@ -1141,6 +1417,7 @@ long readlink_recheck ()
 	    handle_mismatch();
 	}
     }
+    end_timing_func (SYS_readlink);
     return rc;
 }
 
@@ -1151,6 +1428,7 @@ long socket_recheck ()
     u_long block[6];
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1164,8 +1442,11 @@ long socket_recheck ()
     block[0] = psocket->domain;
     block[1] = psocket->type;
     block[2] = psocket->protocol;
+    start_timing();
     rc = syscall(SYS_socketcall, SYS_SOCKET, &block);
+    end_timing (SYS_socketcall, rc);
     check_retval ("socket", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_socketcall);
     return rc;
 }
 
@@ -1186,6 +1467,7 @@ inline long connect_or_bind_recheck (int call, char* call_name)
     char* addr;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1201,8 +1483,11 @@ inline long connect_or_bind_recheck (int call, char* call_name)
     block[0] = pconnect->sockfd;
     block[1] = (u_long) pconnect->addr;
     block[2] = pconnect->addrlen;
+    start_timing();
     rc = syscall(SYS_socketcall, call, &block);
+    end_timing (SYS_socketcall, rc);
     check_retval (call_name, pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_socketcall);
     return rc;
 }
 
@@ -1218,14 +1503,37 @@ long getpid_recheck ()
 {
     long rc;
     struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
+    start_timing_func ();
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ( "getpid: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_getpid);
+    end_timing (SYS_getpid, rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
+    end_timing_func (SYS_getpid);
+    return rc;
+}
+
+long gettid_recheck ()
+{
+    long rc;
+    struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
+    start_timing_func ();
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "gettid: rc %ld clock %lu\n", pentry->retval, pentry->clock);
+#endif 
+    start_timing();
+    rc = syscall(SYS_gettid);
+    end_timing (SYS_gettid, rc);
+    add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
+    end_timing_func (SYS_gettid);
     return rc;
 }
 
@@ -1233,14 +1541,18 @@ long getpgrp_recheck ()
 {
     long rc;
     struct recheck_entry* pentry = (struct recheck_entry *) bufptr;
+    start_timing_func ();
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
 
 #ifdef PRINT_VALUES
     LPRINT ("getpgrp: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc =  syscall(SYS_getpgrp);
+    end_timing(SYS_getpgrp, rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
+    end_timing_func (SYS_getpgrp);
     return rc;
 }
 
@@ -1249,6 +1561,7 @@ long getuid32_recheck ()
     struct recheck_entry* pentry;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1256,8 +1569,11 @@ long getuid32_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "getuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_getuid32);
+    end_timing (SYS_getuid32, rc);
     check_retval ("getuid32", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_getuid32);
     return rc;
 }
 
@@ -1266,6 +1582,7 @@ long geteuid32_recheck ()
     struct recheck_entry* pentry;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1273,8 +1590,11 @@ long geteuid32_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "geteuid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_geteuid32);
+    end_timing (SYS_geteuid32, rc);
     check_retval ("geteuid32", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_geteuid32);
     return rc;
 }
 
@@ -1283,6 +1603,7 @@ long getgid32_recheck ()
     struct recheck_entry* pentry;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1290,8 +1611,11 @@ long getgid32_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "getgid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_getgid32);
+    end_timing(SYS_getgid32, rc);
     check_retval ("getgid32", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_getgid32);
     return rc;
 }
 
@@ -1300,6 +1624,7 @@ long getegid32_recheck ()
     struct recheck_entry* pentry;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1307,8 +1632,11 @@ long getegid32_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "getegid32: rc %ld clock %lu\n", pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_getegid32);
     check_retval ("getegid32", pentry->clock, pentry->retval, rc);
+    end_timing(SYS_getegid32, rc);
+    end_timing_func (SYS_getegid32);
     return rc;
 }
 
@@ -1319,6 +1647,7 @@ long llseek_recheck ()
     loff_t off;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1334,12 +1663,15 @@ long llseek_recheck ()
     }
 #endif 
 
+    start_timing();
     rc = syscall(SYS__llseek, pllseek->fd, pllseek->offset_high, pllseek->offset_low, &off, pllseek->whence);
+    end_timing (SYS__llseek, rc);
     check_retval ("llseek", pentry->clock, pentry->retval, rc);
     if (rc >= 0 && off != pllseek->result) {
 	printf ("[MISMATCH] llseek returns offset %llu\n", off);
 	handle_mismatch();
     }
+    end_timing_func (SYS__llseek);
     return rc;
 }
 
@@ -1350,6 +1682,7 @@ long ioctl_recheck ()
     char* addr;
     int rc, i;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1362,7 +1695,9 @@ long ioctl_recheck ()
 #endif 
 
     if (pioctl->dir == _IOC_WRITE) {
+        start_timing();
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
+        end_timing(SYS_ioctl, rc);
 	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
 	// Right now we are tainting buffer
 	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
@@ -1381,12 +1716,14 @@ long ioctl_recheck ()
 		if (!tainted[i]) pioctl->arg[i] = outbuf[i];
 	    }
 	}
+        start_timing();
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);
+        end_timing (SYS_ioctl, rc);
 	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
     } else {
 	printf ("[ERROR] ioctl_recheck only handles ioctl dir _IOC_WRITE and _IOC_READ for now\n");
     }
-    LPRINT ("ioctl returns");
+    end_timing_func (SYS_ioctl);
     return rc;
 }
 
@@ -1406,6 +1743,7 @@ long getdents64_recheck ()
     char* dents;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1418,7 +1756,9 @@ long getdents64_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ( "getdents64: fd %u buf %p count %u arglen %ld rc %ld clock %lu\n", pgetdents64->fd, pgetdents64->buf, pgetdents64->count, pgetdents64->arglen, pentry->retval, pentry->clock);
 #endif 
+    start_timing();
     rc = syscall(SYS_getdents64, pgetdents64->fd, tmpbuf, pgetdents64->count);
+    end_timing (SYS_getdents64, rc);
     check_retval ("getdents64", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	int compared = 0;
@@ -1441,6 +1781,7 @@ long getdents64_recheck ()
 	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
 	}
     }
+    end_timing_func (SYS_getdents64);
     return rc;
 }
 
@@ -1450,6 +1791,7 @@ long eventfd2_recheck ()
     struct eventfd2_recheck* peventfd2;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1460,8 +1802,11 @@ long eventfd2_recheck ()
     LPRINT ("eventfd2: count %u flags %x rc %ld clock %lu\n", peventfd2->count, peventfd2->flags, pentry->retval, pentry->clock);
 #endif 
 
+    start_timing();
     rc = syscall(SYS_eventfd2, peventfd2->count, peventfd2->flags);
+    end_timing(SYS_eventfd2, rc);
     check_retval ("eventfd2", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_eventfd2);
     return rc;
 }
 
@@ -1475,6 +1820,7 @@ long poll_recheck ()
     int rc;
     u_int i;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1494,7 +1840,9 @@ long poll_recheck ()
 #endif 
 
     memcpy (tmpbuf, fds, ppoll->nfds*sizeof(struct pollfd));
+    start_timing();
     rc = syscall(SYS_poll, pollbuf, ppoll->nfds, ppoll->timeout);
+    end_timing(SYS_poll, rc);
     if (rc > 0) {
 	for (i = 0; i < ppoll->nfds; i++) {
 	    LPRINT ("\tfd %d events %x returns revents %x\n", pollbuf[i].fd, pollbuf[i].events, pollbuf[i].revents);
@@ -1508,6 +1856,7 @@ long poll_recheck ()
 	    }
 	}
     }
+    end_timing_func (SYS_poll);
     return rc;
 }
 
@@ -1521,6 +1870,7 @@ long newselect_recheck ()
     struct timeval* use_timeout;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1543,7 +1893,9 @@ long newselect_recheck ()
 	LPRINT ("use_timeout is %lx %lx\n", pnewselect->timeout.tv_sec, pnewselect->timeout.tv_usec);
     }
 
+    start_timing();
     rc = syscall(SYS__newselect, pnewselect->nfds, readfds, writefds, exceptfds, use_timeout);
+    end_timing(SYS__newselect, rc);
     check_retval ("select", pentry->clock, pentry->retval, rc);
     if (readfds && memcmp (&pnewselect->readfds, readfds, pnewselect->setsize)) {
 	printf ("[MISMATCH] select returns different readfds\n");
@@ -1560,6 +1912,7 @@ long newselect_recheck ()
     if (pnewselect->is_timeout_tainted) {
 	add_to_taintbuf (pentry, NEWSELECT_TIMEOUT, use_timeout, sizeof(struct timeval));
     }
+    end_timing_func (SYS__newselect);
     return rc;
 }
 
@@ -1569,6 +1922,7 @@ long set_robust_list_recheck ()
     struct set_robust_list_recheck* pset_robust_list;
     int rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1579,8 +1933,11 @@ long set_robust_list_recheck ()
     LPRINT ("set_robust_list: head %lx len %u rc %ld clock %lu\n", (u_long) pset_robust_list->head, pset_robust_list->len, pentry->retval, pentry->clock);
 #endif 
 
+    start_timing();
     rc = syscall(SYS_set_robust_list, pset_robust_list->head, pset_robust_list->len);
+    end_timing(SYS_set_robust_list, rc);
     check_retval ("set_robust_list", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_set_robust_list);
     return rc;
 }
 
@@ -1590,6 +1947,7 @@ long set_tid_address_recheck ()
     struct set_tid_address_recheck* pset_tid_address;
     long rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1600,9 +1958,12 @@ long set_tid_address_recheck ()
     LPRINT ("set_tid_address: tidptr %lx rc %ld clock %lu\n", (u_long) pset_tid_address->tidptr, pentry->retval, pentry->clock);
 #endif 
 
+    start_timing();
     rc = syscall(SYS_set_tid_address, pset_tid_address->tidptr); 
+    end_timing(SYS_set_tid_address, rc);
     LPRINT ("set_tid_address returns %ld\n", rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(rc));
+    end_timing_func (SYS_set_tid_address);
     return rc;
 }
 
@@ -1614,6 +1975,7 @@ long rt_sigaction_recheck ()
     char* data;
     long rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1627,10 +1989,13 @@ long rt_sigaction_recheck ()
 
     if (prt_sigaction->act) pact = (struct sigaction *) data;
     rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, prt_sigaction->oact, prt_sigaction->sigsetsize); 
+    start_timing();
     check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
+    end_timing(SYS_rt_sigaction, rc);
     if (prt_sigaction->oact && rc == 0) {
 	add_to_taintbuf (pentry, SIGACTION_ACTION, prt_sigaction->oact, 20);
     }
+    end_timing_func (SYS_rt_sigaction);
     return rc;
 }
 
@@ -1643,6 +2008,7 @@ long rt_sigprocmask_recheck ()
     char* data;
     long rc;
 
+    start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
@@ -1653,11 +2019,14 @@ long rt_sigprocmask_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
 	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock);
+    fflush (stdout);
 #endif 
 
     if (prt_sigprocmask->set) pset = (sigset_t *) data;
     if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
+    start_timing();
     rc = syscall(SYS_rt_sigprocmask, prt_sigprocmask->how, pset, poset, prt_sigprocmask->sigsetsize); 
+    end_timing(SYS_rt_sigprocmask, rc);
     check_retval ("rt_sigprocmask", pentry->clock, pentry->retval, rc);
     if (prt_sigprocmask->oset) {
 	if (prt_sigprocmask->set) {
@@ -1672,6 +2041,182 @@ long rt_sigprocmask_recheck ()
 	    }
 	}
     }
+    end_timing_func (SYS_rt_sigprocmask);
     return rc;
 }
 
+void mkdir_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct mkdir_recheck* pmkdir;
+    int rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pmkdir = (struct mkdir_recheck *) bufptr;
+    char* fileName = bufptr+sizeof(struct mkdir_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "mkdir: filename %s mode %d", fileName, pmkdir->mode);
+    LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall(SYS_mkdir, fileName, pmkdir->mode);
+    end_timing (SYS_mkdir, rc);
+    check_retval ("mkdir", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_mkdir);
+}
+
+void sched_getaffinity_recheck (int pid)
+{
+    struct recheck_entry* pentry;
+    struct sched_getaffinity_recheck* psched;
+    pid_t use_pid;
+    int rc;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    psched = (struct sched_getaffinity_recheck *) bufptr;
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ( "sched_getaffinity: pid tainted? %d record pid %d passed pid %d clock %lu\n", 
+	     psched->is_pid_tainted, psched->pid, pid, pentry->clock);
+#endif 
+    if (psched->is_pid_tainted) {
+	use_pid = pid; 
+    } else {
+	use_pid = psched->pid;
+    }
+
+    start_timing();
+    rc = syscall(SYS_sched_getaffinity, use_pid, psched->cpusetsize, tmpbuf);
+    end_timing(SYS_sched_getaffinity, rc);
+    check_retval ("sched_getaffinity", pentry->clock, pentry->retval, rc);
+    if (rc == 0) {
+        if (memcmp (tmpbuf, psched->mask, psched->cpusetsize)) {
+            printf ("[MISMATCH] sched_getaffinity returns different cpu mask.\n");
+            handle_mismatch ();
+        }
+    }
+    end_timing_func (SYS_sched_getaffinity);
+}
+
+void recheck_add_clock_by_2 ()
+{
+    if (go_live_clock)
+        __sync_add_and_fetch (&go_live_clock->slice_clock, 2);
+}
+
+void recheck_add_clock_by_1 ()
+{
+    if (go_live_clock)
+        __sync_add_and_fetch (&go_live_clock->slice_clock, 1);
+}
+
+void recheck_wait_clock_init ()
+{
+    if (go_live_clock) {
+#ifdef PRINT_SCHEDULING
+        int pid = syscall(SYS_gettid);
+        printf ("Pid %d recheck_wait_clock_init: %lu mutex %p\n", pid, go_live_clock->slice_clock, &go_live_clock->mutex);
+#endif
+        go_live_clock->mutex = 0;
+        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
+        while (go_live_clock->wait_for_other_threads) { 
+            //wait until all threads are ready for slice execution
+        }
+#ifdef PRINT_SCHEDULING
+        printf ("Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
+#endif
+    }
+}
+
+void recheck_wait_clock_proc_init ()
+{
+    if (go_live_clock) { 
+#ifdef PRINT_SCHEDULING
+        int pid = syscall (SYS_gettid);
+        printf ("Pid %d recheck_wait_clock_proc_init: ready to continue!\n", pid);
+#endif
+        __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
+    }
+}
+
+void recheck_wait_clock (unsigned long wait_clock) 
+{
+    if (go_live_clock) {
+#ifdef PRINT_SCHEDULING
+        int pid = syscall(SYS_gettid);
+        printf ("Pid %d call recheck_wait_clock.\n", pid);
+        fflush (stdout);
+#endif
+        if (go_live_clock->slice_clock >= wait_clock) {
+#ifdef PRINT_SCHEDULING
+            printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, go_live_clock->slice_clock, &go_live_clock->slice_clock, wait_clock);
+            fflush (stdout);
+#endif
+        } else {
+#ifdef PRINT_SCHEDULING
+            printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p \n", pid, go_live_clock->slice_clock, wait_clock, &go_live_clock->mutex);
+            fflush (stdout);
+#endif
+            //wake up other sleeping threads
+            syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
+            //wait for its own clock
+            while (go_live_clock->slice_clock < wait_clock) {
+                //printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+                //fflush (stdout);
+                syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAIT, go_live_clock->mutex, NULL, NULL, 0);
+                //printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
+                //fflush (stdout);
+            }
+        }
+    }
+}
+
+void recheck_final_clock_wakeup () 
+{
+    if (go_live_clock) { 
+#ifdef PRINT_SCHEDULING
+        int pid = syscall(SYS_gettid);
+        printf ("Pid %d finishes executing slice, now wake up other sleeping threads.\n", pid);
+#endif
+        syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
+    }
+#ifdef PRINT_TIMING
+    print_timings();
+#endif
+}
+
+int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
+{
+    if (go_live_clock) {
+        struct go_live_process_map* process_map = go_live_clock->process_map;
+        int i = 0;
+        pid_t ret = 0;
+        while (i < 100) {
+            if (record_pid == process_map[i].record_pid) {
+                ret = process_map[i].current_pid;
+                break;
+            }
+            ++i;
+        }
+#ifdef PRINT_VALUES
+        printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
+#endif
+        *ptid = ret;
+        *ctid = ret;
+#ifdef PRINT_VALUES
+        printf ("fake_clone ptid now has value %d, ctid %d\n", *ptid, *ctid);
+#endif
+
+        return ret;
+    } else 
+        return 0;
+}

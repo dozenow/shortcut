@@ -256,7 +256,15 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 				return -EINVAL;
 			}
 		}
-		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos, wcdata.go_live, wcdata.slice_filename?slice_filename:NULL);
+		if (wcdata.recheck_filename) { 
+			retval = strncpy_from_user (recheck_filename, wcdata.recheck_filename, MAX_LOGDIR_STRLEN);
+			if (retval < 0 || retval >= MAX_LOGDIR_STRLEN) { 
+				printk ("ioctl SPECI_FOR_REPLAY fails, strcpy returns %d\n", retval);
+				return -EINVAL;
+			}
+		}	
+
+		rc = replay_full_ckpt_proc_wakeup(logdir, filename, uniqueid,wcdata.fd,wcdata.ckpt_pos, wcdata.go_live, wcdata.slice_filename?slice_filename:NULL, wcdata.recheck_filename?recheck_filename:NULL);
 
 		if (tmp) putname (tmp);
 		return rc;
@@ -397,7 +405,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 	    
 
 	case SPECI_MAP_CLOCK: {
-		return pthread_shm_path ();
+		return pthread_shm_path ((void __user **)data);
 	}
 	case SPECI_CHECK_FOR_REDO: {
 		return check_for_redo ();

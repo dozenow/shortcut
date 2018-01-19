@@ -44,4 +44,3 @@ pthread_log_replay (unsigned long type, unsigned long check)
 {
     return (*pthread_log_replay_hook) (type, check);
 }
-

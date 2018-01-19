@@ -859,6 +859,7 @@ GLIBC_2.0 i.86-.*-linux.*/notls i.86-.*-linux.*/thread i.86-.*-linux.*/tls m68.*
  pthread_attr_setschedparam F
  pthread_attr_setschedpolicy F
  pthread_attr_setscope F
+ pthread_go_live F
  pthread_condattr_destroy F
  pthread_condattr_init F
  pthread_equal F

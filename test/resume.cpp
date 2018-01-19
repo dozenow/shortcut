@@ -19,7 +19,9 @@
 #include <sys/stat.h>
 #include <sys/queue.h>
 #include <sys/time.h>
+#include <time.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 
 #include <vector>
 #include <map>
@@ -30,9 +32,11 @@ using namespace std;
 #define MAX_THREADS 128 //arbitrary... but works
 
 //#define LPRINT
+//#define LTIMING
+
 
 void print_help(const char *program) {
-    fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val]\n"
+    fprintf (stderr, "format: %s <logdir> [-p] [-f] [-m] [-g] [-r] [--pthread libdir] [--attach_offset=pid,sysnum] [--ckpt_at=replay_clock_val]\n"
                      "                    [--recover_at=replay_clock_val] [--recover_pid=daemon_pid] [--from_ckpt=replay_clock-val]\n"
 	             "                    [--fake_calls=c1,c2...] \n", program);
 }
@@ -83,6 +87,7 @@ public:
 };
 
 std::map<int, Ckpt_Proc*> ckpt_procs; 
+int generated_mm_region_fd = 0;
 
 Ckpt_Proc * get_ckpt_proc(int pid) {
     std::map<int, Ckpt_Proc*>::iterator i =  ckpt_procs.find(pid);
@@ -97,7 +102,7 @@ void *start_thread(void *td) {
     int rc;
     struct ckpt_data *cd = (struct ckpt_data *) td;
     
-    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos, cd->go_live, cd->slice_filename);
+    rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, cd->ckpt_pos, cd->go_live, cd->slice_filename, cd->recheck_filename);
     if (rc < 0) {
 	perror ("resume proc after ckpt");
 	exit (-1);
@@ -186,25 +191,28 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 	    return recheck_all_procs(c, cd, thread, i);
 	}
     }
-    if (current->main_thread){ 
+    if (current->main_thread) { 
+#ifdef LTIMING
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	fprintf (stderr, "resume after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+#endif
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
-				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename,
+				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename, //this is the prefix of the slice and recheck filename
 				cd->recheck_filename);
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
 	}
 
-    }
-    else { 
+    } else { 
+#ifdef LTIMING
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	fprintf (stderr, "resume proc after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename);
+#endif
+	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename, cd->recheck_filename); //again this is the prefix for the filenames
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
 	    exit(-1);		
@@ -217,11 +225,6 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthread_dir)
 {
     char filename[256], mapname[256], procname[256], buf[256];
-
-#ifdef LTIMING
-    struct timeval tv1, tv2;
-    gettimeofday(&tv1, NULL);
-#endif
 
     list<pair<u_long,u_long>> maps;
     sprintf (procname, "/proc/%d/maps", getpid());
@@ -251,28 +254,47 @@ int load_slice_lib (char* dirname, u_long from_ckpt, char* slicelib, char* pthre
     sprintf (filename, "ckpt.%ld.ckpt_mmap.", from_ckpt);
     u_long len = strlen(filename);
     struct stat st;
+    DIR* dir = NULL;
+    struct dirent* pent = NULL;
 
-    DIR* dir = opendir(dirname);
+    if (!generated_mm_region_fd) { 
+        dir = opendir(dirname);
 
-    if (dir == NULL) {
-	fprintf (stderr, "Cannot open directory %s\n", dirname);
-	return -1;
+        if (dir == NULL) {
+            fprintf (stderr, "Cannot open directory %s\n", dirname);
+            return -1;
+        }
+
+        pent = readdir(dir);
     }
-    
-    struct dirent* pent = readdir(dir);
-    while (pent != NULL) {
-	if (!strncmp(pent->d_name, filename, strlen(filename))) {
-	    sprintf (mapname, "%s/%s", dirname, pent->d_name);
-	    int rc = stat(mapname, &st);
-	    if (rc < 0) {
-		fprintf (stderr, "Cannot stat %s\n", mapname);
-		return -1;
-	    }
-	    *(pent->d_name+len-2) = '0';
-	    *(pent->d_name+len-1) = 'x';
-	    u_long start = strtold(pent->d_name+len-2, NULL);
-	    if (st.st_size == 0) st.st_size = 4096;
-	    u_long end = start + st.st_size;
+    while (1) {
+	if (generated_mm_region_fd > 0 || !strncmp(pent->d_name, filename, strlen(filename))) {
+            u_long start = 0;
+            u_long end = 0;
+            int rc = 0;
+            if (generated_mm_region_fd) { 
+                //get the memory regions from memory region files
+                rc = read (generated_mm_region_fd, &start, sizeof(start));
+                if (rc != sizeof(start)) {
+                    printf ("Already mmap all memory regions.\n");
+                    break;
+                }
+                rc = read (generated_mm_region_fd, &end, sizeof(end));
+                assert (rc == sizeof(end));
+            } else { 
+                //get the memory regions from checkpoint filenames
+                sprintf (mapname, "%s/%s", dirname, pent->d_name);
+                rc = stat(mapname, &st);
+                if (rc < 0) {
+                    fprintf (stderr, "Cannot stat %s\n", mapname);
+                    return -1;
+                }
+                *(pent->d_name+len-2) = '0';
+                *(pent->d_name+len-1) = 'x';
+                start = strtold(pent->d_name+len-2, NULL);
+                if (st.st_size == 0) st.st_size = 4096;
+                end = start + st.st_size;
+            }
 #ifdef LPRINT
 	    printf ("%lx %lx\n", start, end);
 #endif
@@ -330,10 +352,14 @@ again:
 		}
 	    }
 	}
-	pent = readdir(dir);
+        if (generated_mm_region_fd) { 
+        } else { 
+            pent = readdir(dir);
+            if (!pent) break;
+        }
     }
 	
-    closedir(dir);
+    if (!generated_mm_region_fd) closedir(dir);
 
 #ifdef LPRINT
     printf ("Before libc\n");
@@ -346,16 +372,19 @@ again:
     fclose(file);
     printf ("\n\n\n");
 #endif
+
     // Let's load libc first
     void* hndl = NULL;
+
     if (pthread_dir) {
 	    char libc_filename[256];
 	    sprintf (libc_filename, "%s/libc-2.15.so", pthread_dir);
 	    hndl = dlopen (libc_filename, RTLD_NOW);
-    } else 
+    } else  {
     	hndl = dlopen ("../eglibc-2.15/prefix/lib/libc-2.15.so", RTLD_NOW);
+    }
     if (hndl == NULL) {
-	perror ("dlopen libc");
+	fprintf (stderr, "dlopen libc %s", dlerror ());
 	exit (0);
     }
 
@@ -372,35 +401,34 @@ again:
 #endif
 
     // Now try and load the library and get the start fn address
-    hndl = dlopen (slicelib, RTLD_NOW);
-    if (hndl == NULL) {
-	fprintf (stderr, "dlopen failed: %s\n", dlerror());
-	exit (0);
-    }
+    for (map<int, Ckpt_Proc*>::iterator iter = ckpt_procs.begin(); iter != ckpt_procs.end(); ++iter) {
+        char slicename[256];
+        snprintf (slicename, 256, "%s.%d.so", slicelib, iter->first);
+        hndl = dlopen (slicename, RTLD_NOW);
+        if (hndl == NULL) {
+            fprintf (stderr, "slice %s dlopen failed: %s\n", slicename, dlerror());
+            exit (0);
+        }
 #ifdef LPRINT
-    printf ("hndl: %p\n", hndl);
+        printf ("hndl: %p\n", hndl);
 #endif
 
-    void* pfn = dlsym (hndl, "_start");
-    if (pfn == NULL) {
-	perror ("dlsym");
-    }
+        void* pfn = dlsym (hndl, "_start");
+        if (pfn == NULL) {
+            perror ("dlsym");
+        }
 
 #ifdef LPRINT
-    printf ("pfn: %p\n", pfn);
-    file = fopen(procname, "r");
-    while (!feof(file)) {
-	if (fgets (buf, sizeof(buf), file)) {
-	    printf ("%s", buf);
-	}
+        printf ("pfn: %p\n", pfn);
+        file = fopen(procname, "r");
+        while (!feof(file)) {
+            if (fgets (buf, sizeof(buf), file)) {
+                printf ("%s", buf);
+            }
+        }
+        fclose(file);
+#endif
     }
-    fclose(file);
-#endif
-
-#ifdef LTIMING
-    gettimeofday(&tv2, NULL);
-    printf ("load time: %ld\n", tv2.tv_usec-tv1.tv_usec+(tv2.tv_sec-tv1.tv_sec)*1000000);
-#endif
 
     return 0;
 }
@@ -438,11 +466,14 @@ int main (int argc, char* argv[])
 	struct ckpt_hdr hdr;
 	struct ckpt_data cd; 
 	pthread_t thread[MAX_THREADS];
+        pid = getpid();
 
-	gettimeofday(&tv, NULL);
-	fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+#ifdef LTIMING
+	sprintf(uniqueid,"%d",pid); //use the parent's pid as the uniqueid
+	gettimeofday (&tv, NULL);
+	fprintf (stderr, "Resume start %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
+#endif
 
-	sprintf(uniqueid,"%d",getpid()); //use the parent's pid as the uniqueid
 
 	struct option long_options[] = {
 		{"pthread", required_argument, 0, 0},
@@ -462,7 +493,7 @@ int main (int argc, char* argv[])
 		char opt;
 		int option_index = 0;
 
-		opt = getopt_long(argc, argv, "fpmhgtl", long_options, &option_index);
+		opt = getopt_long(argc, argv, "fpmhgtlr", long_options, &option_index);
 		//printf("getopt_long returns %c (%d)\n", opt, opt);
 
 		if (opt == -1) {
@@ -525,11 +556,13 @@ int main (int argc, char* argv[])
 			case 8:
 			{
 				slice_filename = optarg;
+                                perror ("Deprecated arguments! Now always using the default slice filenames in replay_logdb\n");
 				break;
 			}
 			case 9:
 			{
 				recheck_filename = optarg;
+                                perror ("Deprecated arguments! Now always using the default recheck filenames in replay_logdb\n");
 				break;
 			}
 			default:
@@ -563,6 +596,10 @@ int main (int argc, char* argv[])
 			break;
 		case 'l':
 			go_live = 1;
+			break;
+		case 'r':
+			//use generated memory region information
+			generated_mm_region_fd = 1;
 			break;
 		default:
 			fprintf(stderr, "Unrecognized option\n");
@@ -611,12 +648,29 @@ int main (int argc, char* argv[])
 		perror("open /dev/spec0");
 		exit(EXIT_FAILURE);
 	}
-	pid = getpid();
+        rc = dup2 (fd, 1019);
+        assert (rc > 0);
+        close (fd);
+        fd = 1019; //TODO: we need a better open syscall to avoid unclosed fd
 
 	if (from_ckpt > 0) {
+            char generated_mm_filename[4096];
 	    
 	    sprintf (filename, "ckpt.%d", from_ckpt);
 	    sprintf (pathname, "%s/ckpt.%d", argv[base], from_ckpt);
+	    if (generated_mm_region_fd) {
+                sprintf (generated_mm_filename, "%s/ckpt.%d.mm", argv[base], from_ckpt);
+                generated_mm_region_fd = open (generated_mm_filename, O_RDONLY);
+                if (generated_mm_region_fd < 0) { 
+                    perror ("open generated memory region file");
+                    return generated_mm_region_fd;
+                }
+                //TODO: fix this
+                rc = dup2 (generated_mm_region_fd, 1011);
+                assert (rc > 0);
+                close (generated_mm_region_fd);
+                generated_mm_region_fd = 1011;
+            }
 	    cfd = open (pathname, O_RDONLY);
 	    if (cfd < 0) {
 		perror ("open checkpoint file");
@@ -631,7 +685,9 @@ int main (int argc, char* argv[])
 		perror("we need more threads!");
 		return -1;
 	    }
-	    
+            if (hdr.proc_count > 1) {
+                printf ("Resuming a multi-threaded program, loading slices with default filenames\n");
+            }
 	    
 	    first_proc = parse_process_map(hdr.proc_count, cfd);
 	    
@@ -641,7 +697,7 @@ int main (int argc, char* argv[])
 		// Supply default slice filename and recheck filename if not specified
 		if (slice_filename == NULL) {
 		    slice_filename = new char[256];
-		    sprintf (slice_filename, "%s/exslice.so", argv[base]);
+                    sprintf (slice_filename, "%s/exslice", argv[base]); //this is only the prefix for the filename
 		}
 		if (recheck_filename == NULL) {
 		    recheck_filename = new char[256];
@@ -652,6 +708,11 @@ int main (int argc, char* argv[])
 	    if (slice_filename) {
 		load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
 	    }
+
+#ifdef LTIMING
+	    gettimeofday (&tv, NULL);
+	    fprintf (stderr, "slice loaded %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
+#endif
 	    
 	    cd.fd = fd;
 	    cd.attach_pin = attach_pin;
@@ -669,8 +730,6 @@ int main (int argc, char* argv[])
 	    cd.go_live = go_live;
 	    cd.slice_filename = slice_filename;
 	    cd.recheck_filename = recheck_filename;
-	    gettimeofday(&tv, NULL);
-	    fprintf (stderr, "resume main done: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	    recheck_all_procs(get_ckpt_proc(first_proc), &cd, thread, i);
 	} else {
 	    rc = resume_with_ckpt (fd, attach_pin, attach_gdb, follow_splits, save_mmap, argv[base], libdir,

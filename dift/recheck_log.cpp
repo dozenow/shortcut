@@ -19,13 +19,13 @@ struct recheck_handle {
     int recheckfd;
 };
 
-struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
+struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
     char recheck_filename[512];
 
     sprintf (klog_filename, "/replay_logdb/rec_%lu/klog.id.%d", record_grp, record_pid);
-    sprintf (recheck_filename, "/replay_logdb/rec_%lu/recheck", record_grp);
+    sprintf (recheck_filename, "/replay_logdb/rec_%lu/recheck.%d", record_grp, record_pid);
 
     struct recheck_handle* handle = (struct recheck_handle *) malloc(sizeof(struct recheck_handle));
     if (handle == NULL) {
@@ -108,6 +108,8 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 	    case 45:  
 	    case 91:  
 	    case 125: 
+            case 120: 
+            case SYS_sched_yield:
 	    case 192: break; //already handled
 	    default:
 		fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped, start_clock %lu - looking for %d\n", res->psr.sysnum , res->index, res->start_clock, syscall); 
@@ -134,6 +136,20 @@ static void check_reg_arguments (const char* call, int regnum)
     assert (regnum == 6);
 }
 
+static void check_one_reg_argument (const char* call, int arg_index) //index starts from 1
+{
+    switch (arg_index) {
+        case 1: if (is_reg_arg_tainted(LEVEL_BASE::REG_EBX, 4, 0)) fprintf (stderr, "[ERROR] register ebx (arg 1) for syscall %s is tainted\n", call); return;
+        case 2: if (is_reg_arg_tainted(LEVEL_BASE::REG_ECX, 4, 0)) fprintf (stderr, "[ERROR] register ecx (arg 2) for syscall %s is tainted\n", call); return;
+        case 3: if (is_reg_arg_tainted(LEVEL_BASE::REG_EDX, 4, 0)) fprintf (stderr, "[ERROR] register edx (arg 3) for syscall %s is tainted\n", call); return;
+        case 4: if (is_reg_arg_tainted(LEVEL_BASE::REG_ESI, 4, 0)) fprintf (stderr, "[ERROR] register esi (arg 4) for syscall %s is tainted\n", call); return;
+        case 5: if (is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0)) fprintf (stderr, "[ERROR] register edi (arg 5) for syscall %s is tainted\n", call); return;
+        case 6: if (is_reg_arg_tainted(LEVEL_BASE::REG_EBP, 4, 0)) fprintf (stderr, "[ERROR] register ebp (arg 6) for syscall %s is tainted\n", call); return;
+        default:
+                    assert (0);
+    }
+}
+
 long calculate_partial_read_size (int is_cache_file, int partial_read, size_t start, size_t end, long total_size) { 
 	if (partial_read == 0) return 0;
 	if (is_cache_file == 0) return 0;
@@ -147,6 +163,12 @@ long calculate_partial_read_size (int is_cache_file, int partial_read, size_t st
 		fprintf (stderr, "calculate_partial_read_size: size is %ld\n", result);
 		return  result;
 	}
+}
+
+int recheck_read_ignore (struct recheck_handle* handle) 
+{
+    skip_to_syscall (handle, SYS_read);
+    return 0;
 }
 
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long max_bound, u_long clock)
@@ -489,6 +511,35 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     return 0;
 }
 
+int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_gettime);
+
+    check_reg_arguments ("clock_gettime", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_gettime, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
+int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock) {
+    struct clock_getx_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_getres);
+
+    check_one_reg_argument ("clock_getres", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_clock_getres, res->retval, sizeof(struct clock_getx_recheck), clock);
+    chk.clk_id = clk_id;
+    chk.tp = tp;
+    chk.clock_id_tainted = clock_id_tainted;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    
+    return 0;
+}
+
 int recheck_time (struct recheck_handle* handle, time_t* t, u_long clock) 
 {
     struct time_recheck chk;
@@ -598,6 +649,14 @@ int recheck_getpid (struct recheck_handle* handle, u_long clock)
 {
     struct klog_result *res = skip_to_syscall (handle, SYS_getpid);
     write_header_into_recheck_log (handle->recheckfd, SYS_getpid, res->retval, 0, clock);
+
+    return 0;
+}
+
+int recheck_gettid (struct recheck_handle* handle, u_long clock)
+{
+    struct klog_result *res = skip_to_syscall (handle, SYS_gettid);
+    write_header_into_recheck_log (handle->recheckfd, SYS_gettid, res->retval, 0, clock);
 
     return 0;
 }
@@ -1025,4 +1084,39 @@ int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* se
 
     return 0;
 }
+
+int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock)
+{
+    struct mkdir_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_mkdir);
+
+    check_reg_arguments ("mkdir", 2);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1))
+            fprintf (stderr, "[ERROR] mkdir pathname is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_mkdir, res->retval, sizeof(struct mkdir_recheck) + strlen(pathname) + 1, clock);
+    chk.mode = mode;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
+
+    return 0;
+}
+
+int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock)
+{
+    struct sched_getaffinity_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_sched_getaffinity);
+
+    check_one_reg_argument ("sched_getaffinity", 2);
+    check_one_reg_argument ("sched_getaffinity", 3);
+    write_header_into_recheck_log (handle->recheckfd, SYS_sched_getaffinity, res->retval, sizeof (struct sched_getaffinity_recheck) + cpusetsize, clock);
+    schk.pid = pid;
+    schk.is_pid_tainted = is_pid_tainted;
+    schk.cpusetsize = cpusetsize;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+    write_data_into_recheck_log (handle->recheckfd, mask, cpusetsize);
+
+    return 0;
+}
+
 

@@ -33,7 +33,7 @@ long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, 
 long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      
 			      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, 
 			      int go_live, char* execute_slice_name, char* recheck_filename);
-long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name);
+long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name, char* recheck_filename);
 void fw_slice_recover (pid_t daemon_pid, long retval);
 
 /* Returns linker for exec to use */
@@ -116,7 +116,7 @@ long replay_resume_from_disk (char* filename, char** execname, char*** argsp, ch
 
 
 long replay_full_resume_hdr_from_disk (char* filename, __u64* prg_id, int* pclock, u_long* pproc_count, loff_t* ppos);
-long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_thread, long* pretval, loff_t* plogpos, u_long* poutptr, u_long* pconsumed, u_long* pexpclock, u_long* pthreadclock, u_long *ignore_flag, u_long *user_log_addr, u_long *user_log_pos,u_long *child_tid,u_long *replay_hook, loff_t* ppos, char* slicelib, u_long* slice_addr, u_long* slice_size);
+long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_thread, long* pretval, loff_t* plogpos, u_long* poutptr, u_long* pconsumed, u_long* pexpclock, u_long* pthreadclock, u_long *ignore_flag, u_long *user_log_addr, u_long *user_log_pos,u_long *child_tid,u_long *replay_hook, loff_t* ppos, char* slicelib, u_long* slice_addr, u_long* slice_size, u_long* pthread_clock_addr);
 
 long replay_full_checkpoint_hdr_to_disk (char* filename, __u64 rg_id, int clock, u_long proc_count, struct ckpt_tsk *ct, struct task_struct *tsk, loff_t* ppos);
 long replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pid_t record_pid, int is_thread, long retval, loff_t logpos, u_long outptr, u_long consumed, u_long expclock, u_long pthread_block_clock, u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,u_long replay_hook, loff_t* ppos);
@@ -181,7 +181,7 @@ void replay_unlink_gdb(struct task_struct* tsk);
 long try_to_exit (u_long pid);
 
 /* Let's the PIN tool read the clock value too */
-long pthread_shm_path (void);
+long pthread_shm_path (void __user** mapped_address);
 
 /* For obtaining list of open sockets */
 struct monitor_data {
@@ -203,7 +203,6 @@ struct startup_db_result {
 	unsigned long ckpt_clock;
 };
 
-long start_fw_slice (char* filename, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name);
 
 void init_startup_db (void);
 void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned long ckpt_clock);
@@ -221,6 +220,33 @@ struct fw_slice_info {
 	unsigned int fpu_last_cpu;
 	unsigned int fpu_has_fpu;
 	union thread_xstate fpu_state;
+        //some extra info
+        struct go_live_clock* slice_clock;
 };
+
+struct go_live_process_map { 
+    int record_pid;
+    int current_pid;
+};
+
+struct replay_group;
+
+// ****
+//NOTE: there is one user-level structure corresponding to this one in recheck_log.h
+// ***
+
+struct go_live_clock {
+    char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
+    atomic_t slice_clock; //ordering
+    atomic_t num_threads;  //the number of threads that has started (has called start_fw_slice)
+    atomic_t num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+    atomic_t wait_for_other_threads;  //if non-zero, there is some threads still not ready for slice execution we need this because we need a synchronization point for all threads to start executing slices, otherwise there would be a fd conflict problem
+    int mutex; //for slice ordering
+    struct replay_group* replay_group; //the address of the replay_group
+    struct go_live_process_map process_map[0]; //current pid  <-> record pid
+};
+
+long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, void* user_clock_addr);
+void destroy_replay_group (struct replay_group *prepg);
 
 #endif

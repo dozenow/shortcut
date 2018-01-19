@@ -5,6 +5,25 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
+struct go_live_process_map {
+    int record_pid;
+    int current_pid;
+};
+//****
+//note: there is one kernel-level structure corresponding to this one in replay.h 
+//note2: the atomic_t in linux is integer on 32bit
+//****
+struct go_live_clock {
+    char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
+    unsigned long slice_clock;
+    int num_threads;  //the number of started threads
+    int wait_for_other_threads; //if non-zero, there are still other threads not ready for slice executing
+    int num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+    int mutex; //for slice ordering
+    void* replay_group;
+    struct go_live_process_map process_map[0];
+};
+ 
 /* Generic entry header */
 struct recheck_entry { 
     int sysnum;
@@ -97,6 +116,12 @@ struct statfs64_recheck {
 struct gettimeofday_recheck {
     struct timeval* tv_ptr;
     struct timezone* tz_ptr;
+};
+
+struct clock_getx_recheck {  //shared by clock_gettime and clock_getres
+    clockid_t clk_id;
+    struct timespec* tp;
+    int clock_id_tainted;
 };
 
 struct time_recheck { 
@@ -243,11 +268,26 @@ struct rt_sigprocmask_recheck {
 };
 /* Followed by contents of act and oact as applicable */
 
+struct mkdir_recheck {
+    int mode;
+    char pathname[0];
+};
+/* Followed by filename */
+
+struct sched_getaffinity_recheck {
+    pid_t pid;
+    char is_pid_tainted;
+    size_t cpusetsize;
+    cpu_set_t mask[0];
+};
+/* Followed by contents of mask*/
+
 /* Prototypes */
 struct recheck_handle;
 
-struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid);
+struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
+int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);
@@ -268,6 +308,7 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol, u_long clock);
 int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen, u_long clock);
 int recheck_getpid (struct recheck_handle* handle, u_long clock);
+int recheck_gettid (struct recheck_handle* handle, u_long clock);
 int recheck_getpgrp (struct recheck_handle* handle, u_long clock);
 int recheck_getuid32 (struct recheck_handle* handle, u_long clock);
 int recheck_geteuid32 (struct recheck_handle* handle, u_long clock);
@@ -288,5 +329,8 @@ int recheck_set_robust_list (struct recheck_handle* handle, struct robust_list_h
 int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long clock);
 int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize, u_long clock);
 int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock);
-
+int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
+int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
+int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
+int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 #endif

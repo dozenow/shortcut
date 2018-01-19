@@ -132,7 +132,7 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
 
 }
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename)
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename, char* recheck_filename)
 {
     struct wakeup_ckpt_data data;
     data.logdir = logdir;
@@ -142,6 +142,7 @@ int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uni
     data.fd = fd_spec;
     data.go_live = go_live;
     data.slice_filename = slice_filename;
+    data.recheck_filename = recheck_filename;
     return ioctl (fd_spec, SPECI_CKPT_PROC_RESUME, &data);    
 }
 
@@ -301,16 +302,16 @@ u_long* map_shared_clock (int fd_spec)
 {
     u_long* clock;
 
-    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK);
+    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK, (u_long) &clock);
     if (fd < 0) {
-	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d\n", fd, errno);
+	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d, clock %p\n", fd, errno, clock);
 	return NULL;
     }
 
     clock = mmap (0, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     if (clock == MAP_FAILED) {
-	fprintf (stderr, "Cannot setup shared page for clock\n");
-	return NULL;
+        fprintf (stderr, "Cannot setup shared page for clock\n");
+        return NULL;
     }
 
     close (fd);

@@ -42,6 +42,11 @@ int main (int argc, char* argv[])
 	    perror ("read data");
 	    return rc;
 	}
+        switch (entry.sysnum) { 
+            case 266:
+                printf ("clock_getres clk_id %ld, tp %lx\n", *(long*)buf, *(long*) (buf + sizeof(long)));
+                break;
+        }
     } while (1);
     
     close (fd);

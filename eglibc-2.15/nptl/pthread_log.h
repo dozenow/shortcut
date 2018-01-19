@@ -4,7 +4,7 @@
 /* Note: must update both user-level and kernel headers together */
 
 // Debug log uses uncompressed format
-//#define USE_DEBUG_LOG
+//#define USE_DEBUG_LOG //BE CAREFUL: going live with this flag turned on is not supported for multi-thread program
 
 // This creates a separate log for debugging
 //#define USE_EXTRA_DEBUG_LOG
@@ -228,7 +228,8 @@ extern void lcok_ignore_address (void);
 
 void pthread_log_lll_lock (int* plock, int type);
 void pthread_log_lll_unlock (int* plock, int type);
-void pthread_log_lll_wait_tid (int* ptid);
 int pthread_log_lll_timedwait_tid (int* ptid, const struct timespec* abstime);
+extern void __pthread_go_live (void);
+extern void __pthread_log_lll_wait_tid (int* ptid);
 
 #endif

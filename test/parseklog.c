@@ -320,6 +320,9 @@ static void print_read(FILE *out, struct klog_result *res) {
 			}
 #endif
 		}
+                /*if (!is_cache_read) { 
+                    printf ("%s\n", (char*) (buf + sizeof (int)));
+                }*/
 	}
 }
 

@@ -1,6 +1,7 @@
 #include "pin.H"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <dirent.h>
 #include <assert.h>
@@ -139,6 +140,8 @@ const char* splice_input = NULL;
 u_long num_merge_entries = 0x40000000/(sizeof(taint_t)*2);
 u_long inst_cnt = 0;
 map<pid_t,struct thread_data*> active_threads;
+extern map<ADDRINT, struct mutex_state*> active_mutex; 
+extern map<ADDRINT, struct wait_state*> active_wait;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
@@ -150,6 +153,136 @@ bool produce_output = true;
 
 struct slab_alloc open_info_alloc;
 struct slab_alloc thread_data_alloc;
+
+#if 0
+//an old function that buffers slice output
+inline void output_slice (struct thread_data* tdata, const char* format, ...) 
+{
+    char output_slice_buf[512];
+    va_list arglist;
+    va_start (arglist, format);
+    int length = vsnprintf (output_slice_buf, 512, format, arglist);
+    va_end (arglist);
+
+    assert (length != 511);  //make sure we don't truncate the message because of buffer size limits
+    printf ("%s", output_slice_buf); 
+    if (tdata->slice_buffer) { 
+        tdata->slice_buffer->push (string(output_slice_buf)); 
+        if (tdata->slice_buffer->size() > 1024) {  //write into file
+            while (!tdata->slice_buffer->empty()) {  
+                string s = tdata->slice_buffer->front(); 
+                int ret = write (tdata->slice_output_file, s.c_str(), s.length());
+                assert (ret == (int)s.length());
+                tdata->slice_buffer->pop ();
+            }
+            fsync (tdata->slice_output_file); 
+        }
+    } 
+}
+#endif
+
+//Not sure about the caller-saved registers
+//Also we don't preserve flags in this function, so call pushfd/popfd if you need
+inline void print_function_call_inst (struct thread_data* tdata, const char* function_name, int arg_num ...)
+{
+    va_list list;
+    va_start (list, arg_num);
+    stack<long> stack;
+    assert (arg_num >= 0);
+    for (int i = 0; i<arg_num; ++i) {
+        stack.push (va_arg (list, long));
+    }
+    while (!stack.empty()) {
+        OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%lx", stack.top());
+        OUTPUT_SLICE_INFO_THREAD (tdata, "");
+        stack.pop ();
+    }
+    OUTPUT_SLICE_THREAD (tdata, 0, "call %s", function_name);
+    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+    if (arg_num > 0) {
+        OUTPUT_SLICE_THREAD (tdata, 0, "add esp, %d", arg_num*4);
+        OUTPUT_SLICE_INFO_THREAD (tdata, "");
+    }
+
+    va_end (list);
+}
+
+inline void sync_slice_buffer (struct thread_data* tdata)
+{
+    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+
+    //wakeup other sleeping threads
+    OUTPUT_SLICE_THREAD (tdata, 0, "call recheck_final_clock_wakeup");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+    //setup pthread properly
+    print_function_call_inst (tdata, "pthread_go_live", 0);
+
+    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+
+    DEBUG_INFO ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
+    //let's re-create necessary pthread state for this thread
+    DEBUG_INFO ("Figure out all valid mutex at this point\n");
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case MUTEX_AFTER_LOCK: 
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+
+    //output the footer and restore untainted memory address
+    fw_slice_print_footer (tdata);
+}
+
+static inline void slice_wait_clock (u_long wait_clock) 
+{
+    if (wait_clock > checkpoint_clock + 1)  {
+        fprintf (stderr, "[DEBUG] slice_wait_clock is ignored as we're wait for a clock (%lu) after checkpoint clock \n", wait_clock);
+    } else { 
+        OUTPUT_SLICE (0, "pushfd");
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
+        OUTPUT_SLICE (0, "push %lu", wait_clock); 
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
+        OUTPUT_SLICE (0, "call recheck_wait_clock");
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
+        OUTPUT_SLICE (0, "add esp, 4");
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
+        OUTPUT_SLICE (0, "popfd");
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
+    }
+}
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
     "pintool", "i", "",
@@ -207,7 +340,7 @@ KNOB<unsigned int> KnobCheckpointClock(KNOB_MODE_WRITEONCE,
     "taint tracking until ckpt_clock(inclusive) and generates params_log logs. The clock should always be the end clock of a syscall (checkpoint files has the same property in namings)");
 KNOB<unsigned int> KnobRecheckGroup(KNOB_MODE_WRITEONCE,
     "pintool", "recheck_group", "",
-    "specifies the group for the recheck log (if not specified, then don't generate log)");
+    "specifies the group for the recheck log and the slice output file (if not specified, then don't generate log and only print slice to stdout)");
 KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE, 
     "pintool", "group_dir", "",
     "the directory for the output files");
@@ -245,8 +378,8 @@ extern int dump_mem_taints_start (int fd);
 extern int dump_reg_taints_start (int fd, taint_t* pregs, int thread_ndx);
 extern taint_t taint_num;
 extern vector<struct ctrl_flow_param> ctrl_flow_params;
+extern vector<struct check_syscall> ignored_syscall;
 extern map<u_long,syscall_check> syscall_checks;
-extern FILE* slicefile;
 
 #ifdef TAINT_STATS
 struct timeval begin_tv, end_tv;
@@ -400,6 +533,68 @@ void print_static_address(FILE* fp, ADDRINT ip)
     }
     fprintf(fp, "%#x %s\n", static_ip, img_name);
     PIN_UnlockClient();
+}
+
+static inline void detect_slice_ordering (int syscall_num) 
+{
+    // ignore pthread syscalls, or deterministic system calls that we don't log (e.g. 123, 186, 243, 244)
+    if (!(syscall_num == 17 || syscall_num == 31 || syscall_num == 32 || 
+	  syscall_num == 35 || syscall_num == 44 || syscall_num == 53 || 
+	  syscall_num == 56 || syscall_num == 58 || syscall_num == 98 || 
+	  syscall_num == 119 || syscall_num == 123 || syscall_num == 127 ||
+	  syscall_num == 186 || syscall_num == 243 || syscall_num == 244)) {
+        if (current_thread->ignore_flag) {
+            if (!(*(int *)(current_thread->ignore_flag))) {
+                //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+                current_thread->expected_clock += 2;
+                OUTPUT_SLICE (0, "pushfd");
+                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
+                OUTPUT_SLICE (0, "popfd");
+                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+                DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
+                assert (psr != NULL);
+                if (psr->psr.sysnum != syscall_num) { 
+                    fprintf (stderr, "mismatched syscall: expected %d, actual %d, actual clock %lu, recorded stop_clock %lu\n", psr->psr.sysnum, syscall_num, *ppthread_log_clock, psr->stop_clock);
+                    fprintf (stderr, "abort\n");
+                    assert (0);
+                }
+                if (current_thread->expected_clock < psr->stop_clock) { 
+                    slice_wait_clock (psr->stop_clock);
+                    current_thread->expected_clock = psr->stop_clock;
+                } 
+                if(syscall_num == 120) current_thread->child_pid = psr->retval;
+            } else { 
+                DEBUG_INFO ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
+            }
+        } else {
+            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+            current_thread->expected_clock += 2;
+            OUTPUT_SLICE (0, "pushfd");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
+            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            OUTPUT_SLICE (0, "popfd");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+            DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
+            assert (psr != NULL);
+            if (psr->psr.sysnum != syscall_num) { 
+                fprintf (stderr, "mismatched syscall: expected %d, actual %d, actual clock %lu, recorded stop_clock %lu\n", psr->psr.sysnum, syscall_num, *ppthread_log_clock, psr->stop_clock);
+                fprintf (stderr, "abort\n");
+                assert (0);
+            }
+            if (current_thread->expected_clock < psr->stop_clock) { 
+                slice_wait_clock (psr->stop_clock);
+                current_thread->expected_clock = psr->stop_clock;
+            } 
+            if(syscall_num == 120) current_thread->child_pid = psr->retval;
+        }
+    } else { 
+        DEBUG_INFO ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
+    }
 }
 
 static inline void increment_syscall_cnt (int syscall_num)
@@ -580,25 +775,31 @@ static inline void sys_read_stop(int rc)
 	max_taint = it->second.value;
     }
 
-    if (ri->recheck_handle) {
-	OUTPUT_SLICE (0, "push edx");
-	OUTPUT_SLICE_INFO ("")
-	OUTPUT_SLICE (0, "call read_recheck");
-	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-	OUTPUT_SLICE (0, "pop edx");
-	OUTPUT_SLICE_INFO ("")
-	if (filter_input()) {
-	    size_t start = 0;
-	    size_t end = 0;
-	    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
-		add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
-	    } else {
-		recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
-	    }
-	} else {
-	    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
-	}
+
+    if (check_is_syscall_ignored (current_thread->record_pid, current_thread->syscall_cnt)) {
+        fprintf (stderr, "Syscall is ignored during rechecking, read syscall, pid %d, index %d, rc %d\n", current_thread->record_pid, current_thread->syscall_cnt, rc);            
+        recheck_read_ignore (ri->recheck_handle);
+    } else { 
+        if (ri->recheck_handle) {
+            OUTPUT_SLICE (0, "push edx");
+            OUTPUT_SLICE_INFO ("");
+            OUTPUT_SLICE (0, "call read_recheck");
+            OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+            OUTPUT_SLICE (0, "pop edx");
+            OUTPUT_SLICE_INFO ("");
+                if (filter_input()) {
+                    size_t start = 0;
+                    size_t end = 0;
+                    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+                        recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
+                        add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+                    } else {
+                        recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
+                    }
+                } else {
+                    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
+                }
+        }
     }
 
     if (rc > 0) {
@@ -667,6 +868,7 @@ static inline void sys_pread_stop(int rc)
     int read_fileno = -1;
     struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
 
+    fprintf (stderr, "[ERROR] sys_pread hasn't been put into recheck log.\n");
     // If global_syscall_cnt == 0, then handled in previous epoch
     if (rc > 0) {
         struct taint_creation_info tci;
@@ -768,6 +970,51 @@ static inline void taint_syscall_retval (const char* sysname)
     DEBUG_INFO ("[SLICE_TAINT] %s #eax\n", sysname);
 }
 
+static inline void sys_mkdir_start(struct thread_data* tdata, char* filename, int mode)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call mkdir_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_mkdir (tdata->recheck_handle, filename, mode, *ppthread_log_clock);
+    } 
+}
+
+static inline void sys_clone_start (struct thread_data* tdata, int flags, pid_t* ptid, pid_t* ctid)  //don't trust the manual page on clone, it's different than the clone syscall
+{
+    struct clone_info* info = &tdata->op.clone_info_cache;
+    info->flags = flags;
+    info->ptid = ptid;
+    info->ctid = ctid;
+}
+
+static inline void sys_clone_stop (int rc) 
+{
+    struct clone_info* info = &current_thread->op.clone_info_cache;
+    pid_t* ptid = info->ptid;
+    pid_t* ctid = info->ctid;
+    if (info->flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
+        fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p, force to wait on the clock\n", ptid, ctid);
+        //put a fake clone syscall here
+        //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
+        OUTPUT_SLICE (0, "pushfd");
+        OUTPUT_SLICE_INFO ("clone");
+        OUTPUT_SLICE (0, "push %p", ctid);
+        OUTPUT_SLICE_INFO ("clone ctid");
+        OUTPUT_SLICE (0, "push %p", ptid);
+        OUTPUT_SLICE_INFO ("clone ptid");
+        OUTPUT_SLICE (0, "push %d", current_thread->child_pid);
+        OUTPUT_SLICE_INFO ("clone record pid");
+        OUTPUT_SLICE (0, "call recheck_fake_clone");
+        OUTPUT_SLICE_INFO ("clone record pid %d, child pid %d", current_thread->record_pid, rc);
+        OUTPUT_SLICE (0, "add esp, 12");
+        OUTPUT_SLICE_INFO ("record_pid %d", current_thread->record_pid);
+        OUTPUT_SLICE (0, "popfd");
+        OUTPUT_SLICE_INFO ("clone");
+        taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
+        taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));
+        taint_syscall_retval ("clone");
+    }
+}
 
 static void sys_ioctl_stop (int rc) 
 {
@@ -812,11 +1059,11 @@ static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* 
 	if (tdata->recheck_handle) {
 	    int owner_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0);
 	    OUTPUT_SLICE(0, "push edx");
-	    OUTPUT_SLICE_INFO ("")
+	    OUTPUT_SLICE_INFO ("");
 	    OUTPUT_SLICE(0, "call fcntl64_setown_recheck");
 	    OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 	    OUTPUT_SLICE(0, "pop edx");
-	    OUTPUT_SLICE_INFO ("")
+	    OUTPUT_SLICE_INFO ("");
 	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg, owner_tainted, *ppthread_log_clock);
 	}
 	break;
@@ -985,6 +1232,7 @@ static inline void sys_write_stop(int rc)
 static inline void sys_writev_start(struct thread_data* tdata, int fd, struct iovec* iov, int count)
 {
     struct writev_info* wvi;
+    fprintf (stderr, "[ERROR] sys_writev hasn't been put into recheck log.\n");
     wvi = (struct writev_info *) &tdata->op.writev_info_cache;
     wvi->fd = fd;
     wvi->count = count;
@@ -1183,6 +1431,7 @@ static void sys_recv_start(thread_data* tdata, int fd, char* buf, int size)
 {
     // recv and read are similar so they can share the same info struct
     struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
+    fprintf (stderr, "[ERROR] sys_recv hasn't been put into recheck log.\n");
     ri->fd = fd;
     ri->buf = buf;
     tdata->save_syscall_info = (void *) ri;
@@ -1241,6 +1490,7 @@ static void sys_recv_stop(int rc)
 static void sys_recvmsg_start(struct thread_data* tdata, int fd, struct msghdr* msg, int flags) 
 {
     struct recvmsg_info* rmi;
+    fprintf (stderr, "[ERROR] sys_recvmsg hasn't been put into recheck log.\n");
     rmi = (struct recvmsg_info *) malloc(sizeof(struct recvmsg_info));
     if (rmi == NULL) {
 	fprintf (stderr, "Unable to malloc recvmsg_info\n");
@@ -1296,6 +1546,7 @@ static void sys_recvmsg_stop(int rc)
 static void sys_sendmsg_start(struct thread_data* tdata, int fd, struct msghdr* msg, int flags)
 {
     struct sendmsg_info* smi;
+    fprintf (stderr, "[ERROR] sys_sendmsg hasn't been put into recheck log.\n");
     smi = (struct sendmsg_info *) malloc(sizeof(struct sendmsg_info));
     if (smi == NULL) {
 	fprintf (stderr, "Unable to malloc sendmsg_info\n");
@@ -1348,6 +1599,7 @@ static void sys_sendmsg_stop(int rc)
 static void sys_send_start(struct thread_data* tdata, int fd, char* msg, size_t len, int flags)
 {
     struct write_info* si;
+    fprintf (stderr, "[ERROR] sys_send hasn't been put into recheck log.\n");
     si = (struct write_info *) malloc(sizeof(struct write_info));
     if (si == NULL) {
 	fprintf (stderr, "Unable to malloc sendmsg_info\n");
@@ -1432,7 +1684,7 @@ static inline void sys_time_start (struct thread_data* tdata, time_t* t)
     tdata->save_syscall_info = (void*) t;
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE(0, "call time_recheck");
-	OUTPUT_SLICE_INFO("%lu\n", *ppthread_log_clock);
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
 	recheck_time (tdata->recheck_handle, t, *ppthread_log_clock);
     }
 }
@@ -1444,30 +1696,54 @@ static inline void sys_time_stop (int rc)
     if (rc >= 0 && t != NULL) taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
 }
 
-static inline void sys_clock_gettime_start (struct thread_data* tdata, struct timespec* tp) { 
-	LOG_PRINT ("start to handle clock_gettime %p\n", tp);
-	struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
-	info->tp = tp;
-	tdata->save_syscall_info = (void*) info;
+static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
+    LOG_PRINT ("start to handle clock_gettime %p\n", tp);
+    struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
+    info->tp = tp;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call clock_gettime_recheck");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_clock_gettime_stop (int rc) { 
-	struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
-	if (rc == 0) { 
-		struct taint_creation_info tci;
-		char* channel_name = (char*) "clock_gettime";
-		tci.type = TOK_CLOCK_GETTIME;
-		tci.rg_id = current_thread->rg_id;
-		tci.record_pid = current_thread->record_pid;
-		tci.syscall_cnt = current_thread->syscall_cnt;
-		tci.offset = 0;
-		tci.fileno = -1;
-		tci.data = 0;
-		create_taints_from_buffer(ri->tp, sizeof(struct timespec), &tci, tokens_fd, channel_name);
-	}
-	memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
-	current_thread->save_syscall_info = 0;
-	LOG_PRINT ("Done with clock_gettime.\n");
+    struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
+    if (rc == 0) { 
+        taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
+    }
+    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+    current_thread->save_syscall_info = 0;
+    LOG_PRINT ("Done with clock_gettime.\n");
+}
+
+static inline void sys_clock_getres_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
+    LOG_PRINT ("start to handle clock_getres clk_id %d, %p\n", clk_id, tp);
+    struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache; //share the structure with clock_gettime
+    info->tp = tp;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+        int clock_id_tainted = is_reg_arg_tainted (LEVEL_BASE:: REG_EBX, 4, 0);
+        OUTPUT_SLICE (0, "push ebx");
+        OUTPUT_SLICE_INFO ("the clockid may be tainted");
+	OUTPUT_SLICE (0, "call clock_getres_recheck");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+        OUTPUT_SLICE (0, "pop ebx");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	recheck_clock_getres (tdata->recheck_handle, clk_id, tp, clock_id_tainted, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_clock_getres_stop (int rc) { 
+    struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
+    if (rc == 0) { 
+        taint_syscall_memory_out ("clock_getres", (char*) ri->tp, sizeof(struct timespec));
+    }
+    DEBUG_INFO ("clock_getres result %ld, %ld\n", ri->tp->tv_sec, ri->tp->tv_nsec);
+    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
+    current_thread->save_syscall_info = 0;
+    LOG_PRINT ("Done with clock_getres.\n");
 }
 
 static inline void sys_getpid_start (struct thread_data* tdata) {
@@ -1481,6 +1757,19 @@ static inline void sys_getpid_start (struct thread_data* tdata) {
 static inline void sys_getpid_stop (int rc) 
 {
     taint_syscall_retval ("getpid");
+}
+
+static inline void sys_gettid_start (struct thread_data* tdata) {
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE(0, "call gettid_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	recheck_gettid (tdata->recheck_handle, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_gettid_stop (int rc) 
+{
+    taint_syscall_retval ("gettid");
 }
 
 static inline void sys_getpgrp_start (struct thread_data* tdata) 
@@ -1536,15 +1825,15 @@ static inline void sys_setpgid_start (struct thread_data* tdata, pid_t pid, pid_
 	int pid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0);
 	int pgid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
 	OUTPUT_SLICE(0, "push ecx");
-	OUTPUT_SLICE_INFO ("")
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE(0, "push ebx");
-	OUTPUT_SLICE_INFO ("")
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE(0, "call setpgid_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 	OUTPUT_SLICE(0, "pop ebx");
-	OUTPUT_SLICE_INFO ("")
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE(0, "pop ecx");
-	OUTPUT_SLICE_INFO ("")
+	OUTPUT_SLICE_INFO ("");
 	recheck_setpgid (tdata->recheck_handle, pid, pgid, pid_tainted, pgid_tainted, *ppthread_log_clock);
     }
 }
@@ -1556,6 +1845,7 @@ static inline void sys_set_tid_address_start (struct thread_data* tdata, int* ti
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 	recheck_set_tid_address (tdata->recheck_handle, tidptr, *ppthread_log_clock);
     }
+    taint_syscall_memory_out ("set_tid_address", (char*)tidptr, sizeof(int));
 }
 
 static inline void sys_set_tid_address_stop (int rc) 
@@ -1823,10 +2113,47 @@ static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how,
     }
 }
 
+static inline void sys_sched_getaffinity_start (struct thread_data* tdata, pid_t pid, size_t cpusetsize, cpu_set_t* mask) { 
+    struct sched_getaffinity_info* info = &tdata->op.sched_getaffinity_info_cache; 
+    info->mask = mask;
+    info->size = cpusetsize;
+    tdata->save_syscall_info = (void*) info;
+    if (tdata->recheck_handle) {
+        int pid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0);
+        OUTPUT_SLICE (0, "push ebx");
+        OUTPUT_SLICE_INFO ("pid is probably tainted");
+	OUTPUT_SLICE (0, "call sched_getaffinity_recheck");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+        OUTPUT_SLICE (0, "pop ebx");
+	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	recheck_sched_getaffinity (tdata->recheck_handle, pid, cpusetsize, mask, pid_tainted, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_sched_getaffinity_stop (int rc) { 
+    struct sched_getaffinity_info* ri = &current_thread->op.sched_getaffinity_info_cache; 
+    if (rc == 0) { 
+        clear_mem_taints ((u_long)ri->mask, ri->size); //output will be verified
+    }
+    memset (&current_thread->op.sched_getaffinity_info_cache, 0, sizeof(struct sched_getaffinity_info));
+    current_thread->save_syscall_info = 0;
+}
+
+static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
+{
+    fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
+}
+
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 { 
     switch (sysnum) {
+        case SYS_ftime:
+            sys_pthread_init (tdata, (int*) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2, (void*) syscallarg3); 
+            break;
+        case SYS_clone:
+            sys_clone_start (tdata, (int) syscallarg2, (pid_t*) syscallarg3, (pid_t*) syscallarg4);
+            break;
         case SYS_open:
             sys_open_start(tdata, (char *) syscallarg0, (int) syscallarg1, (int) syscallarg2);
             break;
@@ -1865,6 +2192,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS__newselect:
             sys__newselect_start(tdata, (int) syscallarg0, (fd_set *) syscallarg1, (fd_set *) syscallarg2,
 				 (fd_set *) syscallarg3, (struct timeval *) syscallarg4);
+            break;
+        case SYS_mkdir:
+            sys_mkdir_start (tdata, (char*) syscallarg0, (int) syscallarg1);
             break;
         case SYS_socketcall:
         {
@@ -1930,6 +2260,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	case SYS_getpid:
 	    sys_getpid_start (tdata);
 	    break;
+	case SYS_gettid:
+	    sys_gettid_start (tdata);
+            break;
 	case SYS_getpgrp:
 	    sys_getpgrp_start (tdata);
 	    break;
@@ -1967,7 +2300,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_set_robust_list (tdata, (struct robust_list_head *) syscallarg0, (size_t) syscallarg1);
 	    break;
 	case SYS_clock_gettime:
-	    sys_clock_gettime_start (tdata, (struct timespec*) syscallarg1);
+	    sys_clock_gettime_start (tdata, (clockid_t) syscallarg0, (struct timespec*) syscallarg1);
+	    break;
+        case SYS_clock_getres:
+	    sys_clock_getres_start (tdata, (clockid_t) syscallarg0, (struct timespec*) syscallarg1);
 	    break;
 	case SYS_access:
 	    if (tdata->recheck_handle) {
@@ -2003,6 +2339,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_rt_sigprocmask:
 	    sys_rt_sigprocmask_start (tdata, (int) syscallarg0, (sigset_t *) syscallarg1, (sigset_t *) syscallarg2, (size_t) syscallarg3);
 	    break;
+        case SYS_sched_getaffinity:
+            sys_sched_getaffinity_start (tdata, (pid_t)syscallarg0, (size_t)syscallarg1, (cpu_set_t*)syscallarg2);
+            break;
+        case SYS_nanosleep:
+            printf ("skipped syscall nanosleep.\n");
+            break;
     }
 }
 
@@ -2011,6 +2353,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     int rc = (int) ret_value;
     switch(sysnum) {
         case SYS_clone:
+            sys_clone_stop (rc);
             break;
         case SYS_open:
             sys_open_stop(rc);
@@ -2064,6 +2407,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_getpid:
 	    sys_getpid_stop(rc);
 	    break;
+	case SYS_gettid:
+	    sys_gettid_stop(rc);
+	    break;
 	case SYS_getpgrp:
 	    sys_getpgrp_stop(rc);
 	    break;
@@ -2094,6 +2440,12 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	case SYS_clock_gettime:
 	    sys_clock_gettime_stop(rc);
 	    break;
+        case SYS_clock_getres:
+	    sys_clock_getres_stop(rc);
+	    break;
+        case SYS_sched_getaffinity:
+            sys_sched_getaffinity_stop (rc);
+            break;
         case SYS_socketcall:
         {
 	    
@@ -2133,9 +2485,11 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	list_for_each_entry (fds, &open_fds->fds, list) {
 		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
-	//let's scan over all memory address included in the slice
 #endif
-	fw_slice_print_footer ();
+      //dump slice buffer for all active threads
+        for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
+            sync_slice_buffer (iter->second);
+        }
 
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -2192,6 +2546,7 @@ void instrument_syscall(ADDRINT syscall_num,
 	PIN_ExitApplication(0); 
 
     }
+    detect_slice_ordering (sysnum);
 	
     syscall_start(tdata, sysnum, syscallarg0, syscallarg1, syscallarg2, 
 		  syscallarg3, syscallarg4, syscallarg5);
@@ -2243,6 +2598,7 @@ void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD 
     if (current_thread->syscall_in_progress) {
 	// reset the syscall number after returning from system call
 	increment_syscall_cnt (current_thread->sysnum);
+        //detect_slice_ordering (current_thread->sysnum);
 	current_thread->syscall_in_progress = false;
     }
 
@@ -2344,6 +2700,44 @@ static inline void fw_slice_src_reg (INS ins, REG srcreg)
     put_copy_of_disasm (str);
 }
 
+static inline void fw_slice_src_fpureg (INS ins, REG srcreg, int fp_stack_change) 
+{
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_fpureg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(srcreg), 
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+                   IARG_ADDRINT, fp_stack_change,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_fpureg2mem (INS ins, REG srcreg, REG base_reg, REG index_reg, int fp_stack_change) 
+{
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_fpureg2mem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(srcreg), 
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_MEMORYWRITE_EA,
+		   IARG_UINT32, INS_MemoryWriteSize(ins),
+                   IARG_ADDRINT, fp_stack_change,
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static inline void fw_slice_src_reg2mem (INS ins, REG srcreg, uint32_t src_regsize, REG base_reg, REG index_reg)  
 {
     SETUP_BASE_INDEX(base_reg, index_reg);
@@ -2377,6 +2771,24 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
 		   IARG_UINT32, INS_MemoryReadSize(ins),
 		   PASS_BASE_INDEX,
 		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_mem2fpureg (INS ins, REG base_reg, REG index_reg, int fp_stack_change) 
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(fw_slice_mem2fpureg),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_INST_PTR,
+            IARG_PTR, str,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change, 
+            PASS_BASE_INDEX,
+            IARG_END);
     put_copy_of_disasm (str);
 }
 
@@ -2417,6 +2829,26 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, REG srcreg)
     put_copy_of_disasm (str);
 }
 
+static inline void fw_slice_src_fpuregfpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_fpuregfpureg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(dstreg),
+		   IARG_UINT32, REG_Size(dstreg),
+		   IARG_UINT32, REG_is_Upper8(dstreg),
+		   IARG_UINT32, translate_reg(srcreg),
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+                   IARG_ADDRINT, fp_stack_change,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg, REG index_reg) 
 { 
     char* str = get_copy_of_disasm (ins);
@@ -2432,6 +2864,27 @@ static inline void fw_slice_src_regmem (INS ins, REG reg, uint32_t reg_size,  IA
 		   IARG_UINT32, REG_is_Upper8(reg),
 		   mem_ea, 
 		   IARG_UINT32, memsize,
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_fpuregmem (INS ins, REG reg, uint32_t reg_size,  IARG_TYPE mem_ea, uint32_t memsize, REG base_reg, REG index_reg, int fp_stack_change) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_memfpureg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_ADDRINT, translate_reg(reg), 
+		   IARG_UINT32, reg_size,
+                   IARG_CONST_CONTEXT,
+		   IARG_UINT32, REG_is_Upper8(reg),
+		   mem_ea, 
+		   IARG_UINT32, memsize,
+                   IARG_UINT32, fp_stack_change,
 		   PASS_BASE_INDEX,
 		   IARG_END);
     put_copy_of_disasm (str);
@@ -2639,6 +3092,21 @@ void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
     } 
 }
 
+void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
+{
+    assert (REG_is_st (dstreg));
+    assert (REG_is_st (srcreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_fpureg2fpureg),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_UINT32, dstreg, //no need to translate_reg
+            IARG_UINT32, srcreg,
+            IARG_UINT32, REG_Size (dstreg),
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change,
+            IARG_END);
+}
+
 void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 {
     UINT32 regsize = REG_Size(reg);
@@ -2663,6 +3131,23 @@ void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 		       IARG_UINT32, size,
 		       IARG_END);
     }
+}
+
+void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
+{
+    UINT32 regsize = REG_Size(reg);
+    UINT32 memsize = INS_MemoryWriteSize(ins);
+
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR (taint_fpureg2mem),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYWRITE_EA,
+            IARG_UINT32, memsize,
+            IARG_UINT32, reg,
+            IARG_UINT32, regsize,
+            IARG_CONST_CONTEXT,
+            IARG_UINT32, fp_stack_change,
+            IARG_END);
 }
 
 #define SETUP_BASE_INDEX_TAINT			\
@@ -2714,6 +3199,22 @@ static void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_
     }
 }
 
+static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_change, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    assert (REG_is_st (dstreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_mem2fpureg_offset),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, get_reg_off (dstreg),
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            PASS_BASE_INDEX_TAINT,
+            IARG_CONST_CONTEXT, 
+            IARG_ADDRINT, fp_stack_change,
+            IARG_END);
+}
+
 void instrument_taint_mem2mem (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -2752,6 +3253,20 @@ static inline void instrument_taint_mix_reg2reg (INS ins, REG dstreg, REG srcreg
 		   IARG_UINT32, clear_flags,
 		   IARG_END);
 }
+
+static inline void instrument_taint_mix_fpureg2fpureg (INS ins, REG dstreg, REG srcreg)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_mix_fpureg2fpureg),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, dstreg, 
+		   IARG_UINT32, REG_Size(dstreg),
+		   IARG_UINT32, srcreg, 
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT, 
+		   IARG_END);
+}
+
 
 static inline void instrument_taint_mix_regreg2reg (INS ins, REG dstreg, REG srcreg1, REG srcreg2, int set_flags, int clear_flags)
 {
@@ -2813,6 +3328,23 @@ static inline void instrument_taint_mix_reg2mem (INS ins, REG reg, int set_flags
 		    IARG_END);
 }
 
+static inline void instrument_taint_mix_fpuregmem2fpureg (INS ins, REG src_reg, REG dst_reg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    INS_InsertCall (ins, IPOINT_BEFORE,
+		    AFUNPTR (taint_mix_fpuregmem2fpureg),
+		    IARG_FAST_ANALYSIS_CALL,
+                    IARG_MEMORYREAD_EA,
+		    IARG_UINT32, INS_MemoryReadSize(ins),
+                    IARG_UINT32, src_reg,
+                    IARG_UINT32, REG_Size (src_reg),
+                    IARG_UINT32, dst_reg, 
+                    IARG_UINT32, REG_Size (dst_reg),
+                    IARG_CONST_CONTEXT, 
+                    PASS_BASE_INDEX_TAINT,
+                    IARG_END);
+}
+
 static inline void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 dst_regsize = REG_Size(dstreg);
@@ -2858,6 +3390,20 @@ static void instrument_taint_clear_reg (INS ins, REG reg, int set_flags, int cle
 		   IARG_UINT32, REG_Size(reg),
 		   IARG_UINT32, set_flags,
 		   IARG_UINT32, clear_flags,
+		   IARG_END);
+}
+
+static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int fp_stack_change)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_clear_fpureg_offset),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, get_reg_off(reg), 
+		   IARG_UINT32, REG_Size(reg),
+		   IARG_UINT32, set_flags,
+		   IARG_UINT32, clear_flags,
+                   IARG_CONST_CONTEXT, 
+                   IARG_UINT32, fp_stack_change,
 		   IARG_END);
 }
 
@@ -3535,10 +4081,12 @@ void instrument_cmov(INS ins, uint32_t mask)
 			IARG_UINT32, REG_Size(reg),
 			IARG_EXECUTING,
 			IARG_END);
+#ifdef TRACK_READONLY_REGION
         //here I still merge taints of index/base registers in
         //But the assumption here is these two merges only take effect on memory access to read-only regions. For access to non readonly regions, base and index register are untainted during forward slicing as we'll verify them
         if (REG_valid(base_reg)) instrument_taint_add_reg2reg (ins, reg, base_reg, -1, -1);
         if (REG_valid(index_reg)) instrument_taint_add_reg2reg (ins, reg, index_reg, -1, -1);
+#endif
     } else if(ismemwrite) {
 	assert (0);//shouldn't happen for cmov
     } else {
@@ -4430,29 +4978,85 @@ void instrument_bit_scan (INS ins)
     }
 }
 
-/* For right now, verify when we load into FPU, we do not handle FPU ops */
-/* Can change to track and slice FPU ops when needed */
 void instrument_fpu_load (INS ins) 
 {
     assert (INS_OperandCount(ins) >= 2);
+    REG dst_reg = INS_OperandReg (ins, 0);
     if (INS_OperandIsMemory(ins, 1)) {	
-	char* str = get_copy_of_disasm (ins);
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
-	SETUP_BASE_INDEX (base_reg, index_reg);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-		       AFUNPTR(fw_slice_mem2fpu),
-		       IARG_FAST_ANALYSIS_CALL,
-		       IARG_INST_PTR,
-		       IARG_PTR, str,
-		       IARG_MEMORYREAD_EA, 
-		       IARG_UINT32, INS_MemoryReadSize(ins),
-		       PASS_BASE_INDEX,
-		       IARG_END);
-	put_copy_of_disasm (str);
+        fw_slice_src_mem2fpureg (ins, base_reg, index_reg, FP_PUSH);
+        instrument_taint_mem2fpureg (ins, dst_reg, FP_PUSH, base_reg, index_reg);
     } else {
-	assert (INS_OperandIsReg(ins, 1));
+        REG src_reg = INS_OperandReg (ins, 1);
+        fw_slice_src_fpureg (ins, src_reg, FP_PUSH);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, FP_PUSH);
     }
+}
+
+void instrument_fpu_store (INS ins)
+{
+    assert (INS_OperandCount(ins) >= 2);
+    REG src_reg = INS_OperandReg (ins, 1);
+    int fp_stack_change = FP_NO_STACK_CHANGE;
+    if (INS_Opcode (ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode(ins) == XED_ICLASS_FISTTP)
+        fp_stack_change = FP_POP;
+    
+    if (INS_IsMemoryWrite(ins)) {	
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+        fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, fp_stack_change);
+        instrument_taint_fpureg2mem (ins, src_reg, fp_stack_change);
+    } else {
+        fw_slice_src_fpureg (ins, src_reg, fp_stack_change);
+        REG dst_reg = INS_OperandReg (ins, 0);
+        assert (REG_is_st (dst_reg)); //per the intel manual
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, fp_stack_change);
+    }
+    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode (ins) == XED_ICLASS_FISTTP) {
+        //pop the register and empty st(0)
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
+}
+
+void instrument_fpu_calc (INS ins, int fp_stack_change)
+{
+    if (INS_IsMemoryRead(ins)) {
+        REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+        REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+        REG dst_reg = INS_OperandReg (ins, 0);
+        fw_slice_src_fpuregmem (ins, dst_reg, REG_Size(dst_reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize (ins), base_reg, index_reg, fp_stack_change);
+        instrument_taint_mix_fpuregmem2fpureg (ins, dst_reg, dst_reg, base_reg, index_reg);
+    } else if (INS_OperandIsReg (ins, 1)) {
+        REG dst_reg = INS_OperandReg (ins, 0);
+        REG src_reg = INS_OperandReg (ins, 1);
+        fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, fp_stack_change);
+        instrument_taint_mix_fpureg2fpureg (ins, dst_reg, src_reg);
+    } else { 
+        assert (0);
+    }
+    if (fp_stack_change == FP_POP) { 
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
+}
+
+void instrument_fpu_exchange (INS ins)
+{
+    int op1reg = INS_OperandIsReg(ins, 0);
+    int op2reg = INS_OperandIsReg(ins, 1);
+    if (op1reg && op2reg) {
+        REG reg1 = INS_OperandReg(ins, 0);
+        REG reg2 = INS_OperandReg(ins, 1);
+	fw_slice_src_fpuregfpureg (ins, reg1, reg2, FP_NO_STACK_CHANGE);
+        INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_xchg_fpureg2fpureg),
+			IARG_FAST_ANALYSIS_CALL,
+                        IARG_UINT32, reg1, 
+                        IARG_UINT32, reg2, 
+			IARG_UINT32, REG_Size(reg1),
+                        IARG_CONST_CONTEXT,
+			IARG_END);
+    } else
+        assert (0);
 }
 
 void instrument_cwde (INS ins) 
@@ -5051,6 +5655,7 @@ void instruction_instrumentation(INS ins, void *v)
                 break;
             case XED_ICLASS_FLD:
             case XED_ICLASS_FILD:
+            case XED_ICLASS_FBLD:
 		instrument_fpu_load (ins);
 		slice_handled = 1;
 		break;
@@ -5061,40 +5666,68 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FFREE:
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_NO_STACK_CHANGE);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
+            case XED_ICLASS_FISTP:
+            case XED_ICLASS_FIST:
+            case XED_ICLASS_FBSTP:
+            case XED_ICLASS_FISTTP:
+                instrument_fpu_store (ins);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FMULP:
-            case XED_ICLASS_FMUL:
-            case XED_ICLASS_FADD:
             case XED_ICLASS_FADDP:
-            case XED_ICLASS_FSUB:
-            case XED_ICLASS_FISUB:
             case XED_ICLASS_FSUBP:
-            case XED_ICLASS_FSUBR:
-            case XED_ICLASS_FISUBR:
             case XED_ICLASS_FSUBRP:
-            case XED_ICLASS_FDIV:
-            case XED_ICLASS_FIDIV:
             case XED_ICLASS_FDIVP:
+            case XED_ICLASS_FDIVRP:
+                instrument_fpu_calc (ins, FP_POP);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FMUL:
+            case XED_ICLASS_FIMUL:
+            case XED_ICLASS_FADD:
+            case XED_ICLASS_FSUB:
+            case XED_ICLASS_FSUBR:
+            case XED_ICLASS_FISUB:
+            case XED_ICLASS_FISUBR:
+            case XED_ICLASS_FDIV:
+            case XED_ICLASS_FDIVR:
+            case XED_ICLASS_FIDIV:
+            case XED_ICLASS_FIDIVR:
+                instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FXCH:
+                instrument_fpu_exchange (ins);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FCOMI:
             case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
             case XED_ICLASS_FUCOMIP:
-            case XED_ICLASS_FXCH:
-            case XED_ICLASS_FNSTCW:
-            case XED_ICLASS_FLDCW:
-            case XED_ICLASS_FISTP:
-            case XED_ICLASS_FIST:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
 	    case XED_ICLASS_FRNDINT:
 	    case XED_ICLASS_FSQRT:
 	    case XED_ICLASS_FABS:
 	    case XED_ICLASS_FPATAN:
-	    case XED_ICLASS_FDIVR:
 	    case XED_ICLASS_FCHS:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
+                //slice_handled = 1;
+                break;
+            case XED_ICLASS_FLDCW:
+            case XED_ICLASS_FNSTCW:
+            case XED_ICLASS_FNSTSW:
+                //ignored
                 slice_handled = 1;
                 break;
    	    case XED_ICLASS_CWDE:
@@ -5713,10 +6346,16 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
     if (recheck_group) {
-	ptdata->recheck_handle = open_recheck_log (recheck_group, ptdata->record_pid);
+	ptdata->recheck_handle = open_recheck_log (threadid, recheck_group, ptdata->record_pid);
     } else {
 	ptdata->recheck_handle = NULL;
     }	
+    //ptdata->slice_buffer = new queue<string>();
+    if (fw_slice_print_header(recheck_group, ptdata) < 0) {
+        fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
+        return;
+    }
+    ptdata->expected_clock = 0;
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
@@ -5869,13 +6508,61 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 #endif
     }
     active_threads[ptdata->record_pid] = ptdata;
+    //slice ordering
+    if (*ppthread_log_clock != 0) {
+        char filename[512];
+        sprintf (filename, "%s/klog.id.%d", group_directory, ptdata->record_pid);
+        current_thread->klog = parseklog_open (filename);
+        assert (current_thread->klog != NULL);
+        sprintf (filename, "%s/ulog.id.%d", group_directory, ptdata->record_pid);
+        current_thread->ulog = parseulib_open (filename);
+        current_thread->expected_clock = *ppthread_log_clock;
+        if (*ppthread_log_clock <=2) { 
+            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+            //skip the first record
+            parseklog_get_next_psr (current_thread->klog);
+            //init clock values for the first thread
+            OUTPUT_SLICE (0, "pushfd");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            //OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x70000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p], 2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", &slice_clock->slice_clock, *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+            print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
+
+            //init mutex and condition var 
+            OUTPUT_SLICE (0, "call recheck_wait_clock_init");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE (0, "popfd");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+        } else {
+
+            //init for other threads
+            OUTPUT_SLICE (0, "pushfd"); 
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE (0, "call recheck_wait_clock_proc_init"); 
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE (0, "popfd");
+            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+
+            //wait for the clock until it should start
+            slice_wait_clock (current_thread->expected_clock - 1);
+        }
+    }
 }
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
+    //sync_slice_buffer (tdata); // we need to call this function if the thread ends earlier before the checkpoint clock?
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
+    if (tdata->klog) parseklog_close (tdata->klog);
+    if (tdata->ulog) parseulib_close (tdata->ulog);
+    if (tdata->slice_output_file) {
+        fclose (tdata->slice_output_file);
+        fprintf (stderr, "well the slice_output_file is not closed before the thread_fini? A thread finishes before the checkpoint clock?\n");
+        tdata->slice_output_file = NULL;
+    }
+    if (tdata->slice_buffer) delete tdata->slice_buffer;
     if (tdata->address_taint_set) delete tdata->address_taint_set;
     // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
@@ -5885,6 +6572,122 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->ctrl_flow_info.diverge_insts) delete tdata->ctrl_flow_info.diverge_insts;
     if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
     if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
+}
+
+void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
+{
+    DEBUG_INFO ("[DEBUG] before pthread_replay for %d, type %u, check %u\n", current_thread->record_pid, type, check);
+}
+
+void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
+{
+    //slice ordering
+    u_long recorded_clock = parseulib_get_next_clock (current_thread->ulog);
+    if (recorded_clock != 0) {
+        //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+        ++current_thread->expected_clock;
+        //OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [%p] [SLICE_INFO] slice ordering, expected %lu, actual %lu, recorded clock in ulog %lu\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, recorded_clock);
+        OUTPUT_SLICE (0, "pushfd");
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+        print_function_call_inst (current_thread, "recheck_add_clock_by_1", 0);
+        OUTPUT_SLICE (0, "popfd"); 
+        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+
+        if (current_thread->expected_clock < recorded_clock) { 
+            DEBUG_INFO ("[DEBUG] pthread_replay  clock %lu, next clock expects %lu\n", *ppthread_log_clock, current_thread->expected_clock);
+            slice_wait_clock (recorded_clock);
+            current_thread->expected_clock = recorded_clock;
+        } 
+    } else { 
+        fprintf (stderr, "well, clock in the user log does not exit??\n");
+    }
+}
+
+void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
+{
+    PTHREAD_DEBUG (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
+}
+
+//TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
+void routine (RTN rtn, VOID* v)
+{ 
+    const char *name;
+
+    name = RTN_Name(rtn).c_str();
+    if (!strcmp (name, "pthread_log_replay")) {
+        RTN_Open(rtn);
+
+        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
+                IARG_ADDRINT, RTN_Address(rtn), 
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                IARG_END);
+        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_pthread_replay,
+                IARG_ADDRINT, RTN_Address(rtn), 
+                IARG_FUNCRET_EXITPOINT_VALUE,  
+                IARG_END);
+
+        RTN_Close(rtn);
+    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
+        RTN_Open(rtn);
+        if (!strcmp (name, "pthread_mutex_init")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_init, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_lock_before,
+                    IARG_PTR, name,
+                IARG_ADDRINT, RTN_Address(rtn), 
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock_after, 
+                    IARG_PTR, name,
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_unlock, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_mutex_destroy")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_cond_timedwait")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_log_lll_wait_tid")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_lll_wait_tid_before,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
+                    IARG_ADDRINT, RTN_Address(rtn), 
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_create") || !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || !strcmp (name, "pthread_log_mutex_lock_rep") || !strcmp (name, "__pthread_mutex_unlock_rep") || !strcmp (name, "pthread_log_mutex_unlock_rep") || !strcmp (name, "__pthread_mutex_lock_rep")) {
+            printf ("ignored pthread operation %s\n", name);
+        } else {
+            RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
+                    IARG_PTR, name, 
+                    IARG_ADDRINT, RTN_Address(rtn),
+                    IARG_END);
+        }
+        RTN_Close(rtn);
+    }
 }
 
 #ifndef NO_FILE_OUTPUT
@@ -5982,9 +6785,7 @@ int main(int argc, char** argv)
     	snprintf(group_directory, 256, "/tmp/%d", PIN_GetPid());
 #ifndef NO_FILE_OUTPUT
     if (mkdir(group_directory, 0755)) {
-        if (errno == EEXIST) {
-            fprintf(stderr, "directory already exists, using it: %s\n", group_directory);
-        } else {
+        if (errno != EEXIST) {
             fprintf(stderr, "could not make directory %s\n", group_directory);
             exit(-1);
         }
@@ -6079,7 +6880,6 @@ int main(int argc, char** argv)
 #endif
 
     init_taint_structures(group_directory, check_filename);
-    if (fw_slice_print_header(recheck_group) < 0) return -1;
 
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(dev_fd);
@@ -6148,6 +6948,7 @@ int main(int argc, char** argv)
     init_mmap_region ();
 
     PIN_AddSyscallExitFunction(instrument_syscall_ret, 0);
+    RTN_AddInstrumentFunction (routine, 0);
     PIN_SetSyntaxIntel();
     PIN_StartProgram();
 
