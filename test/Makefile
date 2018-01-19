@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt sdaemon \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range bbcmp
+	recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -43,8 +43,6 @@ resume: resume.cpp libutil.a
 	c++ -std=c++0x resume.cpp libutil.a -o resume -pthread --static -ldl
 
 canonicalize: CPPFLAGS += -std=c++0x
-
-bbcmp: CPPFLAGS += -std=c++0x
 
 getstats: libutil.a
 

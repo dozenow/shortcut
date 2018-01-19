@@ -17,12 +17,15 @@
 
 #include <iostream>
 #include <map>
+#include <unordered_set>
 using namespace std;
 
 #define DPRINT(...)
-//#define DPRINT printf
 #define MYASSERT(c)
 #define OP_CHECK(val) get_value()
+//#define DPRINT printf
+//#define MYASSERT assert
+//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("Expected %lx got %d syscall %ld bb_cnt %ld\n", lval, val, *ppthread_log_clock, bb_cnt); assert (0); } }
 
 #define OP_CALL             0
 #define OP_RETURN           1
@@ -93,7 +96,7 @@ static inline u_long skip_to_end ()
     int skip_ndx = ndx;
     u_long val;
 
-    printf ("skip to end from ndx %d prev bb is %lu\n", ndx, prev_bb);
+    DPRINT ("skip to end from ndx %d prev bb is %lu\n", ndx, prev_bb);
     do {
 	if (skip_ndx >= bufsize-1) {
 	    // Overflow
@@ -192,8 +195,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 }
 
 // called before every application system call
-void set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
-		     ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
+					    ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     if (tdata) {
@@ -227,18 +230,13 @@ void set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallar
 void syscall_after (ADDRINT ip)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
-    if (tdata != current_thread) printf ("sa: tdata %p current_thread %p\n", tdata, current_thread);
-    if (current_thread) {
-	if (current_thread->app_syscall == 999) {
-	    if (check_clock_after_syscall (fd) == 0) {
-	    } else {
-		fprintf (stderr, "Check clock failed\n");
-	    }
-	    current_thread->app_syscall = 0;  
+    if (current_thread->app_syscall == 999) {
+	if (check_clock_after_syscall (fd)) {
+	    fprintf (stderr, "Check clock failed\n");
 	}
-    } else {
-	fprintf (stderr, "syscall_after: NULL current_thread\n");
+	current_thread->app_syscall = 0;  
     }
+
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= print_stop) { 
         fprintf (stderr, "exit.\n");
@@ -253,9 +251,7 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     int record_pid;
     if (tdata != current_thread) printf ("afic: tdata %p current_thread %p\n", tdata, current_thread);
-    printf ("AfterForkInChild\n");
     record_pid = get_record_pid();
-    printf ("get record id %d\n", record_pid);
     current_thread->record_pid = record_pid;
 
     // reset syscall index for thread
@@ -272,38 +268,159 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
+static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf, 
+				  map<u_long,u_long>& bb, unordered_set<u_long>& splits)
+
+{
+    u_long start_bb;
+
+    for (int i = 0; i < end; i++) {
+	u_long val = buf[i];
+	DPRINT ("%d: %lx\n", i, val);
+	if (val >= OP_RELREAD && val <= OP_RELREAD2) {
+	    DPRINT ("%d: %lx\n", i+1, buf[i+1]);
+	    i++;
+	    if (is_devbuf) {
+		DPRINT ("%d: %lx\n", i+1, buf[i+1]);
+		i++;
+	    }
+	} else if (val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	    u_long end_bb = buf[i+1];
+	    DPRINT ("%d: %lx\n", i+1, end_bb);
+	    DPRINT ("BB %lx-%lx\n", start_bb, end_bb);
+	    auto iter = bb.find(end_bb);
+	    if (iter == bb.end()) {
+		bb[end_bb] = start_bb;
+	    } else {
+		DPRINT ("conflict\n");
+		if (start_bb == bb[end_bb]) {
+		    DPRINT ("agree\n");
+		} else if (start_bb < bb[end_bb]) {
+		    bb[bb[end_bb]] = start_bb; /* Split this bb */
+		    splits.insert(bb[end_bb]);
+		} else {
+		    bb[start_bb] = bb[end_bb]; /* Split existing block */
+		    bb[end_bb] = start_bb;
+		    splits.insert(start_bb);
+		}
+	    }
+	    i++;
+	} else if (val > OP_BRANCH_NOT_TAKEN) {
+	    start_bb = val;
+	}
+    }
+}
+
+static void print_bb (u_long start_bb, u_long end_bb, u_long* new_buf, int& new_ndx,
+		      map<u_long,u_long>& bb) 
+{
+    if (start_bb == bb[end_bb]) {
+	new_buf[new_ndx++] = start_bb;
+    } else {
+	print_bb (start_bb, bb[end_bb], new_buf, new_ndx, bb);
+	new_buf[new_ndx++] = bb[end_bb];
+    }
+}
+
+static void build_new_bb_list (u_long* old_buf, int end, u_long* new_buf, int& new_ndx, bool is_devbuf, map<u_long,u_long>& bb)
+{
+    u_long start_bb = 0;
+
+    for (int i = 0; i < end; i++) {
+	u_long val = old_buf[i];
+	if (val >= OP_RELREAD && val <= OP_RELREAD2) {
+	    i++; 
+	    if (is_devbuf) i++;
+	} else if (val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	    u_long end_bb = old_buf[i+1];
+	    print_bb (start_bb, end_bb, new_buf, new_ndx, bb);
+	    new_buf[new_ndx++] = val;
+	    new_buf[new_ndx++] = end_bb;
+	    start_bb = 0;
+	    i++;
+	} else if (val < OP_RELREAD) {
+	    if (start_bb) {
+		new_buf[new_ndx++] = start_bb;
+		start_bb = 0;
+	    }
+	    new_buf[new_ndx++] = val;
+	} else {
+	    if (start_bb) {
+		// This happens sometimes when BB ends in a call - yuk - Pin!
+		new_buf[new_ndx++] = start_bb;
+	    }
+	    start_bb = val;
+	}
+    }
+    if (start_bb) {
+	new_buf[new_ndx++] = start_bb;
+    }
+
+    for (int i = 0; i < new_ndx; i++) {
+	DPRINT ("New list %d: %lx\n", i, new_buf[i]);
+    }
+}
+
+static inline void handle_index_diverge (ADDRINT ip, uint32_t memloc, u_long logaddr, bool is_write)
+{
+    printf ("Memory access type write at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
+    u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
+    auto iter = indexes.find(ip);
+    if (iter == indexes.end()) {
+	index_div rw;
+	rw.addr = ip;
+	rw.is_write = is_write;
+	rw.value = diff;
+	indexes[ip] = rw;
+    } else {
+	if (diff > iter->second.value) {
+	    iter->second.value = diff;
+	}
+    }
+}
+
 void find_best_match ()
 {
+    map<u_long,u_long> bb; /* End -> Start */
+    unordered_set<u_long> splits;
+
+    // Read in sufficient records from file to do comparison
     int end_ndx = skip_to_end ();
+
+    // Split basic blocks to get correct values, and construct traces for comparison
     DPRINT ("prev ndx is %d, end ndx is %d\n", prev_ndx, end_ndx);
-    for (int i = prev_ndx; i < end_ndx; i++) DPRINT ("%d: %lx\n", i, buffer[i]);
-
+    extract_basic_blocks (buffer+prev_ndx, end_ndx-prev_ndx, false, bb, splits);
     DPRINT ("dev ndx is %d\n", devndx);
-    for (int i = 0; i < devndx; i++) DPRINT ("%d: %lx\n", i, dev_buffer[i]);
+    extract_basic_blocks (dev_buffer, devndx, true, bb, splits);
 
+    u_long buffer1[1024], buffer2[1024];
+    int bufend1 = 0, bufend2 = 0;
+    build_new_bb_list (buffer+prev_ndx, end_ndx-prev_ndx, buffer1, bufend1, false, bb);
+    build_new_bb_list (dev_buffer, devndx, buffer2, bufend2, true, bb);
 
+    // Now find the best match (lowest total # of basic blocks 
     int best_i = -1, best_j = -1, best_val = INT_MAX;
     int skip_i = 0;
-    for (int i = prev_ndx; i < end_ndx; i++) {
+    for (int i = 0; i < bufend1; i++) {
 	int start_j;
-	if (i == prev_ndx) {
+	if (i == 0) {
 	    start_j = 1;
 	} else {
 	    start_j = 0;
 	}
-	while (buffer[i] >= OP_RELREAD && buffer[i] <= OP_BRANCH_NOT_TAKEN) {
+	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_BRANCH_NOT_TAKEN) {
 	    i += 2;
 	    skip_i += 2;
 	}
 	int skip_j = 0;
-	for (int j = start_j; j < devndx; j++) {
-	    while (dev_buffer[j] >= OP_RELREAD && dev_buffer[j] <= OP_BRANCH_NOT_TAKEN) {
+	for (int j = start_j; j < bufend2; j++) {
+	    while (buffer2[j] >= OP_BRANCH_TAKEN && buffer2[j] <= OP_BRANCH_NOT_TAKEN) {
 		j += 2;
 		skip_j += 2;
 	    }
 	    if (i-skip_i + j-skip_j >= best_val) break;
-	    if (buffer[i] == dev_buffer[j]) {
-		DPRINT ("Match at index %d/%d: %lx\n", i-prev_ndx-skip_i, j-skip_j, buffer[i]);
+	    if (buffer1[i] == buffer2[j]) {
+	      DPRINT ("Match at index %d/%d (%d/%d): %lx\n", i-skip_i, j-skip_j, i, j, buffer1[i]);
 		best_i = i; 
 		best_j = j; 
 		best_val = i-skip_i+j-skip_j;
@@ -312,70 +429,158 @@ void find_best_match ()
 	}
     }
 
-    int iter = (buffer[prev_ndx] == buffer[best_i] || dev_buffer[0] == dev_buffer[best_j]);
+    if (best_val == INT_MAX) {
+	fprintf (stderr, "deviation at %x bb %lx syscall %ld is too large to handle\n", deviation_ip, bb_cnt, *ppthread_log_clock);
+	exit (1);
+    }
+
+    // Spit out the deviation for the checks file
+    int iter = (buffer1[0] == buffer1[best_i] || buffer2[0] == buffer2[best_j]);
     printf ("0x%x ctrl_diverge -1,%ld,%ld orig_branch %c iter %d\n", 
 	    deviation_ip, *ppthread_log_clock, bb_cnt, deviation_taken ? 't' : 'n', iter);
 
     int skip1 = 0;
     bool first = true;
-    for (int i = prev_ndx+1; i < best_i; i++) {
-	while (buffer[i] >= OP_RELREAD && buffer[i] <= OP_BRANCH_NOT_TAKEN) {
+    for (int i = 1; i < best_i; i++) {
+	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_BRANCH_NOT_TAKEN) {
 	    if (!first) {
-		if (buffer[i] == OP_BRANCH_TAKEN) {
-		    printf ("0x%lx ctrl_block_instrument_orig branch t\n", buffer[i+1]);
-		} else if (buffer[i] == OP_BRANCH_NOT_TAKEN) {
-		    printf ("0x%lx ctrl_block_instrument_orig branch n\n", buffer[i+1]);
+		if (buffer1[i] == OP_BRANCH_TAKEN) {
+		    printf ("0x%lx ctrl_block_instrument_orig branch t\n", buffer1[i+1]);
+		} else if (buffer1[i] == OP_BRANCH_NOT_TAKEN) {
+		    printf ("0x%lx ctrl_block_instrument_orig branch n\n", buffer1[i+1]);
 		}
 	    } 
 	    i += 2;
 	    skip1 += 2;
 	}
 	first = false;
-	if (i < best_i) printf ("0x%lx ctrl_block_instrument_orig branch -\n", buffer[i]);
+	if (i < best_i) printf ("0x%lx ctrl_block_instrument_orig branch -\n", buffer1[i]);
     }
 
     first = true;
     int skip2 = 0;
     for (int i = 1; i < best_j; i++) {
-	while(dev_buffer[i] >= OP_RELREAD && dev_buffer[i] <= OP_BRANCH_NOT_TAKEN) {
+	while (buffer2[i] >= OP_BRANCH_TAKEN && buffer2[i] <= OP_BRANCH_NOT_TAKEN) {
 	    if (!first) {
-		if (dev_buffer[i] == OP_BRANCH_TAKEN) {
-		    printf ("0x%lx ctrl_block_instrument_alt branch t\n", dev_buffer[i+1]);
-		} else if (dev_buffer[i] == OP_BRANCH_NOT_TAKEN) {
-		    printf ("0x%lx ctrl_block_instrument_alt branch t\n", dev_buffer[i+1]);
+		if (buffer2[i] == OP_BRANCH_TAKEN) {
+		    printf ("0x%lx ctrl_block_instrument_alt branch t\n", buffer2[i+1]);
+		} else if (buffer2[i] == OP_BRANCH_NOT_TAKEN) {
+		    printf ("0x%lx ctrl_block_instrument_alt branch n\n", buffer2[i+1]);
 		}
 	    }
 	    i += 2;
 	    skip2 += 2;
 	}
 	first = false;
-	if (i < best_j) printf ("0x%lx ctrl_block_instrument_alt branch -\n", dev_buffer[i]);
+	if (i < best_j) printf ("0x%lx ctrl_block_instrument_alt branch -\n", buffer2[i]);
     }
 
-    u_long new_bb_cnt = bb_cnt + best_i - prev_ndx - skip1;
-    if (buffer[prev_ndx] == buffer[best_i] && prev_ndx != best_i) {
+    u_long new_bb_cnt = bb_cnt + best_i - skip1;
+    bool loop1 = false, loop2 = false;
+    u_long target_val = buffer1[best_i];
+    if (buffer1[0] == buffer1[best_i] && best_i) {
 	// Loop
-	printf ("0x%lx ctrl_block_instrument_orig branch -\n", buffer[best_i]);	
+	printf ("0x%lx ctrl_block_instrument_orig branch -\n", buffer1[best_i]);	
 	printf ("0x%x ctrl_merge -1,%ld,%ld\n", deviation_ip, *ppthread_log_clock, new_bb_cnt);
-    } else if (dev_buffer[0] == dev_buffer[best_j]) {
+	loop1 = true;
+    } else if (buffer2[0] == buffer2[best_j]) {
 	// Loop
-	printf ("0x%lx ctrl_block_instrument_alt branch -\n", dev_buffer[best_j]);	
+	printf ("0x%lx ctrl_block_instrument_alt branch -\n", buffer2[best_j]);	
 	printf ("0x%x ctrl_merge -1,%ld,%ld\n", deviation_ip, *ppthread_log_clock, new_bb_cnt);
+	loop2 = true;
     } else {
-	printf ("0x%lx ctrl_merge -1,%ld,%ld\n", buffer[best_i], *ppthread_log_clock, new_bb_cnt);
+	printf ("0x%lx ctrl_merge -1,%ld,%ld\n", buffer1[best_i], *ppthread_log_clock, new_bb_cnt);
     }
 
+    // Find the correct index to restart comparison
     DPRINT ("Extra log records: %d\n", end_ndx - best_i);
     DPRINT ("Extra deviation log records: %d\n", devndx - best_j);
-    ndx = best_i+1;
-    bb_cnt = new_bb_cnt-1;
-    for (int i = best_j+1; i < devndx; i++) {
-	DPRINT ("Records: %lx vs. %lx\n", buffer[ndx], dev_buffer[i]);
-	ndx++;
+    if (best_i && splits.count(target_val)) {
+	DPRINT ("target was split\n");
+	// Because of split bbs, target may not be in list - make it end of bb, call, or return
+	for (int i = best_i+1; i < bufend1; i++) {
+	    if (buffer1[i] == OP_BRANCH_TAKEN || buffer1[i] == OP_BRANCH_NOT_TAKEN) {
+		target_val = buffer1[i+1];
+		break;
+	    } else if (buffer1[i] <= OP_RETURN) {
+		target_val = buffer1[i+1];
+		break;
+	    }
+	}
+    }
+    DPRINT ("Search for value %lx in deviation buffer\n", target_val);
+
+    int i, j;
+    for (i = 0; i < devndx; i++) {
+	if (dev_buffer[i] == target_val) {
+	    if (loop2) {
+		loop2 = false;
+	    } else {
+		DPRINT ("Occurs at index %d\n", i);
+		break;
+	    }
+	}
+    }
+    assert (i != devndx);
+
+    DPRINT ("Search for value %lx in original original buffer\n", target_val);
+    bool loop1_check = loop1;
+    for (j = prev_ndx; j < end_ndx; j++) {
+	if (buffer[j] > OP_BRANCH_NOT_TAKEN) {
+	    // Update this because we might have another deviation
+	    prev_ndx = j;
+	    prev_bb = buffer[j];
+	}
+	if (buffer[j] == target_val) {
+	    if (loop1) {
+		loop1 = false;
+	    } else {
+		if (loop1_check) {
+		    // May need to load into buffer
+		    DPRINT ("Checking deviation: %d %lx\n", j+1, buffer[j+1]);
+		    while (buffer[j+1] >= OP_RELREAD && buffer[j+1] <= OP_RELREAD2) {
+			j += 2;  // These won't be in deviation buffer so skip
+		    }
+		}
+		DPRINT ("Occurs at index %d/%d\n", j, j-prev_ndx);
+		break;
+	    }
+	}
+    }
+    assert (j != end_ndx);
+
+    ndx = j+1;
+    bb_cnt = new_bb_cnt;
+    for (i = i+1; i < devndx; i++, ndx++) {
+	DPRINT ("Records: %d:%lx vs. %d:%lx\n", ndx, buffer[ndx], i, dev_buffer[i]);
+	if ((buffer[ndx] == OP_BRANCH_TAKEN && dev_buffer[i] == OP_BRANCH_NOT_TAKEN) ||
+	    (buffer[ndx] == OP_BRANCH_NOT_TAKEN && dev_buffer[i] == OP_BRANCH_TAKEN)) {
+	    DPRINT ("Another deviation at indexes %d %d\n", ndx, i);
+	    deviation_ip = dev_buffer[i+1];
+	    deviation_taken = (buffer[ndx] == OP_BRANCH_TAKEN);
+	    if (i != 1) {
+		/* Compact the deviation buffer */
+		dev_buffer[0] = prev_bb;
+		for (j = i; j < devndx; j++) {
+		    dev_buffer[j-i+1] = dev_buffer[j];
+		}
+		devndx = devndx-i+1;
+	    }
+	    return find_best_match();
+	}
+	assert (buffer[ndx] == dev_buffer[i]);
 	if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_BRANCH_NOT_TAKEN) {
+	    if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_RELREAD2) {
+		if (buffer[ndx+1] != dev_buffer[i+2]) {
+		    handle_index_diverge (dev_buffer[i+1], dev_buffer[i+2], buffer[ndx+1], (buffer[ndx] == OP_RELWRITE));
+		}
+		i++;
+	    }
 	    ndx++;
 	    i++;
 	} else if (buffer[ndx] > OP_BRANCH_NOT_TAKEN) {
+	    prev_ndx = ndx;
+	    prev_bb = buffer[ndx];
 	    bb_cnt++;
 	}
     }
@@ -384,7 +589,7 @@ void find_best_match ()
     DPRINT ("BB cnt is now %lu\n", bb_cnt);
 }
 
-void trace_bbl (ADDRINT ip)
+static void PIN_FAST_ANALYSIS_CALL trace_bbl (ADDRINT ip)
 {
     if (deviation) {
 	dev_buffer[devndx++] = ip;
@@ -399,10 +604,28 @@ void trace_bbl (ADDRINT ip)
     MYASSERT (prev_bb == ip);
 }
 
-void trace_relread (ADDRINT ip, uint32_t memloc)
+static void PIN_FAST_ANALYSIS_CALL trace_bbl_stutters (ADDRINT ip, uint32_t first_iter)
+{
+    if (first_iter) {
+	if (deviation) {
+	    dev_buffer[devndx++] = ip;
+	    assert (devndx < BUF_SIZE);
+	    if (ip == prev_bb) find_best_match ();
+	    return;
+	}
+
+	prev_ndx = ndx;
+	prev_bb = get_value();
+	MYASSERT (prev_bb == ip);
+    }
+    bb_cnt++;
+}
+
+static void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
 {
     if (deviation) {
 	dev_buffer[devndx++] = OP_RELREAD;
+	dev_buffer[devndx++] = ip;
 	dev_buffer[devndx++] = memloc;
 	assert (devndx < BUF_SIZE);
 	return;
@@ -412,27 +635,15 @@ void trace_relread (ADDRINT ip, uint32_t memloc)
 
     u_long logaddr = get_value();
     if (logaddr != memloc) {
-	printf ("Memory access type read at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
-	auto iter = indexes.find(ip);
-	u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
-	if (iter == indexes.end()) {
-	    index_div rw;
-	    rw.addr = ip;
-	    rw.is_write = false;
-	    rw.value = diff;
-	    indexes[ip] = rw;
-	} else {
-	    if (diff > iter->second.value) {
-		iter->second.value = diff;
-	    }
-	}
+	handle_index_diverge(ip, memloc, logaddr, false);
     }
 }
 
-void trace_relwrite (ADDRINT ip, uint32_t memloc)
+static void PIN_FAST_ANALYSIS_CALL trace_relwrite (ADDRINT ip, uint32_t memloc)
 {
     if (deviation) {
 	dev_buffer[devndx++] = OP_RELWRITE;
+	dev_buffer[devndx++] = ip;
 	dev_buffer[devndx++] = memloc;
 	assert (devndx < BUF_SIZE);
 	return;
@@ -442,27 +653,15 @@ void trace_relwrite (ADDRINT ip, uint32_t memloc)
 
     u_long logaddr = get_value();
     if (logaddr != memloc) {
-	printf ("Memory access type write at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
-	auto iter = indexes.find(ip);
-	u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
-	if (iter == indexes.end()) {
-	    index_div rw;
-	    rw.addr = ip;
-	    rw.is_write = true;
-	    rw.value = diff;
-	    indexes[ip] = rw;
-	} else {
-	    if (diff > iter->second.value) {
-		iter->second.value = diff;
-	    }
-	}
+	handle_index_diverge(ip, memloc, logaddr, true);
     }
 }
 
-void trace_relread2 (ADDRINT ip, uint32_t memloc)
+static void PIN_FAST_ANALYSIS_CALL trace_relread2 (ADDRINT ip, uint32_t memloc)
 {
     if (deviation) {
 	dev_buffer[devndx++] = OP_RELREAD2;
+	dev_buffer[devndx++] = ip;
 	dev_buffer[devndx++] = memloc;
 	assert (devndx < BUF_SIZE);
 	return;
@@ -472,24 +671,26 @@ void trace_relread2 (ADDRINT ip, uint32_t memloc)
 
     u_long logaddr = get_value();
     if (logaddr != memloc) {
-	printf ("Memory access type read2 at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
-	auto iter = indexes.find(ip);
-	u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
-	if (iter == indexes.end()) {
-	    index_div rw;
-	    rw.addr = ip;
-	    rw.is_write = false;
-	    rw.value = diff;
-	    indexes[ip] = rw;
-	} else {
-	    if (diff > iter->second.value) {
-		iter->second.value = diff;
-	    }
-	}
+	handle_index_diverge(ip, memloc, logaddr, false);
     }
 }
 
-void trace_branch (ADDRINT ip, uint32_t taken)
+static void PIN_FAST_ANALYSIS_CALL trace_relread_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) trace_relread (ip, memloc);
+}
+
+static void PIN_FAST_ANALYSIS_CALL trace_relwrite_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) trace_relwrite (ip, memloc);
+}
+
+static void PIN_FAST_ANALYSIS_CALL trace_relread2_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) trace_relread2 (ip, memloc);
+}
+
+static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 {
     if (deviation) {
 	dev_buffer[devndx++] = taken ? OP_BRANCH_TAKEN : OP_BRANCH_NOT_TAKEN;
@@ -506,7 +707,9 @@ void trace_branch (ADDRINT ip, uint32_t taken)
     u_long logtaken = (op == OP_BRANCH_TAKEN);
     if (taken != logtaken) {
 	dev_buffer[0] = prev_bb;
-	devndx = 1;
+	dev_buffer[1] = taken ? OP_BRANCH_TAKEN : OP_BRANCH_NOT_TAKEN;
+	dev_buffer[2] = ip;
+	devndx = 3;
 	deviation_ip = ip;
 	deviation_taken = logtaken;
 	deviation = true;
@@ -518,10 +721,23 @@ void track_trace(TRACE trace, void* data)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-	BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl), IARG_INST_PTR, IARG_END);
+	if (INS_Stutters(BBL_InsHead(bbl))) {
+	    BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl_stutters), 
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR, 
+			   IARG_FIRST_REP_ITERATION,
+			   IARG_END);
+
+	} else {
+	    BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl), 
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR, 
+			   IARG_END);
+	}
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 	    if(INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
+			       IARG_FAST_ANALYSIS_CALL,
 			       IARG_SYSCALL_NUMBER, 
 			       IARG_SYSARG_VALUE, 0, 
 			       IARG_SYSARG_VALUE, 1,
@@ -533,28 +749,59 @@ void track_trace(TRACE trace, void* data)
 	    }
 	    if (INS_IsBranch(ins)) {
 		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_branch), 
+				   IARG_FAST_ANALYSIS_CALL,
 				   IARG_INST_PTR,
 				   IARG_BRANCH_TAKEN,
 				   IARG_END);
 	    }
 	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
-		if (INS_IsMemoryRead(ins)) {
-		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread), 
-				   IARG_INST_PTR,
-				   IARG_MEMORYREAD_EA,
-				   IARG_END);
-		    if (INS_HasMemoryRead2(ins)) {
-			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread2), 
+		if (INS_Stutters(BBL_InsHead(bbl))) {
+		    if (INS_IsMemoryRead(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread_stutters), 
+				       IARG_FAST_ANALYSIS_CALL,
 				       IARG_INST_PTR,
-				       IARG_MEMORYREAD2_EA,
+				       IARG_MEMORYREAD_EA,
+				       IARG_FIRST_REP_ITERATION,
+				       IARG_END);
+			if (INS_HasMemoryRead2(ins)) {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread2_stutters), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_MEMORYREAD2_EA,
+					   IARG_FIRST_REP_ITERATION,
+					   IARG_END);
+			}
+		    }
+		    if (INS_IsMemoryWrite(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relwrite_stutters), 
+				       IARG_FAST_ANALYSIS_CALL,
+				       IARG_INST_PTR,
+				       IARG_MEMORYWRITE_EA,
+				       IARG_FIRST_REP_ITERATION,				       
 				       IARG_END);
 		    }
-		}
-		if (INS_IsMemoryWrite(ins)) {
-		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relwrite), 
-				   IARG_INST_PTR,
-				   IARG_MEMORYWRITE_EA,
-				   IARG_END);
+		} else {
+		    if (INS_IsMemoryRead(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread), 
+				       IARG_FAST_ANALYSIS_CALL,
+				       IARG_INST_PTR,
+				       IARG_MEMORYREAD_EA,
+				       IARG_END);
+			if (INS_HasMemoryRead2(ins)) {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread2), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_MEMORYREAD2_EA,
+					   IARG_END);
+			}
+		    }
+		    if (INS_IsMemoryWrite(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relwrite), 
+				       IARG_FAST_ANALYSIS_CALL,
+				       IARG_INST_PTR,
+				       IARG_MEMORYWRITE_EA,
+				       IARG_END);
+		    }
 		}
 	    }
 	}
@@ -566,8 +813,6 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     char** argv;
     char** prev_argv = (char**)data;
     int index = 0;
-
-    printf ("following child...\n");
 
     /* the format of pin command would be:
      * pin_binary -follow_execv -t pin_tool new_addr*/
@@ -583,20 +828,13 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
 
     CHILD_PROCESS_SetPinCommandLine(child, new_argc, argv);
 
-    printf("returning from follow child\n");
-    printf("pin my pid is %d\n", PIN_GetPid());
-    printf("%d is application thread\n", PIN_IsApplicationThread());
-
     return TRUE;
 }
 
-void before_function_call(ADDRINT rtn_addr)
+static void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT rtn_addr)
 {
     if (deviation) {
 	dev_buffer[devndx++] = 0;
-#ifdef LOG_DEBUG
-	dev_buffer[devndx++] = rtn_addr;
-#endif
 	assert (devndx < BUF_SIZE);
 	find_best_match ();
 	return;
@@ -607,22 +845,12 @@ void before_function_call(ADDRINT rtn_addr)
 	fprintf (stderr, "before_function_call: got op %lx\n", op);
 	exit (1);
     }
-#ifdef LOG_DEBUG
-    u_long logaddr = get_value();
-    if (logaddr != rtn_addr) {
-	fprintf (stderr, "before_function_call: got routine address %lx expected %x\n", logaddr, rtn_addr);
-	exit (1);
-    }
-#endif
 }
 
-void after_function_call(ADDRINT rtn_addr)
+static void PIN_FAST_ANALYSIS_CALL after_function_call(ADDRINT rtn_addr)
 {
     if (deviation) {
 	dev_buffer[devndx++] = 1;
-#ifdef LOG_DEBUG
-	dev_buffer[devndx++] = rtn_addr;
-#endif
 	assert (devndx < BUF_SIZE);
 	find_best_match ();
 	return;
@@ -633,13 +861,6 @@ void after_function_call(ADDRINT rtn_addr)
 	fprintf (stderr, "after_function_call: got op %lx\n", op);
 	exit (1);
     }
-#ifdef LOG_DEBUG
-    u_long logaddr = get_value();
-    if (logaddr != rtn_addr) {
-	fprintf (stderr, "after_function_call: got routine address %lx expected %x\n", logaddr, rtn_addr);
-	exit (1);
-    }
-#endif
 }
 
 void routine (RTN rtn, VOID *v)
@@ -647,9 +868,11 @@ void routine (RTN rtn, VOID *v)
     RTN_Open(rtn);
 
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_ADDRINT, RTN_Address(rtn), 
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
+		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_ADDRINT, RTN_Address(rtn), 
 		   IARG_END);
 
@@ -692,7 +915,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     if (thread_status < 2) {
 	current_thread = ptdata;
     }
-    //fprintf (stderr,"Thread %d gets rc %ld ndx %d from set_pin_addr\n", ptdata->record_pid, thread_status, thread_ndx);
 }
 
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
@@ -743,9 +965,9 @@ int main(int argc, char** argv)
     PIN_AddThreadFiniFunction(thread_fini, 0);
     PIN_AddFollowChildProcessFunction(follow_child, argv);
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
-    TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
     RTN_AddInstrumentFunction (routine, 0);
+    TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_StartProgram();
 
     return 0;
