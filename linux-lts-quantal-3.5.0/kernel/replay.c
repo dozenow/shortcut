@@ -5288,14 +5288,14 @@ replay_signal_delivery (int* signr, siginfo_t* info)
 	psignal = (struct repsignal *) argshead (prt->rp_record_thread);
 	argsconsume (prt->rp_record_thread, sizeof(struct repsignal));
 
-	printk ("Pid %d replaying signal delivery signo %d, clock %lu\n", current->pid, psignal->signr, *(prt->rp_preplay_clock));
+	MPRINT ("Pid %d replaying signal delivery signo %d, clock %lu\n", current->pid, psignal->signr, *(prt->rp_preplay_clock));
 	prt->rp_signals = psignal->next ? 1 : 0;
 
 	*signr = psignal->signr;
 	memcpy (info, &psignal->info, sizeof (siginfo_t));
 
 	if (!is_pin_attached()) {
-		printk ("Pid %d No Pin attached, so setting blocked signal mask to recorded mask, and copying k_sigaction\n", current->pid);
+		MPRINT ("Pid %d No Pin attached, so setting blocked signal mask to recorded mask, and copying k_sigaction\n", current->pid);
 		memcpy (&current->sighand->action[psignal->signr-1],
 			&psignal->ka, sizeof (struct k_sigaction));
 		current->blocked = psignal->blocked;
@@ -6398,7 +6398,7 @@ get_next_syscall_exit (struct replay_thread* prt, struct replay_group* prg, stru
 	}
 
 	if (unlikely((psr->flags & SR_HAS_SIGNAL) != 0)) {
-		printk ("Pid %d set deliver signal flag before clock %ld increment\n", current->pid, *(prt->rp_preplay_clock));
+		MPRINT ("Pid %d set deliver signal flag before clock %ld increment\n", current->pid, *(prt->rp_preplay_clock));
 		prt->rp_signals = 1;
 		signal_wake_up (current, 0);
 	}
@@ -13351,9 +13351,6 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 	struct replay_thread* prt = current->replay_thrd;
 	
 	if (is_pin_attached())	{
-		printk ("replay_rt_sigaction: PIN is attached\n");
-		printk ("app_syscall is %lx\n", prt->app_syscall_addr);
-		printk ("app_syscall value is %d\n", (*(int*)(prt->app_syscall_addr)));
 		rc = prt->rp_saved_rc;
 		retparams = prt->rp_saved_retparams;
 
@@ -13366,7 +13363,6 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 			syscall_mismatch();
 		}
 	} else if (is_preallocated ())	{
-		printk ("replay_rt_sigaction: preallocated\n");
 		rc = get_next_syscall (174, &retparams);
 
 		retval = sys_rt_sigaction (sig, act, oact, sigsetsize);
@@ -13375,7 +13371,6 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 			syscall_mismatch();
 		}
 	} else {
-		printk ("replay_rt_sigaction: normal case\n");
 		rc = get_next_syscall (174, &retparams);
 		if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 	}

@@ -3246,6 +3246,9 @@ TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_
         if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
 	if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
 
+	// Reformat Pin output to make gcc happy
+	if (!strncmp(ins_str, "fmulp ", 6)) ins_str[5] = '\0';
+
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s", 
 		dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, print_regval(tmpbuf, &dst_regvalue, dst_regsize), print_regval(tmpbuf2, &src_regvalue, src_regsize));
@@ -3312,8 +3315,9 @@ TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_s
 
         if (!still_tainted && (reg_tainted || mem_tainted)) {
             print_abs_address (ip, slice, mem_loc);
-        } else 
+        } else {
             OUTPUT_SLICE (ip, "%s", slice);
+	}
 	OUTPUT_SLICE_INFO ("#src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s", 
 		mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value32 (mem_loc, mem_size), print_regval(tmpbuf, &regvalue, reg_size));
     }

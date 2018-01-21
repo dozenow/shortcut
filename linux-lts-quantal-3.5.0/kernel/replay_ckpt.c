@@ -44,7 +44,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 #define SLICE_DEBUG(x,...)
 
 /* Prototypes not in header files */
@@ -1920,7 +1920,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			printk ("sys_execute_fw_slice: strncpy_from_user returns %ld\n", retval);
 			return -EINVAL;
 		}
-		DPRINT ("recheck_filename is %s address %p\n", pstask->recheck_filename, filename);
+		DPRINT ("recheck_filename is %s\n", pstask->recheck_filename);
 
 		pstask->slice_pid = current->pid;
 		mutex_lock(&slice_task_mutex);
@@ -2005,7 +2005,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			sys_kill (9, pstask->slice_pid); // Terminate the sleeping task
 			tsk = find_task_by_vpid(pstask->slice_pid);
 			if (!tsk) {
-				printk ("fw_slice_recover: cannot find target slice pid %d\n", pstask->slice_pid);
+				printk ("sys_execute_fw_slice: cannot find target slice pid %d\n", pstask->slice_pid);
 			}
 			wake_up_process (tsk);
 			KFREE (pstask);

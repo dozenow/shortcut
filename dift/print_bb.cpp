@@ -463,12 +463,13 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
 }
 
 #ifdef COMPACT
-void PIN_FAST_ANALYSIS_CALL before_function_call (ADDRINT rtn_addr)
+void PIN_FAST_ANALYSIS_CALL before_function_call (ADDRINT ip)
 {
     write_to_buffer (OP_CALL);
+    write_to_buffer (ip);
 }
 
-void PIN_FAST_ANALYSIS_CALL after_function_call (ADDRINT rtn_addr)
+void PIN_FAST_ANALYSIS_CALL after_function_call ()
 {
     write_to_buffer (OP_RETURN);
 }
@@ -493,17 +494,19 @@ void routine (RTN rtn, VOID *v)
 
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
 		   IARG_FAST_ANALYSIS_CALL,
-#ifndef COMPACT
+#ifdef COMPACT
+		   IARG_INST_PTR,
+#else
 		   IARG_PTR, name, 
-#endif
 		   IARG_ADDRINT, RTN_Address(rtn), 
+#endif
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
 		   IARG_FAST_ANALYSIS_CALL,
 #ifndef COMPACT
 		   IARG_PTR, name, 
-#endif
 		   IARG_ADDRINT, RTN_Address(rtn), 
+#endif
 		   IARG_END);
 
     RTN_Close(rtn);
@@ -589,6 +592,7 @@ int main(int argc, char** argv)
     
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(fd);
+    if (ppthread_log_clock == NULL) return -1;
 
     PIN_AddThreadStartFunction(thread_start, 0);
     PIN_AddThreadFiniFunction(thread_fini, 0);

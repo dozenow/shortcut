@@ -114,8 +114,8 @@ static inline u_long skip_to_end ()
 	}
 	assert (skip_ndx < bufsize); // Eventually, will need to handle overflow
 	val = buffer[skip_ndx];
-	if (val >= OP_RELREAD && val <= OP_BRANCH_NOT_TAKEN) {
-	    skip_ndx++; // Skip over memory logging
+	if (val == OP_CALL || (val >= OP_RELREAD && val <= OP_BRANCH_NOT_TAKEN)) {
+	    skip_ndx++; // Skip over extra info
 	}
 	skip_ndx++;
     } while (val > 2 && val != prev_bb);
@@ -271,7 +271,7 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 				  map<u_long,u_long>& bb, unordered_set<u_long>& splits)
 
 {
-    u_long start_bb;
+    u_long start_bb = 0;
 
     for (int i = 0; i < end; i++) {
 	u_long val = buf[i];
@@ -283,28 +283,52 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 		DPRINT ("%d: %lx\n", i+1, buf[i+1]);
 		i++;
 	    }
-	} else if (val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
-	    u_long end_bb = buf[i+1];
-	    DPRINT ("%d: %lx\n", i+1, end_bb);
-	    DPRINT ("BB %lx-%lx\n", start_bb, end_bb);
-	    auto iter = bb.find(end_bb);
-	    if (iter == bb.end()) {
-		bb[end_bb] = start_bb;
-	    } else {
-		DPRINT ("conflict\n");
-		if (start_bb == bb[end_bb]) {
-		    DPRINT ("agree\n");
-		} else if (start_bb < bb[end_bb]) {
-		    bb[bb[end_bb]] = start_bb; /* Split this bb */
-		    splits.insert(bb[end_bb]);
-		} else {
-		    bb[start_bb] = bb[end_bb]; /* Split existing block */
+	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	    if (start_bb) {
+		u_long end_bb = buf[i+1];
+		DPRINT ("%d: %lx\n", i+1, end_bb);
+		DPRINT ("BB %lx-%lx\n", start_bb, end_bb);
+		auto iter = bb.find(end_bb);
+		if (iter == bb.end()) {
 		    bb[end_bb] = start_bb;
-		    splits.insert(start_bb);
+		} else {
+		    DPRINT ("conflict\n");
+		    if (start_bb == bb[end_bb]) {
+			DPRINT ("agree\n");
+		    } else if (start_bb < bb[end_bb]) {
+			bb[bb[end_bb]] = start_bb; /* Split this bb */
+			splits.insert(bb[end_bb]);
+		    } else {
+			bb[start_bb] = bb[end_bb]; /* Split existing block */
+			bb[end_bb] = start_bb;
+			splits.insert(start_bb);
+		    }
 		}
+		start_bb = 0;
 	    }
 	    i++;
 	} else if (val > OP_BRANCH_NOT_TAKEN) {
+	    if (start_bb) {
+		u_long end_bb = buf[i+1];
+		DPRINT ("%d: %lx\n", i+1, end_bb);
+		DPRINT ("BB %lx-%lx\n", start_bb, end_bb);
+		auto iter = bb.find(end_bb);
+		if (iter == bb.end()) {
+		    bb[end_bb] = start_bb;
+		} else {
+		    DPRINT ("conflict\n");
+		    if (start_bb == bb[end_bb]) {
+			DPRINT ("agree\n");
+		    } else if (start_bb < bb[end_bb]) {
+			bb[bb[end_bb]] = start_bb; /* Split this bb */
+			splits.insert(bb[end_bb]);
+		    } else {
+			bb[start_bb] = bb[end_bb]; /* Split existing block */
+			bb[end_bb] = start_bb;
+			splits.insert(start_bb);
+		    }
+		}
+	    }
 	    start_bb = val;
 	}
     }
@@ -330,14 +354,16 @@ static void build_new_bb_list (u_long* old_buf, int end, u_long* new_buf, int& n
 	if (val >= OP_RELREAD && val <= OP_RELREAD2) {
 	    i++; 
 	    if (is_devbuf) i++;
-	} else if (val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
-	    u_long end_bb = old_buf[i+1];
-	    print_bb (start_bb, end_bb, new_buf, new_ndx, bb);
-	    new_buf[new_ndx++] = val;
-	    new_buf[new_ndx++] = end_bb;
-	    start_bb = 0;
+	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	    if (start_bb) {
+		u_long end_bb = old_buf[i+1];
+		print_bb (start_bb, end_bb, new_buf, new_ndx, bb);
+		new_buf[new_ndx++] = val;
+		new_buf[new_ndx++] = end_bb;
+		start_bb = 0;
+	    }
 	    i++;
-	} else if (val < OP_RELREAD) {
+	} else if (val == OP_RETURN) {
 	    if (start_bb) {
 		new_buf[new_ndx++] = start_bb;
 		start_bb = 0;
@@ -419,7 +445,7 @@ void find_best_match ()
 	    }
 	    if (i-skip_i + j-skip_j >= best_val) break;
 	    if (buffer1[i] == buffer2[j]) {
-	      DPRINT ("Match at index %d/%d (%d/%d): %lx\n", i-skip_i, j-skip_j, i, j, buffer1[i]);
+		DPRINT ("Match at index %d/%d (%d/%d): %lx\n", i-skip_i, j-skip_j, i, j, buffer1[i]);
 		best_i = i; 
 		best_j = j; 
 		best_val = i-skip_i+j-skip_j;
@@ -830,36 +856,30 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     return TRUE;
 }
 
-static void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT rtn_addr)
+static void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT ip)
 {
     if (deviation) {
-	dev_buffer[devndx++] = 0;
+	dev_buffer[devndx++] = OP_CALL;
+	dev_buffer[devndx++] = ip;
 	assert (devndx < BUF_SIZE);
 	find_best_match ();
 	return;
     }
 
-    u_long op = get_value();
-    if (op != 0) {
-	fprintf (stderr, "before_function_call: got op %lx\n", op);
-	exit (1);
-    }
+    OP_CHECK(OP_CALL);
+    OP_CHECK(ip);
 }
 
-static void PIN_FAST_ANALYSIS_CALL after_function_call(ADDRINT rtn_addr)
+static void PIN_FAST_ANALYSIS_CALL after_function_call()
 {
     if (deviation) {
-	dev_buffer[devndx++] = 1;
+	dev_buffer[devndx++] = OP_RETURN;
 	assert (devndx < BUF_SIZE);
 	find_best_match ();
 	return;
     }
 
-    u_long op = get_value();
-    if (op != 1) {
-	fprintf (stderr, "after_function_call: got op %lx\n", op);
-	exit (1);
-    }
+    OP_CHECK(OP_RETURN);
 }
 
 void routine (RTN rtn, VOID *v)
@@ -868,11 +888,10 @@ void routine (RTN rtn, VOID *v)
 
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
 		   IARG_FAST_ANALYSIS_CALL,
-		   IARG_ADDRINT, RTN_Address(rtn), 
+		   IARG_INST_PTR, 
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
 		   IARG_FAST_ANALYSIS_CALL,
-		   IARG_ADDRINT, RTN_Address(rtn), 
 		   IARG_END);
 
     RTN_Close(rtn);
