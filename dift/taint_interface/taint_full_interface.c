@@ -1824,6 +1824,20 @@ TAINTSIGN taint_regreg2flag_offset (uint32_t dst_reg_off, uint32_t dst_reg_size,
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
+TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change, uint32_t set_flags, uint32_t clear_flags) 
+{
+    int sp = get_fp_stack_top (ctx);
+    reg1 = update_fp_stack_reg (reg1, sp);
+    reg2 = update_fp_stack_reg (reg2, sp);
+
+    if (fp_stack_change == FP_POP) {
+        //FCOMIP/FUCOMIP
+    } else if (fp_stack_change == FP_NO_STACK_CHANGE) { 
+    } else 
+        assert (0);
+    taint_regreg2flag_offset (reg1*REG_SIZE, size, reg2*REG_SIZE, size, set_flags, clear_flags);
+}
+
 TAINTSIGN taint_jump (ADDRINT eflag, uint32_t flags, ADDRINT ip) {
 	struct taint_creation_info tci;
         taint_t t = merge_flag_taints (flags);

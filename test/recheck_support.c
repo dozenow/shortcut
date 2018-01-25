@@ -261,7 +261,6 @@ void handle_mismatch()
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
-    fflush (stderr);
 #endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
@@ -1048,11 +1047,59 @@ long ugetrlimit_recheck ()
     end_timing (SYS_ugetrlimit, rc);
     check_retval ("ugetrlimit", pentry->clock, pentry->retval, rc);
     if (memcmp(&rlim, &pugetrlimit->rlim, sizeof(rlim))) {
-	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld, while in recheck log %ld %ld\n", rlim.rlim_cur, rlim.rlim_max, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max);
+	printf ("[MISMATCH] ugetrlimit does not match: returns %ld %ld, while in recheck log %ld %ld, on resource %d\n", rlim.rlim_cur, rlim.rlim_max, pugetrlimit->rlim.rlim_cur, pugetrlimit->rlim.rlim_max, pugetrlimit->resource);
 	handle_mismatch();
     }
     end_timing_func (SYS_ugetrlimit);
     return rc;
+}
+
+void setrlimit_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct setrlimit_recheck* psetrlimit;
+    int rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    psetrlimit = (struct setrlimit_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "setrlimit: resource %d rlimit %ld %ld rc %ld clock %lu\n", psetrlimit->resource, psetrlimit->rlim.rlim_cur, psetrlimit->rlim.rlim_max, pentry->retval, pentry->clock);
+#endif
+
+    start_timing();
+    rc = syscall(SYS_setrlimit, psetrlimit->resource, &psetrlimit->rlim);
+    end_timing (SYS_setrlimit, rc);
+    check_retval ("setrlimit", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_setrlimit);
+}
+
+void ftruncate_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct ftruncate_recheck* pftruncate;
+    int rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pftruncate = (struct ftruncate_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ("ftruncate: fd %d length %lu clock %lu\n", pftruncate->fd, pftruncate->length, pentry->clock);
+#endif
+
+    start_timing();
+    rc = syscall(SYS_ftruncate, pftruncate->fd, pftruncate->length);
+    end_timing (SYS_ftruncate, rc);
+    check_retval ("ftruncate", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_ftruncate);
 }
 
 long uname_recheck ()

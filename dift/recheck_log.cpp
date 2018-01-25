@@ -464,6 +464,36 @@ int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlim
     return 0;
 }
 
+int recheck_setrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock)
+{
+    struct setrlimit_recheck ugchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_setrlimit);
+
+    check_reg_arguments ("setrlimit", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_setrlimit, res->retval, sizeof (struct setrlimit_recheck), clock);
+    ugchk.resource = resource;
+    memcpy (&ugchk.rlim, prlim, sizeof(ugchk.rlim));
+    write_data_into_recheck_log (handle->recheckfd, &ugchk, sizeof(ugchk));
+
+    return 0;
+}
+
+int recheck_ftruncate (struct recheck_handle * handle, int fd, unsigned long length, u_long clock)
+{
+    struct ftruncate_recheck ftchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_ftruncate);
+
+    check_reg_arguments ("ftruncate", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ftruncate, res->retval, sizeof (struct ftruncate_recheck), clock);
+    ftchk.fd = fd;
+    ftchk.length = length;
+    write_data_into_recheck_log (handle->recheckfd, &ftchk, sizeof(ftchk));
+
+    return 0;
+}
+
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf, u_long clock)
 {
     struct uname_recheck uchk;

@@ -1958,6 +1958,27 @@ static inline void sys_ugetrlimit_stop (int rc)
 	LOG_PRINT ("Done with ugetrlimit.\n");
 }
 
+static inline void sys_setrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
+{
+    if (is_mem_arg_tainted ((u_long)prlim, sizeof(*prlim))) {
+        fprintf (stderr, "[ERROR] sys_setrlimit_start: rlimit is tainted.\n");
+    }
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE(0, "call setrlimit_recheck");
+        OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+        recheck_setrlimit (tdata->recheck_handle, resource, prlim, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_ftruncate_start (struct thread_data* tdata, int fd, unsigned long length)
+{
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE(0, "call ftruncate_recheck");
+        OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+        recheck_ftruncate (tdata->recheck_handle, fd, length, *ppthread_log_clock);
+    }
+}
+
 static inline void sys_prlimit64_start (struct thread_data* tdata, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit) 
 {
     struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
@@ -2284,6 +2305,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_ugetrlimit:
 	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
 	    break;
+        case SYS_setrlimit:
+	    sys_setrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
+	    break;
+        case SYS_ftruncate:
+            sys_ftruncate_start (tdata, (int) syscallarg0, (unsigned long) syscallarg1);
+            break;
         case SYS_prlimit64:
 	    sys_prlimit64_start (tdata, (pid_t) syscallarg0, (int) syscallarg1, (struct rlimit64 *) syscallarg2, (struct rlimit64 *) syscallarg3);
 	    break;
@@ -5040,6 +5067,31 @@ void instrument_fpu_calc (INS ins, int fp_stack_change)
     }
 }
 
+void instrument_fpu_cmp (INS ins, int fp_stack_change) 
+{
+    if (INS_OperandIsReg (ins, 1)) { 
+        REG dst_reg = INS_OperandReg (ins, 0);
+        REG src_reg = INS_OperandReg (ins, 1);
+        fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, fp_stack_change);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_fpuregfpureg2flag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, dst_reg, 
+		   IARG_UINT32, src_reg, 
+		   IARG_UINT32, REG_Size(dst_reg),
+                   IARG_CONST_CONTEXT, 
+                   IARG_UINT32, fp_stack_change,
+                   IARG_UINT32, ZF_FLAG|PF_FLAG|CF_FLAG, 
+                   IARG_UINT32, OF_FLAG|SF_FLAG|AF_FLAG,
+		   IARG_END);
+    } else {
+        assert (0);
+    }
+    if (fp_stack_change == FP_POP) { 
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
+}
+
 void instrument_fpu_exchange (INS ins)
 {
     int op1reg = INS_OperandIsReg(ins, 0);
@@ -5710,9 +5762,24 @@ void instruction_instrumentation(INS ins, void *v)
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
-            case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
+                instrument_fpu_cmp (ins, FP_NO_STACK_CHANGE);
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FUCOMIP:
+            case XED_ICLASS_FCOMIP:
+                instrument_fpu_cmp (ins, FP_POP);
+                slice_handled = 1;
+                break;
+            //FCOM/FCOMP/FCOMPP,FUCOM/FUCOMP/FUCOMPP  only affect fpu flags, not eflags; so just pop fpu stack if necessary
+            case XED_ICLASS_FCOM:
+            case XED_ICLASS_FUCOM:
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FCOMP:
+            case XED_ICLASS_FUCOMP:
+            case XED_ICLASS_FCOMPP:
+            case XED_ICLASS_FUCOMPP:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
 	    case XED_ICLASS_FRNDINT:

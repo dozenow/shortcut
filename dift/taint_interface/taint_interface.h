@@ -73,6 +73,7 @@ TAINTSIGN taint_mem2reg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, 
 TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);
 
 TAINTSIGN taint_regreg2flag_offset (uint32_t dst_reg_off, uint32_t dst_reg_size, uint32_t src_reg_off, uint32_t src_reg_size, uint32_t set_flags, uint32_t clear_flags);
+TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change, uint32_t set_flags, uint32_t clear_flags);
 
 TAINTSIGN taint_regmem2flag (u_long mem_loc, uint32_t size_mem, uint32_t reg_off, uint32_t size_reg, uint32_t set_flags, uint32_t clear_flags);
 TAINTSIGN taint_regmem2flag_pcmpxstri (uint32_t reg, u_long mem_loc2, uint32_t reg2, uint32_t size_reg, uint32_t size2, uint32_t implicit);
