@@ -1657,7 +1657,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 }
 
 
-long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, void* user_clock_addr) 
+long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1739,7 +1739,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 
         //address of the slice_clock
         regs->sp -= sizeof(long);
-        put_user ((long)user_clock_addr, (long __user*) regs->sp);
+        put_user (user_clock_addr, (long __user*) regs->sp);
        	
 	regs->bp = regs->sp;
 

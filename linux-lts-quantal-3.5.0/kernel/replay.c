@@ -121,8 +121,6 @@ int verify_debug = 0;
 #define MCPRINT
 #define SLICE_DEBUG(x,...)
 
-#define JNF_HACK //TODO it appears that java can't use this while emacs must
-
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
@@ -1000,10 +998,6 @@ struct record_thread {
 	char recorded_filemap_valid[RECORD_FILE_SLOTS];
 #endif
 
-#ifdef JNF_HACK
-	int __user* rp_pthread_status;
-#endif
-
 	struct record_cache_files* rp_cache_files; // Info about open cache files
 	int rp_exe_flag; 		//flag for special handling of some application checkpoints
 };
@@ -1096,10 +1090,6 @@ struct replay_thread {
 
 	atomic_t ckpt_restore_done;            // finished with checkpoint restore
 	u_long rp_ckpt_pthread_block_clock; //it doesn't seem to be saved anywhere, and seems are to get; 
-
-#ifdef JNF_HACK
-	int __user* rp_pthread_status;
-#endif
 
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
@@ -2211,10 +2201,6 @@ new_record_thread (struct record_group* prg, u_long recpid, struct record_cache_
 	prp->rp_signals = NULL;
 	prp->rp_last_signal = NULL;
 
-#ifdef JNF_HACK
-	prp->rp_pthread_status = 0;
-#endif
-
 	atomic_inc(&prg->rg_record_threads);
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
@@ -2301,10 +2287,6 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 	prp->rp_pin_curthread_ptr = NULL;
 
 	prp->rp_pin_switch_before_attach = 0;
-
-#ifdef JNF_HACK
-	prp->rp_pthread_status = 0;
-#endif
 
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
@@ -4443,7 +4425,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	int clock, i, is_thread = 1;
 	u_long slice_addr = 0;
 	u_long slice_size;
-        u_long pthread_clock_addr;
 
 	if(PRINT_TIME) {
 		struct timeval tv;
@@ -4551,11 +4532,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	//if (PRINT_TIME) {
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
-	//}
+	}
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4567,7 +4548,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 						       (u_long*)&current->clear_child_tid, 
 						       (u_long*)&prept->rp_replay_hook, 
 						       &pos, execute_slice_name, &slice_addr, 
-						       &slice_size, &current->replay_thrd->rp_group->rg_pthread_clock_addr);
+						       &slice_size, &prept->rp_group->rg_pthread_clock_addr);
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4693,10 +4674,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 struct replay_group* replay_group = current->replay_thrd->rp_group;
 
-                if (pthread_clock_addr == 0) {
-                        pthread_clock_addr = current->replay_thrd->rp_group->rg_pthread_clock_addr;
-                        //BUG_ON (pthread_clock_addr == 0);
-                }
 		current->replay_thrd = NULL;
                 SLICE_DEBUG ("replay pid %d goes live\n", current->pid);
 		if (PRINT_TIME) {
@@ -4716,7 +4693,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			}
 
 			//run slice jumps back to the user space
-			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
+			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
 			if (PRINT_TIME) {
 				struct rusage ru;
 				mm_segment_t old_fs = get_fs();
@@ -4764,7 +4741,6 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	u_long cur_ckpts, consumed, slice_addr = 0, slice_size;
 	u_char ch, ch2;
         long ret_code = -1;
-        u_long pthread_clock_addr;
 
 	// Restore the checkpoint
 	sprintf (ckpt, "%s/%s",logdir, filename);
@@ -4855,7 +4831,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 							(u_long*)&prept->rp_record_thread->rp_read_ulog_pos,
 							(u_long *)&current->clear_child_tid,
 							(u_long *)&prept->rp_replay_hook,
-							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size, &current->replay_thrd->rp_group->rg_pthread_clock_addr);
+							&pckpt_waiter->pos, execute_slice_name, &slice_addr, &slice_size, &prept->rp_group->rg_pthread_clock_addr);
 	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4924,10 +4900,6 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	if (go_live) {
             struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
             SLICE_DEBUG ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
-            if (pthread_clock_addr == 0) {
-                pthread_clock_addr = (u_long) current->replay_thrd->rp_group->rg_pthread_clock_addr;
-                BUG_ON (pthread_clock_addr == 0);
-            }
                 
             current->replay_thrd = NULL;
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
@@ -4939,7 +4911,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
-                start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, (void*)pthread_clock_addr);	 
+                start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
                 /*printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
@@ -5908,9 +5880,6 @@ get_next_syscall_enter (struct replay_thread* prt, struct replay_group* prg, int
 	int ret, is_restart = 0;
 	int original_status = -1;
 
-//	char* head = NULL;
-//	int i = 0;
-
 #ifdef REPLAY_PARANOID
 	if (current->replay_thrd == NULL) {
 		printk ("Pid %d replaying but no log\n", current->pid);
@@ -5952,8 +5921,6 @@ get_next_syscall_enter (struct replay_thread* prt, struct replay_group* prg, int
 
 
 	MPRINT ("Replay Pid %d, index %ld sys %d\n", current->pid, prt->rp_out_ptr, psr->sysnum);
-//	dump_stack(); // how did we get here? for debugging purposes
-
 	MPRINT ("Pid %d (%d) get_next_syscall_enter (beginning) syscall %d (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		current->pid, prect->rp_record_pid,prect->rp_log[prt->rp_out_ptr].sysnum, prt->rp_out_ptr, prt->rp_expected_clock, prt->rp_ckpt_pthread_block_clock);
 
@@ -5969,16 +5936,16 @@ get_next_syscall_enter (struct replay_thread* prt, struct replay_group* prg, int
 	//becuase of the way all we store the records, we are sometimes off sizeof(u_long)
 	if (prt->rp_status == REPLAY_STATUS_RESTART_CKPT && psr->flags & SR_HAS_START_CLOCK_SKIP) { 
 		argsrestore (prt->rp_record_thread, sizeof(u_long)); 
-//		MPRINT ("Replay Pid %d, checkpointed consumed offset was off by the start_clock offset\n", current->pid);
+		MPRINT ("Replay Pid %d, checkpointed consumed offset was off by the start_clock offset\n", current->pid);
 	}
-//	MPRINT ("Replay Pid %d, flags %x argsconsumed %lu\n", current->pid, psr->flags, argsconsumed(prect));
+	MPRINT ("Replay Pid %d, flags %x argsconsumed %lu\n", current->pid, psr->flags, argsconsumed(prect));
 
 	start_clock = prt->rp_expected_clock;
 	if (psr->flags & SR_HAS_START_CLOCK_SKIP) {
 		pclock = (u_long *) argshead(prect);
 		argsconsume(prect, sizeof(u_long));
 		start_clock += *pclock;		
-//		MPRINT("Replay pid %d, argsconsumed %lu, pclock %lu, start_clock %lu\n", current->pid, argsconsumed(prect) - sizeof(u_long), *pclock, start_clock);
+		MPRINT("Replay pid %d, argsconsumed %lu, pclock %lu, start_clock %lu\n", current->pid, argsconsumed(prect) - sizeof(u_long), *pclock, start_clock);
 		if (start_clock > 100000000) {
 			printk("start_clock %ld, pclock %ld, prt->rp_expected_clock %ld\n", start_clock, *pclock, prt->rp_expected_clock); 
 		}
@@ -7343,14 +7310,6 @@ asmlinkage long sys_pthread_full (void)
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
-#ifdef JNF_HACK
-	if (current->record_thrd) {
-		current->record_thrd->rp_pthread_status = status;
-	} else if (current->replay_thrd) {
-		current->replay_thrd->rp_pthread_status = status;
-	}
-	put_user (3, status);
-#else
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {
@@ -7358,7 +7317,6 @@ asmlinkage long sys_pthread_status (int __user * status)
 	} else {
 		put_user (3, status);
 	}
-#endif
 	return 0;
 }
 
@@ -12107,10 +12065,6 @@ record_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 	new_syscall_enter (120);
 
-#ifdef JNF_HACK
-	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
-#endif
-
 	if (!(clone_flags&CLONE_VM)) {
 		/* The intent here is to change the next pointer for the child - the easiest way to do this is to change
 		   the parent, fork, and then revert the parent */
@@ -12216,10 +12170,6 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 	struct syscall_result* psr;
 
 	prg = current->replay_thrd->rp_group;
-
-#ifdef JNF_HACK
-	if (current->record_thrd->rp_pthread_status) put_user (2, current->record_thrd->rp_pthread_status);
-#endif
 
 	if (is_pin_attached()) {
 		rc = current->replay_thrd->rp_saved_rc;
@@ -13907,10 +13857,6 @@ record_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 
 	new_syscall_enter (190);
 
-#ifdef JNF_HACK
-	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
-#endif
-
 	/* On clone, we reset the user log.  On, vfork we do not do this because the parent and child share one
            address space.  This sharing will get fixed on exec. */
 
@@ -14013,10 +13959,6 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 	long ret, rc;
 
 	// See above comment about user log
-
-#ifdef JNF_HACK
-	if (current->record_thrd->rp_pthread_status) put_user (1, current->record_thrd->rp_pthread_status);
-#endif
 
 	// This is presumably necessary for PIN handling
 	MPRINT ("Pid %d replay_vfork syscall enter\n", current->pid);

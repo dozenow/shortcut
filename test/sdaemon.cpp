@@ -228,6 +228,8 @@ int patch_klog (string recheck_filename)
     struct dirent* dp;
     int klog_files = 0;
     string klogfilename;
+    char newfile[256];
+    char oldfile[256];
     while ((dp = readdir (dirp)) != NULL) {
 	if (!strncmp (dp->d_name, "klog.id.", 8)) {
 	    klog_files++;
@@ -237,7 +239,14 @@ int patch_klog (string recheck_filename)
 	    }
 	    klogfilename = dp->d_name;
 	}
-
+	if (!strncmp (dp->d_name, "ulog.id.", 8) ||
+	    !strcmp(dp->d_name, "mlog") || 
+	    !strcmp(dp->d_name, "ckpt")) {
+	    sprintf (oldfile, "%s/%s", dir.c_str(), dp->d_name);
+	    sprintf (newfile, "%s/%s", altdirname, dp->d_name);
+	    rc = symlink (oldfile, newfile);
+	    if (rc != 0) fprintf (stderr, "Cannot create symlink for %s\n", dp->d_name);
+	}
     }
 
     closedir (dirp);
@@ -256,19 +265,6 @@ int patch_klog (string recheck_filename)
 	return -1;
     }
       
-    // Copy other files to new directory
-    char newfile[256];
-    char oldfile[256];
-    sprintf (oldfile, "%s/mlog", dir.c_str());
-    sprintf (newfile, "%s/mlog", altdirname);
-    rc = symlink (oldfile, newfile);
-    if (rc != 0) fprintf (stderr, "Cannot create mlog symlink\n");
-
-    sprintf (oldfile, "%s/ckpt", dir.c_str());
-    sprintf (newfile, "%s/ckpt", altdirname);
-    rc = symlink (oldfile, newfile);
-    if (rc != 0) fprintf (stderr, "Cannot create ckpt symlink\n");
-
     // First things in the recheck file is the divergence info
     struct taintbuf_hdr hdr;
     if (read (tfd, &hdr, sizeof(hdr)) != sizeof(hdr)) {
@@ -291,10 +287,11 @@ int patch_klog (string recheck_filename)
 	exit(EXIT_FAILURE);
     }
 
+    bool no_more_records = false;
     while (parseklog_read_next_chunk(log) > 0) {
 	struct klog_result* res;
 	while ((res = parseklog_get_next_psr_from_chunk (log)) != NULL) {
-	    while (res->start_clock == trv.clock) {
+	    while (res->start_clock == trv.clock && !no_more_records) {
 		assert (res->psr.sysnum == trv.syscall);
 		switch (trv.syscall) {
 		case SYS_read:
@@ -333,7 +330,7 @@ int patch_klog (string recheck_filename)
 		}
 		long rc = read (tfd, &trv, sizeof(trv));
 		if (rc == 0) {
-		    res->start_clock = 99999; // Skip to end
+		    no_more_records = true;
 		} else if (rc != sizeof(trv)) {
 		    fprintf (stderr, "Cannot read tainted retval, rc = %ld\n", rc);
 		    return -1;
