@@ -156,6 +156,7 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
 	write_to_buffer (*ppthread_log_clock);
 #else	
 	printf ("%ld Pid %d, tid %d, (record pid %d), %d: syscall num is %d\n", global_syscall_cnt, PIN_GetPid(), PIN_GetTid(), tdata->record_pid, tdata->syscall_cnt, (int) syscall_num);
+	fflush (stdout);
 #endif
 
 	if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
@@ -323,9 +324,20 @@ void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
     printf ("Instruction %x branch taken=%d\n", ip, taken);
 }
 
-#define trace_relread_stutters(ip,memloc,first_iter) trace_relread(ip,memloc)
-#define trace_relwrite_stutters(ip,memloc,first_iter) trace_relwrite(ip,memloc)
-#define trace_relread2_stutters(ip,memloc,first_iter) trace_relread2(ip,memloc)
+void trace_relread_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relread(ip,memloc);
+}
+
+void trace_relwrite_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relwrite(ip,memloc);
+}
+
+void trace_relread2_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relread2(ip,memloc);
+}
 #endif
 
 
