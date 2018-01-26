@@ -5,6 +5,7 @@
 #include "util.h"
 #include <string.h>
 #include <stdlib.h>
+#include <syscall.h>
 
 // edited by hyihe
 #include "happens_before.h"
@@ -113,6 +114,11 @@ bool detect_race(THREADID tid, VOID *ref_addr, ADDRINT size, ADDRINT ip, int ref
 
 struct thread_data {
     u_long app_syscall; // Per thread address for specifying pin vs. non-pin system calls
+    u_long app_syscall_chk;
+    int record_pid;
+    int syscall_cnt;
+    int sysnum;
+    u_long ignore_flag;
 };
 
 void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
@@ -125,7 +131,24 @@ void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, V
     }	
 }
 
-void set_address_one(ADDRINT syscall_num, ADDRINT eax_ref)
+static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd)
+{
+    tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
+}
+
+void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
+		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+{
+    switch (sysnum) {
+        case SYS_mmap:
+        case SYS_mmap2:
+            sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
+            break;
+    }
+}
+
+void set_address_one(ADDRINT syscall_num, ADDRINT eax_ref, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
+		     ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 {   
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     if (tdata) {
@@ -139,6 +162,9 @@ void set_address_one(ADDRINT syscall_num, ADDRINT eax_ref)
     } else {
 	fprintf (stderr, "set_address_one: NULL tdata\n");
     }
+    syscall_start(tdata, syscall_num, syscallarg0, syscallarg1, syscallarg2, 
+		  syscallarg3, syscallarg4, syscallarg5);
+
 }
 
 void syscall_after (ADDRINT ip)
@@ -276,9 +302,16 @@ void track_inst(INS ins, void* data)
     // The first system call is the ioctl associated with fork_replay.
     // We do not want to issue it again, so we NULL the call and return.
     if(INS_IsSyscall(ins)) {
-            INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), IARG_SYSCALL_NUMBER, 
-			   IARG_REG_REFERENCE, LEVEL_BASE::REG_EAX, IARG_END);
-
+	    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
+			       IARG_SYSCALL_NUMBER, 
+			       IARG_REG_REFERENCE, LEVEL_BASE::REG_EAX,
+			       IARG_SYSARG_VALUE, 0, 
+			       IARG_SYSARG_VALUE, 1,
+			       IARG_SYSARG_VALUE, 2,
+			       IARG_SYSARG_VALUE, 3,
+			       IARG_SYSARG_VALUE, 4,
+			       IARG_SYSARG_VALUE, 5,
+			       IARG_END);
     } else {
 	// Ugh - I guess we have to instrument every instruction to find which
 	// ones are after a system call - would be nice to do better.
@@ -358,10 +391,11 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     thd_entr_type.push_back(0);
 
     ptdata->app_syscall = 0;
+    ptdata->record_pid = get_record_pid();
 
     PIN_SetThreadData (tls_key, ptdata, threadid);
     int thread_ndx;
-    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), ptdata, (void **) &current_thread, &thread_ndx);
+    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), (u_long)&(ptdata->app_syscall_chk), ptdata, (void **) &current_thread, &thread_ndx);
     if (thread_status < 2) {
 	current_thread = ptdata;
     }

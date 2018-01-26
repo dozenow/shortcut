@@ -46,6 +46,7 @@ REG tls_reg;
 
 struct thread_data {
     u_long app_syscall; // Per thread address for specifying pin vs. non-pin system calls
+    u_long app_syscall_chk;
     int record_pid; 	// per thread record pid
     int syscall_cnt;	// per thread count of syscalls
     int sysnum;		// current syscall number
@@ -401,7 +402,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 #endif
 
     int thread_ndx;
-    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), ptdata, (void **) &current_thread, &thread_ndx);
+    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), (u_long)&ptdata->app_syscall_chk, ptdata, (void **) &current_thread, &thread_ndx);
     /*
      * DON'T PUT SYSCALLS ABOVE THIS POINT! 
      */
