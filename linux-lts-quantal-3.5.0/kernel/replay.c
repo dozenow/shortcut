@@ -11880,6 +11880,9 @@ replay_ipc (uint call, int first, u_long second, u_long third, void __user *ptr,
 	long rc = get_next_syscall (117, (char **) &retparams);
 	int repid, cmd;
 
+	DPRINT ("replay_ipc: call %u first %x second %lx, third %lx, ptr %p fifth %lx\n", 
+		call, first, second, third, ptr, fifth);
+
 	if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 
 	switch (call) {
@@ -11976,12 +11979,12 @@ replay_ipc (uint call, int first, u_long second, u_long third, void __user *ptr,
 			MPRINT("Pid %d Remove shm at addr %lx, len %lx\n", current->pid, (u_long) ptr, size);
 			preallocate_after_munmap((u_long) ptr, size);
 		}
-
+		return rc;
 	case SHMGET: 
 		retval = sys_ipc (call, first, second, third, ptr, fifth);		
 		if ((rc < 0 && retval >= 0) || (rc >= 0 && retval < 0)) {
-			printk ("Pid %d replay_ipc SHMGET, on record we had %ld, but replay we got %ld\n", 
-				current->pid, rc, retval);
+			printk ("Pid %d replay_ipc SHMGET, on record we had %ld, but replay we got %ld: key %x size %lx shmflag %lx\n", 
+				current->pid, rc, retval, first, second, third);
 			return syscall_mismatch();
 		}
 		
@@ -11992,7 +11995,7 @@ replay_ipc (uint call, int first, u_long second, u_long third, void __user *ptr,
 				current->pid, retval, rc);
 			return syscall_mismatch();
 		}
-		printk("pid %d replays SHMGET success\n", current->pid);
+		MPRINT ("pid %d replays SHMGET success\n", current->pid);
 		return rc;
 	case SHMCTL: 
 		cmd = second;
