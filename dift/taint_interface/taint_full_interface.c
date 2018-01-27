@@ -1091,18 +1091,21 @@ int inline get_fp_stack_top (const CONTEXT* ctx)
 {
     PIN_REGISTER value;
     PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
+    fprintf (stderr, "stack top is %d\n", (int) ((*value.word >> 11 ) & 0x7));
     return (int) ((*value.word >> 11 ) & 0x7);
-}
-
-int inline update_fp_stack_regoff (int reg_off, int sp/*stack top*/)
-{
-    return reg_off + (sp - reg_off/REG_SIZE + REG_ST0) * REG_SIZE;
 }
 
 int inline update_fp_stack_reg (int reg, int sp) 
 {
-    return sp + REG_ST0;
+    fprintf (stderr, "stack is %d while reg is %d\n", sp, reg-REG_ST0);
+    return (sp + reg - REG_ST0)%8 + REG_ST0;
 }
+
+int inline update_fp_stack_regoff (int reg_off, int sp/*stack top*/)
+{
+    return update_fp_stack_reg (reg_off/REG_SIZE, sp) + reg_off%REG_SIZE;
+}
+
 void inline fw_slice_track_fp_stack_top (ADDRINT ip, const CONTEXT* ctx, uint32_t fp_stack_change) 
 {
     int sp = get_fp_stack_top (ctx);
@@ -3946,8 +3949,6 @@ TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CO
         assert (0);
     dst_reg = update_fp_stack_reg (dst_reg, sp);
     taint_reg2reg_offset (dst_reg*REG_SIZE, src_reg*REG_SIZE, size);
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));
 }
 
 // reg2reg

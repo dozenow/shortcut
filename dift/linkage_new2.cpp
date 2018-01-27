@@ -5709,7 +5709,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FILD:
             case XED_ICLASS_FBLD:
 		instrument_fpu_load (ins);
-		slice_handled = 1;
+		//slice_handled = 1;
 		break;
             case XED_ICLASS_FLDZ:
             case XED_ICLASS_FLD1:
@@ -5719,11 +5719,11 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
                 instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FFREE:
                 instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_NO_STACK_CHANGE);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
@@ -5732,7 +5732,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FBSTP:
             case XED_ICLASS_FISTTP:
                 instrument_fpu_store (ins);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FMULP:
             case XED_ICLASS_FADDP:
@@ -5741,7 +5741,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FDIVP:
             case XED_ICLASS_FDIVRP:
                 instrument_fpu_calc (ins, FP_POP);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FMUL:
             case XED_ICLASS_FIMUL:
@@ -5755,26 +5755,26 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FIDIV:
             case XED_ICLASS_FIDIVR:
                 instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FXCH:
                 instrument_fpu_exchange (ins);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
             case XED_ICLASS_FUCOMI:
                 instrument_fpu_cmp (ins, FP_NO_STACK_CHANGE);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FUCOMIP:
             case XED_ICLASS_FCOMIP:
                 instrument_fpu_cmp (ins, FP_POP);
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             //FCOM/FCOMP/FCOMPP,FUCOM/FUCOMP/FUCOMPP  only affect fpu flags, not eflags; so just pop fpu stack if necessary
             case XED_ICLASS_FCOM:
             case XED_ICLASS_FUCOM:
-                slice_handled = 1;
+                //slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMP:
             case XED_ICLASS_FUCOMP:
@@ -5789,7 +5789,6 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FCHS:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
-                //slice_handled = 1;
                 break;
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:
