@@ -1091,26 +1091,24 @@ int inline get_fp_stack_top (const CONTEXT* ctx)
 {
     PIN_REGISTER value;
     PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
-    fprintf (stderr, "stack top is %d\n", (int) ((*value.word >> 11 ) & 0x7));
     return (int) ((*value.word >> 11 ) & 0x7);
 }
 
-int inline update_fp_stack_reg (int reg, int sp) 
+int inline map_fp_stack_reg (int reg, int sp) 
 {
-    fprintf (stderr, "stack is %d while reg is %d\n", sp, reg-REG_ST0);
     return (sp + reg - REG_ST0)%8 + REG_ST0;
 }
 
-int inline update_fp_stack_regoff (int reg_off, int sp/*stack top*/)
+int inline map_fp_stack_regoff (int reg_off, int sp/*stack top*/)
 {
-    return update_fp_stack_reg (reg_off/REG_SIZE, sp) + reg_off%REG_SIZE;
+    return map_fp_stack_reg (reg_off/REG_SIZE, sp)*REG_SIZE + reg_off%REG_SIZE;
 }
 
 void inline fw_slice_track_fp_stack_top (ADDRINT ip, const CONTEXT* ctx, uint32_t fp_stack_change) 
 {
     int sp = get_fp_stack_top (ctx);
     if (sp != current_thread->slice_fp_top) { 
-        fprintf (stderr, "**********we need an offset in the slice for the top of fpu stack, %d %d\n", sp, current_thread->slice_fp_top);
+        fprintf (stderr, "**********we need an offset in the slice for the top of fpu stack, %d while in slice %d\n", sp, current_thread->slice_fp_top);
         current_thread->slice_fp_top = sp;
     }
     if (fp_stack_change == FP_PUSH) { 
@@ -1129,19 +1127,13 @@ TAINTSIGN taint_clear_reg_offset (int offset, int size, uint32_t set_flags, uint
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], 0, set_flags, clear_flags);
 }
 
-TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags, const CONTEXT* ctx, int fp_stack_change)
+TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags, const CONTEXT* ctx, uint32_t is_load)
 {
     int sp = get_fp_stack_top (ctx);
-    if (fp_stack_change == FP_PUSH) 
+    if (is_load) 
         //first change top of stack and then clear
         sp = decrement_fp_stack_top (sp);
-    else if (fp_stack_change == FP_POP) {
-        //do nothing
-        //first clear and then change top of stack
-    } else if (fp_stack_change == FP_NO_STACK_CHANGE) {
-    } else 
-        assert (0);
-    offset = update_fp_stack_regoff (offset, sp);
+    offset = map_fp_stack_regoff (offset, sp);
     taint_clear_reg_offset (offset, size, set_flags, clear_flags);
 }
 
@@ -1409,16 +1401,22 @@ TAINTSIGN taint_mem2reg_ext_offset(u_long mem_loc, uint32_t reg_off, uint32_t si
     }
 }
 
-TAINTSIGN taint_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx, int fp_stack_change)
+TAINTSIGN taint_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx)
 {
     int sp = get_fp_stack_top (ctx);
-    if (fp_stack_change == FP_PUSH)
-        sp = decrement_fp_stack_top (sp);
-    else 
-        assert (0);
-    reg_off = update_fp_stack_regoff (reg_off, sp);
+    reg_off = map_fp_stack_regoff (reg_off, sp);
     taint_mem2reg_ext_offset (mem_loc, reg_off, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
-    //This is necessary as we convert interger/float/double into double extended format here
+}
+
+//only used for these instructions
+// (opcode == XED_ICLASS_FILD || opcode == XED_ICLASS_FLD || opcode == XED_ICLASS_FBLD)
+TAINTSIGN taint_load_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx)
+{
+    int sp = get_fp_stack_top (ctx);
+    sp = decrement_fp_stack_top (sp);
+    reg_off = map_fp_stack_regoff (reg_off, sp);
+    taint_mem2reg_ext_offset (mem_loc, reg_off, size, base_reg_off, base_reg_size, index_reg_off, index_reg_size);
+    //This is necessary as we convert interger/float/double/bcd into double extended format here
     taint_mix_reg_offset (reg_off, REG_SIZE, -1, -1);
 }
 
@@ -1827,17 +1825,11 @@ TAINTSIGN taint_regreg2flag_offset (uint32_t dst_reg_off, uint32_t dst_reg_size,
     set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
 }
 
-TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change, uint32_t set_flags, uint32_t clear_flags) 
+TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t set_flags, uint32_t clear_flags) 
 {
     int sp = get_fp_stack_top (ctx);
-    reg1 = update_fp_stack_reg (reg1, sp);
-    reg2 = update_fp_stack_reg (reg2, sp);
-
-    if (fp_stack_change == FP_POP) {
-        //FCOMIP/FUCOMIP
-    } else if (fp_stack_change == FP_NO_STACK_CHANGE) { 
-    } else 
-        assert (0);
+    reg1 = map_fp_stack_reg (reg1, sp);
+    reg2 = map_fp_stack_reg (reg2, sp);
     taint_regreg2flag_offset (reg1*REG_SIZE, size, reg2*REG_SIZE, size, set_flags, clear_flags);
 }
 
@@ -1979,10 +1971,10 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
     }
 }
 
-TAINTSIGN taint_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx, uint32_t fp_stack_change)
+TAINTSIGN taint_mix_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx)
 {
     int sp = get_fp_stack_top (ctx); //get the actual st register
-    reg = update_fp_stack_reg (reg, sp);
+    reg = map_fp_stack_reg (reg, sp);
 
     if (is_reg_zero (reg, reg_size)) {
         clear_mem_taints (mem_loc, mem_size);
@@ -3123,7 +3115,7 @@ TAINTSIGN fw_slice_reg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const
 TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, uint32_t fp_stack_change) 
 {
     //get the actual st reg 
-    reg = update_fp_stack_reg (reg, get_fp_stack_top (ctx));
+    reg = map_fp_stack_reg (reg, get_fp_stack_top (ctx));
     int tainted = is_reg_tainted (reg, size, reg_u8);
     
     if (tainted) {
@@ -3135,7 +3127,7 @@ TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, co
 
         memset (slice, 0, 256);
         memcpy (slice, ins_str, index);
-        //gcc representation of st register: st(0) instead st0 (pin representation)
+        //gcc representation of st register: st(0) instead of st0 (pin representation)
         if (slice[index - 3] == 's' && slice[index - 2] == 't') {
             i = slice[index - 1];
             slice[index - 1] = '(';
@@ -3153,7 +3145,7 @@ TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, co
 TAINTSIGN fw_slice_fpureg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
 {
     VERIFY_BASE_INDEX_WRITE;
-    reg = update_fp_stack_reg (reg, get_fp_stack_top (ctx));
+    reg = map_fp_stack_reg (reg, get_fp_stack_top (ctx));
     int tainted = is_reg_tainted (reg, size, reg_u8);
 
     if (tainted) {
@@ -3249,22 +3241,42 @@ TAINTSIGN fw_slice_regreg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_
 TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize,  uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t src_reg_u8, uint32_t fp_stack_change) 
 {
     int sp = get_fp_stack_top (ctx);
-    dst_reg = update_fp_stack_reg (dst_reg, sp);
-    src_reg = update_fp_stack_reg (src_reg, sp);
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
+    src_reg = map_fp_stack_reg (src_reg, sp);
     int tainted1 = is_reg_tainted (dst_reg, dst_regsize, dst_reg_u8);
     int tainted2 = is_reg_tainted (src_reg, src_regsize, src_reg_u8);
     if (tainted1 || tainted2){
+        char slice[256]; //convert the output instruction format
         PIN_REGISTER dst_regvalue;
         PIN_REGISTER src_regvalue;
         PIN_GetContextRegval (ctx, REG(dst_reg), (UINT8*)&dst_regvalue);
         PIN_GetContextRegval (ctx, REG(src_reg), (UINT8*)&src_regvalue);
+        int index = strrchr (ins_str, ',') - ins_str;
+        char i = 0;
+
+        //reformat
+        //gcc representation of st register: st(0) instead of st0 (pin representation)
+        memset (slice, 0, 256);
+        memcpy (slice, ins_str, index);
+        if (slice[index - 3] == 's' && slice[index - 2] == 't') {
+            i = slice[index - 1];
+            slice[index - 1] = '(';
+            slice[index] = i;
+            //find the next st
+            i = ins_str[index + 4];
+            slice[++index] = ')';
+            slice[++index] = ',';
+            slice[++index] = ' ';
+            slice[++index] = 's';
+            slice[++index] = 't';
+            slice[++index] = '(';
+            slice[++index] = i;
+            slice[++index] = ')';
+        }
 
         fw_slice_track_fp_stack_top (ip, ctx, fp_stack_change);
         if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
 	if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
-
-	// Reformat Pin output to make gcc happy
-	if (!strncmp(ins_str, "fmulp ", 6)) ins_str[5] = '\0';
 
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s", 
@@ -3388,6 +3400,7 @@ TAINTSIGN fw_slice_regregflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
     }
 }
 
+//deprecated function
 TAINTSIGN fw_slice_mem2fpu(ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS)
 {
     VERIFY_BASE_INDEX;
@@ -3946,18 +3959,15 @@ TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t s
     memset(&shadow_reg_table[dst_reg_off+size], 0, (REG_SIZE-size) * sizeof(taint_t));
 }
 
-TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx, uint32_t fp_stack_change)
+TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx, uint32_t opcode)
 {
     int sp = get_fp_stack_top (ctx);
-    src_reg = update_fp_stack_reg (src_reg, sp);
-    if (fp_stack_change == FP_PUSH) {
+    src_reg = map_fp_stack_reg (src_reg, sp);
+    if (opcode == XED_ICLASS_FLD) {
         //per FLD specification
         sp = decrement_fp_stack_top (sp);
-    } else if (fp_stack_change == FP_POP) {
-        //do nothing
-    } else
-        assert (0);
-    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    }
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
     taint_reg2reg_offset (dst_reg*REG_SIZE, src_reg*REG_SIZE, size);
 }
 
@@ -4098,8 +4108,8 @@ TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off,
 TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, uint32_t src_size, const CONTEXT* ctx)
 {
     int sp = get_fp_stack_top (ctx);
-    dst_reg = update_fp_stack_reg (dst_reg, sp);
-    src_reg = update_fp_stack_reg (src_reg, sp);
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
+    src_reg = map_fp_stack_reg (src_reg, sp);
     taint_mix_reg2reg_offset (dst_reg*REG_SIZE, dst_size, src_reg*REG_SIZE, src_size, -1, -1);
 }
 
@@ -4141,8 +4151,8 @@ TAINTSIGN taint_mix_reg2mem_offset (u_long mem_loc, uint32_t memsize, int reg_of
 TAINTSIGN taint_mix_fpuregmem2fpureg (u_long mem_loc, uint32_t memsize, int src_reg, uint32_t src_regsize, int dst_reg, uint32_t dst_regsize, const CONTEXT* ctx, TAINT_BASE_INDEX_ARGS)
 {
     int sp = get_fp_stack_top (ctx);
-    src_reg = update_fp_stack_reg (src_reg, sp);
-    dst_reg = update_fp_stack_reg (dst_reg, sp);
+    src_reg = map_fp_stack_reg (src_reg, sp);
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     taint_t bi_taint = base_index_taint (base_reg_off, base_reg_size, index_reg_off, index_reg_size);
     taint_t t = merge_mem_taints (mem_loc, memsize);
@@ -4167,8 +4177,8 @@ TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, con
 { 
     taint_t tmp[REG_SIZE];
     int sp = get_fp_stack_top (ctx);
-    dst_reg = update_fp_stack_reg (dst_reg, sp);
-    src_reg = update_fp_stack_reg (src_reg, sp);
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
+    src_reg = map_fp_stack_reg (src_reg, sp);
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     memcpy((char*)&tmp, &shadow_reg_table[dst_reg*REG_SIZE], size * sizeof(taint_t));
     memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));

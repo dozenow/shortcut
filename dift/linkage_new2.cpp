@@ -3119,7 +3119,7 @@ void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
     } 
 }
 
-void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
+void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg)
 {
     assert (REG_is_st (dstreg));
     assert (REG_is_st (srcreg));
@@ -3130,7 +3130,7 @@ void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_sta
             IARG_UINT32, srcreg,
             IARG_UINT32, REG_Size (dstreg),
             IARG_CONST_CONTEXT, 
-            IARG_ADDRINT, fp_stack_change,
+            IARG_ADDRINT, INS_Opcode(ins),
             IARG_END);
 }
 
@@ -3160,20 +3160,19 @@ void instrument_taint_reg2mem(INS ins, REG reg, int extend)
     }
 }
 
-void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
+void instrument_taint_mix_fpureg2mem (INS ins, REG reg) 
 {
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
 
     INS_InsertCall(ins, IPOINT_BEFORE,
-            AFUNPTR (taint_fpureg2mem),
+            AFUNPTR (taint_mix_fpureg2mem),
             IARG_FAST_ANALYSIS_CALL,
             IARG_MEMORYWRITE_EA,
             IARG_UINT32, memsize,
             IARG_UINT32, reg,
             IARG_UINT32, regsize,
             IARG_CONST_CONTEXT,
-            IARG_UINT32, fp_stack_change,
             IARG_END);
 }
 
@@ -3226,7 +3225,7 @@ static void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_
     }
 }
 
-static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_change, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+static inline void instrument_taint_mem2fpureg (INS ins, REG dstreg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     SETUP_BASE_INDEX_TAINT;
     assert (REG_is_st (dstreg));
@@ -3238,7 +3237,22 @@ static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_chang
             IARG_UINT32, INS_MemoryReadSize(ins),
             PASS_BASE_INDEX_TAINT,
             IARG_CONST_CONTEXT, 
-            IARG_ADDRINT, fp_stack_change,
+            IARG_ADDRINT, INS_Opcode (ins),
+            IARG_END);
+}
+
+static void instrument_taint_load_mem2fpureg (INS ins, REG dstreg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    assert (REG_is_st (dstreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_load_mem2fpureg_offset),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, get_reg_off (dstreg),
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            PASS_BASE_INDEX_TAINT,
+            IARG_CONST_CONTEXT, 
             IARG_END);
 }
 
@@ -3420,7 +3434,7 @@ static void instrument_taint_clear_reg (INS ins, REG reg, int set_flags, int cle
 		   IARG_END);
 }
 
-static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int fp_stack_change)
+static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int is_load)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_clear_fpureg_offset),
@@ -3430,7 +3444,7 @@ static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int 
 		   IARG_UINT32, set_flags,
 		   IARG_UINT32, clear_flags,
                    IARG_CONST_CONTEXT, 
-                   IARG_UINT32, fp_stack_change,
+                   IARG_UINT32, is_load,
 		   IARG_END);
 }
 
@@ -5013,11 +5027,12 @@ void instrument_fpu_load (INS ins)
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         fw_slice_src_mem2fpureg (ins, base_reg, index_reg, FP_PUSH);
-        instrument_taint_mem2fpureg (ins, dst_reg, FP_PUSH, base_reg, index_reg);
+        //these instructions convert interger/float/double/bcd into double extended format here
+        instrument_taint_load_mem2fpureg (ins, dst_reg, base_reg, index_reg);
     } else {
         REG src_reg = INS_OperandReg (ins, 1);
         fw_slice_src_fpureg (ins, src_reg, FP_PUSH);
-        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, FP_PUSH);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg);
     }
 }
 
@@ -5033,16 +5048,17 @@ void instrument_fpu_store (INS ins)
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, fp_stack_change);
-        instrument_taint_fpureg2mem (ins, src_reg, fp_stack_change);
+        instrument_taint_mix_fpureg2mem (ins, src_reg);
+        //because of the convertion from double-precision
     } else {
         fw_slice_src_fpureg (ins, src_reg, fp_stack_change);
         REG dst_reg = INS_OperandReg (ins, 0);
         assert (REG_is_st (dst_reg)); //per the intel manual
-        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, fp_stack_change);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg);
     }
-    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode (ins) == XED_ICLASS_FISTTP) {
-        //pop the register and empty st(0)
-        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP /*|| INS_Opcode (ins) == XED_ICLASS_FISTTP not sure about this one??*/) {
+        //these instructions empty st(0)
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, 0);
     }
 }
 
@@ -5709,7 +5725,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FILD:
             case XED_ICLASS_FBLD:
 		instrument_fpu_load (ins);
-		//slice_handled = 1;
+		slice_handled = 1;
 		break;
             case XED_ICLASS_FLDZ:
             case XED_ICLASS_FLD1:
@@ -5718,12 +5734,12 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
-                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
-                //slice_handled = 1;
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, 1);
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FFREE:
-                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_NO_STACK_CHANGE);
-                //slice_handled = 1;
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, 0);
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FST:
             case XED_ICLASS_FSTP:
@@ -5732,7 +5748,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FBSTP:
             case XED_ICLASS_FISTTP:
                 instrument_fpu_store (ins);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FMULP:
             case XED_ICLASS_FADDP:
@@ -5741,7 +5757,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FDIVP:
             case XED_ICLASS_FDIVRP:
                 instrument_fpu_calc (ins, FP_POP);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FMUL:
             case XED_ICLASS_FIMUL:
@@ -5755,21 +5771,21 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FIDIV:
             case XED_ICLASS_FIDIVR:
                 instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FXCH:
                 instrument_fpu_exchange (ins);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
             case XED_ICLASS_FUCOMI:
                 instrument_fpu_cmp (ins, FP_NO_STACK_CHANGE);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
-            case XED_ICLASS_FUCOMIP:
             case XED_ICLASS_FCOMIP:
+            case XED_ICLASS_FUCOMIP:
                 instrument_fpu_cmp (ins, FP_POP);
-                //slice_handled = 1;
+                slice_handled = 1;
                 break;
             //FCOM/FCOMP/FCOMPP,FUCOM/FUCOMP/FUCOMPP  only affect fpu flags, not eflags; so just pop fpu stack if necessary
             case XED_ICLASS_FCOM:
