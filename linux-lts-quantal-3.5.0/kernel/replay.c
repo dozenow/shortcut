@@ -6285,7 +6285,7 @@ get_next_syscall_exit (struct replay_thread* prt, struct replay_group* prg, stru
 					}
 					rg_unlock (prg->rg_rec_group);
 					printk ("replay pid %d waiting for clock value %ld on syscall exit - current clock value is %ld\n", current->pid, stop_clock, *(prt->rp_preplay_clock));
-					sys_exit_group (0);
+					__syscall_mismatch (prg->rg_rec_group);
 				}
 			} while (tmp != prt);
 		}

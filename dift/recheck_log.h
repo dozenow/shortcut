@@ -282,6 +282,11 @@ struct sched_getaffinity_recheck {
 };
 /* Followed by contents of mask*/
 
+struct ftruncate_recheck {
+    u_int fd;
+    u_long length;
+};
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -321,6 +326,7 @@ int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags, u_
 int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg, u_long clock);
 int recheck_fcntl64_getown (struct recheck_handle* handle, int fd, u_long clock);
 int recheck_fcntl64_setown (struct recheck_handle* handle, int fd, long owner, int is_owner_tainted, u_long clock);
+int recheck_getdents (struct recheck_handle* handle, u_int fd, char* buf, int count, u_long clock);
 int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count, u_long clock);
 int recheck_eventfd2 (struct recheck_handle* handle, u_int count, int flags, u_long clock);
 int recheck_poll (struct recheck_handle* handle, struct pollfd* fds, u_int nfds, int timeout, u_long clock);
@@ -333,4 +339,5 @@ int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, stru
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
+int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock);
 #endif

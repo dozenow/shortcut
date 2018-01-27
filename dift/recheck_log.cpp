@@ -904,6 +904,26 @@ int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg
     return ichk.arglen;
 }
 
+int recheck_getdents (struct recheck_handle* handle, u_int fd, char* buf, int count, u_long clock)
+{
+    struct getdents64_recheck gchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_getdents);
+
+    check_reg_arguments ("getdents", 3);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_getdents, res->retval, sizeof(gchk)+res->retparams_size, clock);
+    gchk.fd = fd;
+    gchk.buf = buf;
+    gchk.count = count;
+    gchk.arglen = res->retparams_size;
+    write_data_into_recheck_log (handle->recheckfd, &gchk, sizeof(gchk));
+    if (gchk.arglen > 0) {
+	write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams, gchk.arglen);
+    }
+
+    return 0;
+}
+
 int recheck_getdents64 (struct recheck_handle* handle, u_int fd, char* buf, int count, u_long clock)
 {
     struct getdents64_recheck gchk;
@@ -1119,4 +1139,17 @@ int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t 
     return 0;
 }
 
+int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock)
+{
+    struct ftruncate_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_ftruncate);
+    check_reg_arguments ("ftruncate", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ftruncate, res->retval, sizeof(struct ftruncate_recheck), clock);
+    chk.fd = fd;
+    chk.length = length;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+
+    return 0;
+}
 

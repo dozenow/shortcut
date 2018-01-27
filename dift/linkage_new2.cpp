@@ -900,6 +900,25 @@ static inline void sys_pread_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+static inline void sys_getdents_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
+{
+    struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
+    gdi->fd = fd;
+    gdi->buf = dirp;
+    gdi->count = count;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call getdents_recheck");
+	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_getdents (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
+    }
+}
+
+static void sys_getdents_stop (int rc) 
+{
+    struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
+    if (rc > 0) clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
+}
+
 static inline void sys_getdents64_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
 {
     struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
@@ -2139,6 +2158,15 @@ static inline void sys_sched_getaffinity_stop (int rc) {
     current_thread->save_syscall_info = 0;
 }
 
+static inline void sys_ftruncate_start (struct thread_data* tdata, u_int fd, u_long length) 
+{ 
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE(0, "call ftruncate_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock-1);
+	recheck_ftruncate (tdata->recheck_handle, fd, length, *ppthread_log_clock-1);
+    }
+}
+
 static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
 {
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
@@ -2183,6 +2211,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_readlink:
 	    sys_readlink_start(tdata, (char *) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2);
             break;
+        case SYS_getdents:
+	    sys_getdents_start(tdata, (unsigned int) syscallarg0, (char *) syscallarg1, (unsigned int) syscallarg2);
+	    break;
         case SYS_getdents64:
 	    sys_getdents64_start(tdata, (unsigned int) syscallarg0, (char *) syscallarg1, (unsigned int) syscallarg2);
 	    break;
@@ -2342,6 +2373,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_sched_getaffinity:
             sys_sched_getaffinity_start (tdata, (pid_t)syscallarg0, (size_t)syscallarg1, (cpu_set_t*)syscallarg2);
             break;
+        case SYS_ftruncate:
+            sys_ftruncate_start (tdata, (u_int)syscallarg0, (u_long)syscallarg1);
+            break;
         case SYS_nanosleep:
             printf ("skipped syscall nanosleep.\n");
             break;
@@ -2398,6 +2432,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         case SYS_time:
             sys_time_stop (rc);
             break;
+        case SYS_getdents:
+	    sys_getdents_stop(rc);
+	    break;
         case SYS_getdents64:
 	    sys_getdents64_stop(rc);
 	    break;
@@ -2503,7 +2540,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 }
 
 // called before every application system call
-void instrument_syscall(ADDRINT syscall_num, 
+static void instrument_syscall(ADDRINT syscall_num, 
 			ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
 			ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 {   
@@ -2579,7 +2616,7 @@ static void syscall_after_redo (ADDRINT ip)
     }
 }
 
-void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
+static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
 {
     if (current_thread->app_syscall != 999) current_thread->app_syscall = 0;
 
@@ -3060,7 +3097,7 @@ static inline UINT32 get_reg_off (REG reg)
     return reg_offset;
 }
 
-void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
+static void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
 {
     UINT32 dst_regsize = REG_Size(dstreg);
     UINT32 src_regsize = REG_Size(srcreg);
@@ -3092,7 +3129,7 @@ void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int extend)
     } 
 }
 
-void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
+static void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
 {
     assert (REG_is_st (dstreg));
     assert (REG_is_st (srcreg));
@@ -3107,7 +3144,7 @@ void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_sta
             IARG_END);
 }
 
-void instrument_taint_reg2mem(INS ins, REG reg, int extend)
+static void instrument_taint_reg2mem(INS ins, REG reg, int extend)
 {
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
@@ -3133,7 +3170,7 @@ void instrument_taint_reg2mem(INS ins, REG reg, int extend)
     }
 }
 
-void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
+static void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
 {
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
@@ -3215,7 +3252,7 @@ static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_chang
             IARG_END);
 }
 
-void instrument_taint_mem2mem (INS ins)
+static void instrument_taint_mem2mem (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_mem2mem),
@@ -3407,7 +3444,7 @@ static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int 
 		   IARG_END);
 }
 
-void instrument_taint_add_reg2mem (INS ins, REG srcreg, int set_flags, int clear_flags)
+static void instrument_taint_add_reg2mem (INS ins, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 regsize = REG_Size(srcreg);
     UINT32 memsize = INS_MemoryReadSize(ins);
@@ -3424,7 +3461,7 @@ void instrument_taint_add_reg2mem (INS ins, REG srcreg, int set_flags, int clear
 		   IARG_END);
 }
 
-void instrument_taint_add_mem2reg (INS ins, REG dstreg, int set_flags, int clear_flags, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+static void instrument_taint_add_mem2reg (INS ins, REG dstreg, int set_flags, int clear_flags, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     UINT32 regsize = REG_Size(dstreg);
     UINT32 memsize = INS_MemoryReadSize(ins);
@@ -3443,7 +3480,7 @@ void instrument_taint_add_mem2reg (INS ins, REG dstreg, int set_flags, int clear
 		   IARG_END);
 }
 
-void instrument_taint_immval2mem(INS ins, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+static void instrument_taint_immval2mem(INS ins, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     SETUP_BASE_INDEX_TAINT;
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -3483,27 +3520,7 @@ static void inline instrument_taint_reg2flag (INS ins, REG reg, uint32_t set_mas
 		   IARG_END);
 }
 
-void instrument_clear_dst(INS ins)
-{
-    if (INS_IsMemoryWrite(ins)) {
-        uint32_t addrsize = INS_MemoryWriteSize(ins);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(clear_mem_taints),
-                IARG_MEMORYWRITE_EA,
-                IARG_UINT32, addrsize,
-                IARG_END);
-    } else if (INS_OperandIsReg(ins, 0)) {
-        REG reg = INS_OperandReg(ins, 0);
-        int treg = translate_reg((int)reg);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(clear_reg),
-                IARG_UINT32, treg,
-                IARG_UINT32, REG_Size(reg),
-                IARG_END);
-    }
-}
-
-void instrument_clear_flag (INS ins, uint32_t mask) 
+static void instrument_clear_flag (INS ins, uint32_t mask) 
 { 
     INS_InsertCall (ins, IPOINT_BEFORE,
 		    AFUNPTR(clear_flag_taint),
@@ -3512,16 +3529,7 @@ void instrument_clear_flag (INS ins, uint32_t mask)
 		    IARG_END);
 }
 
-void instrument_clear_mem_src (INS ins) {
-	uint32_t addrsize = INS_MemoryReadSize(ins);
-        INS_InsertCall(ins, IPOINT_BEFORE,
-                AFUNPTR(clear_mem_taints),
-                IARG_MEMORYREAD_EA,
-                IARG_UINT32, addrsize,
-                IARG_END);
-}
-
-void instrument_move_string(INS ins)
+static void instrument_move_string(INS ins)
 {
     char* str = get_copy_of_disasm (ins); 
     if (INS_HasRealRep(ins)) {
@@ -3576,7 +3584,7 @@ void instrument_move_string(INS ins)
     put_copy_of_disasm (str);
 }
 
-void instrument_compare_string(INS ins, uint32_t mask)
+static void instrument_compare_string(INS ins, uint32_t mask)
 {
     UINT32 size = INS_OperandWidth(ins, 0) / 8;
     char* str = get_copy_of_disasm (ins); 
@@ -3608,7 +3616,7 @@ void instrument_compare_string(INS ins, uint32_t mask)
 		    IARG_END);
 }
 
-void instrument_scan_string(INS ins, uint32_t mask)
+static void instrument_scan_string(INS ins, uint32_t mask)
 {
     UINT32 size = INS_OperandWidth(ins, 0) / 8;
     assert (size == 1);  // Need to handle more general sizes
@@ -3648,7 +3656,7 @@ void instrument_scan_string(INS ins, uint32_t mask)
     put_copy_of_disasm (str);
 }
 
-void instrument_store_string(INS ins)
+static void instrument_store_string(INS ins)
 {
     UINT32 size = INS_OperandWidth(ins, 0) / 8;
     assert(size == INS_MemoryOperandSize(ins, 0));
@@ -3702,7 +3710,7 @@ void instrument_store_string(INS ins)
 }
 
 //TODO: for repz, we probably need the exact number of iterations, which is supported with scan_string
-void instrument_load_string(INS ins)
+static void instrument_load_string(INS ins)
 {
     assert(INS_OperandIsReg(ins, 0));
     assert(INS_OperandIsMemory(ins, 1));
@@ -3745,7 +3753,7 @@ TAINTSIGN pcmpestri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, PIN_REGIS
 
 //INPUT: EAX, EDX, two operands
 //OUTPUT: ECX, FLAGS
-void instrument_pcmpestri (INS ins) { 
+static void instrument_pcmpestri (INS ins) { 
 	int op1reg;
 	int op2mem;
 	int op2reg;
@@ -3827,7 +3835,7 @@ TAINTSIGN pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, PIN_REGIS
 
 //INPUT: EAX, EDX, two operands
 //OUTPUT: ECX, FLAGS
-void instrument_pcmpistri (INS ins) 
+static void instrument_pcmpistri (INS ins) 
 { 
     int reg1;
     int reg2;
@@ -3865,7 +3873,7 @@ void instrument_pcmpistri (INS ins)
     }
 }
 
-void instrument_xchg (INS ins)
+static void instrument_xchg (INS ins)
 {
     int op1reg = INS_OperandIsReg(ins, 0);
     int op2reg = INS_OperandIsReg(ins, 1);
@@ -3894,7 +3902,7 @@ void instrument_xchg (INS ins)
     }
 }
 
-void instrument_cmpxchg (INS ins)
+static void instrument_cmpxchg (INS ins)
 {
     int op1reg = INS_OperandIsReg(ins, 0);
     REG srcreg = INS_OperandReg (ins, 1);
@@ -3926,7 +3934,7 @@ void instrument_cmpxchg (INS ins)
     }
 }
 
-void instrument_mov (INS ins) 
+static void instrument_mov (INS ins) 
 {
     if (INS_IsMemoryRead(ins)) {
 	// (src) operand is memory...destination must be a register
@@ -3966,7 +3974,7 @@ void instrument_mov (INS ins)
     }
 }
 
-void instrument_pinsrb (INS ins) 
+static void instrument_pinsrb (INS ins) 
 {
     REG dstreg = INS_OperandReg(ins, 0);
     if (INS_OperandIsMemory(ins, 1)) {
@@ -3995,7 +4003,7 @@ void instrument_pinsrb (INS ins)
  * Dst: register/memory
  * Src: register/memory
  * */
-void instrument_movx (INS ins)
+static void instrument_movx (INS ins)
 {
     int op1mem = INS_OperandIsMemory(ins, 0);
     int op2mem = INS_OperandIsMemory(ins, 1);
@@ -4024,7 +4032,7 @@ void instrument_movx (INS ins)
     }
 } 
 
-void instrument_cmov(INS ins, uint32_t mask)
+static void instrument_cmov(INS ins, uint32_t mask)
 {
     int ismemread = 0, ismemwrite = 0;
     int immval = 0;
@@ -4114,7 +4122,7 @@ void instrument_cmov(INS ins, uint32_t mask)
 }
 
 //This function doesn't handle RCR and RCL
-void instrument_rotate(INS ins)
+static void instrument_rotate(INS ins)
 {
     int op2imm = INS_OperandIsImmediate (ins, 1);
     int set_flags = 0;
@@ -4150,7 +4158,7 @@ void instrument_rotate(INS ins)
     }
 }
 
-void instrument_shift(INS ins)
+static void instrument_shift(INS ins)
 {
     int count = INS_OperandCount(ins);
     
@@ -4206,7 +4214,7 @@ void instrument_shift(INS ins)
     }
 }
 
-void instrument_lea(INS ins)
+static void instrument_lea(INS ins)
 {
     REG dstreg = INS_OperandReg(ins, 0);
     REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -4250,7 +4258,7 @@ void instrument_lea(INS ins)
     }
 }
 
-void instrument_push(INS ins)
+static void instrument_push(INS ins)
 {
     if (INS_OperandIsImmediate(ins, 0)) {
 	instrument_taint_immval2mem (ins);
@@ -4284,7 +4292,7 @@ void instrument_push(INS ins)
     }
 }
 
-void instrument_pop(INS ins)
+static void instrument_pop(INS ins)
 {
     if (INS_OperandIsMemory(ins, 0)) {
 	assert (0); // Curretntly don't handle this as we would need to do a mem to mem copy
@@ -4302,7 +4310,7 @@ void instrument_pop(INS ins)
     }
 }
 
-void instrument_leave (INS ins) { 
+static void instrument_leave (INS ins) { 
     USIZE addrsize = INS_MemoryReadSize (ins);
     assert (addrsize == 4); //only care about 32bit for now
     fw_slice_src_regmem (ins, LEVEL_BASE::REG_EBP, 4, IARG_MEMORYREAD_EA, 4, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
@@ -4310,7 +4318,12 @@ void instrument_leave (INS ins) {
     instrument_taint_mem2reg (ins, LEVEL_BASE::REG_EBP, 0);
 }
 
-void instrument_addorsub(INS ins, int set_flags, int clear_flags)
+static void instrument_sahf (INS ins) {
+    fw_slice_src_reg (ins, LEVEL_BASE::REG_AH);
+    instrument_taint_reg2flag (ins, LEVEL_BASE::REG_AH, 0, 0);
+}
+
+static void instrument_addorsub(INS ins, int set_flags, int clear_flags)
 {
     OPCODE opcode = INS_Opcode(ins);
     int op1mem = INS_OperandIsMemory(ins, 0);
@@ -4365,7 +4378,7 @@ void instrument_addorsub(INS ins, int set_flags, int clear_flags)
  *
  *  r/m, AX, AL/H/X <- quotient, AH <- remainder
  * */
-void instrument_div(INS ins)
+static void instrument_div(INS ins)
 {
     if (INS_IsMemoryRead(ins)) {
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
@@ -4506,7 +4519,7 @@ void instrument_div(INS ins)
     }
 }
 
-void instrument_mul(INS ins)
+static void instrument_mul(INS ins)
 {
     INSTRUMENT_PRINT (log_f, "mul instruction: %s\n", INS_Disassemble(ins).c_str());
     if (INS_IsMemoryRead(ins)) {
@@ -4632,7 +4645,7 @@ void instrument_mul(INS ins)
 //IMPORTANT: retval of INS_OperandCount won't correspond to the actual operand counts in the intel manual! 
 //Apperantly, pin has its only definition of operand counts
 //It prints out all hidden registers and EFLAGS as operands
-void instrument_imul(INS ins)
+static void instrument_imul(INS ins)
 {
     int count = INS_OperandCount(ins);
     if (count == 3) {
@@ -4672,7 +4685,7 @@ void instrument_imul(INS ins)
     }
 }
 
-void instrument_call_near (INS ins)
+static void instrument_call_near (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_call_near),
@@ -4681,7 +4694,7 @@ void instrument_call_near (INS ins)
 		   IARG_END);
 }
 
-void instrument_call_far (INS ins)
+static void instrument_call_far (INS ins)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_call_far),
@@ -4690,7 +4703,7 @@ void instrument_call_far (INS ins)
 		   IARG_END);
 }
 
-void instrument_palignr(INS ins)
+static void instrument_palignr(INS ins)
 {
     UINT32 imm;
     REG reg;
@@ -4761,7 +4774,7 @@ void instrument_palignr(INS ins)
     }
 }
 
-void instrument_psrldq(INS ins)
+static void instrument_psrldq(INS ins)
 {
     assert(INS_OperandIsReg(ins, 0));
     assert(INS_OperandIsImmediate(ins, 1));
@@ -4776,7 +4789,7 @@ void instrument_psrldq(INS ins)
                     IARG_END);
 }
 
-void instrument_pmovmskb(INS ins)
+static void instrument_pmovmskb(INS ins)
 {
     int src_treg;
     int dst_treg;
@@ -4798,7 +4811,7 @@ void instrument_pmovmskb(INS ins)
             IARG_END);
 }
 
-inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t set_flags, uint32_t clear_flags) 
+inline static void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t set_flags, uint32_t clear_flags) 
 {
     INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regmem2flag),
 		    IARG_FAST_ANALYSIS_CALL,
@@ -4811,7 +4824,7 @@ inline void instrument_taint_regmem2flag (INS ins, REG reg, uint32_t set_flags, 
 		    IARG_END);
 }
 
-inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t set_flags, uint32_t clear_flags) 
+inline static void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uint32_t set_flags, uint32_t clear_flags) 
 {
     INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_regreg2flag_offset),
 		    IARG_FAST_ANALYSIS_CALL,
@@ -4824,7 +4837,7 @@ inline void instrument_taint_regreg2flag (INS ins, REG dst_reg, REG src_reg, uin
 		    IARG_END);
 }
 
-void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
+static void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
 {
     bool op1mem = INS_OperandIsMemory(ins, 0);
     bool op1reg = INS_OperandIsReg(ins, 0);
@@ -4859,7 +4872,7 @@ void instrument_test_or_cmp (INS ins, uint32_t set_mask, uint32_t clear_mask)
     }
 }
 
-void instrument_jump (INS ins, uint32_t flags) 
+static void instrument_jump (INS ins, uint32_t flags) 
 {
     fw_slice_src_flag (ins, flags);
     INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump),
@@ -4871,18 +4884,31 @@ void instrument_jump (INS ins, uint32_t flags)
 		    IARG_END);
 }
 
-void instrument_jump_ecx (INS ins) {
-	fw_slice_src_reg (ins, LEVEL_BASE::REG_ECX);
-	INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump_ecx),
-			IARG_FAST_ANALYSIS_CALL,
-			IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
-			IARG_UINT32, 4,
-			IARG_INST_PTR,
-			IARG_BRANCH_TAKEN,
-			IARG_END);
+static void instrument_jump_ecx (INS ins) 
+{
+    REG reg = INS_OperandReg (ins, 1);
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(fw_slice_condregjump),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(reg), 
+		   IARG_UINT32, REG_Size(reg),
+		   IARG_BRANCH_TAKEN,
+		   IARG_BRANCH_TARGET_ADDR,
+		   IARG_CONST_CONTEXT, 
+		   IARG_END);
+    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_jump_ecx),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_REG_VALUE, LEVEL_BASE::REG_ECX,
+		    IARG_UINT32, REG_Size(reg),
+		    IARG_INST_PTR,
+		    IARG_BRANCH_TAKEN,
+		    IARG_END);
+    put_copy_of_disasm (str);
 }
 
-void instrument_not (INS ins) 
+static void instrument_not (INS ins) 
 { 
     if (INS_OperandIsReg (ins, 0)) { 
 	REG reg = INS_OperandReg(ins, 0);
@@ -4895,7 +4921,7 @@ void instrument_not (INS ins)
     } 
 }
 
-void instrument_incdec_neg (INS ins, int set_flags, int clear_flags) 
+static void instrument_incdec_neg (INS ins, int set_flags, int clear_flags) 
 {
     if (INS_OperandIsMemory (ins, 0)) { 
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
@@ -4909,7 +4935,7 @@ void instrument_incdec_neg (INS ins, int set_flags, int clear_flags)
     } 
 }
 
-void instrument_set (INS ins, uint32_t mask) 
+static void instrument_set (INS ins, uint32_t mask) 
 { 
     if (INS_IsMemoryWrite(ins)) {
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
@@ -4934,7 +4960,7 @@ void instrument_set (INS ins, uint32_t mask)
     }
 }
 
-void instrument_bt (INS ins) 
+static void instrument_bt (INS ins) 
 { 
     int op1reg = INS_OperandIsReg (ins, 0);
     int op2reg = INS_OperandIsReg (ins, 1);
@@ -4963,7 +4989,7 @@ void instrument_bt (INS ins)
     }
 }
 
-void instrument_bit_scan (INS ins) 
+static void instrument_bit_scan (INS ins) 
 { 
     REG dstreg = INS_OperandReg(ins, 0);
     if (INS_IsMemoryRead(ins)) {
@@ -4978,7 +5004,7 @@ void instrument_bit_scan (INS ins)
     }
 }
 
-void instrument_fpu_load (INS ins) 
+static void instrument_fpu_load (INS ins) 
 {
     assert (INS_OperandCount(ins) >= 2);
     REG dst_reg = INS_OperandReg (ins, 0);
@@ -4994,7 +5020,7 @@ void instrument_fpu_load (INS ins)
     }
 }
 
-void instrument_fpu_store (INS ins)
+static void instrument_fpu_store (INS ins)
 {
     assert (INS_OperandCount(ins) >= 2);
     REG src_reg = INS_OperandReg (ins, 1);
@@ -5019,7 +5045,7 @@ void instrument_fpu_store (INS ins)
     }
 }
 
-void instrument_fpu_calc (INS ins, int fp_stack_change)
+static void instrument_fpu_calc (INS ins, int fp_stack_change)
 {
     if (INS_IsMemoryRead(ins)) {
         REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
@@ -5040,7 +5066,7 @@ void instrument_fpu_calc (INS ins, int fp_stack_change)
     }
 }
 
-void instrument_fpu_exchange (INS ins)
+static void instrument_fpu_exchange (INS ins)
 {
     int op1reg = INS_OperandIsReg(ins, 0);
     int op2reg = INS_OperandIsReg(ins, 1);
@@ -5059,7 +5085,7 @@ void instrument_fpu_exchange (INS ins)
         assert (0);
 }
 
-void instrument_cwde (INS ins) 
+static void instrument_cwde (INS ins) 
 {
     fw_slice_src_reg (ins, LEVEL_BASE::REG_AX);
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -5068,7 +5094,7 @@ void instrument_cwde (INS ins)
 		   IARG_END);
 }
 
-void instrument_bswap (INS ins) 
+static void instrument_bswap (INS ins) 
 {
     REG reg = INS_OperandReg(ins, 0);    
     fw_slice_src_reg (ins, reg);
@@ -5224,444 +5250,437 @@ void instruction_instrumentation(INS ins, void *v)
         // We separate out the tainting of the movement of data with
         //  cf, since we can do so much faster if we don't care about cf
 	switch (opcode) {
-		case XED_ICLASS_CMOVBE:
-		case XED_ICLASS_CMOVNBE:
-			instrument_cmov (ins, CF_FLAG | ZF_FLAG);
-			break;
-		case XED_ICLASS_CMOVZ:
-		case XED_ICLASS_CMOVNZ:
-			instrument_cmov (ins, ZF_FLAG);
-			break;
-		case XED_ICLASS_CMOVB:
-		case XED_ICLASS_CMOVNB:
-			instrument_cmov (ins, CF_FLAG);
-			break;
-		case XED_ICLASS_CMOVS:
-		case XED_ICLASS_CMOVNS:
-			instrument_cmov (ins, SF_FLAG);
-			break;
-                case XED_ICLASS_CMOVNLE:
-                case XED_ICLASS_CMOVLE:
-                        instrument_cmov (ins, ZF_FLAG | SF_FLAG | OF_FLAG);
-                        break;
-                case XED_ICLASS_CMOVL:
-                case XED_ICLASS_CMOVNL:
-                        instrument_cmov (ins, SF_FLAG | OF_FLAG);
-                        break;
-		default:
-			fprintf (stderr, "[NOOP] cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
-			break;
+	case XED_ICLASS_CMOVBE:
+	case XED_ICLASS_CMOVNBE:
+	    instrument_cmov (ins, CF_FLAG | ZF_FLAG);
+	    break;
+	case XED_ICLASS_CMOVZ:
+	case XED_ICLASS_CMOVNZ:
+	    instrument_cmov (ins, ZF_FLAG);
+	    break;
+	case XED_ICLASS_CMOVB:
+	case XED_ICLASS_CMOVNB:
+	    instrument_cmov (ins, CF_FLAG);
+	    break;
+	case XED_ICLASS_CMOVS:
+	case XED_ICLASS_CMOVNS:
+	    instrument_cmov (ins, SF_FLAG);
+	    break;
+	case XED_ICLASS_CMOVNLE:
+	case XED_ICLASS_CMOVLE:
+	    instrument_cmov (ins, ZF_FLAG | SF_FLAG | OF_FLAG);
+	    break;
+	case XED_ICLASS_CMOVL:
+	case XED_ICLASS_CMOVNL:
+	    instrument_cmov (ins, SF_FLAG | OF_FLAG);
+	    break;
+	default:
+	    fprintf (stderr, "[NOOP] cmov not instrumented : %s\n", INS_Disassemble(ins).c_str());
+	    break;
 	}
 	slice_handled = 1;
     } else if (category == XED_CATEGORY_SHIFT) {
 	//TODO: flags are affected 
 	switch (opcode) { 
 	    //case XED_ICLASS_SAL:
-	    case XED_ICLASS_SAR:
-	    case XED_ICLASS_SHL:
-	    case XED_ICLASS_SHR:
-	    case XED_ICLASS_SHRD:
-            case XED_ICLASS_SHLD: 
-                    instrument_shift(ins);
-		    slice_handled = 1;
-		    break;
-	    default:
-		    break;
+	case XED_ICLASS_SAR:
+	case XED_ICLASS_SHL:
+	case XED_ICLASS_SHR:
+	case XED_ICLASS_SHRD:
+	case XED_ICLASS_SHLD: 
+	    instrument_shift(ins);
+	    slice_handled = 1;
+	    break;
+	default:
+	    break;
 	}
     } else {
         switch(opcode) {
             // Move and sign/zero extend
-            case XED_ICLASS_MOVSX:
-            case XED_ICLASS_MOVZX:
-                //flags affected: none
-                instrument_movx(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_MOVD:
-            case XED_ICLASS_MOVQ:
-                instrument_movx(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_MOVDQU:
-            case XED_ICLASS_MOVDQA:
-            case XED_ICLASS_MOVAPS:
-            case XED_ICLASS_MOVUPS:
-            case XED_ICLASS_MOVLPD:
-            case XED_ICLASS_MOVHPD:
-            case XED_ICLASS_MOVNTDQA:
-            case XED_ICLASS_MOVNTDQ:
-                instrument_mov(ins);
-                rep_handled = 1; //it seems these instructions are always prefixed with 0xF3
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_PALIGNR:
-                instrument_palignr(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_MOVSB:
-            case XED_ICLASS_MOVSW:
-            case XED_ICLASS_MOVSD:
-            case XED_ICLASS_MOVSQ:
-                instrument_move_string(ins);
-		slice_handled = 1;
-		rep_handled = 1;
-                break;
-            case XED_ICLASS_STOSB:
-            case XED_ICLASS_STOSW:
-            case XED_ICLASS_STOSD:
-            case XED_ICLASS_STOSQ:
-                instrument_store_string(ins);
-		slice_handled = 1;
-		rep_handled = 1;
-                break;
-            case XED_ICLASS_LODSB:
-            case XED_ICLASS_LODSW:
-            case XED_ICLASS_LODSD:
-            case XED_ICLASS_LODSQ:
-                instrument_load_string(ins);
-                break;
-            case XED_ICLASS_XCHG:
-                instrument_xchg(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_CMPXCHG:
-                instrument_cmpxchg(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_PUSH:
-                instrument_push(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_POP:
-                instrument_pop(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_LEA:
-                instrument_lea(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_XADD:
-                instrument_xchg(ins);
-                instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_AND:
-            case XED_ICLASS_OR:
-            case XED_ICLASS_XOR:
-                instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_ADD:
-            case XED_ICLASS_SUB:
-            case XED_ICLASS_SBB:
-            case XED_ICLASS_ADC:
-                instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_DIV:
-            case XED_ICLASS_IDIV:
-                instrument_div(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_MUL:
-                instrument_mul(ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_IMUL:
-                instrument_imul(ins);
-		slice_handled = 1;
-                break;
+	case XED_ICLASS_MOVSX:
+	case XED_ICLASS_MOVZX:
+	    //flags affected: none
+	    instrument_movx(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_MOVD:
+	case XED_ICLASS_MOVQ:
+	    instrument_movx(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_MOVDQU:
+	case XED_ICLASS_MOVDQA:
+	case XED_ICLASS_MOVAPS:
+	case XED_ICLASS_MOVUPS:
+	case XED_ICLASS_MOVLPD:
+	case XED_ICLASS_MOVHPD:
+	case XED_ICLASS_MOVNTDQA:
+	case XED_ICLASS_MOVNTDQ:
+	    instrument_mov(ins);
+	    rep_handled = 1; //it seems these instructions are always prefixed with 0xF3
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PALIGNR:
+	    instrument_palignr(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_MOVSB:
+	case XED_ICLASS_MOVSW:
+	case XED_ICLASS_MOVSD:
+	case XED_ICLASS_MOVSQ:
+	    instrument_move_string(ins);
+	    slice_handled = 1;
+	    rep_handled = 1;
+	    break;
+	case XED_ICLASS_STOSB:
+	case XED_ICLASS_STOSW:
+	case XED_ICLASS_STOSD:
+	case XED_ICLASS_STOSQ:
+	    instrument_store_string(ins);
+	    slice_handled = 1;
+	    rep_handled = 1;
+	    break;
+	case XED_ICLASS_LODSB:
+	case XED_ICLASS_LODSW:
+	case XED_ICLASS_LODSD:
+	case XED_ICLASS_LODSQ:
+	    instrument_load_string(ins);
+	    break;
+	case XED_ICLASS_XCHG:
+	    instrument_xchg(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_CMPXCHG:
+	    instrument_cmpxchg(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PUSH:
+	    instrument_push(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_POP:
+	    instrument_pop(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_LEA:
+	    instrument_lea(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_XADD:
+	    instrument_xchg(ins);
+	    instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_AND:
+	case XED_ICLASS_OR:
+	case XED_ICLASS_XOR:
+	    instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_ADD:
+	case XED_ICLASS_SUB:
+	case XED_ICLASS_SBB:
+	case XED_ICLASS_ADC:
+	    instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_DIV:
+	case XED_ICLASS_IDIV:
+	    instrument_div(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_MUL:
+	    instrument_mul(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_IMUL:
+	    instrument_imul(ins);
+	    slice_handled = 1;
+	    break;
             // now all of the XMM packed instructions
-            case XED_ICLASS_POR:
-            case XED_ICLASS_PAND:
-            case XED_ICLASS_PANDN:
-            case XED_ICLASS_PXOR:
-            case XED_ICLASS_PADDB:
-            case XED_ICLASS_PADDW:
-            case XED_ICLASS_PADDD:
-            case XED_ICLASS_PADDQ:
-            case XED_ICLASS_PSUBB:
-            case XED_ICLASS_PSUBW:
-            case XED_ICLASS_PSUBD:
-            case XED_ICLASS_PSUBQ:
-            case XED_ICLASS_PMADDWD:
-            case XED_ICLASS_PMULHUW:
-            case XED_ICLASS_PMINUB:
-            case XED_ICLASS_PMULLW:
-            case XED_ICLASS_PADDUSW:
-            case XED_ICLASS_PADDUSB:
-            case XED_ICLASS_PACKUSWB:
-            case XED_ICLASS_PSHUFHW:
-            case XED_ICLASS_PSHUFLW:
-	    case XED_ICLASS_PSHUFD:
-            case XED_ICLASS_PSHUFB:
-            case XED_ICLASS_XORPS:
-            case XED_ICLASS_SUBSD:
-            case XED_ICLASS_DIVSD:
-                instrument_addorsub(ins, -1, -1);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_PCMPEQB:
-            case XED_ICLASS_PCMPEQW:
-            case XED_ICLASS_PCMPEQD:
-            case XED_ICLASS_PCMPGTB:
-            case XED_ICLASS_PCMPGTW:
-            case XED_ICLASS_PCMPGTD:
-            case XED_ICLASS_PCMPGTQ:
-                instrument_addorsub(ins, -1, -1);
-		slice_handled = 1;
-                break;
-	    case XED_ICLASS_PINSRB:
-		instrument_pinsrb(ins);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_PSRLDQ:
-                instrument_psrldq(ins);
-                slice_handled = 1;
-                break;
-                /*
-            case XED_ICLASS_PSRLW:
-            case XED_ICLASS_PSRLD:
-            case XED_ICLASS_PSRLQ:
-                assert(0);
-                break;
-                */
-            case XED_ICLASS_PMOVMSKB:
-                instrument_pmovmskb(ins);
-                slice_handled = 1;
-                break;
-            case XED_ICLASS_PUNPCKHBW:
-            case XED_ICLASS_PUNPCKLBW:
-            case XED_ICLASS_PUNPCKHWD:
-            case XED_ICLASS_PUNPCKLWD:
-            case XED_ICLASS_PUNPCKHDQ:
-            case XED_ICLASS_PUNPCKLDQ:
-            case XED_ICLASS_PUNPCKHQDQ:
-            case XED_ICLASS_PUNPCKLQDQ:
-                instrument_addorsub(ins, -1, -1);
-		slice_handled = 1;
-                break;
-                /*
-            case XED_ICLASS_PSHUFD:
-                break;
-                */
-            case XED_ICLASS_CALL_NEAR:
-		instrument_call_near(ins);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_CALL_FAR:
-		instrument_call_far(ins);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_RET_NEAR:
-            case XED_ICLASS_RET_FAR:
-		slice_handled = 1;
-		rep_handled = 1;
-                break;
-            case XED_ICLASS_INC:
-            case XED_ICLASS_DEC:
-		instrument_incdec_neg (ins, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_NEG:
-		instrument_incdec_neg (ins, CF_FLAG|OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_ROL:
-	    case XED_ICLASS_ROR:
-		instrument_rotate (ins);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETB:
-            case XED_ICLASS_SETNB:
-		instrument_set (ins, CF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETL:
-            case XED_ICLASS_SETNL:
-		instrument_set (ins, SF_FLAG | OF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETNBE:
-            case XED_ICLASS_SETBE:
-		instrument_set (ins, CF_FLAG | ZF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETLE:
-            case XED_ICLASS_SETNLE:
-		instrument_set (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETNO:
-            case XED_ICLASS_SETO:
-		instrument_set (ins, OF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETNP:
-            case XED_ICLASS_SETP:
-		instrument_set (ins, PF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETNS:
-            case XED_ICLASS_SETS:
-		instrument_set (ins, SF_FLAG);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_SETZ:
-            case XED_ICLASS_SETNZ:
-		instrument_set (ins, ZF_FLAG);
-		slice_handled = 1;
-                break;
-           case XED_ICLASS_BSF:
-           case XED_ICLASS_BSR:
-                instrument_bit_scan (ins);
-                slice_handled = 1;
-                break;
-	   case XED_ICLASS_TEST:
-                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
-                instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG, CF_FLAG|OF_FLAG|AF_FLAG);
-		slice_handled = 1;
-		break;
-	   case XED_ICLASS_CMP:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
-		instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG, 0);
-		slice_handled = 1;
-		break;
-	   case XED_ICLASS_PTEST:
-		instrument_test_or_cmp(ins, ZF_FLAG | CF_FLAG, OF_FLAG|AF_FLAG|PF_FLAG|SF_FLAG);
-		slice_handled = 1;
-		break;
-                //for the following 4 cases, refer to move_string
-	   case XED_ICLASS_CMPSB:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument TEST\n", INS_Address(ins));
-		instrument_compare_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
-		rep_handled = 1;
-		slice_handled = 1;
-		break;
-	   case XED_ICLASS_SCASB:
-		instrument_scan_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
-		slice_handled = 1;
-		rep_handled = 1;
-		break;
-	   case XED_ICLASS_PCMPESTRI:
-		instrument_pcmpestri (ins);
-                slice_handled = 1;
-		break;
-	   case XED_ICLASS_PCMPISTRI: 
-		instrument_pcmpistri (ins);
-                slice_handled = 1;
-		break;
-	   case XED_ICLASS_JNZ:
-                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JNZ/JNE\n", INS_Address(ins)); instrument_jump (ins, ZF_FLAG);
-		instrument_jump (ins, ZF_FLAG);
-		slice_handled = 1;
-		break;
-       	   case XED_ICLASS_JZ:
-                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JZ/JE\n", INS_Address(ins));
-		instrument_jump (ins, ZF_FLAG);
-		slice_handled = 1;
-		break;
-	   case XED_ICLASS_JMP:
-                //INSTRUMENT_PRINT(log_f, "%#x: about to instrument JMP\n", INS_Address(ins));
-		instrument_jump (ins, 0);
-		slice_handled = 1;
-		break;
+	case XED_ICLASS_POR:
+	case XED_ICLASS_PAND:
+	case XED_ICLASS_PANDN:
+	case XED_ICLASS_PXOR:
+	case XED_ICLASS_PADDB:
+	case XED_ICLASS_PADDW:
+	case XED_ICLASS_PADDD:
+	case XED_ICLASS_PADDQ:
+	case XED_ICLASS_PSUBB:
+	case XED_ICLASS_PSUBW:
+	case XED_ICLASS_PSUBD:
+	case XED_ICLASS_PSUBQ:
+	case XED_ICLASS_PMADDWD:
+	case XED_ICLASS_PMULHUW:
+	case XED_ICLASS_PMINUB:
+	case XED_ICLASS_PMULLW:
+	case XED_ICLASS_PADDUSW:
+	case XED_ICLASS_PADDUSB:
+	case XED_ICLASS_PACKUSWB:
+	case XED_ICLASS_PSHUFHW:
+	case XED_ICLASS_PSHUFLW:
+	case XED_ICLASS_PSHUFD:
+	case XED_ICLASS_PSHUFB:
+	case XED_ICLASS_XORPS:
+	case XED_ICLASS_SUBSD:
+	case XED_ICLASS_DIVSD:
+	    instrument_addorsub(ins, -1, -1);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PCMPEQB:
+	case XED_ICLASS_PCMPEQW:
+	case XED_ICLASS_PCMPEQD:
+	case XED_ICLASS_PCMPGTB:
+	case XED_ICLASS_PCMPGTW:
+	case XED_ICLASS_PCMPGTD:
+	case XED_ICLASS_PCMPGTQ:
+	    instrument_addorsub(ins, -1, -1);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PINSRB:
+	    instrument_pinsrb(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PSRLDQ:
+	    instrument_psrldq(ins);
+	    slice_handled = 1;
+	    break;
+	    /*
+	      case XED_ICLASS_PSRLW:
+	      case XED_ICLASS_PSRLD:
+	      case XED_ICLASS_PSRLQ:
+	      assert(0);
+	      break;
+	    */
+	case XED_ICLASS_PMOVMSKB:
+	    instrument_pmovmskb(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PUNPCKHBW:
+	case XED_ICLASS_PUNPCKLBW:
+	case XED_ICLASS_PUNPCKHWD:
+	case XED_ICLASS_PUNPCKLWD:
+	case XED_ICLASS_PUNPCKHDQ:
+	case XED_ICLASS_PUNPCKLDQ:
+	case XED_ICLASS_PUNPCKHQDQ:
+	case XED_ICLASS_PUNPCKLQDQ:
+	    instrument_addorsub(ins, -1, -1);
+	    slice_handled = 1;
+	    break;
+	    /*
+	      case XED_ICLASS_PSHUFD:
+	      break;
+	    */
+	case XED_ICLASS_CALL_NEAR:
+	    instrument_call_near(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_CALL_FAR:
+	    instrument_call_far(ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_RET_NEAR:
+	case XED_ICLASS_RET_FAR:
+	    slice_handled = 1;
+	    rep_handled = 1;
+	    break;
+	case XED_ICLASS_INC:
+	case XED_ICLASS_DEC:
+	    instrument_incdec_neg (ins, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_NEG:
+	    instrument_incdec_neg (ins, CF_FLAG|OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_ROL:
+	case XED_ICLASS_ROR:
+	    instrument_rotate (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETB:
+	case XED_ICLASS_SETNB:
+	    instrument_set (ins, CF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETL:
+	case XED_ICLASS_SETNL:
+	    instrument_set (ins, SF_FLAG | OF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETNBE:
+	case XED_ICLASS_SETBE:
+	    instrument_set (ins, CF_FLAG | ZF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETLE:
+	case XED_ICLASS_SETNLE:
+	    instrument_set (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETNO:
+	case XED_ICLASS_SETO:
+	    instrument_set (ins, OF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETNP:
+	case XED_ICLASS_SETP:
+	    instrument_set (ins, PF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETNS:
+	case XED_ICLASS_SETS:
+	    instrument_set (ins, SF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SETZ:
+	case XED_ICLASS_SETNZ:
+	    instrument_set (ins, ZF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_BSF:
+	case XED_ICLASS_BSR:
+	    instrument_bit_scan (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_TEST:
+	    instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG, CF_FLAG|OF_FLAG|AF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_CMP:
+	    instrument_test_or_cmp(ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PTEST:
+	    instrument_test_or_cmp(ins, ZF_FLAG | CF_FLAG, OF_FLAG|AF_FLAG|PF_FLAG|SF_FLAG);
+	    slice_handled = 1;
+	    break;
+	    //for the following 4 cases, refer to move_string
+	case XED_ICLASS_CMPSB:
+	    instrument_compare_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
+	    rep_handled = 1;
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SCASB:
+	    instrument_scan_string (ins, SF_FLAG|ZF_FLAG|PF_FLAG|CF_FLAG|OF_FLAG|AF_FLAG);
+	    slice_handled = 1;
+	    rep_handled = 1;
+	    break;
+	case XED_ICLASS_PCMPESTRI:
+	    instrument_pcmpestri (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PCMPISTRI: 
+	    instrument_pcmpistri (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_JNZ:
+	    instrument_jump (ins, ZF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_JZ:
+	    instrument_jump (ins, ZF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_JMP:
+	    instrument_jump (ins, 0);
+	    slice_handled = 1;
+	    break;
         case XED_ICLASS_JB:
         case XED_ICLASS_JNB:
-           	//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JB/JNB\n", INS_Address(ins));
-		instrument_jump (ins, CF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, CF_FLAG);
+	    slice_handled = 1;
+	    break;
         case XED_ICLASS_JBE:
         case XED_ICLASS_JNBE:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JBE/JNBE\n", INS_Address(ins));
-		instrument_jump (ins, CF_FLAG|ZF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, CF_FLAG|ZF_FLAG);
+	    slice_handled = 1;
+	    break;
         case XED_ICLASS_JL:
         case XED_ICLASS_JNL:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JL/JNL\n", INS_Address(ins));
-		instrument_jump (ins, SF_FLAG|OF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, SF_FLAG|OF_FLAG);
+	    slice_handled = 1;
+	    break;
 	case XED_ICLASS_JLE:
         case XED_ICLASS_JNLE: 
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JLE/JNLE\n", INS_Address(ins));
-		instrument_jump (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, ZF_FLAG|SF_FLAG|OF_FLAG);
+	    slice_handled = 1;
+	    break;
 	case XED_ICLASS_JNO:
         case XED_ICLASS_JO:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JO/JNO\n", INS_Address(ins));
-		instrument_jump (ins, OF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, OF_FLAG);
+	    slice_handled = 1;
+	    break;
 	case XED_ICLASS_JNP:
         case XED_ICLASS_JP:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JP/JNP\n", INS_Address(ins));
-		instrument_jump (ins, PF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, PF_FLAG);
+	    slice_handled = 1;
+	    break;
         case XED_ICLASS_JNS:
         case XED_ICLASS_JS:
-		//INSTRUMENT_PRINT(log_f, "%#x: about to instrument JS/JNS\n", INS_Address(ins));
-		instrument_jump (ins, SF_FLAG);
-		slice_handled = 1;
-		break;
+	    instrument_jump (ins, SF_FLAG);
+	    slice_handled = 1;
+	    break;
 	case XED_ICLASS_JRCXZ:
-		instrument_jump_ecx (ins);
-		slice_handled = 1;
-		break;
-            case XED_ICLASS_NOT:
-		instrument_not (ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_LEAVE:
-                instrument_leave (ins);
-                slice_handled = 1;
-                break;
-            case XED_ICLASS_CLD:
-		fw_slice_src_flag (ins, DF_FLAG);
-		instrument_clear_flag (ins, DF_FLAG);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_BT:
-		instrument_bt (ins);
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_CPUID:
-                // ignore this instruction
-		slice_handled = 1;
-                break;
-            case XED_ICLASS_PUSHFD:
-                fw_slice_src_flag2mem (ins, uint32_t(-1), LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
-                INS_InsertCall (ins, IPOINT_BEFORE, 
-                        AFUNPTR(taint_pushfd), 
-                        IARG_FAST_ANALYSIS_CALL, 
-                        IARG_MEMORYWRITE_EA, 
-                        IARG_UINT32, INS_MemoryWriteSize(ins),
-                        IARG_END);
-                slice_handled = 1;
-                break;
-            case XED_ICLASS_POPFD:
-                fw_slice_src_mem (ins, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
-                INS_InsertCall (ins, IPOINT_BEFORE, 
-                        AFUNPTR(taint_popfd), 
-                        IARG_FAST_ANALYSIS_CALL, 
-                        IARG_MEMORYREAD_EA, 
-                        IARG_UINT32, INS_MemoryReadSize(ins),
-                        IARG_END);
-                slice_handled = 1;
-                break;
-            case XED_ICLASS_FLD:
-            case XED_ICLASS_FILD:
-            case XED_ICLASS_FBLD:
-		instrument_fpu_load (ins);
-		slice_handled = 1;
-		break;
+	    /* Could also be jecxz */
+	    instrument_jump_ecx (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_NOT:
+	    instrument_not (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_LEAVE:
+	    instrument_leave (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_CLD:
+	case XED_ICLASS_STD:
+	    //fw_slice_src_flag (ins, DF_FLAG);
+	    instrument_clear_flag (ins, DF_FLAG);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SAHF:
+	    instrument_sahf (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_BT:
+	    instrument_bt (ins);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_CPUID:
+	    // ignore this instruction
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_PUSHFD:
+	    fw_slice_src_flag2mem (ins, uint32_t(-1), LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
+	    INS_InsertCall (ins, IPOINT_BEFORE, 
+			    AFUNPTR(taint_pushfd), 
+			    IARG_FAST_ANALYSIS_CALL, 
+			    IARG_MEMORYWRITE_EA, 
+			    IARG_UINT32, INS_MemoryWriteSize(ins),
+			    IARG_END);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_POPFD:
+	    fw_slice_src_mem (ins, LEVEL_BASE::REG_INVALID(), LEVEL_BASE::REG_INVALID());
+	    INS_InsertCall (ins, IPOINT_BEFORE, 
+			    AFUNPTR(taint_popfd), 
+			    IARG_FAST_ANALYSIS_CALL, 
+			    IARG_MEMORYREAD_EA, 
+			    IARG_UINT32, INS_MemoryReadSize(ins),
+			    IARG_END);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_FLD:
+	case XED_ICLASS_FILD:
+	case XED_ICLASS_FBLD:
+	    instrument_fpu_load (ins);
+	    slice_handled = 1;
+	    break;
             case XED_ICLASS_FLDZ:
-            case XED_ICLASS_FLD1:
-            case XED_ICLASS_FLDL2T:
+	case XED_ICLASS_FLD1:
+	case XED_ICLASS_FLDL2T:
             case XED_ICLASS_FLDL2E:
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
@@ -5786,7 +5805,7 @@ void instruction_instrumentation(INS ins, void *v)
 	
 }
 
-void instrument_print_inst_dest (INS ins) 
+static void instrument_print_inst_dest (INS ins) 
 { 
     uint32_t operand_count = INS_OperandCount (ins);
     if (INS_IsCall (ins)) {

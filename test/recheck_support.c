@@ -1727,6 +1727,61 @@ long ioctl_recheck ()
     return rc;
 }
 
+// Can I find this definition as user level?
+struct linux_dirent {
+    unsigned long        d_ino;
+    unsigned long        d_off;
+    unsigned short	 d_reclen;
+    char		 d_name[1];
+};
+
+long getdents_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct getdents64_recheck* pgetdents;
+    char* dents;
+    int rc;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pgetdents = (struct getdents64_recheck *) bufptr;
+    if (pgetdents->arglen > 0) {
+	dents = bufptr+sizeof(struct getdents64_recheck);
+    }
+    bufptr += pentry->len;
+    
+#ifdef PRINT_VALUES
+    LPRINT ( "getdents: fd %u buf %p count %u arglen %ld rc %ld clock %lu\n", pgetdents->fd, pgetdents->buf, pgetdents->count, pgetdents->arglen, pentry->retval, pentry->clock);
+#endif 
+    start_timing();
+    rc = syscall(SYS_getdents, pgetdents->fd, tmpbuf, pgetdents->count);
+    end_timing (SYS_getdents, rc);
+    check_retval ("getdents", pentry->clock, pentry->retval, rc);
+    if (rc > 0) {
+	int compared = 0;
+	char* p = dents; 
+	char* c = tmpbuf;
+	while (compared < rc) {
+	    struct linux_dirent* prev = (struct linux_dirent *) p;
+	    struct linux_dirent* curr = (struct linux_dirent *) c;
+	    if (prev->d_ino != curr->d_ino || prev->d_off != curr->d_off ||
+		prev->d_reclen != curr->d_reclen || strcmp(prev->d_name, curr->d_name)) {
+		printf ("{MISMATCH] getdetnts: inode %lu vs. %lu\t", prev->d_ino, curr->d_ino);
+		printf ("offset %ld vs. %ld\t", prev->d_off, curr->d_off);
+		printf ("reclen %d vs. %d\t", prev->d_reclen, curr->d_reclen);
+		printf ("name %s vs. %s\t", prev->d_name, curr->d_name);
+		handle_mismatch();
+	    }
+	    if (prev->d_reclen <= 0) break;
+	    p += prev->d_reclen; c += curr->d_reclen; compared += prev->d_reclen;
+	}
+    }
+    end_timing_func (SYS_getdents);
+    return rc;
+}
+
 // Can I find this definition at user level?
 struct linux_dirent64 {
 	__u64		d_ino;
@@ -2105,6 +2160,30 @@ void sched_getaffinity_recheck (int pid)
         }
     }
     end_timing_func (SYS_sched_getaffinity);
+}
+
+void ftruncate_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct ftruncate_recheck* pftruncate;
+    int rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pftruncate = (struct ftruncate_recheck *) bufptr;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "ftruncate: fd %u length %lu", pftruncate->fd, pftruncate->length);
+    LPRINT ( " rc %ld clock %lu\n", pentry->retval, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall(SYS_ftruncate, pftruncate->fd, pftruncate->length);
+    end_timing (SYS_ftruncate, rc);
+    check_retval ("ftruncate", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_ftruncate);
 }
 
 void recheck_add_clock_by_2 ()

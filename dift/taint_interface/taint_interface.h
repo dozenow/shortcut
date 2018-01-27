@@ -119,6 +119,7 @@ TAINTSIGN fw_slice_memregreg (ADDRINT ip, char* ins_str, int reg1, uint32_t reg1
 TAINTSIGN fw_slice_jmp_reg (ADDRINT ip, char* ins_str, uint32_t reg, uint32_t reg_size, uint32_t is_upper8, ADDRINT target);
 TAINTSIGN fw_slice_jmp_mem (ADDRINT ip, char* ins_str, uint32_t mem_addr, uint32_t mem_size, ADDRINT target);
 TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, ADDRINT target, const CONTEXT* ctx);
+TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t regsize, BOOL taken, ADDRINT target, const CONTEXT* ctx);
 TAINTSIGN fw_slice_flag (ADDRINT ip, char* ins_str, uint32_t mask);
 TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_regregreg (ADDRINT ip, char* ins_str, int dst_reg, int src_reg, int count_reg, uint32_t dst_regsize, uint32_t src_regsize, uint32_t count_regsize, const PIN_REGISTER* dst_regvalue,

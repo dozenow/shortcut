@@ -3598,6 +3598,137 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
     }
 }
 
+/* Mostly the same as above but the jump depends on a register value like ECX - any other registers? */
+/* For now, we are not going to handle divergences - may need to change this later */
+TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t regsize, BOOL taken, ADDRINT target, const CONTEXT* ctx) 
+{
+#if 0
+    if (current_thread->ctrl_flow_info.is_in_original_branch) {
+	CFDEBUG ("Original branch ip 0x%x taken %d target %x next %lx\n", ip, taken, target, current_thread->ctrl_flow_info.diverge_point->front().orig_path.front().first);
+	CFDEBUG ("Flag tainted %d is_diverged_branch %d change jump %d\n", is_flag_tainted(mask), current_thread->ctrl_flow_info.is_in_diverged_branch, current_thread->ctrl_flow_info.change_jump);
+	if (current_thread->ctrl_flow_info.change_original_branch) { 
+	    CFDEBUG ("Restart orig branch - change the jump here ip 0x%x\n", ip);
+	    current_thread->ctrl_flow_info.change_original_branch = false;
+	    change_jump (mask, ctx, ins_str);
+	}
+	if (!current_thread->ctrl_flow_info.change_jump) { 
+	    // Track the original path and see if we diverge
+	    pair<u_long, char> orig_branch = current_thread->ctrl_flow_info.diverge_point->front().orig_path.front();
+	    current_thread->ctrl_flow_info.diverge_point->front().orig_path.pop();
+	    if ((orig_branch.second == 't' && !taken) || (orig_branch.second == 'n' && taken)) {
+		CFDEBUG ("Uh-oh! Original path not going expeced direction orig branch 0x%lx, ip 0x%x orig %c taken %d\n", orig_branch.first, ip, orig_branch.second, taken);
+		// We are going to "abort" this control flow divergence
+		char label_prefix[256];
+		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
+
+		OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
+		OUTPUT_SLICE_INFO ("");
+		OUTPUT_SLICE (ip, "%s_that_branch_init:", label_prefix);
+		OUTPUT_SLICE_INFO ("");
+		// This should have been a control flow divergence at the diverge point (oops) 
+		OUTPUT_SLICE (ip, "call handle_delayed_jump_diverge");
+		OUTPUT_SLICE_INFO ("");
+		OUTPUT_SLICE (ip, "%s_branch_end:", label_prefix);
+		OUTPUT_SLICE_INFO ("");
+		cleanup_after_merge();
+		CFDEBUG ("Aborted handling of this divergence\n");
+	    }
+	}
+    }
+
+    if (current_thread->ctrl_flow_info.is_in_diverged_branch) { 
+	CFDEBUG ("Should I change jump along diverged branch? ip 0x%x taken %d orig taken %d target %x\n", ip, taken, current_thread->ctrl_flow_info.diverge_point->front().orig_taken, target);
+	CFDEBUG ("Flag tainted %d is_diverged_branch %d change jump %d\n", is_flag_tainted(mask), current_thread->ctrl_flow_info.is_in_diverged_branch, current_thread->ctrl_flow_info.change_jump);
+	if (current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst) {
+	    if ((current_thread->ctrl_flow_info.diverge_point->front().orig_taken && !taken) ||
+		(!current_thread->ctrl_flow_info.diverge_point->front().orig_taken && taken)) {
+		CFDEBUG ("It appears that execution takes alternate path\n");
+		swap (current_thread->ctrl_flow_info.diverge_point->front().orig_path, 
+		      current_thread->ctrl_flow_info.diverge_point->front().alt_path);
+	    } else {
+		CFDEBUG ("Execution takes expected path\n");
+	    }
+	    change_jump(mask, ctx, ins_str);
+	} else {
+	    if (current_thread->ctrl_flow_info.changed_jump) {
+		CFDEBUG ("Jump at 0x%x was changed\n", ip);
+		current_thread->ctrl_flow_info.changed_jump = false;
+	    } else {
+		pair<u_long, char> alt_branch = current_thread->ctrl_flow_info.diverge_point->front().alt_path.front();
+		current_thread->ctrl_flow_info.diverge_point->front().alt_path.pop();
+		CFDEBUG ("Alternate branch %lx was taken %c at branch %x taken %d\n", alt_branch.first, alt_branch.second, ip, taken);
+		if ((alt_branch.second == 't' && !taken) || (alt_branch.second == 'n' && taken)) {
+		    CFDEBUG ("Change jump direction\n");
+		    change_jump(mask, ctx, ins_str);
+		}
+	    }
+	}
+    }
+#endif
+
+    if (is_reg_tainted (reg, regsize, 0)) {
+#if 0
+        if (!current_thread->ctrl_flow_info.is_in_diverged_branch && current_thread->ctrl_flow_info.change_jump) { 
+            current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
+        } else if (current_thread->ctrl_flow_info.is_in_diverged_branch && current_thread->ctrl_flow_info.change_jump) { 
+	    current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
+        } else {
+#endif
+	    OUTPUT_SLICE_VERIFICATION ("pushfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("push %ld", jump_count++);
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+
+	    if (!strncmp(ins_str, "jcxz ", 5)) {
+		if (taken) {
+		    /* No opposite branch */
+		    OUTPUT_SLICE (ip, "jcxz b_jcxz_%lu", jump_count);
+		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 1", reg, regsize, is_reg_tainted(reg, regsize, 0));
+		    OUTPUT_SLICE (ip, "jmp jump_diverge");
+		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu: add esp, 4", jump_count);
+		} else {
+		    OUTPUT_SLICE (ip, "jcxz b_jcxz_%lu_1", jump_count);
+		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 0", reg, regsize, is_reg_tainted(reg, regsize, 0));
+		    OUTPUT_SLICE (ip, "jmp b_jcxz_%lu_2", jump_count);
+		    OUTPUT_SLICE_INFO ("");
+		    OUTPUT_SLICE (ip, "b_jcxz_%lu_1: jmp jump_diverge", jump_count);
+		    OUTPUT_SLICE_INFO ("");
+		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu_2: add esp, 4", jump_count);
+		}
+	    } else if (!strncmp(ins_str, "jecxz ", 6)) {
+		if (taken) {
+		    /* No opposite branch */
+		    OUTPUT_SLICE (ip, "jecxz b_jecxz_%lu", jump_count);
+		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 1", reg, regsize, is_reg_tainted(reg, regsize, 0));
+		    OUTPUT_SLICE (ip, "jmp jump_diverge");
+		    OUTPUT_SLICE_INFO ("");
+		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu: add esp, 4", jump_count);
+		} else {
+		    OUTPUT_SLICE (ip, "jecxz b_jecxz_%lu_1", jump_count);
+		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 0", reg, regsize, is_reg_tainted(reg, regsize, 0));
+		    OUTPUT_SLICE (ip, "jmp b_jecxz_%lu_2", jump_count);
+		    OUTPUT_SLICE_INFO ("");
+		    OUTPUT_SLICE (ip, "b_jecxz_%lu_1: jmp jump_diverge", jump_count);
+		    OUTPUT_SLICE_INFO ("");
+		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu_2: add esp, 4", jump_count);
+		}
+	    } else {
+		fprintf (stderr, "unhandled register-based conditional jump: %s\n", ins_str);
+		assert (0);
+	    }
+
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+	    OUTPUT_SLICE_VERIFICATION ("popfd");
+	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#if 0
+        }
+    } else { 
+	if (current_thread->ctrl_flow_info.change_jump) fprintf (stderr, "Diverge at non-tainted jump: %x %s mask %x\n", ip, ins_str, mask);
+        assert (current_thread->ctrl_flow_info.change_jump == false); //we diverge at a non-tainted jump??
+#endif 
+    }
+}
+
 TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 {
     VERIFY_BASE_INDEX_WRITE;
@@ -3920,6 +4051,12 @@ TAINTSIGN taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size)
     memcpy(&shadow_reg_table[dst_reg_off], &shadow_reg_table[src_reg_off], size * sizeof(taint_t));
 }
 
+// reg2reg
+static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
+{
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+    memcpy(&shadow_reg_table[dst_reg * REG_SIZE], &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
+}
 
 // JNF: What mike did - but only really right for zero extension, not sign extension, etc.
 TAINTSIGN taint_reg2reg_ext_offset (int dst_reg_off, int src_reg_off, uint32_t size)
@@ -3936,22 +4073,9 @@ TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CO
     if (fp_stack_change == FP_PUSH) {
         //per FLD specification
         sp = decrement_fp_stack_top (sp);
-    } else if (fp_stack_change == FP_POP) {
-        //do nothing
-    } else
-        assert (0);
+    }
     dst_reg = update_fp_stack_reg (dst_reg, sp);
-    taint_reg2reg_offset (dst_reg*REG_SIZE, src_reg*REG_SIZE, size);
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&shadow_reg_table[dst_reg*REG_SIZE], &shadow_reg_table[src_reg*REG_SIZE], size * sizeof(taint_t));
-}
-
-// reg2reg
-static inline void taint_reg2reg (int dst_reg, int src_reg, uint32_t size)
-{
-    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-    memcpy(&shadow_reg_table[dst_reg * REG_SIZE],
-            &shadow_reg_table[src_reg * REG_SIZE], size * sizeof(taint_t));
+    taint_reg2reg (dst_reg, src_reg, size);
 }
 
 TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg) { 
