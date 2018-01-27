@@ -121,7 +121,7 @@ int verify_debug = 0;
 #define MCPRINT
 #define SLICE_DEBUG(x,...)
 
-#define JNF_HACK //TODO it appears that java can't use this while emacs must
+//#define JNF_HACK //TODO it appears that java can't use this while emacs must
 
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
@@ -4551,11 +4551,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	//if (PRINT_TIME) {
+	if (PRINT_TIME) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
 		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
-	//}
+	}
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4711,7 +4711,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			
                         snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
 			if (slice_addr == 0) {
-				printk ("Cannot find forward slice library\n");
+				printk ("Cannot find forward slice library %s\n", recheckname);
 				return -EEXIST;
 			}
 
@@ -4929,7 +4929,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 char recheckname[256];
                 snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
                 if (slice_addr == 0) {
-                    printk ("Cannot find forward slice library\n");
+                    printk ("Cannot find forward slice library %s\n", recheck_filename);
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
@@ -5135,6 +5135,9 @@ check_signal_delivery (int signr, siginfo_t* info, struct k_sigaction* ka, int i
 
 	if (ignore_flag && sysnum >= 0) {
 		return 0;
+	} else if (signr == SIGSEGV && ka->sa.sa_handler != SIG_DFL) {
+		//this is a segfault and user provides a handler, then delivery it immeidiately
+		return 0;
 	} else if (!sig_fatal(current,signr) && sysnum != psr->sysnum && sysnum != 0 /* restarted syscall */) {
 		// This is an unrecorded system call or a trap.  Since we cannot guarantee that the signal will not delivered
 		// at this same place on replay, delay the delivery until we reach such a safe place.  Signals that immediately
@@ -5161,6 +5164,17 @@ record_signal_delivery (int signr, siginfo_t* info, struct k_sigaction* ka)
 		get_user (ignore_flag, prt->rp_ignore_flag_addr);
 	} else {
 		ignore_flag = 0;
+	}
+	if (signr == SIGSEGV && ka->sa.sa_handler != SIG_DFL) {
+		printk ("Pid %d get a segfault and there is user-defined handler, so ignore\n", current->pid);
+		// Also save context from before signal
+		pcontext = KMALLOC (sizeof(struct repsignal_context), GFP_ATOMIC);
+		pcontext->ignore_flag = ignore_flag;
+		pcontext->next = prt->rp_repsignal_context_stack;
+		prt->rp_repsignal_context_stack = pcontext;
+		// If we were in an ignore region, that is no longer the case
+		if (prt->rp_ignore_flag_addr) put_user (0, prt->rp_ignore_flag_addr); 
+		return 0;
 	}
 
         MPRINT ("Pid %d recording signal delivery signr %d fatal %d - clock is currently %d ignore flag %d sysnum %d psr->sysnum %d handler %p\n", 
@@ -5272,7 +5286,7 @@ replay_signal_delivery (int* signr, siginfo_t* info)
 	struct repsignal* psignal;
 
 	if (!prt->rp_signals) {
-		MPRINT ("pid %d replay_signal called but no signals, signr is %d\n", current->pid, *signr);
+		MPRINT ("pid %d replay_signal called but no signals, signr is %d, current clock %lu\n", current->pid, *signr, *(prt->rp_preplay_clock));
 		*signr = 0;
 		return;
 	}
@@ -10499,8 +10513,10 @@ static asmlinkage long replay_sigaction (int sig, const struct old_sigaction __u
 	char *retparams = NULL;						
 	long rc;
 									
-	if (current->replay_thrd->app_syscall_addr) {
-		return sys_sigaction (sig, act, oact); // do actual syscall when PIN is attached
+	if (current->replay_thrd->app_syscall_addr || sig == SIGSEGV) {
+		if (sig == SIGSEGV) 
+			printk ("Pid %d call sigaction for SIGSEGV.\n", current->pid);
+		return sys_sigaction (sig, act, oact); // do actual syscall when PIN is attached or the program tries to handle sigfault
 	}
 
 	rc = get_next_syscall (67, (char **) &retparams); 
@@ -13362,8 +13378,10 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 		}
 	}  
 
-	else if(is_preallocated ())
+	else if(is_preallocated () || sig == SIGSEGV)
 	{
+		if (sig == SIGSEGV) 
+			printk ("Pid %d call rt_sigaction for SIGSEGV.\n", current->pid);
 		MPRINT("inside of the 'going' to attach pin branch\n");
 		rc = get_next_syscall (174, &retparams);
 
