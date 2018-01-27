@@ -2552,7 +2552,7 @@ void instrument_syscall(ADDRINT syscall_num,
 	check_clock_before_syscall (dev_fd, (int) syscall_num);
     }
     if (sysnum == 252) dift_done();
-
+    
     if (segment_length && *ppthread_log_clock >= segment_length) {
 	// Done with this replay - do exit stuff now because we may not get clean unwind
 
@@ -5934,6 +5934,7 @@ void trace_instrumentation(TRACE trace, void* v)
 
         put_copy_of_disasm (str);
 #endif
+	bool track_this_bb = false;
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 #ifdef EXTRA_DEBUG
             //DEBUG: print out dynamic instructions and their mem read/write
@@ -5950,8 +5951,9 @@ void trace_instrumentation(TRACE trace, void* v)
 				IARG_END);
 	    }
 
-            if (current_thread->ctrl_flow_info.insts_instrumented->find(INS_Address(ins)) != current_thread->ctrl_flow_info.insts_instrumented->end()) {
+            if (track_this_bb || current_thread->ctrl_flow_info.insts_instrumented->find(INS_Address(ins)) != current_thread->ctrl_flow_info.insts_instrumented->end()) {
                 instrument_print_inst_dest (ins);
+		track_this_bb = true;
             }
 #endif
 	    instruction_instrumentation (ins, NULL);

@@ -44,7 +44,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 #define SLICE_DEBUG(x,...)
 
 /* Prototypes not in header files */
@@ -1657,7 +1657,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 }
 
 
-long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, void* user_clock_addr) 
+long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1739,7 +1739,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 
         //address of the slice_clock
         regs->sp -= sizeof(long);
-        put_user ((long)user_clock_addr, (long __user*) regs->sp);
+        put_user (user_clock_addr, (long __user*) regs->sp);
        	
 	regs->bp = regs->sp;
 
@@ -1771,7 +1771,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		unsigned int entry = 0;
 		struct fw_slice_info* slice_info = NULL;
 
-		DPRINT ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
+		printk ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
 
 		fd = sys_open (filename, O_RDONLY, 0);
 		if (fd < 0) { 
@@ -1845,7 +1845,6 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		struct fw_slice_info* slice_info = NULL;
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
-
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
                         printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
@@ -1888,7 +1887,6 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			printk ("sys_execute_fw_slice: cannot munmap");
 			return -1;
 		}
-
                 if (PRINT_TIME) {
 			struct rusage ru;
 			mm_segment_t old_fs = get_fs();
@@ -1903,11 +1901,13 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 	} else if (finish == 2) {
 
 		struct slice_task* pstask;
-		struct timeval tv;
 		long retval;
 
-		do_gettimeofday (&tv);
-		DPRINT ("Execute slice fails predicate check %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("slice fails check at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+		}
 
 		pstask = KMALLOC (sizeof(struct slice_task), GFP_KERNEL);
 		if (pstask == NULL) {
@@ -1920,7 +1920,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			printk ("sys_execute_fw_slice: strncpy_from_user returns %ld\n", retval);
 			return -EINVAL;
 		}
-		DPRINT ("recheck_filename is %s address %p\n", pstask->recheck_filename, filename);
+		DPRINT ("recheck_filename is %s\n", pstask->recheck_filename);
 
 		pstask->slice_pid = current->pid;
 		mutex_lock(&slice_task_mutex);
@@ -1928,10 +1928,18 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		wake_up (&daemon_waitq);
 		mutex_unlock(&slice_task_mutex);
 		
-		DPRINT ("Sleeping %d until we can generate correct memory state\n", current->pid);
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("Pid %d sleeping to generate correct memory state at %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule();
-		DPRINT ("Sleeping slice %d woken up.\n", current->pid);   
+		if (PRINT_TIME) {
+		    struct timeval tv;
+		    do_gettimeofday (&tv);
+		    printk ("Pid %d woken up and going live after recovery at %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+		}
 
 		// We should have correct address space and register values now
 		set_thread_flag (TIF_IRET); // Make sure we restore the new registers
@@ -1997,7 +2005,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			sys_kill (9, pstask->slice_pid); // Terminate the sleeping task
 			tsk = find_task_by_vpid(pstask->slice_pid);
 			if (!tsk) {
-				printk ("fw_slice_recover: cannot find target slice pid %d\n", pstask->slice_pid);
+				printk ("sys_execute_fw_slice: cannot find target slice pid %d\n", pstask->slice_pid);
 			}
 			wake_up_process (tsk);
 			KFREE (pstask);

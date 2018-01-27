@@ -296,17 +296,14 @@ void handle_delayed_jump_diverge()
     abort();
 }
 
-void handle_index_diverge(u_long foo, u_long bar, u_long baz)
+void handle_index_diverge(u_long foo, u_long bar, u_long baz, u_long quux)
 {
     int i;
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
-#ifdef PRINT_VALUES
-    fflush (stderr);
-#endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_jump_diverge: should not get here\n");
+    fprintf (stderr, "handle_index_diverge: should not get here\n");
     abort ();
 }
 

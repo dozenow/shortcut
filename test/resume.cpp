@@ -191,7 +191,12 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 	    return recheck_all_procs(c, cd, thread, i);
 	}
     }
-    if (current->main_thread){ 
+    if (current->main_thread) { 
+#ifdef LTIMING
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	fprintf (stderr, "resume after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+#endif
 	rc = resume_after_ckpt (cd->fd, cd->attach_pin, cd->attach_gdb, cd->follow_splits, 
 				cd->save_mmap, cd->logdir, cd->libdir, cd->filename, cd->uniqueid,
 				cd->attach_index, cd->attach_pid, cd->nfake_calls, cd->fake_calls, cd->go_live, cd->slice_filename, //this is the prefix of the slice and recheck filename
@@ -201,8 +206,12 @@ int recheck_all_procs(Ckpt_Proc *current, struct ckpt_data *cd, pthread_t *threa
 	    exit(-1);		
 	}
 
-    }
-    else { 
+    } else { 
+#ifdef LTIMING
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	fprintf (stderr, "resume proc after ckpt: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+#endif
 	rc = resume_proc_after_ckpt (cd->fd, cd->logdir, cd->filename, cd->uniqueid, current->ckpt_pos, cd->go_live, cd->slice_filename, cd->recheck_filename); //again this is the prefix for the filenames
 	if (rc) { 
 	    printf("hmm... what rc is %d\n",rc);
@@ -459,10 +468,8 @@ int main (int argc, char* argv[])
 	pthread_t thread[MAX_THREADS];
         pid = getpid();
 
-	//fprintf (stderr, "resume starts: %ld.%ld\n", tv.tv_sec, tv.tv_usec);
-
-	sprintf(uniqueid,"%d",pid); //use the parent's pid as the uniqueid
 #ifdef LTIMING
+	sprintf(uniqueid,"%d",pid); //use the parent's pid as the uniqueid
 	gettimeofday (&tv, NULL);
 	fprintf (stderr, "Resume start %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
 #endif
@@ -701,9 +708,10 @@ int main (int argc, char* argv[])
 	    if (slice_filename) {
 		load_slice_lib (argv[base], from_ckpt, slice_filename, pthread_dir);
 	    }
+
 #ifdef LTIMING
-	gettimeofday (&tv, NULL);
-	fprintf (stderr, "slice loaded %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
+	    gettimeofday (&tv, NULL);
+	    fprintf (stderr, "slice loaded %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
 #endif
 	    
 	    cd.fd = fd;

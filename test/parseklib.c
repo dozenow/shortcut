@@ -211,7 +211,7 @@ static int read_psr_chunk(struct klogfile *log) {
 				fprintf(stderr, "cannot read start clock value\n");
 				return rc;
 			}
-
+			debugf("Start clock skip is %ld at %ld\n", clock, lseek(log->fd, 0, SEEK_CUR)-sizeof(u_long));
 			apsr->start_clock += clock;
 		}
 		log->expected_clock = apsr->start_clock + 1;
@@ -460,9 +460,9 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 	}
 
 	/* For each psr */
+	u_long prev_start_clock;
+	u_long prev_stop_clock;
 	for (i = 0; i < count; i++) {
-		u_long prev_start_clock;
-		u_long prev_stop_clock;
 		struct syscall_result *apsr = &psrs[i].psr;
 		struct klog_result *res = &psrs[i];
 
@@ -1005,7 +1005,7 @@ static u_long getretparams_pread64 (struct klogfile *log, struct klog_result *re
 	}
 	size += sizeof(u_int);
 
-	debugf(stderr, "\tis_cache_file: %d\n", is_cache_read);
+	debugf("\tis_cache_file: %d\n", is_cache_read);
 	if (is_cache_read & CACHE_MASK) {
 		size += sizeof(loff_t);
 

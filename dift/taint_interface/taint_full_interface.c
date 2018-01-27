@@ -2404,7 +2404,11 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 		//fprintf (stderr, "Check file specifies mmap region, but addres not in such a region\n");
 	    }
 	} else if (iter->second.type == CHECK_TYPE_RANGE || iter->second.type == CHECK_TYPE_SPECIFIC_RANGE) {
-            if (iter->second.type == CHECK_TYPE_RANGE) {
+	    bool is_ro_region = false;
+
+	    if (is_readonly_mmap_region (mem_loc, mem_size, start, end)) {
+		is_ro_region = true; // Start and end set above
+	    } else if (iter->second.type == CHECK_TYPE_RANGE) {
                 start = mem_loc - iter->second.value;
                 end = mem_loc + iter->second.value + 1;
             } else { 
@@ -2415,12 +2419,14 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
 	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted);
 	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted);
-	    for (u_long i = start; i < end; i++) {
-		if (!is_mem_tainted(i, 1)) {
-		    // Untainted - load in valid value to memory address
-		    OUTPUT_SLICE (0, "mov byte ptr [0x%lx], %d", i, *(u_char *) i);
-		    OUTPUT_SLICE_INFO ("comes with %08x", ip);
-		    add_modified_mem_for_final_check (i,1);  
+	    if (!is_ro_region) {
+		for (u_long i = start; i < end; i++) {
+		    if (!is_mem_tainted(i, 1)) {
+			// Untainted - load in valid value to memory address
+			OUTPUT_SLICE (0, "mov byte ptr [0x%lx], %d", i, *(u_char *) i);
+			OUTPUT_SLICE_INFO ("comes with %08x", ip);
+			add_modified_mem_for_final_check (i,1);  
+		    }
 		}
 	    }
 	    print_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
@@ -2585,7 +2591,7 @@ TAINTSIGN ctrl_flow_init_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t* 
 }
 
 //for handling control flow diverges
-TAINTSIGN ctrl_flow_taint_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t ctrl_flow_taint)
+static void ctrl_flow_taint_reg (REG reg, taint_t ctrl_flow_taint)
 {
     taint_t* shadow_reg_table = current_thread->shadow_reg_table;
     uint32_t size = REG_Size (reg);
@@ -2654,11 +2660,11 @@ static void init_ctrl_flow_this_branch (ADDRINT ip, const CONTEXT* ctx, std::set
 }
 
 
-static void taint_ctrl_flow_branch (ADDRINT ip, const CONTEXT* ctx, taint_t ctrl_flow_taint, std::set<uint32_t> *store_set_reg, std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem) 
+static void taint_ctrl_flow_branch (ADDRINT ip, taint_t ctrl_flow_taint, std::set<uint32_t> *store_set_reg, std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem) 
 { 
     for (auto i: *(store_set_reg)) {
         //before we actual taint the register, we need to init if it's originally not tainted
-        ctrl_flow_taint_reg (ip, REG(i), ctx, ctrl_flow_taint);
+        ctrl_flow_taint_reg (REG(i), ctrl_flow_taint);
     }
     //always restore EFLAGS TODO
     print_extra_move_flag (ip, NULL, 0);
@@ -2938,7 +2944,7 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		//TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
 		init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
 		/* JNF - this stmt. below seems questionable? Shouldn't we add taints only after handling original branch? */
-		taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
+		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
 		OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
 		OUTPUT_SLICE_INFO ("");
 		OUTPUT_SLICE (ip, "%s_that_branch_init:", label_prefix);
@@ -2955,7 +2961,7 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		//
 		//TODO well, I think this might break the current taint backtracing tool
 		//
-		taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
 		cleanup_after_merge ();
 		CFDEBUG ("[CTRL_FLOW] This control flow is handled.\n");
 
@@ -2979,7 +2985,7 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		CFDEBUG ("[CTRL_FLOW_THE_OTHER_BRANCH] taint_ctrl_flow_branch: the other branch: merge before this block, %x\n", ip);
 		//TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
 		init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
-		taint_ctrl_flow_branch (ip, ctx, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
 		OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
 		OUTPUT_SLICE_INFO ("");
 		OUTPUT_SLICE (ip, "%s_this_branch_init:", label_prefix);
@@ -3257,6 +3263,9 @@ TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_
         if (tainted1 != 1) print_extra_move_reg (ip, dst_reg, dst_regsize, &dst_regvalue, dst_reg_u8, tainted1);
 	if (tainted2 != 1) print_extra_move_reg (ip, src_reg, src_regsize, &src_regvalue, src_reg_u8, tainted2);
 
+	// Reformat Pin output to make gcc happy
+	if (!strncmp(ins_str, "fmulp ", 6)) ins_str[5] = '\0';
+
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s", 
 		dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, print_regval(tmpbuf, &dst_regvalue, dst_regsize), print_regval(tmpbuf2, &src_regvalue, src_regsize));
@@ -3323,8 +3332,9 @@ TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_s
 
         if (!still_tainted && (reg_tainted || mem_tainted)) {
             print_abs_address (ip, slice, mem_loc);
-        } else 
+        } else {
             OUTPUT_SLICE (ip, "%s", slice);
+	}
 	OUTPUT_SLICE_INFO ("#src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s", 
 		mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value32 (mem_loc, mem_size), print_regval(tmpbuf, &regvalue, reg_size));
     }

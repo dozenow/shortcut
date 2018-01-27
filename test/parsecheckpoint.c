@@ -137,7 +137,7 @@ int restore_ckpt_tsks_header (u_long num_procs, int cfile)
 			return -1;
 		}		
 		info->ckpt_pos = unused;
-		printf("%lu\n",unused);
+		printf("%d\n", unused);
 	}       
 }
 

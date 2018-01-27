@@ -246,7 +246,7 @@ struct go_live_clock {
     struct go_live_process_map process_map[0]; //current pid  <-> record pid
 };
 
-long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, void* user_clock_addr);
+long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr);
 void destroy_replay_group (struct replay_group *prepg);
 
 #endif

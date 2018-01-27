@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include "util.h"
@@ -10,18 +12,66 @@
 #include <sys/time.h>
 #include <iostream>
 
+#define COMPACT
+
+#define OP_CALL             0
+#define OP_RETURN           1
+#define OP_SYSCALL          2
+#define OP_RELREAD          3
+#define OP_RELWRITE         4
+#define OP_RELREAD2         5
+#define OP_BRANCH_TAKEN     6
+#define OP_BRANCH_NOT_TAKEN 7
+
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 u_long print_stop = 1000000;
-u_long print_start = 0;
 u_long* ppthread_log_clock = NULL;
 
-KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print start");
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
+#ifdef COMPACT
+KNOB<string> KnobFilename(KNOB_MODE_WRITEONCE, "pintool", "f", "/tmp/bb.out", "output filename");
+#endif
 
 long global_syscall_cnt = 0;
 /* Toggle between which syscall count to use */
 #define SYSCALL_CNT tdata->syscall_cnt
 // #define SYSCALL_CNT global_syscall_cnt
+
+#ifdef COMPACT
+#define BUF_SIZE 256*1024
+u_long buffer[BUF_SIZE];
+u_long buf_cnt = 0;
+int buf_fd = -1;
+
+static int init_buffer (const char* filename) 
+{
+    buf_fd = open (filename, O_CREAT | O_TRUNC | O_WRONLY | O_LARGEFILE, 0644);
+    if (buf_fd < 0) {
+	fprintf (stderr, "Cannot open %s\n", filename);
+	return buf_fd;
+    }
+    return 0;
+}
+
+static void flush_buffer ()
+{
+    long rc = write (buf_fd, buffer, buf_cnt*sizeof(u_long));
+    if (rc != (long) (buf_cnt*sizeof(u_long))) {
+	fprintf (stderr, "Cannot write to buffer, rc=%ld not %ld\n", rc, buf_cnt*sizeof(u_long));
+	exit (0);
+    }
+    buf_cnt = 0;
+}
+
+static inline void write_to_buffer (u_long val)
+{
+    buffer[buf_cnt++] = val;
+    if (buf_cnt == BUF_SIZE) {
+	flush_buffer ();
+    }
+}
+
+#endif
 
 struct thread_data {
     u_long app_syscall;     // Per thread address for specifying pin vs. non-pin system calls
@@ -93,15 +143,21 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 }
 
 // called before every application system call
-void set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
-		     ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
+					    ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
     if (tdata != current_thread) printf ("sao: tdata %p current_thread %p\n", tdata, current_thread);
     if (tdata) {
 	int sysnum = (int) syscall_num;
-	
+
+#ifdef COMPACT
+	write_to_buffer (OP_SYSCALL);
+	write_to_buffer (*ppthread_log_clock);
+#else	
 	printf ("%ld Pid %d, tid %d, (record pid %d), %d: syscall num is %d\n", global_syscall_cnt, PIN_GetPid(), PIN_GetTid(), tdata->record_pid, tdata->syscall_cnt, (int) syscall_num);
+	fflush (stdout);
+#endif
 
 	if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
 	    check_clock_before_syscall (fd, (int) syscall_num);
@@ -133,6 +189,9 @@ void syscall_after (ADDRINT ip)
     }
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= print_stop) { 
+#ifdef COMPACT
+	flush_buffer();
+#endif
         fprintf (stderr, "exit.\n");
         try_to_exit (fd, PIN_GetPid());
         PIN_ExitApplication(0);
@@ -163,35 +222,147 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
-void trace_bbl (ADDRINT ip, const CONTEXT* ctxt)
+void PIN_FAST_ANALYSIS_CALL trace_bbl (ADDRINT ip)
 {
-    if (*ppthread_log_clock >= print_start) { 
-        printf ("%x   ", ip);
-        PIN_LockClient();
-        if (IMG_Valid(IMG_FindByAddress(ip))) {
-            printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
-        } else {
-            printf("unknown\n");
-        }
-        PIN_UnlockClient();
-        if (ip == 0xb7fe6820) {
-            printf ("At 0xb7fe6820, eax is %x\n", PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX));
-            ADDRINT mem = PIN_GetContextReg(ctxt, LEVEL_BASE::REG_EAX);
-            printf ("String at that location is %s\n", (char *) mem);
-        }
-	fflush (stdout);
+#ifdef COMPACT
+    write_to_buffer (ip);
+#else
+    printf ("%x   ", ip);
+    PIN_LockClient();
+    if (IMG_Valid(IMG_FindByAddress(ip))) {
+	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+    } else {
+	printf("unknown\n");
+    }
+    PIN_UnlockClient();
+#endif
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_bbl_stutters (ADDRINT ip, uint32_t first_iter)
+{
+#ifdef COMPACT
+    if (first_iter) write_to_buffer (ip);
+#else
+    printf ("%x   ", ip);
+    PIN_LockClient();
+    if (IMG_Valid(IMG_FindByAddress(ip))) {
+	printf("%s -- img %s static %#x (stutters %d)\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip), first_iter);
+    } else {
+	printf("unknown\n");
+    }
+    PIN_UnlockClient();
+#endif
+}
+
+#ifdef COMPACT
+void PIN_FAST_ANALYSIS_CALL trace_relread (uint32_t memloc)
+{
+    write_to_buffer (OP_RELREAD);
+    write_to_buffer (memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relwrite (uint32_t memloc)
+{
+    write_to_buffer (OP_RELWRITE);
+    write_to_buffer (memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relread2 (uint32_t memloc)
+{
+    write_to_buffer (OP_RELREAD2);
+    write_to_buffer (memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relread_stutters (uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) {
+	write_to_buffer (OP_RELREAD);
+	write_to_buffer (memloc);
     }
 }
+
+void PIN_FAST_ANALYSIS_CALL trace_relwrite_stutters (uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) {
+	write_to_buffer (OP_RELWRITE);
+	write_to_buffer (memloc);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relread2_stutters (uint32_t memloc, uint32_t first_iter)
+{
+    if (first_iter) {
+	write_to_buffer (OP_RELREAD2);
+	write_to_buffer (memloc);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
+{
+    write_to_buffer (taken ? OP_BRANCH_TAKEN : OP_BRANCH_NOT_TAKEN);
+    write_to_buffer (ip);
+}
+
+#else
+void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
+{
+    printf ("Instruction %x reads memory location %x\n", ip, memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relwrite (ADDRINT ip, uint32_t memloc)
+{
+    printf ("Instruction %x writes memory location %x\n", ip, memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_relread2 (ADDRINT ip, uint32_t memloc)
+{
+    printf ("Instruction %x reads memory location %x\n", ip, memloc);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
+{
+    printf ("Instruction %x branch taken=%d\n", ip, taken);
+}
+
+void trace_relread_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relread(ip,memloc);
+}
+
+void trace_relwrite_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relwrite(ip,memloc);
+}
+
+void trace_relread2_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
+{
+    trace_relread2(ip,memloc);
+}
+#endif
+
 
 void track_trace(TRACE trace, void* data)
 {
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-	BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl), IARG_INST_PTR, IARG_CONTEXT, IARG_END);
+	if (INS_Stutters(BBL_InsHead(bbl))) {
+	    BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl_stutters), 
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR, 
+			   IARG_FIRST_REP_ITERATION,
+			   IARG_END);
+
+	} else {
+	    BBL_InsertCall(bbl, IPOINT_BEFORE, AFUNPTR(trace_bbl), 
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR, 
+			   IARG_END);
+	}
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 	    if(INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
+			       IARG_FAST_ANALYSIS_CALL,
 			       IARG_SYSCALL_NUMBER, 
 			       IARG_SYSARG_VALUE, 0, 
 			       IARG_SYSARG_VALUE, 1,
@@ -200,6 +371,75 @@ void track_trace(TRACE trace, void* data)
 			       IARG_SYSARG_VALUE, 4,
 			       IARG_SYSARG_VALUE, 5,
 			       IARG_END);
+	    }
+	    if (INS_IsBranch(ins)) {
+		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_branch), 
+				   IARG_FAST_ANALYSIS_CALL,
+				   IARG_INST_PTR,
+				   IARG_BRANCH_TAKEN,
+				   IARG_END);
+	    }
+	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
+		if (INS_Stutters(BBL_InsHead(bbl))) {
+		    if (INS_IsMemoryRead(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread_stutters), 
+				       IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+				       IARG_INST_PTR,
+#endif
+				       IARG_MEMORYREAD_EA,
+				       IARG_FIRST_REP_ITERATION,
+				       IARG_END);
+			if (INS_HasMemoryRead2(ins)) {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread2_stutters), 
+					   IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+					   IARG_INST_PTR,
+#endif
+					   IARG_MEMORYREAD2_EA,
+					   IARG_FIRST_REP_ITERATION,
+					   IARG_END);
+			}
+		    }
+		    if (INS_IsMemoryWrite(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relwrite_stutters), 
+				       IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+				       IARG_INST_PTR,
+#endif
+				       IARG_MEMORYWRITE_EA,
+				       IARG_FIRST_REP_ITERATION,
+				       IARG_END);
+		    }
+		} else {
+		    if (INS_IsMemoryRead(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread), 
+				       IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+				       IARG_INST_PTR,
+#endif
+				       IARG_MEMORYREAD_EA,
+				       IARG_END);
+			if (INS_HasMemoryRead2(ins)) {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread2), 
+					   IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+					   IARG_INST_PTR,
+#endif
+					   IARG_MEMORYREAD2_EA,
+					   IARG_END);
+			}
+		    }
+		    if (INS_IsMemoryWrite(ins)) {
+			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relwrite), 
+				       IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT				   
+				       IARG_INST_PTR,
+#endif
+				       IARG_MEMORYWRITE_EA,
+				       IARG_END);
+		    }
+		}
 	    }
 	}
     }
@@ -234,36 +474,51 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     return TRUE;
 }
 
-void before_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT arg0)
+#ifdef COMPACT
+void PIN_FAST_ANALYSIS_CALL before_function_call (ADDRINT ip)
 {
-    if (*ppthread_log_clock >= print_start) { 
-	printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
-    }
+    write_to_buffer (OP_CALL);
+    write_to_buffer (ip);
 }
 
-void after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT ret)
+void PIN_FAST_ANALYSIS_CALL after_function_call ()
 {
-    if (*ppthread_log_clock >= print_start) { 
-	printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
-    }
+    write_to_buffer (OP_RETURN);
 }
+#else
+void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT name, ADDRINT rtn_addr)
+{
+    printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+}
+
+void PIN_FAST_ANALYSIS_CALL after_function_call(ADDRINT name, ADDRINT rtn_addr)
+{
+    printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+}
+#endif
 
 void routine (RTN rtn, VOID *v)
 {
-    const char *name;
-
-    name = RTN_Name(rtn).c_str();
-
+#ifndef COMPACT
+    const char *name = RTN_Name(rtn).c_str();
+#endif
     RTN_Open(rtn);
 
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_function_call,
+		   IARG_FAST_ANALYSIS_CALL,
+#ifdef COMPACT
+		   IARG_INST_PTR,
+#else
 		   IARG_PTR, name, 
 		   IARG_ADDRINT, RTN_Address(rtn), 
-		   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+#endif
 		   IARG_END);
     RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_function_call,
-		   IARG_PTR, name, IARG_ADDRINT, RTN_Address(rtn), 
-		   IARG_FUNCRET_EXITPOINT_VALUE,  
+		   IARG_FAST_ANALYSIS_CALL,
+#ifndef COMPACT
+		   IARG_PTR, name, 
+		   IARG_ADDRINT, RTN_Address(rtn), 
+#endif
 		   IARG_END);
 
     RTN_Close(rtn);
@@ -313,6 +568,9 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     struct thread_data* ptdata;
     ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
     printf("Pid %d (recpid %d, tid %d) thread fini\n", PIN_GetPid(), ptdata->record_pid, PIN_GetTid());
+#ifdef COMPACT
+    flush_buffer();
+#endif
 }
 
 int main(int argc, char** argv) 
@@ -338,19 +596,23 @@ int main(int argc, char** argv)
     // Obtain a key for TLS storage
     tls_key = PIN_CreateThreadDataKey(0);
 
-    print_start = atoi(KnobPrintStart.Value().c_str());
+#ifdef COMPACT
+    if (init_buffer (KnobFilename.Value().c_str()) < 0) return -1;
+#endif
+
     print_stop = atoi(KnobPrintStop.Value().c_str());
     
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(fd);
+    if (ppthread_log_clock == NULL) return -1;
 
     PIN_AddThreadStartFunction(thread_start, 0);
     PIN_AddThreadFiniFunction(thread_fini, 0);
     PIN_AddFollowChildProcessFunction(follow_child, argv);
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
-    TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
     RTN_AddInstrumentFunction (routine, 0);
+    TRACE_AddInstrumentFunction (track_trace, 0);
     PIN_StartProgram();
 
     return 0;
