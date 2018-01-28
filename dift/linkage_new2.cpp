@@ -5076,6 +5076,18 @@ static void instrument_fpu_store (INS ins)
     }
 }
 
+static void instrument_fpu_onereg_calc (INS ins)
+{
+    REG reg = INS_OperandReg (ins, 0);
+    fw_slice_src_fpureg (ins, reg, FP_NO_STACK_CHANGE);
+    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(taint_mix_fpureg),
+		    IARG_FAST_ANALYSIS_CALL,
+		    IARG_UINT32, reg,
+		    IARG_UINT32, REG_Size(reg),
+		    IARG_CONST_CONTEXT, 
+		    IARG_END);
+}
+
 static void instrument_fpu_calc (INS ins, int fp_stack_change)
 {
     if (INS_IsMemoryRead(ins)) {
@@ -5763,6 +5775,8 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FSUBRP:
             case XED_ICLASS_FDIVP:
             case XED_ICLASS_FDIVRP:
+	    case XED_ICLASS_FYL2X:
+	    case XED_ICLASS_FYL2XP1:
                 instrument_fpu_calc (ins, FP_POP);
                 slice_handled = 1;
                 break;
@@ -5777,6 +5791,7 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FDIVR:
             case XED_ICLASS_FIDIV:
             case XED_ICLASS_FIDIVR:
+	    case XED_ICLASS_FSCALE:
                 instrument_fpu_calc (ins, FP_NO_STACK_CHANGE);
                 slice_handled = 1;
                 break;
@@ -5799,23 +5814,26 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FUCOM:
                 //slice_handled = 1;
                 break;
+	    case XED_ICLASS_F2XM1:
+	    case XED_ICLASS_FABS:
+	    case XED_ICLASS_FCHS:
+	    case XED_ICLASS_FRNDINT:
+		instrument_fpu_onereg_calc (ins);
+		slice_handled = 1;
+		break;
             case XED_ICLASS_FCOMP:
             case XED_ICLASS_FUCOMP:
             case XED_ICLASS_FCOMPP:
             case XED_ICLASS_FUCOMPP:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
-	    case XED_ICLASS_FRNDINT:
 	    case XED_ICLASS_FSQRT:
-	    case XED_ICLASS_FABS:
 	    case XED_ICLASS_FPATAN:
-	    case XED_ICLASS_FCHS:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
                 break;
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:
-            case XED_ICLASS_FNSTSW:
                 //ignored
                 slice_handled = 1;
                 break;

@@ -1971,6 +1971,15 @@ TAINTSIGN taint_reg2mem_ext_offset (u_long mem_loc, uint32_t mem_size, uint32_t 
     }
 }
 
+TAINTSIGN taint_mix_fpureg (int reg, uint32_t reg_size, const CONTEXT* ctx)
+{
+    int sp = get_fp_stack_top (ctx); //get the actual st register
+    reg = map_fp_stack_reg (reg, sp);
+
+    taint_t t = merge_reg_taints (reg, reg_size, 0); 
+    if (t) set_reg_single_value (reg, reg_size, t);
+}
+
 TAINTSIGN taint_mix_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint32_t reg_size,  const CONTEXT* ctx)
 {
     int sp = get_fp_stack_top (ctx); //get the actual st register
