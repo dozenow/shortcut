@@ -1977,6 +1977,18 @@ static inline void sys_ugetrlimit_stop (int rc)
 	LOG_PRINT ("Done with ugetrlimit.\n");
 }
 
+static inline void sys_setrlimit_start (struct thread_data* tdata, int resource, struct rlimit* prlim) 
+{
+    if (is_mem_arg_tainted ((u_long)prlim, sizeof(*prlim))) {
+        fprintf (stderr, "[ERROR] sys_setrlimit_start: rlimit is tainted.\n");
+    }
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE(0, "call setrlimit_recheck");
+        OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+        recheck_setrlimit (tdata->recheck_handle, resource, prlim, *ppthread_log_clock);
+    }
+}
+
 static inline void sys_prlimit64_start (struct thread_data* tdata, pid_t pid, int resource, struct rlimit64* new_limit, struct rlimit64* old_limit) 
 {
     struct prlimit64_info* pri = (struct prlimit64_info*) &current_thread->op.prlimit64_info_cache;
@@ -2314,6 +2326,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_ugetrlimit:
 	    sys_ugetrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
+	    break;
+        case SYS_setrlimit:
+	    sys_setrlimit_start (tdata, (int) syscallarg0, (struct rlimit *) syscallarg1);
 	    break;
         case SYS_prlimit64:
 	    sys_prlimit64_start (tdata, (pid_t) syscallarg0, (int) syscallarg1, (struct rlimit64 *) syscallarg2, (struct rlimit64 *) syscallarg3);
@@ -3129,7 +3144,7 @@ static void instrument_taint_reg2reg (INS ins, REG dstreg, REG srcreg, int exten
     } 
 }
 
-static void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int fp_stack_change)
+static void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg)
 {
     assert (REG_is_st (dstreg));
     assert (REG_is_st (srcreg));
@@ -3140,7 +3155,7 @@ static void instrument_taint_fpureg2fpureg (INS ins, REG dstreg, REG srcreg, int
             IARG_UINT32, srcreg,
             IARG_UINT32, REG_Size (dstreg),
             IARG_CONST_CONTEXT, 
-            IARG_ADDRINT, fp_stack_change,
+            IARG_ADDRINT, INS_Opcode(ins),
             IARG_END);
 }
 
@@ -3170,20 +3185,19 @@ static void instrument_taint_reg2mem(INS ins, REG reg, int extend)
     }
 }
 
-static void instrument_taint_fpureg2mem (INS ins, REG reg, int fp_stack_change) 
+static void instrument_taint_mix_fpureg2mem (INS ins, REG reg) 
 {
     UINT32 regsize = REG_Size(reg);
     UINT32 memsize = INS_MemoryWriteSize(ins);
 
     INS_InsertCall(ins, IPOINT_BEFORE,
-            AFUNPTR (taint_fpureg2mem),
+            AFUNPTR (taint_mix_fpureg2mem),
             IARG_FAST_ANALYSIS_CALL,
             IARG_MEMORYWRITE_EA,
             IARG_UINT32, memsize,
             IARG_UINT32, reg,
             IARG_UINT32, regsize,
             IARG_CONST_CONTEXT,
-            IARG_UINT32, fp_stack_change,
             IARG_END);
 }
 
@@ -3236,7 +3250,7 @@ static void instrument_taint_mem2reg (INS ins, REG dstreg, int extend, REG base_
     }
 }
 
-static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_change, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+static inline void instrument_taint_mem2fpureg (INS ins, REG dstreg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
 {
     SETUP_BASE_INDEX_TAINT;
     assert (REG_is_st (dstreg));
@@ -3248,7 +3262,22 @@ static void instrument_taint_mem2fpureg (INS ins, REG dstreg, int fp_stack_chang
             IARG_UINT32, INS_MemoryReadSize(ins),
             PASS_BASE_INDEX_TAINT,
             IARG_CONST_CONTEXT, 
-            IARG_ADDRINT, fp_stack_change,
+            IARG_ADDRINT, INS_Opcode (ins),
+            IARG_END);
+}
+
+static void instrument_taint_load_mem2fpureg (INS ins, REG dstreg, REG base_reg = LEVEL_BASE::REG_INVALID(), REG index_reg = LEVEL_BASE::REG_INVALID())
+{
+    SETUP_BASE_INDEX_TAINT;
+    assert (REG_is_st (dstreg));
+    INS_InsertCall(ins, IPOINT_BEFORE,
+            AFUNPTR(taint_load_mem2fpureg_offset),
+            IARG_FAST_ANALYSIS_CALL,
+            IARG_MEMORYREAD_EA,
+            IARG_UINT32, get_reg_off (dstreg),
+            IARG_UINT32, INS_MemoryReadSize(ins),
+            PASS_BASE_INDEX_TAINT,
+            IARG_CONST_CONTEXT, 
             IARG_END);
 }
 
@@ -3430,7 +3459,7 @@ static void instrument_taint_clear_reg (INS ins, REG reg, int set_flags, int cle
 		   IARG_END);
 }
 
-static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int fp_stack_change)
+static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int is_load)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(taint_clear_fpureg_offset),
@@ -3440,7 +3469,7 @@ static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int 
 		   IARG_UINT32, set_flags,
 		   IARG_UINT32, clear_flags,
                    IARG_CONST_CONTEXT, 
-                   IARG_UINT32, fp_stack_change,
+                   IARG_UINT32, is_load,
 		   IARG_END);
 }
 
@@ -5012,11 +5041,12 @@ static void instrument_fpu_load (INS ins)
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
         fw_slice_src_mem2fpureg (ins, base_reg, index_reg, FP_PUSH);
-        instrument_taint_mem2fpureg (ins, dst_reg, FP_PUSH, base_reg, index_reg);
+        //these instructions convert interger/float/double/bcd into double extended format here
+        instrument_taint_load_mem2fpureg (ins, dst_reg, base_reg, index_reg);
     } else {
         REG src_reg = INS_OperandReg (ins, 1);
         fw_slice_src_fpureg (ins, src_reg, FP_PUSH);
-        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, FP_PUSH);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg);
     }
 }
 
@@ -5032,16 +5062,17 @@ static void instrument_fpu_store (INS ins)
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
         fw_slice_src_fpureg2mem (ins, src_reg, base_reg, index_reg, fp_stack_change);
-        instrument_taint_fpureg2mem (ins, src_reg, fp_stack_change);
+        instrument_taint_mix_fpureg2mem (ins, src_reg);
+        //because of the convertion from double-precision
     } else {
         fw_slice_src_fpureg (ins, src_reg, fp_stack_change);
         REG dst_reg = INS_OperandReg (ins, 0);
         assert (REG_is_st (dst_reg)); //per the intel manual
-        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg, fp_stack_change);
+        instrument_taint_fpureg2fpureg (ins, dst_reg, src_reg);
     }
-    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP || INS_Opcode (ins) == XED_ICLASS_FISTTP) {
-        //pop the register and empty st(0)
-        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    if (INS_Opcode(ins) == XED_ICLASS_FSTP || INS_Opcode (ins) == XED_ICLASS_FBSTP || INS_Opcode (ins) == XED_ICLASS_FISTP /*|| INS_Opcode (ins) == XED_ICLASS_FISTTP not sure about this one??*/) {
+        //these instructions empty st(0)
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, 0);
     }
 }
 
@@ -5059,6 +5090,31 @@ static void instrument_fpu_calc (INS ins, int fp_stack_change)
         fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, fp_stack_change);
         instrument_taint_mix_fpureg2fpureg (ins, dst_reg, src_reg);
     } else { 
+        assert (0);
+    }
+    if (fp_stack_change == FP_POP) { 
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+    }
+}
+
+static void instrument_fpu_cmp (INS ins, int fp_stack_change) 
+{
+    if (INS_OperandIsReg (ins, 1)) { 
+        REG dst_reg = INS_OperandReg (ins, 0);
+        REG src_reg = INS_OperandReg (ins, 1);
+        fw_slice_src_fpuregfpureg (ins, dst_reg, src_reg, fp_stack_change);
+        INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_fpuregfpureg2flag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, dst_reg, 
+		   IARG_UINT32, src_reg, 
+		   IARG_UINT32, REG_Size(dst_reg),
+                   IARG_CONST_CONTEXT, 
+                   IARG_UINT32, fp_stack_change,
+                   IARG_UINT32, ZF_FLAG|PF_FLAG|CF_FLAG, 
+                   IARG_UINT32, OF_FLAG|SF_FLAG|AF_FLAG,
+		   IARG_END);
+    } else {
         assert (0);
     }
     if (fp_stack_change == FP_POP) { 
@@ -5685,11 +5741,11 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FLDPI:
             case XED_ICLASS_FLDLG2:
             case XED_ICLASS_FLDLN2:
-                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_PUSH);
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, 1);
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FFREE:
-                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, FP_NO_STACK_CHANGE);
+                instrument_taint_clear_fpureg (ins, INS_OperandReg (ins, 0), -1, -1, 0);
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FST:
@@ -5729,9 +5785,24 @@ void instruction_instrumentation(INS ins, void *v)
                 slice_handled = 1;
                 break;
             case XED_ICLASS_FCOMI:
-            case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMI:
+                instrument_fpu_cmp (ins, FP_NO_STACK_CHANGE);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_FCOMIP:
             case XED_ICLASS_FUCOMIP:
+                instrument_fpu_cmp (ins, FP_POP);
+                slice_handled = 1;
+                break;
+            //FCOM/FCOMP/FCOMPP,FUCOM/FUCOMP/FUCOMPP  only affect fpu flags, not eflags; so just pop fpu stack if necessary
+            case XED_ICLASS_FCOM:
+            case XED_ICLASS_FUCOM:
+                //slice_handled = 1;
+                break;
+            case XED_ICLASS_FCOMP:
+            case XED_ICLASS_FUCOMP:
+            case XED_ICLASS_FCOMPP:
+            case XED_ICLASS_FUCOMPP:
             case XED_ICLASS_FCMOVNBE:
 	    case XED_ICLASS_FWAIT:
 	    case XED_ICLASS_FRNDINT:
@@ -5741,7 +5812,6 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FCHS:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
-                //slice_handled = 1;
                 break;
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:

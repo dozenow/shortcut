@@ -101,6 +101,11 @@ struct ugetrlimit_recheck {
     struct rlimit rlim;
 };
 
+struct setrlimit_recheck {
+    int resource;
+    struct rlimit rlim;
+};
+
 struct uname_recheck {
     struct utsname* buf;
     struct utsname utsname;
@@ -340,4 +345,6 @@ int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struc
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock);
+int recheck_setrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
+
 #endif

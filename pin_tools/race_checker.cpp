@@ -114,7 +114,11 @@ bool detect_race(THREADID tid, VOID *ref_addr, ADDRINT size, ADDRINT ip, int ref
 
 struct thread_data {
     u_long app_syscall; // Per thread address for specifying pin vs. non-pin system calls
-    u_long app_syscall_chk; // Per thread address for helping disambiguate pin vs. non-pin system calls with same app_sycall
+    u_long app_syscall_chk;
+    int record_pid;
+    int syscall_cnt;
+    int sysnum;
+    u_long ignore_flag;
 };
 
 void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
@@ -377,6 +381,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     thd_entr_type.push_back(0);
 
     ptdata->app_syscall = 0;
+    ptdata->record_pid = get_record_pid();
 
     PIN_SetThreadData (tls_key, ptdata, threadid);
     int thread_ndx;

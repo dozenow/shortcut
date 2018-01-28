@@ -2354,6 +2354,9 @@ relock:
 		}
 
 		ka = &sighand->action[signr-1];
+#ifdef REP_SIG_DEBUG
+		printk ("Pid %d signal %d handler %p\n", current->pid, signr, ka->sa.sa_handler);
+#endif
 
 		/* Trace actually delivered signals. */
 		trace_signal_deliver(signr, info, ka);
