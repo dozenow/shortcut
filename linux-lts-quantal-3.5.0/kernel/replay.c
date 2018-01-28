@@ -12157,6 +12157,9 @@ record_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 #endif			
 		}
 
+		// And the record hook should be the same
+		tsk->record_thrd->rp_record_hook = current->record_thrd->rp_record_hook;
+
 		// allocate a slab for retparams
 		slab = VMALLOC (argsalloc_size);
 		if (slab == NULL) return -ENOMEM;
@@ -12322,6 +12325,9 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 		//Set up the child so that the gdb state is the same
 		tsk->replay_thrd->gdb_state = current->replay_thrd->gdb_state;
+
+		// And the replay hook should be the same
+		tsk->replay_thrd->rp_replay_hook = current->replay_thrd->rp_replay_hook;
 
 		if (is_gdb_attached())
 		{
