@@ -34,7 +34,7 @@ void track_pthread_mutex_init (ADDRINT rtn_addr)
 void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mutex) 
 {
     current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-    printf ("record pid %d, before lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
+    PTHREAD_DEBUG ("record pid %d, before lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
     if (active_mutex.find (mutex) != active_mutex.end()) {
         struct mutex_state* state = active_mutex[mutex];
         state->pid = current_thread->record_pid;
@@ -53,7 +53,7 @@ void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mute
 void track_pthread_mutex_lock_after (char* name, ADDRINT rtn_addr)
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    printf ("record pid %d, after lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
+    PTHREAD_DEBUG ("record pid %d, after lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
     struct mutex_state* state = active_mutex[mutex];
     state->pid = current_thread->record_pid;
     if (state->state == MUTEX_AFTER_LOCK) {  //we have a deadlock?
@@ -102,7 +102,7 @@ static inline void destroy_wait_state (ADDRINT wait)
 void track_pthread_mutex_unlock (ADDRINT rtn_addr)
 {   
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    printf ("record pid %d, unlock %p\n", current_thread->record_pid, (void*)mutex);
+    PTHREAD_DEBUG ("record pid %d, unlock %p\n", current_thread->record_pid, (void*)mutex);
     change_mutex_state (mutex, MUTEX_UNLOCK);
 }
 
@@ -120,7 +120,7 @@ void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT a
     cache->mutex = mutex;
     cache->cond = cond;
     cache->abstime = abstime;
-    printf ("record pid %d, before cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)mutex, (void*) cond);
+    PTHREAD_DEBUG ("record pid %d, before cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)mutex, (void*) cond);
     //change_mutex_state (mutex, MUTEX_UNLOCK):
     change_wait_state (cond, COND_BEFORE_WAIT, mutex, abstime);
 }
@@ -128,7 +128,7 @@ void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT a
 void track_pthread_cond_timedwait_after (ADDRINT rtn_addr) 
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
-    printf ("record pid %d, after cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
+    PTHREAD_DEBUG ("record pid %d, after cond_timedwait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
     //change_mutex_state (mutex, MUTEX_AFTER_LOCK);
     //change_cond_state (cache->cond, COND_AFTER_WAIT, cache->mutex, cache->abstime);
     destroy_wait_state (cache->cond);
@@ -136,7 +136,7 @@ void track_pthread_cond_timedwait_after (ADDRINT rtn_addr)
 
 void track_pthread_lll_wait_tid_before (ADDRINT tid)
 {
-    printf ("record pid %d, before lll_wait_tid %p\n", current_thread->record_pid, (void*)tid);
+    PTHREAD_DEBUG ("record pid %d, before lll_wait_tid %p\n", current_thread->record_pid, (void*)tid);
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     cache->tid = tid;
     change_wait_state (tid, LLL_WAIT_TID_BEFORE, 0, 0);
@@ -145,7 +145,7 @@ void track_pthread_lll_wait_tid_before (ADDRINT tid)
 void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr)
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
-    printf ("record pid %d, after lll_wait_tid %p\n", current_thread->record_pid, (void*)cache->tid);
+    PTHREAD_DEBUG ("record pid %d, after lll_wait_tid %p\n", current_thread->record_pid, (void*)cache->tid);
     //change_wait_tid_state (tid, LLL_WAIT_TID_AFTER);
     destroy_wait_state (cache->tid);
 }

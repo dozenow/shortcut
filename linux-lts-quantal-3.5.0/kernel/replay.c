@@ -9845,8 +9845,8 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
                         //The right way: check if the current executable matches the one in the cache
                         //if so, we open the actual executable instead in order to support java to go live
                         //TODO:xdou fix this 
-                        //rc = do_execve(filename, __argv, __envp, regs);
-                        rc = do_execve(name, __argv, __envp, regs);
+                        rc = do_execve(filename, __argv, __envp, regs);
+                        //rc = do_execve(name, __argv, __envp, regs);
 			set_fs(old_fs);
 
 			prt->rp_record_thread->rp_ignore_flag_addr = NULL;

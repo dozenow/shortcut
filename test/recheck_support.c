@@ -30,7 +30,7 @@ struct go_live_clock* go_live_clock;
 
 #define PRINT_VALUES
 #define PRINT_TO_LOG
-//#define PRINT_SCHEDULING
+#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
@@ -262,10 +262,10 @@ void handle_mismatch()
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
-    DELAY;
+    /*DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
-    abort();
+    abort();*/
 }
 
 void handle_jump_diverge()

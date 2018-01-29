@@ -545,15 +545,18 @@ static inline void detect_slice_ordering (int syscall_num)
 	  syscall_num == 186 || syscall_num == 243 || syscall_num == 244)) {
         if (current_thread->ignore_flag) {
             if (!(*(int *)(current_thread->ignore_flag))) {
-                //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+                struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+                if (current_thread->expected_clock < psr->stop_clock) { 
+                    slice_wait_clock (psr->stop_clock);
+                    current_thread->expected_clock = psr->stop_clock;
+                } 
                 current_thread->expected_clock += 2;
                 OUTPUT_SLICE (0, "pushfd");
-                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
+                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, sysnum %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, syscall_num);
                 //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
                 print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
                 OUTPUT_SLICE (0, "popfd");
                 OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-                struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
                 DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
                 assert (psr != NULL);
                 if (psr->psr.sysnum != syscall_num) { 
@@ -561,16 +564,16 @@ static inline void detect_slice_ordering (int syscall_num)
                     fprintf (stderr, "abort\n");
                     assert (0);
                 }
-                if (current_thread->expected_clock < psr->stop_clock) { 
-                    slice_wait_clock (psr->stop_clock);
-                    current_thread->expected_clock = psr->stop_clock;
-                } 
                 if(syscall_num == 120) current_thread->child_pid = psr->retval;
             } else { 
                 DEBUG_INFO ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
             }
         } else {
-            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+            if (current_thread->expected_clock < psr->stop_clock) { 
+                slice_wait_clock (psr->stop_clock);
+                current_thread->expected_clock = psr->stop_clock;
+            } 
             current_thread->expected_clock += 2;
             OUTPUT_SLICE (0, "pushfd");
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
@@ -578,7 +581,6 @@ static inline void detect_slice_ordering (int syscall_num)
             //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
             OUTPUT_SLICE (0, "popfd");
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
             DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
             assert (psr != NULL);
             if (psr->psr.sysnum != syscall_num) { 
@@ -586,10 +588,6 @@ static inline void detect_slice_ordering (int syscall_num)
                 fprintf (stderr, "abort\n");
                 assert (0);
             }
-            if (current_thread->expected_clock < psr->stop_clock) { 
-                slice_wait_clock (psr->stop_clock);
-                current_thread->expected_clock = psr->stop_clock;
-            } 
             if(syscall_num == 120) current_thread->child_pid = psr->retval;
         }
     } else { 
@@ -2560,6 +2558,7 @@ static void instrument_syscall(ADDRINT syscall_num,
 			ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 {   
     int sysnum = (int) syscall_num;
+    fprintf (stderr, "instrument_syscall %d\n", syscall_num);
 
     // Because of Pin restart issues, this function alone has to use PIN thread-specific data
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
@@ -2657,21 +2656,6 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
     // The first syscall returns twice 
     if (global_syscall_cnt > 1) { 
 	current_thread->sysnum = 0;
-    }
-}
-
-void track_inst(INS ins, void* data) 
-{
-    if(INS_IsSyscall(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),
-                IARG_SYSCALL_NUMBER, 
-                IARG_SYSARG_VALUE, 0, 
-                IARG_SYSARG_VALUE, 1,
-                IARG_SYSARG_VALUE, 2,
-                IARG_SYSARG_VALUE, 3,
-                IARG_SYSARG_VALUE, 4,
-                IARG_SYSARG_VALUE, 5,
-                IARG_END);
     }
 }
 
@@ -5283,6 +5267,11 @@ void debug_print (INS ins)
     }
 }
 
+void test_function_call (char* inst_str) 
+{ 
+    fprintf (stderr, "funtion call to %s\n", inst_str);
+}
+
 void instruction_instrumentation(INS ins, void *v)
 {
     OPCODE opcode;
@@ -5306,6 +5295,20 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_SYSARG_VALUE, 5,
                 IARG_END);
 	slice_handled = 1;
+    } else if (INS_IsProcedureCall(ins)) { 
+        char* str = get_copy_of_disasm (ins);
+        RTN rtn = INS_Rtn(ins);
+        if (RTN_Valid (rtn)) {
+            const char* name = RTN_Name (rtn).c_str();
+            if (name) {
+                if (!strcmp (name, "pthread_log_replay")) {
+                    INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR (test_function_call),
+                            IARG_PTR, str, 
+                            IARG_END);
+                }
+            }
+        }
+        put_copy_of_disasm (str);
     }
 
     opcode = INS_Opcode(ins);
@@ -6623,17 +6626,19 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         assert (current_thread->klog != NULL);
         sprintf (filename, "%s/ulog.id.%d", group_directory, ptdata->record_pid);
         current_thread->ulog = parseulib_open (filename);
-        current_thread->expected_clock = *ppthread_log_clock;
         if (*ppthread_log_clock <=2) { 
-            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
             //skip the first record
-            parseklog_get_next_psr (current_thread->klog);
+            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+            current_thread->expected_clock = psr->stop_clock + 2;
             //init clock values for the first thread
             OUTPUT_SLICE (0, "pushfd");
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            //a ways to avoid using functions calls to recheck_add_clock_by1_
+            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
             //OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x70000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
-            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p], 2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", &slice_clock->slice_clock, *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
+            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p], 1 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", &slice_clock->slice_clock, *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
             print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
+            print_function_call_inst (current_thread, "recheck_add_clock_by_1", 0);
 
             //init mutex and condition var 
             OUTPUT_SLICE (0, "call recheck_wait_clock_init");
@@ -6641,7 +6646,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
             OUTPUT_SLICE (0, "popfd");
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
         } else {
-
             //init for other threads
             OUTPUT_SLICE (0, "pushfd"); 
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
@@ -6651,7 +6655,10 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
             OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
 
             //wait for the clock until it should start
-            slice_wait_clock (current_thread->expected_clock - 1);
+            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
+            -- current_thread->klog->cur_idx; //force to go back to the first klog record
+            current_thread->expected_clock = psr->start_clock - 1;
+            slice_wait_clock (psr->start_clock - 1);
         }
     }
 }
@@ -6683,15 +6690,20 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 {
-    DEBUG_INFO ("[DEBUG] before pthread_replay for %d, type %u, check %u\n", current_thread->record_pid, type, check);
+    fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x\n", current_thread->record_pid, type, check, rtn_addr);
 }
 
 void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
 {
+    fprintf (stderr, "after_pthread_replay is called at %x\n", rtn_addr);
     //slice ordering
     u_long recorded_clock = parseulib_get_next_clock (current_thread->ulog);
     if (recorded_clock != 0) {
-        //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
+        if (current_thread->expected_clock < recorded_clock) { 
+            fprintf (stderr, "[DEBUG] pthread_replay  clock %lu, next clock expects %lu, recorded %lu\n", *ppthread_log_clock, current_thread->expected_clock, recorded_clock);
+            slice_wait_clock (recorded_clock);
+            current_thread->expected_clock = recorded_clock;
+        } 
         ++current_thread->expected_clock;
         //OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [%p] [SLICE_INFO] slice ordering, expected %lu, actual %lu, recorded clock in ulog %lu\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, recorded_clock);
         OUTPUT_SLICE (0, "pushfd");
@@ -6699,12 +6711,6 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
         print_function_call_inst (current_thread, "recheck_add_clock_by_1", 0);
         OUTPUT_SLICE (0, "popfd"); 
         OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
-
-        if (current_thread->expected_clock < recorded_clock) { 
-            DEBUG_INFO ("[DEBUG] pthread_replay  clock %lu, next clock expects %lu\n", *ppthread_log_clock, current_thread->expected_clock);
-            slice_wait_clock (recorded_clock);
-            current_thread->expected_clock = recorded_clock;
-        } 
     } else { 
         fprintf (stderr, "well, clock in the user log does not exit??\n");
     }
@@ -6724,6 +6730,7 @@ void routine (RTN rtn, VOID* v)
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
 
+        fprintf (stderr, "instrument pthread_log replay \n");
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
                 IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
