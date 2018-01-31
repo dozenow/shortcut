@@ -133,11 +133,11 @@ $(OBJDIR)linkage_data$(PINTOOL_SUFFIX): $(OBJDIR)linkage_data$(OBJ_SUFFIX)
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS) $(TAINT_BACK_OBJS) $(TAINT_OBJS) $(SDEV)/parseulib$(OBJ_SUFFIX) -lglib-2.0 -lrt
 
 # DATA+INDEX TOOL
-$(OBJDIR)linkage_offset$(OBJ_SUFFIX): linkage_new2.cpp recheck_log.cpp xray_slab_alloc.c xray_slab_alloc.h $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c splice.c maputil.c mmap_regions.h mmap_regions.cpp linkage_common.h $(SDEV)/parseulib$(OBJ_SUFFIX) track_pthread.cpp
+$(OBJDIR)linkage_offset$(OBJ_SUFFIX): linkage_new2.cpp recheck_log.cpp xray_slab_alloc.c xray_slab_alloc.h $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c splice.c maputil.c mmap_regions.h mmap_regions.cpp linkage_common.h $(SDEV)/parseulib$(OBJ_SUFFIX) track_pthread.cpp 
 	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
 
 $(OBJDIR)linkage_offset$(PINTOOL_SUFFIX): $(OBJDIR)linkage_offset$(OBJ_SUFFIX)
-	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS) $(TAINT_BACK_OBJS) $(TAINT_OBJS) $(SDEV)/parseulib$(OBJ_SUFFIX) -lglib-2.0 -lrt
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS) $(TAINT_BACK_OBJS) $(TAINT_OBJS) $(SDEV)/parseulib$(OBJ_SUFFIX) $(SDEV)/parseklib$(OBJ_SUFFIX) -lglib-2.0 -lrt
 
 # BASIC BLOCK PRINTER
 $(OBJDIR)print_bb$(OBJ_SUFFIX): print_bb.cpp 

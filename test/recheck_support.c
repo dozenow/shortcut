@@ -28,9 +28,10 @@
 
 struct go_live_clock* go_live_clock;
 
+#define MAX_THREAD_NUM 99
 #define PRINT_VALUES
 #define PRINT_TO_LOG
-#define PRINT_SCHEDULING
+//#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
@@ -262,10 +263,10 @@ void handle_mismatch()
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
-    /*DELAY;
+    DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
-    abort();*/
+    abort();
 }
 
 void handle_jump_diverge()
@@ -2209,19 +2210,7 @@ void ftruncate_recheck ()
     end_timing_func (SYS_ftruncate);
 }
 
-void recheck_add_clock_by_2 ()
-{
-    if (go_live_clock)
-        __sync_add_and_fetch (&go_live_clock->slice_clock, 2);
-}
-
-void recheck_add_clock_by_1 ()
-{
-    if (go_live_clock)
-        __sync_add_and_fetch (&go_live_clock->slice_clock, 1);
-}
-
-void recheck_wait_clock_init ()
+void recheck_wait_init ()
 {
     if (go_live_clock) {
 #ifdef PRINT_SCHEDULING
@@ -2232,6 +2221,7 @@ void recheck_wait_clock_init ()
         __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
         while (go_live_clock->wait_for_other_threads) { 
             //wait until all threads are ready for slice execution
+            //just use busy waiting here as it shouldn't take a long time
         }
 #ifdef PRINT_SCHEDULING
         printf ("Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
@@ -2239,78 +2229,109 @@ void recheck_wait_clock_init ()
     }
 }
 
-void recheck_wait_clock_proc_init ()
+void recheck_wait_proc_init ()
 {
     if (go_live_clock) { 
 #ifdef PRINT_SCHEDULING
         int pid = syscall (SYS_gettid);
-        printf ("Pid %d recheck_wait_clock_proc_init: ready to continue!\n", pid);
+        printf ("Pid %d recheck_wait_clock_proc_init: this thread is ready to continue\n", pid);
 #endif
         __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
     }
 }
 
-void recheck_wait_clock (unsigned long wait_clock) 
+void recheck_thread_wait (int record_pid)
 {
     if (go_live_clock) {
+        struct go_live_process_map* process_map = go_live_clock->process_map;
+        int i = 1;
+        struct go_live_process_map* p = NULL;
+        int value = 0;
+        int fail = 1;
 #ifdef PRINT_SCHEDULING
         int pid = syscall(SYS_gettid);
-        printf ("Pid %d call recheck_wait_clock.\n", pid);
+        int actual_pid = 0;
+#endif
+        while (i < MAX_THREAD_NUM) {
+            if (record_pid == process_map[i].record_pid) {
+                p = &process_map[i];
+                fail = 0;
+#ifdef PRINT_SCHEDULING
+                actual_pid = process_map[i].current_pid;
+#endif
+                break;
+            }
+            if (!process_map[i].record_pid) break;
+            ++i;
+        }
+        if (fail) fprintf (stderr, "recheck_thread_wait cannot find the record_pid????\n");
+#ifdef PRINT_SCHEDULING
+        printf ("Pid %d call recheck_thread_wait, record_pid %d, addr %p, actual pid %d.\n", pid, record_pid, &p->wait, actual_pid);
         fflush (stdout);
 #endif
-        if (go_live_clock->slice_clock >= wait_clock) {
-#ifdef PRINT_SCHEDULING
-            printf ("Pid %d recheck_wait_clock wakeup: current_clock %lu(addr %p), wait_clock %lu\n", pid, go_live_clock->slice_clock, &go_live_clock->slice_clock, wait_clock);
-            fflush (stdout);
-#endif
-        } else {
-#ifdef PRINT_SCHEDULING
-            printf ("Pid %d recheck_wait_clock start to wait: current_clock %lu, wait_clock %lu, mutex %p \n", pid, go_live_clock->slice_clock, wait_clock, &go_live_clock->mutex);
-            fflush (stdout);
-#endif
-            //wake up other sleeping threads
-            syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
-            //wait for its own clock
-            while (go_live_clock->slice_clock < wait_clock) {
-                //printf ("Pid %d conditional wait current_clock %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
-                //fflush (stdout);
-                syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAIT, go_live_clock->mutex, NULL, NULL, 0);
-                //printf ("Pid %d wakes up while current clock is %lu, wait clock %lu\n", pid, go_live_clock->slice_clock, wait_clock);
-                //fflush (stdout);
-            }
+        value = __sync_sub_and_fetch (&p->value, 1); 
+        if (value < 0) {
+            syscall (SYS_futex, &p->wait, FUTEX_WAIT, p->wait, NULL, NULL, 0);
         }
     }
 }
 
-void recheck_final_clock_wakeup () 
+void recheck_thread_wakeup (int record_pid)
 {
-    if (go_live_clock) { 
+    if (go_live_clock) {
+        struct go_live_process_map* process_map = go_live_clock->process_map;
+        int i = 1;
+        struct go_live_process_map* p = NULL;
+        int fail = 1;
+        int value = 0;
 #ifdef PRINT_SCHEDULING
+        int actual_pid = 0;
         int pid = syscall(SYS_gettid);
-        printf ("Pid %d finishes executing slice, now wake up other sleeping threads.\n", pid);
 #endif
-        syscall (SYS_futex, &go_live_clock->mutex, FUTEX_WAKE, 99999, NULL, NULL, 0);
+        while (i < MAX_THREAD_NUM) {
+            if (record_pid == process_map[i].record_pid) {
+                p = &process_map[i];
+#ifdef PRINT_SCHEDULING
+                actual_pid = process_map[i].current_pid;
+#endif
+                fail = 0;
+                break;
+            }
+            if (!process_map[i].record_pid) break;
+            ++i;
+        }
+        if (fail) fprintf (stderr, "recheck_thread_wakeup cannot find the record_pid????\n");
+#ifdef PRINT_SCHEDULING
+        printf ("Pid %d call recheck_thread_wakeup, to wakeup %d (record_pid), %d (actual pid), addr %p\n", pid, record_pid, actual_pid, &p->wait);
+        fflush (stdout);
+#endif
+        value = __sync_add_and_fetch (&p->value, 1);
+        if (value <=0) {
+            while (syscall (SYS_futex, &p->wait, FUTEX_WAKE, 1, NULL, NULL, 0) < 1)
+                ;
+        }
     }
-#ifdef PRINT_TIMING
-    print_timings();
-#endif
 }
 
 int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
 {
     if (go_live_clock) {
         struct go_live_process_map* process_map = go_live_clock->process_map;
-        int i = 0;
+        int i = 1;
         pid_t ret = 0;
-        while (i < 100) {
+        int fail = 1;
+        while (i < MAX_THREAD_NUM) {
             if (record_pid == process_map[i].record_pid) {
                 ret = process_map[i].current_pid;
+                fail = 0;
                 break;
             }
+            if (!process_map[i].record_pid) break;
             ++i;
         }
+        if (fail) fprintf (stderr, "recheck_fake_clone cannot find the record_pid????\n");
 #ifdef PRINT_VALUES
-        printf ("fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", ptid, *ptid, ctid, *ctid, record_pid, ret);
+        printf ("Pid %ld fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d\n", syscall(SYS_gettid), ptid, *ptid, ctid, *ctid, record_pid, ret);
 #endif
         *ptid = ret;
         *ctid = ret;
