@@ -4293,7 +4293,7 @@ replay_full_ckpt (long rc)
 	
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, first_proc->pid);
 	retval = replay_full_checkpoint_hdr_to_disk (ckpt, precg->rg_id, clock, proc_count, curr_ckpt_tsk, current, &pos);
-        printk ("Pid %d after replay_full_checkpoint_hdr_to_disk pos %lld\n", current->pid, pos);
+        MPRINT ("Pid %d after replay_full_checkpoint_hdr_to_disk pos %lld\n", current->pid, pos);
 	if (retval) return retval;
 
 	// First write out data for this process
@@ -4301,7 +4301,7 @@ replay_full_ckpt (long rc)
 	       current->pid,(u_long)current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
 	       (u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr, (u_long)current->clear_child_tid);
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, current->pid);       
-	printk("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
+	MPRINT("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
 
 
 	retval = replay_full_checkpoint_proc_to_disk (ckpt, current, 
@@ -4328,7 +4328,7 @@ replay_full_ckpt (long rc)
 			curr_ckpt_tsk = btree_lookup32(&proc_btree, tsk->pid);       
 			//not sure we want or need these two cases! 
 			if(prt->rp_ckpt_pthread_block_clock){				
-				printk("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
+				MPRINT("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
 				retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
 									      prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
 									      argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
@@ -4339,7 +4339,7 @@ replay_full_ckpt (long rc)
 									      (u_long) prt->rp_replay_hook, &pos); 	       
 			}
 			else { 
-				printk("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
+				MPRINT("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
 				       prt->rp_replay_pid, 
 				       prt->rp_record_thread->rp_record_pid, 
 				       prt->rp_expected_clock,

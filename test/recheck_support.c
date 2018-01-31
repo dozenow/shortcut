@@ -26,7 +26,7 @@
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
-struct go_live_clock* go_live_clock;
+static struct go_live_clock* go_live_clock;
 
 #define PRINT_VALUES
 #define PRINT_TO_LOG
@@ -34,8 +34,7 @@ struct go_live_clock* go_live_clock;
 //#define PRINT_TIMING
 
 #ifdef PRINT_VALUES
-char logbuf[4096];
-int logfd;
+static char logbuf[4096];
 #endif
 
 // This pauses for a while to let us see what went wrong
@@ -114,10 +113,11 @@ inline void print_timings (void)
 #define end_timing_func(x)
 #endif
 
-char buf[1024*1024];
-char tmpbuf[1024*1024];
-char taintbuf_filename[256];
-char* bufptr = buf;
+static char buf[1024*1024];
+static char tmpbuf[1024*1024];
+static char taintbuf_filename[256];
+static char slicelog_filename[256];
+static char* bufptr = buf;
 
 struct cfopened {
     int is_open_cache_file;
@@ -125,11 +125,11 @@ struct cfopened {
 };
 
 #define MAX_FDS 4096
-struct cfopened cache_files_opened[MAX_FDS];
+static struct cfopened cache_files_opened[MAX_FDS];
 
-char taintbuf[1024*1024];
-long taintndx = 0;
-u_long last_clock = 0;
+static char taintbuf[1024*1024];
+static long taintndx = 0;
+static u_long last_clock = 0;
 
 static void add_to_taintbuf (struct recheck_entry* pentry, short rettype, void* values, u_long size)
 {
@@ -191,47 +191,43 @@ void recheck_start(char* filename, void* clock_addr)
 	fprintf (stderr, "Cannot open recheck file\n");
 	return;
     }
-    rc = dup2 (fd, 1020); //this is necessary to avoid fd conflict; TODO: change the open syscall directly
-    if (rc < 0) {
-	fprintf (stderr, "[BUG] Cannot dup log file descriptor\n");
-        sleep (2);
-        exit (-1);
-    }
-    close (fd);
-    rc = read (1020, buf, sizeof(buf));
+    rc = read (fd, buf, sizeof(buf));
     if (rc <= 0) {
 	fprintf (stderr, "Cannot read recheck file\n");
 	return;
     }
-    close (1020);
+    close (fd);
 
     for (i = 0; i < MAX_FDS; i++) {
 	cache_files_opened[i].is_open_cache_file = 0;
     }
 
-    // Put taintbuf in same file as recheck
+    // Put taintbuf in same directory as recheck file
     strcpy(taintbuf_filename, filename);
     for (i = strlen(taintbuf_filename)-1; i >= 0; i--) {
 	if (taintbuf_filename[i] == '/') {
-	    taintbuf_filename[i+1] = '\0';
+	    // This will leave the pid appended to filename
+	    memcpy (taintbuf_filename+i+1, "taintbuf", 8); 
 	    break;
 	}
     }
-    strcat (taintbuf_filename, "taintbuf");
 
 #ifdef PRINT_VALUES
 #ifdef PRINT_TO_LOG
-    fd = open ("/tmp/slice_log", O_RDWR|O_CREAT|O_TRUNC, 0644);
+    strcpy(slicelog_filename, filename);
+    for (i = strlen(slicelog_filename)-1; i >= 0; i--) {
+	if (slicelog_filename[i] == '/') {
+	    // This will leave the pid appended to filename
+	    memcpy (slicelog_filename+i+1, "slicelg", 7); 
+	    break;
+	}
+    }
+    fd = open (slicelog_filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);    
     if (fd < 0) {
-	fprintf (stderr, "Cannot open log file\n");
-	return;
+	fprintf (stderr, "Error opening slice log %s\n", slicelog_filename);
+    } else {
+	close (fd);
     }
-    rc = dup2 (fd,1023);
-    if (rc < 0) {
-	fprintf (stderr, "Cannot dup log file descriptor\n");
-	return;
-    }
-    close(fd);
 #endif
 #endif
 #ifdef PRINT_TIMING
@@ -243,7 +239,20 @@ void recheck_start(char* filename, void* clock_addr)
 }
 
 #ifdef PRINT_TO_LOG
-#define LPRINT(args...) sprintf (logbuf, args); write(1023, logbuf, strlen(logbuf));
+#define LPRINT(args...) { int fd;					\
+	sprintf (logbuf, args);						\
+	fd = open (slicelog_filename, O_WRONLY|O_APPEND, 0644);		\
+	if (fd >= 0) {							\
+	    if (write (fd, logbuf, strlen(logbuf)+1)			\
+		!= strlen(logbuf)+1) {					\
+		fprintf (stderr, "cannot write to log %s\n",		\
+			 slicelog_filename);				\
+	    }								\
+	    close (fd);							\
+	} else {							\
+	    fprintf (stderr, "cannot log to %s\n", slicelog_filename);	\
+	}								\
+    }
 #else
 #define LPRINT printf
 #endif
