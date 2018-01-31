@@ -227,6 +227,8 @@ struct fw_slice_info {
 struct go_live_process_map { 
     int record_pid;
     int current_pid;
+    int wait; //for futex wait
+    int value; //for futex wait 
 };
 
 struct replay_group;

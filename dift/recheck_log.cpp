@@ -1168,3 +1168,10 @@ int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u
     return 0;
 }
 
+//this function doesn't actually put anything to the slice, but just read the klog and returns the child pid
+int recheck_clone (struct recheck_handle* handle)
+{
+    struct klog_result* res = skip_to_syscall (handle, SYS_clone);
+    return res->retval;
+}
+

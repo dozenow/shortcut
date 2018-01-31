@@ -109,6 +109,7 @@ int get_record_pid(void);
 void init_logs(void);
 #endif
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
+struct thread_data* previous_thread; // used for tracking thread switching
 int first_thread = 1;
 int child = 0;
 char** main_prev_argv = 0;
@@ -210,16 +211,14 @@ inline void print_function_call_inst (struct thread_data* tdata, const char* fun
 inline void sync_slice_buffer (struct thread_data* tdata)
 {
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
 
-    //wakeup other sleeping threads
-    OUTPUT_SLICE_THREAD (tdata, 0, "call recheck_final_clock_wakeup");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+    //TODO: probably need to wakeup other sleeping threads if necesary  (only happens if one thread terminates before the checkpoint clock)
     //setup pthread properly
     print_function_call_inst (tdata, "pthread_go_live", 0);
 
     OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
 
     DEBUG_INFO ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
     //let's re-create necessary pthread state for this thread
@@ -228,7 +227,7 @@ inline void sync_slice_buffer (struct thread_data* tdata)
         if (iter->second->pid == tdata->record_pid) { 
             DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
             OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
             switch (iter->second->state) { 
                 case MUTEX_AFTER_LOCK: 
                     print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
@@ -238,14 +237,14 @@ inline void sync_slice_buffer (struct thread_data* tdata)
                     PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
             }
             OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
         }
     }
     for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
         if (iter->second->pid == tdata->record_pid) { 
             DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
             OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
             switch (iter->second->state) { 
                 case COND_BEFORE_WAIT: 
                     //normally, the mutex should already be held by this thread
@@ -258,7 +257,7 @@ inline void sync_slice_buffer (struct thread_data* tdata)
                     PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
             }
             OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, expected %lu, actual %lu, pid %d", tdata->expected_clock, *ppthread_log_clock, tdata->record_pid);
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
         }
     }
 
@@ -266,22 +265,65 @@ inline void sync_slice_buffer (struct thread_data* tdata)
     fw_slice_print_footer (tdata);
 }
 
-static inline void slice_wait_clock (u_long wait_clock) 
+//tdata: the previous thread that has to wait 
+static inline void slice_thread_wait (struct thread_data* tdata) 
 {
-    if (wait_clock > checkpoint_clock + 1)  {
-        fprintf (stderr, "[DEBUG] slice_wait_clock is ignored as we're wait for a clock (%lu) after checkpoint clock \n", wait_clock);
-    } else { 
-        OUTPUT_SLICE (0, "pushfd");
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
-        OUTPUT_SLICE (0, "push %lu", wait_clock); 
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
-        OUTPUT_SLICE (0, "call recheck_wait_clock");
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
-        OUTPUT_SLICE (0, "add esp, 4");
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
-        OUTPUT_SLICE (0, "popfd");
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d, recored_clock %lu", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid, wait_clock);
-    }
+    printf ("call recheck_thread_wait, record_pid %d\n", tdata->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    //necessary: preserve registers before function calls
+    OUTPUT_SLICE_THREAD (tdata, 0, "push eax");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "push ecx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "push edx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+
+    OUTPUT_SLICE_THREAD (tdata, 0, "push %d", tdata->record_pid); 
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "call recheck_thread_wait");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 4");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop edx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop ecx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop eax");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+}
+
+//tdata: the previous thread that has to wakes up the current thread (with record pid as wakeup_record_pid)
+static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_record_pid) 
+{
+    printf ("call recheck_thread_wakeup, to wakeup pid %d (record_pid), current record_pid %d\n", wakeup_record_pid, tdata->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "push eax");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "push ecx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "push edx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+
+    OUTPUT_SLICE_THREAD (tdata, 0, "push %d", wakeup_record_pid); 
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "call recheck_thread_wakeup");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 4");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop edx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop ecx");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "pop eax");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
 }
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
@@ -539,58 +581,21 @@ static inline void detect_slice_ordering (int syscall_num)
 {
     // ignore pthread syscalls, or deterministic system calls that we don't log (e.g. 123, 186, 243, 244)
     if (!(syscall_num == 17 || syscall_num == 31 || syscall_num == 32 || 
-	  syscall_num == 35 || syscall_num == 44 || syscall_num == 53 || 
-	  syscall_num == 56 || syscall_num == 58 || syscall_num == 98 || 
-	  syscall_num == 119 || syscall_num == 123 || syscall_num == 127 ||
-	  syscall_num == 186 || syscall_num == 243 || syscall_num == 244)) {
-        if (current_thread->ignore_flag) {
-            if (!(*(int *)(current_thread->ignore_flag))) {
-                //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
-                current_thread->expected_clock += 2;
-                OUTPUT_SLICE (0, "pushfd");
-                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-                //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-                print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
-                OUTPUT_SLICE (0, "popfd");
-                OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-                struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
-                DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
-                assert (psr != NULL);
-                if (psr->psr.sysnum != syscall_num) { 
-                    fprintf (stderr, "mismatched syscall: expected %d, actual %d, actual clock %lu, recorded stop_clock %lu\n", psr->psr.sysnum, syscall_num, *ppthread_log_clock, psr->stop_clock);
-                    fprintf (stderr, "abort\n");
-                    assert (0);
-                }
-                if (current_thread->expected_clock < psr->stop_clock) { 
-                    slice_wait_clock (psr->stop_clock);
-                    current_thread->expected_clock = psr->stop_clock;
-                } 
-                if(syscall_num == 120) current_thread->child_pid = psr->retval;
-            } else { 
+                syscall_num == 35 || syscall_num == 44 || syscall_num == 53 || 
+                syscall_num == 56 || syscall_num == 58 || syscall_num == 98 || 
+                syscall_num == 119 || syscall_num == 123 || syscall_num == 127 ||
+                syscall_num == 186 || syscall_num == 243 || syscall_num == 244)) {
+        if (current_thread != previous_thread) { 
+            //well, a thread switch happens and this thread now executes
+            if ((current_thread->ignore_flag && !(*(int *)(current_thread->ignore_flag))) || !current_thread->ignore_flag) {
+                //previous thread needs to sleep and wakes up this thread
+                slice_thread_wakeup (previous_thread, current_thread->record_pid);
+                slice_thread_wait (previous_thread);
+
+                previous_thread = current_thread;
+            } else if (current_thread->ignore_flag && (*(int*)(current_thread->ignore_flag))) {
                 DEBUG_INFO ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
             }
-        } else {
-            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
-            current_thread->expected_clock += 2;
-            OUTPUT_SLICE (0, "pushfd");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-            print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
-            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p],2 [SLICE_INFO] slice ordering, expected %lu, actual %lu, pid %d\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-            OUTPUT_SLICE (0, "popfd");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu, pid %d", current_thread->expected_clock, *ppthread_log_clock, current_thread->record_pid);
-            struct klog_result* psr = parseklog_get_next_psr (current_thread->klog);
-            DEBUG_INFO ("[SLICE_DEBUG] syscall end %d; clock %lu, next clock expects %lu, stop clock %lu\n", syscall_num, *ppthread_log_clock, current_thread->expected_clock, psr->stop_clock);
-            assert (psr != NULL);
-            if (psr->psr.sysnum != syscall_num) { 
-                fprintf (stderr, "mismatched syscall: expected %d, actual %d, actual clock %lu, recorded stop_clock %lu\n", psr->psr.sysnum, syscall_num, *ppthread_log_clock, psr->stop_clock);
-                fprintf (stderr, "abort\n");
-                assert (0);
-            }
-            if (current_thread->expected_clock < psr->stop_clock) { 
-                slice_wait_clock (psr->stop_clock);
-                current_thread->expected_clock = psr->stop_clock;
-            } 
-            if(syscall_num == 120) current_thread->child_pid = psr->retval;
         }
     } else { 
         DEBUG_INFO ("[SLICE_DEBUG] skip syscall for calculating expected clock, sys num %d, pid %d\n", syscall_num, current_thread->record_pid);
@@ -1015,13 +1020,14 @@ static inline void sys_clone_stop (int rc)
         fprintf (stderr, "A pthread-like clone is called, ptid %p, ctid %p, force to wait on the clock\n", ptid, ctid);
         //put a fake clone syscall here
         //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
+        int child_pid = recheck_clone (current_thread->recheck_handle);
         OUTPUT_SLICE (0, "pushfd");
         OUTPUT_SLICE_INFO ("clone");
         OUTPUT_SLICE (0, "push %p", ctid);
         OUTPUT_SLICE_INFO ("clone ctid");
         OUTPUT_SLICE (0, "push %p", ptid);
         OUTPUT_SLICE_INFO ("clone ptid");
-        OUTPUT_SLICE (0, "push %d", current_thread->child_pid);
+        OUTPUT_SLICE (0, "push %d", child_pid);
         OUTPUT_SLICE_INFO ("clone record pid");
         OUTPUT_SLICE (0, "call recheck_fake_clone");
         OUTPUT_SLICE_INFO ("clone record pid %d, child pid %d", current_thread->record_pid, rc);
@@ -2538,7 +2544,14 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
 #endif
-      //dump slice buffer for all active threads
+        //wake up other threads
+        //don't combine this loop with the next one
+        for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
+            if (iter->second != current_thread) 
+                slice_thread_wakeup (current_thread, iter->second->record_pid);
+        }
+
+        //dump slice buffer for all active threads
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             sync_slice_buffer (iter->second);
         }
@@ -2650,28 +2663,12 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
     if (current_thread->syscall_in_progress) {
 	// reset the syscall number after returning from system call
 	increment_syscall_cnt (current_thread->sysnum);
-        //detect_slice_ordering (current_thread->sysnum);
 	current_thread->syscall_in_progress = false;
     }
 
     // The first syscall returns twice 
     if (global_syscall_cnt > 1) { 
 	current_thread->sysnum = 0;
-    }
-}
-
-void track_inst(INS ins, void* data) 
-{
-    if(INS_IsSyscall(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_syscall),
-                IARG_SYSCALL_NUMBER, 
-                IARG_SYSARG_VALUE, 0, 
-                IARG_SYSARG_VALUE, 1,
-                IARG_SYSARG_VALUE, 2,
-                IARG_SYSARG_VALUE, 3,
-                IARG_SYSARG_VALUE, 4,
-                IARG_SYSARG_VALUE, 5,
-                IARG_END);
     }
 }
 
@@ -5306,7 +5303,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_SYSARG_VALUE, 5,
                 IARG_END);
 	slice_handled = 1;
-    }
+    } 
 
     opcode = INS_Opcode(ins);
     category = INS_Category(ins);
@@ -6462,7 +6459,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
         return;
     }
-    ptdata->expected_clock = 0;
 
     ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
@@ -6617,41 +6613,27 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     active_threads[ptdata->record_pid] = ptdata;
     //slice ordering
     if (*ppthread_log_clock != 0) {
-        char filename[512];
-        sprintf (filename, "%s/klog.id.%d", group_directory, ptdata->record_pid);
-        current_thread->klog = parseklog_open (filename);
-        assert (current_thread->klog != NULL);
-        sprintf (filename, "%s/ulog.id.%d", group_directory, ptdata->record_pid);
-        current_thread->ulog = parseulib_open (filename);
-        current_thread->expected_clock = *ppthread_log_clock;
+        //this is the first thread that executes
         if (*ppthread_log_clock <=2) { 
-            //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
-            //skip the first record
-            parseklog_get_next_psr (current_thread->klog);
+            previous_thread = current_thread;
             //init clock values for the first thread
             OUTPUT_SLICE (0, "pushfd");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
-            //OUTPUT_SLICE ("[SLICE] #00000000 #mov dword ptr [0x70000000],%lu [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
-            //OUTPUT_SLICE ("[SLICE] #00000000 #lock add dword ptr [%p], 2 [SLICE_INFO] slice ordering, expected %lu, actual %lu\n", &slice_clock->slice_clock, *ppthread_log_clock, current_thread->expected_clock, *ppthread_log_clock);
-            print_function_call_inst (current_thread, "recheck_add_clock_by_2", 0);
-
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
             //init mutex and condition var 
-            OUTPUT_SLICE (0, "call recheck_wait_clock_init");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE (0, "call recheck_wait_init");
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
             OUTPUT_SLICE (0, "popfd");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
         } else {
-
             //init for other threads
             OUTPUT_SLICE (0, "pushfd"); 
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
-            OUTPUT_SLICE (0, "call recheck_wait_clock_proc_init"); 
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+            OUTPUT_SLICE (0, "call recheck_wait_proc_init"); 
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
             OUTPUT_SLICE (0, "popfd");
-            OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
-
-            //wait for the clock until it should start
-            slice_wait_clock (current_thread->expected_clock - 1);
+            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+            //wait until it should start
+            slice_thread_wait (current_thread);
         }
     }
 }
@@ -6659,14 +6641,14 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
-    //sync_slice_buffer (tdata); // we need to call this function if the thread ends earlier before the checkpoint clock?
+    //sync_slice_buffer (tdata); 
+    //TODO: we need to call this function if the thread ends earlier before the checkpoint clock?
+    //and we also need to make sure this thread wakes up other necessary threads
     active_threads.erase(tdata->record_pid);
     if (tdata->recheck_handle) close_recheck_log (tdata->recheck_handle);
-    if (tdata->klog) parseklog_close (tdata->klog);
-    if (tdata->ulog) parseulib_close (tdata->ulog);
     if (tdata->slice_output_file) {
         fclose (tdata->slice_output_file);
-        fprintf (stderr, "well the slice_output_file is not closed before the thread_fini? A thread finishes before the checkpoint clock?\n");
+        fprintf (stderr, "[BUG] well the slice_output_file is not closed before the thread_fini? A thread finishes before the checkpoint clock?\n");
         tdata->slice_output_file = NULL;
     }
     if (tdata->slice_buffer) delete tdata->slice_buffer;
@@ -6683,30 +6665,18 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 {
-    DEBUG_INFO ("[DEBUG] before pthread_replay for %d, type %u, check %u\n", current_thread->record_pid, type, check);
+    PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x\n", current_thread->record_pid, type, check, rtn_addr);
 }
 
 void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
 {
-    //slice ordering
-    u_long recorded_clock = parseulib_get_next_clock (current_thread->ulog);
-    if (recorded_clock != 0) {
-        //struct go_live_clock* slice_clock = (struct go_live_clock*) ppthread_log_clock;
-        ++current_thread->expected_clock;
-        //OUTPUT_SLICE ("[SLICE] #00000000 #lock inc dword ptr [%p] [SLICE_INFO] slice ordering, expected %lu, actual %lu, recorded clock in ulog %lu\n", &slice_clock->slice_clock, current_thread->expected_clock, *ppthread_log_clock, recorded_clock);
-        OUTPUT_SLICE (0, "pushfd");
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
-        print_function_call_inst (current_thread, "recheck_add_clock_by_1", 0);
-        OUTPUT_SLICE (0, "popfd"); 
-        OUTPUT_SLICE_INFO ("slice ordering, expected %lu, actual %lu", current_thread->expected_clock, *ppthread_log_clock);
+    if (current_thread != previous_thread) { 
+        //well, a thread switch happens and this thread now executes
+        //previous thread needs to sleep and wakes up this thread
+        slice_thread_wakeup (previous_thread, current_thread->record_pid);
+        slice_thread_wait (previous_thread);
 
-        if (current_thread->expected_clock < recorded_clock) { 
-            DEBUG_INFO ("[DEBUG] pthread_replay  clock %lu, next clock expects %lu\n", *ppthread_log_clock, current_thread->expected_clock);
-            slice_wait_clock (recorded_clock);
-            current_thread->expected_clock = recorded_clock;
-        } 
-    } else { 
-        fprintf (stderr, "well, clock in the user log does not exit??\n");
+        previous_thread = current_thread;
     }
 }
 
@@ -6719,7 +6689,10 @@ void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr)
 void routine (RTN rtn, VOID* v)
 { 
     const char *name;
-
+    //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...
+    if (IMG_Name(IMG_FindByAddress(RTN_Address(rtn))).find("libpthread") == string::npos) {
+        return;
+    }
     name = RTN_Name(rtn).c_str();
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);

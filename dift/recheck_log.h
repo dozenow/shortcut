@@ -8,6 +8,8 @@
 struct go_live_process_map {
     int record_pid;
     int current_pid;
+    int wait;
+    int value;
 };
 //****
 //note: there is one kernel-level structure corresponding to this one in replay.h 
@@ -346,5 +348,6 @@ int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_lo
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock);
 int recheck_setrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
+int recheck_clone (struct recheck_handle* handle);
 
 #endif

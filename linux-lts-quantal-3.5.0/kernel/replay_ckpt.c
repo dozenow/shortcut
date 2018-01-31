@@ -1675,6 +1675,8 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
             //write the process map
             go_live_clock->process_map[index].record_pid = record_pid;
             go_live_clock->process_map[index].current_pid = current->pid;
+            go_live_clock->process_map[index].value = 0;
+            go_live_clock->process_map[index].wait = 0;
         }
 
 	// Too big - so allocate on the stack

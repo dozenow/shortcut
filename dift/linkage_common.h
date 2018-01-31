@@ -407,12 +407,6 @@ struct thread_data {
     FILE* slice_output_file;        //and then written to this file
     FILE* main_output_file;        
 
-    //slice ordering
-    u_long expected_clock; //the clock we're expecting
-    struct klogfile* klog;
-    struct ulog* ulog;
-    pid_t child_pid; //the recorded child pid returned from clone (the return value from clone is the actual child pid)
-
     union {
         struct mutex_info_cache mutex_info_cache;
         struct wait_info_cache wait_info_cache;
