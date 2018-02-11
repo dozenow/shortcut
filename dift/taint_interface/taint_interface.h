@@ -25,6 +25,8 @@ typedef uint8_t taintvalue_t;
 #define REP_TYPE_E  1
 #define REP_TYPE_NE 2
 
+#define SPECIAL_VAL_NO_REP 99
+
 /* Creates a new taint for a memory input */
 taint_t create_and_taint_option (u_long mem_addr);
 

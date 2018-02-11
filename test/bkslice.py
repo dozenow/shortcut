@@ -136,11 +136,43 @@ def findNextBSlice(cnt):
                     break
 
         
+cnt = 0
+lines = {}
+
+def source (line):
+    d = line.find("#src_mem[")
+    if d > 0:
+        d += 9
+        e = line.find("]", d)
+        (saddr,staint,ssize) = line[d:e].split(":")
+        addr = int(saddr,16)
+        size = int(ssize)
+        return addr
+
+def findStore (loc, cnt):
+    while cnt > 0:
+        cnt -= 1
+        d = lines[cnt].find("#dst_mem[")
+        if d > 0:
+            d += 9
+            e = lines[cnt].find("]", d)
+            if e > 0:
+                (saddr,staint,ssize) = lines[cnt][d:e].split(":")
+                addr = int(saddr,16)
+                size = int(ssize)
+                if loc >= addr and loc < addr+size:
+                    print cnt, ":", lines[cnt]
+                    return (cnt,source(lines[cnt]))
+        if lines[cnt].find("[TAINT_INFO]") >= 0:
+            tokens = lines[cnt][d:].split()
+            addr = int(tokens[2], 16)
+            end = int(tokens[3], 16)
+            if loc >= addr and loc < end:
+                print cnt, ":", lines[cnt]
+                return (cnt,source(lines[cnt]))
 
 # Read in and cache lines up to slicing point
 fh = open (pinout, "r")
-cnt = 0
-lines = {}
 for line in fh:
     lines[cnt] = line;
     cnt = cnt + 1
@@ -148,11 +180,6 @@ for line in fh:
         break
 fh.close()
 
-cnt = cnt-1
-target = lines[cnt]
-print target,
+(cnt,addr) = findStore(0x8529346, cnt)
+findStore(addr, cnt)
 
-while (cnt > 0):
-    findSources(lines[cnt])
-    print "Source: ", sorted(sources.keys());
-    cnt = findNextBSlice(cnt)

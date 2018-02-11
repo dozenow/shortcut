@@ -40,7 +40,7 @@
 //#define DEBUG_PRINT
 
 #ifdef DEBUG_PRINT
-#define debugf(...) printf(__VA_ARGS__)
+#define debugf(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define debugf(...)
 #endif
@@ -182,6 +182,7 @@ static int read_psr_chunk(struct klogfile *log) {
 	}
 
 	log->active_start_idx += log->active_num_psrs;
+	log->cur_idx = 0;
 	log->active_num_psrs = count;
 
 	/* Now handle each psr */
@@ -341,6 +342,7 @@ struct klogfile *parseklog_open(const char *filename) {
 	ret->cur_idx = 0;
 
 	ret->expected_clock = 0;
+	ret->expected_write_clock = 0;
 
 out:
 	return ret;
@@ -412,7 +414,8 @@ int parseklog_cur_chunk_size(struct klogfile *log) {
 	return log->active_num_psrs;
 }
 
-int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
+static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t* pexpected_write_clock, int destfd) 
+{
 	int i;
 	int rc;
 	u_long data_size;
@@ -460,22 +463,22 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 	}
 
 	/* For each psr */
-	u_long prev_start_clock;
-	u_long prev_stop_clock;
 	for (i = 0; i < count; i++) {
 		struct syscall_result *apsr = &psrs[i].psr;
 		struct klog_result *res = &psrs[i];
 
 		/* If (has clock) write clock */
 		if (apsr->flags & SR_HAS_START_CLOCK_SKIP) {
-			/* The 2 is magic... */
-			u_long record_clock = res->start_clock-prev_start_clock-2;
+			u_long record_clock = res->start_clock-*pexpected_write_clock;
+			*pexpected_write_clock = res->start_clock;
 			rc = write(destfd, &record_clock, sizeof(u_long));
 			if (rc != sizeof(u_long)) {
 				fprintf(stderr, "Couldn't record start_clock\n");
 				return -1;
 			}
 		}
+		(*pexpected_write_clock)++;
+
 		/* If (has retval) write retval */
 		if (apsr->flags & SR_HAS_NONZERO_RETVAL) {
 			rc = write(destfd, &res->retval, sizeof(long));
@@ -485,14 +488,16 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 			}
 		}
 		if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) {
-			/* The 2 is magic... */
-			u_long record_clock = res->stop_clock-prev_stop_clock-2;
+			u_long record_clock = res->stop_clock-*pexpected_write_clock;
+			*pexpected_write_clock = res->stop_clock;
 			rc = write(destfd, &record_clock, sizeof(u_long));
 			if (rc != sizeof(u_long)) {
 				fprintf(stderr, "Couldn't record start_clock\n");
 				return -1;
 			}
 		}
+		(*pexpected_write_clock)++;
+
 		/* If (has retparams) write retparams */
 		if (res->retparams_size) {
 			rc = write(destfd, res->retparams, res->retparams_size);
@@ -512,9 +517,6 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 			    }
 			} while (n->next);
 		}
-
-		prev_stop_clock = res->stop_clock;
-		prev_start_clock = res->start_clock;
 	}
 
 	return 0;
@@ -524,7 +526,7 @@ int parseklog_write_chunk(struct klogfile *log, int destfd) {
 	long rc;
 
 	/* Write the header */
-	rc = parseklog_do_write_chunk(log->active_num_psrs, log->active_psrs, destfd);
+	rc = parseklog_do_write_chunk(log->active_num_psrs, log->active_psrs, &log->expected_write_clock, destfd);
 
 	return rc;
 }

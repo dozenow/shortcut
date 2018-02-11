@@ -68,6 +68,7 @@ static void print_results ()
 	printf ("0x%lx %s %lu\n", iter->second.addr, iter->second.is_write ? "rangev_write" : "rangev", 
 		iter->second.value);
     }
+    fflush (stdout);
 }
 
 static void get_values ()
@@ -741,6 +742,28 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
     }
 }
 
+#if 0 
+// This is handy for random debugging tasks so leaving commented out
+static void PIN_FAST_ANALYSIS_CALL jnf_debug (ADDRINT ip, const CONTEXT* ctx)
+{
+    char val[16];
+
+    PIN_GetContextRegval (ctx, LEVEL_BASE::REG_XMM1, (UINT8 *) &val);    
+    fprintf (stderr, "Instruction %x syscall %ld xmm1: 0x", ip, *ppthread_log_clock);
+    for (int i = 0; i < 16; i++) {
+	fprintf (stderr, "%02x", val[i]);
+    }
+    fprintf (stderr, "\n");
+
+    PIN_GetContextRegval (ctx, LEVEL_BASE::REG_XMM2, (UINT8 *) &val);    
+    fprintf (stderr, "Instruction %x syscall %ld xmm2: 0x", ip, *ppthread_log_clock);
+    for (int i = 0; i < 16; i++) {
+	fprintf (stderr, "%02x", val[i]);
+    }
+    fprintf (stderr, "\n");
+}
+#endif
+
 void track_trace(TRACE trace, void* data)
 {
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
@@ -760,6 +783,16 @@ void track_trace(TRACE trace, void* data)
 			   IARG_END);
 	}
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#if 0
+	    // Leaving this as a template for random debugging tasks
+	    if (INS_Address(ins) == 0xb72b0668) {
+		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(jnf_debug),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_INST_PTR, 
+			       IARG_CONST_CONTEXT,
+			       IARG_END);
+	    }
+#endif
 	    if(INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
 			       IARG_FAST_ANALYSIS_CALL,

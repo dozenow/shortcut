@@ -5,16 +5,19 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
+//****
+//note: there are kernel-level structures corresponding to these two in replay.h.  Both must be changed together.
+//note2: the atomic_t in linux is integer on 32bit
+//****
 struct go_live_process_map {
     int record_pid;
     int current_pid;
+    char* taintbuf;
+    u_long* taintndx;
     int wait;
     int value;
 };
-//****
-//note: there is one kernel-level structure corresponding to this one in replay.h 
-//note2: the atomic_t in linux is integer on 32bit
-//****
+
 struct go_live_clock {
     char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
     unsigned long slice_clock;
@@ -51,10 +54,35 @@ struct read_recheck {
 };
 /* Followed by variable length read data */
 
+struct recv_recheck {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+    size_t readlen;
+};
+/* Followed by variable length read data */
+
+struct recvmsg_recheck {
+    int sockfd;
+    struct msghdr* msg;
+    int flags;
+};
+/* Followed by message structure and sub-structures */
+
+struct execve_recheck {
+    char* filename;
+    int argvcnt;
+    char** argv;
+    int envpcnt;
+    char** envp;
+};
+
 struct open_recheck {
     int has_retvals;
     struct open_retvals retvals;
     int flags;
+    int is_mode_tainted;
     int mode;
 };
 /* Followed by filename */
@@ -69,6 +97,18 @@ struct openat_recheck {
 
 struct close_recheck {
     int fd;
+};
+
+struct waitpid_recheck {
+    pid_t pid;
+    int* status;
+    int options;
+    int statusval;
+};
+
+struct dup2_recheck {
+    int oldfd;
+    int newfd;
 };
 
 struct access_recheck {
@@ -90,13 +130,58 @@ struct fstat64_recheck {
     void* buf;
 };
 
+struct pipe_recheck {
+    int* pipefd;
+    int piperet[2];
+};
+
 struct write_recheck {
     int has_retvals;
     int fd;
     void* buf;
     size_t count;
 };
-/* Followed by data actually written */
+/* Followed by data actually written with taints */
+
+struct writev_recheck {
+    int fd;
+    struct iovec* iov;
+    int iovcnt;
+};
+/* Followed by iovector and data actually written with taints */
+
+struct send_recheck {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+};
+/* Followed by data sent */
+
+struct sendmsg_recheck {
+    int sockfd;
+    struct msghdr* msg;
+    int flags;
+};
+/* Followed by message and associated data strcutures */
+
+struct getresuid_recheck {
+    uid_t* ruid;
+    uid_t* euid;
+    uid_t* suid;
+    uid_t ruidval;
+    uid_t euidval;
+    uid_t suidval;
+};
+
+struct getresgid_recheck {
+    gid_t* rgid;
+    gid_t* egid;
+    gid_t* sgid;
+    gid_t rgidval;
+    gid_t egidval;
+    gid_t sgidval;
+};
 
 struct ugetrlimit_recheck {
     int resource;
@@ -171,6 +256,32 @@ struct connect_recheck {
 };
 /* Followed by address of size addrlen */
 
+struct getsockname_recheck {
+    int sockfd;
+    struct sockaddr* addr;
+    socklen_t* addrlen;
+    socklen_t addrlenval;
+    u_long arglen;
+};
+/* Followed by address of size arglen */
+
+struct getpeername_recheck {
+    int sockfd;
+    struct sockaddr* addr;
+    socklen_t* addrlen;
+    socklen_t addrlenval;
+    u_long arglen;
+};
+/* Followed by address of size arglen */
+
+struct setsockopt_recheck {
+    int sockfd;
+    int level;
+    int optname;
+    const void* optval;
+    socklen_t optlen;
+};
+
 struct llseek_recheck {
     u_int fd;
     u_long offset_high;
@@ -186,6 +297,15 @@ struct ioctl_recheck {
     u_int size;
     char* arg;
     u_long arglen;
+};
+
+struct fcntl64_getfd_recheck {
+    int fd;
+};
+
+struct fcntl64_setfd_recheck {
+    int fd;
+    int arg;
 };
 
 struct fcntl64_getfl_recheck {
@@ -229,6 +349,7 @@ struct eventfd2_recheck {
 
 struct poll_recheck {
     u_int nfds;
+    int is_timeout_tainted;
     int timeout;
     char* buf;
 };
@@ -281,6 +402,11 @@ struct mkdir_recheck {
 };
 /* Followed by filename */
 
+struct unlink_recheck {
+    char* pathname;
+};
+/* Followed by filename */
+
 struct sched_getaffinity_recheck {
     pid_t pid;
     char is_pid_tainted;
@@ -294,6 +420,16 @@ struct ftruncate_recheck {
     u_long length;
 };
 
+struct prctl_recheck {
+    int option;
+    u_long arg2;
+    u_long arg3;
+    u_long arg4;
+    u_long arg5;
+    u_long optsize;
+};
+/* Followed by optional data depending on option */
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -301,14 +437,22 @@ struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t 
 int close_recheck_log (struct recheck_handle* handle);
 int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, u_long clock);
+int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, u_long clock);
+int recheck_execve (struct recheck_handle* handle, char* filename, char* argv[], char* envp[], u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);
 int recheck_close (struct recheck_handle* handle, int fd, u_long clock);
+int recheck_waitpid (struct recheck_handle* handle, pid_t pid, int* status, int options, u_long clock);
+int recheck_dup2 (struct recheck_handle* handle, int oldfd, int newfd, u_long clock);
 int recheck_access (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_stat64 (struct recheck_handle* handle, char* path, void* buf, u_long clock);
 int recheck_fstat64 (struct recheck_handle* handle, int fd, void* buf, u_long clock);
 int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf, u_long clock);
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count, u_long clock);
+int recheck_writev (struct recheck_handle* handle, int fd, struct iovec* iov, int iovcnt, u_long clock);
+int recheck_send (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, u_long clock);
+int recheck_sendmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, u_long clock);
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf, u_long clock);
 int recheck_statfs64 (struct recheck_handle* handle, const char* path, size_t sz, struct statfs64* buf, u_long clock);
@@ -318,7 +462,10 @@ int recheck_prlimit64 (struct recheck_handle* handle, pid_t pid, int resource, s
 int recheck_setpgid (struct recheck_handle* handle, pid_t pid, pid_t pgid, int is_pid_tainted, int is_pgid_tainted, u_long clock);
 int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size_t bufsiz, u_long clock);
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol, u_long clock);
+int recheck_setsockopt (struct recheck_handle* handle, int sockfd, int level, int optname, const void* optval, socklen_t optlen, u_long clock);
 int recheck_connect_or_bind (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t addrlen, u_long clock);
+int recheck_getsockname (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t* addrlen, u_long clock);
+int recheck_getpeername (struct recheck_handle* handle, int sockfd, struct sockaddr* addr, socklen_t* addrlen, u_long clock);
 int recheck_getpid (struct recheck_handle* handle, u_long clock);
 int recheck_gettid (struct recheck_handle* handle, u_long clock);
 int recheck_getpgrp (struct recheck_handle* handle, u_long clock);
@@ -326,8 +473,12 @@ int recheck_getuid32 (struct recheck_handle* handle, u_long clock);
 int recheck_geteuid32 (struct recheck_handle* handle, u_long clock);
 int recheck_getgid32 (struct recheck_handle* handle, u_long clock);
 int recheck_getegid32 (struct recheck_handle* handle, u_long clock);
+int recheck_getresuid (struct recheck_handle* handle, uid_t* ruid, uid_t* euid, uid_t* suid, u_long clock);
+int recheck_getresgid (struct recheck_handle* handle, gid_t* rgid, gid_t* egid, gid_t* sgid, u_long clock);
 int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high, u_long offset_low, loff_t* result, u_int whence, u_long clock);
 int recheck_ioctl (struct recheck_handle* handle, u_int fd, u_int cmd, char* arg, u_long clock);
+int recheck_fcntl64_getfd (struct recheck_handle* handle, int fd, u_long clock);
+int recheck_fcntl64_setfd (struct recheck_handle* handle, int fd, int arg, u_long clock);
 int recheck_fcntl64_getfl (struct recheck_handle* handle, int fd, u_long clock);
 int recheck_fcntl64_setfl (struct recheck_handle* handle, int fd, long flags, u_long clock);
 int recheck_fcntl64_getlk (struct recheck_handle* handle, int fd, void* arg, u_long clock);
@@ -345,9 +496,12 @@ int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* se
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
+int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock);
 int recheck_setrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
-int recheck_clone (struct recheck_handle* handle);
+int recheck_prctl (struct recheck_handle* handle, int option, u_long arg2, u_long arg3, u_long arg4, u_long arg5, u_long clock);
+int recheck_clone (struct recheck_handle* handle, u_long clock);
+int recheck_pipe (struct recheck_handle* handle, int pipefd[2], u_long clock);
 
 #endif

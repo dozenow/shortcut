@@ -374,7 +374,7 @@ int main (int argc, char* argv[])
 			rc = read (fd, &mm_info, sizeof(mm_info));
 			assert (rc == sizeof(mm_info));
 			printf ("\t\t start_brk %lx brk %lx\n", mm_info.start_brk, mm_info.brk);
-		} else { 
+			printf ("\t\t env_start %lx env_end %lx\n", mm_info.env_start, mm_info.env_end);
 		}
 
 		//ignore these structures for now; didn't bother to parse them

@@ -2125,10 +2125,10 @@ static inline void add_imm_load_to_slice (uint32_t reg, uint32_t size, char* val
 {
     OUTPUT_SLICE_EXTRA (ip, "pushfd");
     OUTPUT_SLICE_EXTRA (ip, "sub esp, 12"); // For alignment
-    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) val));
-    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (val+4)));
-    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (val+8)));
     OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (val+12)));
+    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (val+8)));
+    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (val+4)));
+    OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) val));
     OUTPUT_SLICE_EXTRA (ip, "movdqu %s, xmmword ptr [esp]", translate_mmx(reg));
     OUTPUT_SLICE_EXTRA (ip, "add esp, 28");
     OUTPUT_SLICE_EXTRA (ip, "popfd");
@@ -3023,16 +3023,20 @@ static inline const char* memSizeToPrefix (int size)
 
 static inline void print_abs_address (ADDRINT ip, char* ins_str, u_long mem_loc)
 {
-    // Put absolute memory addres in here
+    // Put absolute memory address in here
     char changed_str[64];
     char* s = strstr(ins_str, " ptr ");
-    char* t = changed_str;
-    char* p = ins_str;
-    while (p != s+5) *t++ = *p++;
-    t += sprintf (t, "[0x%lx]", mem_loc);
-    while (*p++ != ']');
-    strcpy (t, p);
-    OUTPUT_SLICE (ip, "%s", changed_str);
+    if (s) {
+	char* t = changed_str;
+	char* p = ins_str;
+	while (p != s+5) *t++ = *p++;
+	t += sprintf (t, "[0x%lx]", mem_loc);
+	while (*p++ != ']');
+	strcpy (t, p);
+	OUTPUT_SLICE (ip, "%s", changed_str);
+    } else {
+	OUTPUT_SLICE (ip, "%s", ins_str); // Leave doens't use ptr notation, for example
+    }
 }
 
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
@@ -3869,6 +3873,12 @@ TAINTSIGN fw_slice_string_scan (ADDRINT ip, char* ins_str, ADDRINT mem_loc, ADDR
 	    char* p = strstr (ins_str, "scas");
 	    assert (p);
 	    *(p+5) = '\0';
+	    if (eflags & DF_MASK) { 
+		OUTPUT_SLICE (0, "std");
+	    } else {
+		OUTPUT_SLICE (0, "cld");
+	    }
+	    OUTPUT_SLICE_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	    OUTPUT_SLICE_INFO ("#src_mem[%x:%d:%lu] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]", mem_loc, mem_tainted, stringlen, LEVEL_BASE::REG_ECX, ecx_tainted, 4, LEVEL_BASE::REG_EAX, al_tainted, 1, LEVEL_BASE::REG_EDI, edi_tainted, 4);
 	}
@@ -3885,12 +3895,11 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 
 	assert (is_flag_tainted(DF_FLAG) == 0); // JNF: Not sure how to handle this flag?
 	if (eflags & DF_MASK) { 
-            fprintf (stderr, "Well, fw_slice_string_move has DF flag set, let's verify if we handle it correctly, ip %x\n", ip);
             src_mem_loc -= size;
             dst_mem_loc -= size;
-        }
+	}
 
-	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+	int ecx_tainted = is_reg_tainted (LEVEL_BASE::REG_ECX, 4, 0); 
 	int edi_tainted = is_reg_tainted (LEVEL_BASE::REG_EDI, 4, 0);
 	int esi_tainted = is_reg_tainted (LEVEL_BASE::REG_ESI, 4, 0);
 	int mem_tainted = is_mem_tainted (src_mem_loc, size);
@@ -3907,13 +3916,17 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	}
 
 	// If partially tainted, need to restore for validation. If untainted, restore for instruction
-	if (ecx_tainted == 2 || (ecx_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ECX, ecx_val, ecx_tainted);
+	if (first_iter != SPECIAL_VAL_NO_REP) {  // Instruction has no rep, so ecx is unused
+	    if (ecx_tainted == 2 || (ecx_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ECX, ecx_val, ecx_tainted);
+	}
 	if (edi_tainted == 2 || (edi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_EDI, edi_val, edi_tainted);
 	if (esi_tainted == 2 || (esi_tainted == 0 && mem_tainted)) print_extra_move_reg_4 (ip, LEVEL_BASE::REG_ESI, esi_val, esi_tainted);
 
 	// Always verify registers if not untainted
         // TODO: xdou: I remembered there was a case where ecx could change for java???
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	if (first_iter != SPECIAL_VAL_NO_REP) {  // Instruction has no rep, so exc is unused
+	    if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	}
 	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
 	if (esi_tainted) verify_register (ip, LEVEL_BASE::REG_ESI, 4, esi_val, 0, 0);
 
@@ -3923,8 +3936,14 @@ TAINTSIGN fw_slice_string_move (ADDRINT ip, char* ins_str, ADDRINT src_mem_loc, 
 	    char* p = strstr (ins_str, "movs");
 	    assert (p);
 	    *(p+5) = '\0';
+	    if (eflags & DF_MASK) { 
+		OUTPUT_SLICE (0, "std");
+	    } else {
+		OUTPUT_SLICE (0, "cld");
+	    }
+	    OUTPUT_SLICE_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE (ip, "%s", ins_str);
-	    OUTPUT_SLICE_INFO ("#src_mem[%x:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]", src_mem_loc, mem_tainted, size, LEVEL_BASE::REG_ECX, ecx_tainted, 4, LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4);
+	    OUTPUT_SLICE_INFO ("#src_mem[%x:%d:%u] #dst_mem[%x:%d:%d] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]", src_mem_loc, mem_tainted, size, dst_mem_loc, is_mem_tainted(dst_mem_loc, size), size, LEVEL_BASE::REG_ECX, ecx_tainted, 4, LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4);
 
 	    // We modified these bytes - add to hash
 	    add_modified_mem_for_final_check (dst_mem_loc, size);
@@ -3981,6 +4000,12 @@ TAINTSIGN fw_slice_string_compare (ADDRINT ip, char* ins_str, ADDRINT mem_loc1, 
 
 	// Move string if src memory is tainted 
 	if (mem1_tainted||mem2_tainted) {
+	    if (eflags & DF_MASK) { 
+		OUTPUT_SLICE (0, "std");
+	    } else {
+		OUTPUT_SLICE (0, "cld");
+	    }
+	    OUTPUT_SLICE_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	    OUTPUT_SLICE_INFO ("#src_mem[%x:%d:%u,%x:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d,%d:%d:%d]", mem_loc1, mem1_tainted, size, mem_loc2, mem2_tainted, size, LEVEL_BASE::REG_ECX, ecx_tainted, 4, 
 			       LEVEL_BASE::REG_EDI, edi_tainted, 4, LEVEL_BASE::REG_ESI, esi_tainted, 4);
@@ -4008,10 +4033,18 @@ TAINTSIGN fw_slice_string_store (ADDRINT ip, char* ins_str, ADDRINT dst_mem_loc,
 	if (eax_tainted == 2) print_extra_move_reg (ip, LEVEL_BASE::REG_EAX, op_size, eax_val, 0, eax_tainted);
 
 	// Always verify ecx and edi if not untainted
-	if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	if (first_iter != SPECIAL_VAL_NO_REP) {  // Instruction has no rep, so ecx is unused
+	    if (ecx_tainted) verify_register (ip, LEVEL_BASE::REG_ECX, 4, ecx_val, 0, 0);
+	}
 	if (edi_tainted) verify_register (ip, LEVEL_BASE::REG_EDI, 4, edi_val, 0, 0);
 
 	if (eax_tainted) {
+	    if (eflags & DF_MASK) { 
+		OUTPUT_SLICE (0, "std");
+	    } else {
+		OUTPUT_SLICE (0, "cld");
+	    }
+	    OUTPUT_SLICE_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%u] #ndx_reg[%d:%d:%d,%d:%d:%d]", LEVEL_BASE::REG_EAX, eax_tainted, op_size, LEVEL_BASE::REG_ECX, ecx_tainted, 4, LEVEL_BASE::REG_EDI, edi_tainted, 4);
 
@@ -4700,7 +4733,7 @@ TAINTSIGN taint_string_move (u_long src_mem_loc, u_long dst_mem_loc, uint32_t op
 	}
 
 	// ECX, EDI, ESI could have different values if bytes were tainted (early stop)
-	set_reg_single_value(LEVEL_BASE::REG_ECX, 4, t);	
+	if (first_iter != SPECIAL_VAL_NO_REP) set_reg_single_value(LEVEL_BASE::REG_ECX, 4, t);	
 	set_reg_single_value(LEVEL_BASE::REG_EDI, 4, t);	
 	set_reg_single_value(LEVEL_BASE::REG_ESI, 4, t);	
     }
@@ -4873,13 +4906,15 @@ int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata)
     OUTPUT_MAIN_THREAD (tdata, ".globl _start");
     OUTPUT_MAIN_THREAD (tdata, "_start:");
     OUTPUT_MAIN_THREAD (tdata, "pushfd");
+    OUTPUT_MAIN_THREAD (tdata, "push %d", tdata->record_pid); // 3rd arg is record pid
     OUTPUT_MAIN_THREAD (tdata, "push dword ptr [ebp]");
-    OUTPUT_MAIN_THREAD (tdata, "add ebp, 4");
+    OUTPUT_MAIN_THREAD (tdata, "add ebp, 4"); 
     OUTPUT_MAIN_THREAD (tdata, "push ebp");
     OUTPUT_MAIN_THREAD (tdata, "call recheck_start");
     OUTPUT_MAIN_THREAD (tdata, "pop ebp");
-    OUTPUT_MAIN_THREAD (tdata, "sub ebp, 4");
-    OUTPUT_MAIN_THREAD (tdata, "add esp, 4");
+    OUTPUT_MAIN_THREAD (tdata, "sub ebp, 4"); 
+    OUTPUT_MAIN_THREAD (tdata, "add esp, 8"); // Dunno
+
     OUTPUT_MAIN_THREAD (tdata, "popfd");
 
     OUTPUT_MAIN_THREAD (tdata, "jmp ckpt_mem");
@@ -5034,7 +5069,5 @@ void fw_slice_print_footer (struct thread_data* tdata)
     fprintf (tdata->slice_output_file, ");\n");
     fclose (tdata->slice_output_file);
     tdata->slice_output_file = NULL;
-
-    fflush (stdout);
 }
 
