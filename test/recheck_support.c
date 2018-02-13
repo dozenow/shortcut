@@ -556,11 +556,8 @@ long recv_recheck ()
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
     precv = (struct recv_recheck *) bufptr;
-    struct recvfrom_retvals* pvals = (struct recvfrom_retvals *) bufptr;
-    char* recvData = &pvals->buf;
+    char* recvData = bufptr + sizeof(struct recv_recheck);
     bufptr += pentry->len;
-
-    recvData += sizeof(u_int);
 
 #ifdef PRINT_VALUES
     LPRINT ("recv: sockfd %d buf %p len %d flags %d returns %ld clock %lu buffer offset %ld\n", 
@@ -777,7 +774,11 @@ long send_recheck ()
     tainted = data;
     outbuf = data + psend->len;
     for (i = 0; i < psend->len; i++) {
-	if (!tainted[i]) ((char *) (psend->buf))[i] = outbuf[i];
+	if (!tainted[i]) {
+	    if (((char *) (psend->buf))[i] != outbuf[i]) {
+		((char *) (psend->buf))[i] = outbuf[i];
+	    }
+	}
     }
 
     u_long block[6];
@@ -822,12 +823,16 @@ long sendmsg_recheck ()
     for (i = 0; i < psendmsg->msg->msg_iovlen; i++) {
 	char* tainted = data;
 	char* outbuf = data + psendmsg->msg->msg_iov[i].iov_len;
-	for (j = 0; j < psendmsg->msg->msg_iov[i].iov_len; i++) {
+	for (j = 0; j < psendmsg->msg->msg_iov[i].iov_len; j++) {
 	    if (!tainted[j]) ((char *) (psendmsg->msg->msg_iov[i].iov_base))[j] = outbuf[j];
 	}
 	data += psendmsg->msg->msg_iov[i].iov_len*2;
     }
-    memcpy (psendmsg->msg->msg_control, data, psendmsg->msg->msg_controllen);
+    char* tainted = data;
+    char* outbuf = data + psendmsg->msg->msg_controllen;
+    for (i = 0; i < psendmsg->msg->msg_controllen; i++) {
+	if (!tainted[i]) ((char *) psendmsg->msg->msg_control)[i] = outbuf[i];
+    }
 
     u_long block[6];
     block[0] = psendmsg->sockfd;
@@ -835,6 +840,7 @@ long sendmsg_recheck ()
     block[2] = psendmsg->flags;
     start_timing();
     rc = syscall(SYS_socketcall, SYS_SENDMSG, &block);
+    LPRINT ("sendmsg rc %d errno %d\n", rc, errno);
     end_timing(SYS_socketcall, rc);
     check_retval ("sendmsg", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_socketcall);

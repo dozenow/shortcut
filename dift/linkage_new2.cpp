@@ -5243,6 +5243,29 @@ static void instrument_fpu_store (INS ins)
     }
 }
 
+static void instrument_fpu_cmov (INS ins, int flags) 
+{
+    REG dstreg = INS_OperandReg (ins, 0);
+    REG srcreg = INS_OperandReg (ins, 1);
+    char* str = get_copy_of_disasm (ins);
+    // For now, just check if inputs are tainted
+    // If any are tainted, we will need to do more work
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_fpu_cmov),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(dstreg),
+		   IARG_UINT32, REG_Size(dstreg),
+		   IARG_UINT32, translate_reg(srcreg),
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+                   IARG_UINT32, flags,
+		   IARG_EXECUTING,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static void instrument_fpu_onereg_calc (INS ins)
 {
     REG reg = INS_OperandReg (ins, 0);
@@ -6006,10 +6029,24 @@ void instruction_instrumentation(INS ins, void *v)
             case XED_ICLASS_FUCOMP:
             case XED_ICLASS_FCOMPP:
             case XED_ICLASS_FUCOMPP:
-            case XED_ICLASS_FCMOVNBE:
                 INSTRUMENT_PRINT(log_f, "[INFO] FPU inst: %s, op_count %u\n", INS_Disassemble(ins).c_str(), INS_OperandCount(ins));
 		// These only work because we are not allowing any FPU registers to become tainted - if we do, then we need to support all of these
                 break;
+            case XED_ICLASS_FCMOVBE:
+            case XED_ICLASS_FCMOVNBE:
+		instrument_fpu_cmov (ins, CF_FLAG|ZF_FLAG);
+                slice_handled = 1;
+		break;
+            case XED_ICLASS_FCMOVE:
+            case XED_ICLASS_FCMOVNE:
+		instrument_fpu_cmov (ins, ZF_FLAG);
+                slice_handled = 1;
+		break;
+            case XED_ICLASS_FCMOVB:
+            case XED_ICLASS_FCMOVNB:
+		instrument_fpu_cmov (ins, CF_FLAG);
+                slice_handled = 1;
+		break;
 	    case XED_ICLASS_FWAIT:
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:

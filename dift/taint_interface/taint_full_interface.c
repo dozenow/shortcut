@@ -2289,6 +2289,11 @@ static inline void print_extra_move_mem (ADDRINT ip, u_long mem_loc, uint32_t me
 	}  else if (mem_size == 8) { 
             OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc, get_mem_value32(mem_loc, 4));
             OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc + 4, get_mem_value32(mem_loc + 4, 4));
+	}  else if (mem_size == 16) { 
+            OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc, get_mem_value32(mem_loc, 4));
+            OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc + 4, get_mem_value32(mem_loc + 4, 4));
+            OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc + 8, get_mem_value32(mem_loc + 8, 4));
+            OUTPUT_SLICE_EXTRA (ip, "mov dword ptr[0x%lx], %u", mem_loc + 12, get_mem_value32(mem_loc + 12, 4));
         } else { 
             fprintf (stderr, "not handled size for print_extra_move_mem %u \n", mem_size);
             print_stack_trace ();
@@ -3294,6 +3299,19 @@ TAINTSIGN fw_slice_fpuregfpureg (ADDRINT ip, char* ins_str, int dst_reg, uint32_
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_regreg[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s", 
 		dst_reg, tainted1, dst_regsize, src_reg, tainted2, src_regsize, print_regval(tmpbuf, &dst_regvalue, dst_regsize), print_regval(tmpbuf2, &src_regvalue, src_regsize));
+    }
+}
+
+TAINTSIGN fw_slice_fpu_cmov (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t flags, BOOL executed)
+{
+    int sp = get_fp_stack_top (ctx);
+    dst_reg = map_fp_stack_reg (dst_reg, sp);
+    src_reg = map_fp_stack_reg (src_reg, sp);
+    int tainted1 = is_reg_tainted (dst_reg, dst_regsize, 0);
+    int tainted2 = is_reg_tainted (src_reg, src_regsize, 0);
+    int tainted3 = is_flag_tainted (flags);
+    if (tainted1 || tainted2 || tainted3) {
+	fprintf (stderr, "[ERROR[ fw_slice_fpu_cmov doesn't hangle tainted inputs yet: ins %s tainted %d %d %d\n", ins_str, tainted1, tainted2, tainted3);
     }
 }
 

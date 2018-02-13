@@ -288,7 +288,7 @@ int recheck_writev (struct recheck_handle* handle, int fd, struct iovec* iov, in
 
     u_long count = 0;
     for (int i = 0; i < iovcnt; i++) {
-	if (is_mem_arg_tainted ((u_long) &iov[i], sizeof(iov[i]))) fprintf (stderr, "[ERROR] iov entry %d is tainted\n", i);
+	if (is_mem_arg_tainted ((u_long) &iov[i], sizeof(iov[i]))) fprintf (stderr, "[INFO] iov entry %d is tainted\n", i);
 	count += iov[i].iov_len;
     }
     write_header_into_recheck_log (handle->recheckfd, SYS_writev, res->retval, sizeof(wrchk) + iovcnt*sizeof(struct iovec) + count*2, clock);
@@ -336,19 +336,24 @@ int recheck_sendmsg (struct recheck_handle* handle, int sockfd, struct msghdr* m
 	fprintf (stderr, "[ERROR] sendmsg name is tainted\n");
     }
     if (msg->msg_iovlen > 0 && is_mem_arg_tainted ((u_long) msg->msg_iov, msg->msg_iovlen*sizeof(struct iovec))) {
-	fprintf (stderr, "[ERROR] sendmsg iov is tainted\n");
-    }
-    if (msg->msg_controllen > 0 && is_mem_arg_tainted ((u_long) msg->msg_control, msg->msg_controllen)) {
-	fprintf (stderr, "[ERROR] sendmsg control is tainted\n");
+	for (u_int i = 0; i < msg->msg_iovlen; i++) {
+	    if (is_mem_arg_tainted ((u_long) &msg->msg_iov[i].iov_len, sizeof(msg->msg_iov[i].iov_len))) {
+		fprintf (stderr, "[ERROR] sendmsg iov %d len %d is tainted, clock=%lu\n", i, msg->msg_iov[i].iov_len, clock);
+	    }
+	    if (is_mem_arg_tainted ((u_long) msg->msg_iov[i].iov_base, sizeof(msg->msg_iov[i].iov_base))) {
+		fprintf (stderr, "[ERROR] sendmsg iov %d base %p is tainted, clock=%lu\n", i, msg->msg_iov[i].iov_base, clock);
+	    }
+	}
     }
 
     u_long count = sizeof(struct msghdr);
     count += msg->msg_namelen;
+    count += msg->msg_iovlen*sizeof(struct iovec);
     for (u_int i = 0; i < msg->msg_iovlen; i++) {
-	if (is_mem_arg_tainted ((u_long) &msg->msg_iov[i], sizeof(msg->msg_iov[i]))) fprintf (stderr, "[ERROR] iov entry %d is tainted\n", i);
+	if (is_mem_arg_tainted ((u_long) &msg->msg_iov[i], sizeof(msg->msg_iov[i]))) fprintf (stderr, "[INFO] iov entry %d is tainted\n", i);
 	count += msg->msg_iov[i].iov_len*2;
     }
-    count += msg->msg_controllen;
+    count += msg->msg_controllen*2;
 
     write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct sendmsg_recheck) + count, clock);
     smchk.sockfd = sockfd;
@@ -361,7 +366,7 @@ int recheck_sendmsg (struct recheck_handle* handle, int sockfd, struct msghdr* m
     for (u_int i = 0; i < msg->msg_iovlen; i++) {
 	write_taintmask_into_recheck_log (handle, (u_long) msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
     }
-    write_data_into_recheck_log (handle->recheckfd, msg->msg_control, msg->msg_controllen);
+    write_taintmask_into_recheck_log (handle, (u_long) msg->msg_control, msg->msg_controllen);
 
     return 0;
 }
