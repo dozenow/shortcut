@@ -1550,8 +1550,21 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 	// For now, just verify recv inputs - I'm sure we'll need to change this at some point to handle partial reads
 	OUTPUT_SLICE(0, "call recv_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
-	int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, *ppthread_log_clock);
-	if (retaddrlen > 0) clear_mem_taints ((u_long)buf, retaddrlen); 
+
+	size_t start, end;
+	if (filter_input() && get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+	    fprintf (stderr, "partial recv taint: %u %u\n", start, end);
+	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 1, start, end, *ppthread_log_clock);
+	    add_modified_mem_for_final_check ((u_long)buf + start, end-start);
+	    if (retaddrlen > 0) {
+		if (start > 0) clear_mem_taints ((u_long) buf, start);
+		if ((int) end < retaddrlen) clear_mem_taints ((u_long) buf + end, retaddrlen-end);
+	    }
+	    OUTPUT_TAINT_INFO_THREAD (current_thread, "read %lx %lx", (u_long) ri->buf+start, (u_long) end-start);  
+	} else {
+	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, *ppthread_log_clock);
+	    if (retaddrlen > 0) clear_mem_taints ((u_long)buf, retaddrlen); 
+	}
     }
     ri->fd = sockfd;
     ri->buf = (char *)buf;
@@ -5374,15 +5387,18 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = false;
 
+    if (ip == 0xb757d684) print_me = true;
+
 #if 0
-    #define ADDR_TO_CHECK 0xb5e32cdf
+    #define ADDR_TO_CHECK 0xb5e32e38
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);
 	old_val = *((u_char *) ADDR_TO_CHECK);
 	print_me = true;
     }
-
+#endif
+#if 0
     static int old_taint = 0;
     int new_taint = is_mem_arg_tainted(0xbffffeff, 1);
     if (new_taint != old_taint) {

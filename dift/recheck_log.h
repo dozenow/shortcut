@@ -60,6 +60,9 @@ struct recv_recheck {
     size_t len;
     int flags;
     size_t readlen;
+    int partial_read; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_start;
+    size_t partial_read_end;
 };
 /* Followed by variable length read data */
 
@@ -437,7 +440,7 @@ struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t 
 int close_recheck_log (struct recheck_handle* handle);
 int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, u_long clock);
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock);
 int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, u_long clock);
 int recheck_execve (struct recheck_handle* handle, char* filename, char* argv[], char* envp[], u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);

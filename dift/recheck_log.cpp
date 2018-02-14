@@ -152,7 +152,7 @@ static void check_one_reg_argument (const char* call, int arg_index) //index sta
     }
 }
 
-long calculate_partial_read_size (int is_cache_file, int partial_read, size_t start, size_t end, long total_size) { 
+static long calculate_partial_read_size (int is_cache_file, int partial_read, size_t start, size_t end, long total_size) { 
 	if (partial_read == 0) return 0;
 	if (is_cache_file == 0) return 0;
 	else {
@@ -217,7 +217,7 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     return 0;
 }
 
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, u_long clock)
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
 {
     struct recv_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
@@ -234,9 +234,13 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     rrchk.buf = buf;
     rrchk.len = len;
     rrchk.flags = flags;
+    rrchk.partial_read = partial_read;
+    rrchk.partial_read_start = partial_read_start;
+    rrchk.partial_read_end = partial_read_end;
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     struct recvfrom_retvals* pretvals = (struct recvfrom_retvals *) res->retparams;
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, &pretvals->buf, rrchk.readlen);
+    // Technically don't need to write data that will not be verified on partial reads - ignored
 
     return res->retval;
 }

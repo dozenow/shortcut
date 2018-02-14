@@ -583,16 +583,33 @@ long recv_recheck ()
     check_retval ("recv", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	LPRINT ("About to compare %p and %p\n", precv->buf, recvData);
-	if (memcmp (precv->buf, recvData, rc)) {
-	    printf ("[MISMATCH] recv returns different values\n");
-	    LPRINT ("[MISMATCH] recv returns different values - read/expected:\n");
-	    if (memcmp (precv->buf, recvData, rc)) {
-		for (i = 0; i < rc; i++) {
-		    LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
-		    if (i%16 == 15) LPRINT ("\n");
+	if (precv->partial_read) {
+	    if (precv->partial_read_start > 0) {
+		if (memcmp (precv->buf, recvData, precv->partial_read_start)) {
+		    printf ("[MISMATCH] partial recv start returns different values\n");
+		    LPRINT ("[MISMATCH] partial recv start returns different values - read/expected:\n");
 		}
-		LPRINT ("\n");
-		handle_mismatch();
+	    } 
+	    if (precv->partial_read_end < rc) {
+		if (memcmp (precv->buf+precv->partial_read_end, recvData+precv->partial_read_end, 
+			    rc-precv->partial_read_end)) {
+		    printf ("[MISMATCH] partial recv start returns different values\n");
+		    LPRINT ("[MISMATCH] partial recv start returns different values - read/expected:\n");
+		}
+	    }
+	    add_to_taintbuf (pentry, RETBUF, precv->buf, rc);
+	} else {
+	    if (memcmp (precv->buf, recvData, rc)) {
+		printf ("[MISMATCH] recv returns different values\n");
+		LPRINT ("[MISMATCH] recv returns different values - read/expected:\n");
+		if (memcmp (precv->buf, recvData, rc)) {
+		    for (i = 0; i < rc; i++) {
+			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
+			if (i%16 == 15) LPRINT ("\n");
+		    }
+		    LPRINT ("\n");
+		    handle_mismatch();
+		}
 	    }
 	}
     }

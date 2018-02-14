@@ -182,6 +182,18 @@ static void handle_gettimeofday (int fd, struct taint_retval* trv, struct klog_r
     }
 }
     
+static void handle_clock_gettime (int fd, struct taint_retval* trv, struct klog_result* res)
+{
+    int rc;
+    
+    if (trv->rettype == CLOCK_GETTIME) {
+	rc = read (fd, (char *) res->retparams, sizeof (struct timespec));
+	assert (rc == sizeof(struct timespec));
+    } else {
+	assert (0);
+    }
+}
+    
 static void handle_newselect (int fd, struct taint_retval* trv, struct klog_result* res)
 {
     int rc;
@@ -203,6 +215,24 @@ static void handle_rt_sigaction (int fd, struct taint_retval* trv, struct klog_r
 	assert (rc == 20);
     } else {
 	assert (0);
+    }
+}
+
+static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_result* res)
+{
+    long rc;
+    int* pcall = (int *) res->retparams;
+
+    switch (*pcall) {
+    case SYS_RECV: {
+	struct recvfrom_retvals *precv = (struct recvfrom_retvals *) res->retparams;
+	rc = read (fd, &precv->buf, res->retval);	
+	assert (rc == res->retval);
+	break;
+    }
+    default:
+	fprintf (stderr, "Socketcall %d not handled in sdaemon\n", *pcall);
+	break;
     }
 }
 
@@ -310,6 +340,12 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 		    break;
 		case SYS_rt_sigaction:
 		    handle_rt_sigaction (tfd, &trv, res);
+		    break;
+		case SYS_clock_gettime:
+		    handle_clock_gettime (tfd, &trv, res);
+		    break;
+		case SYS_socketcall:
+		    handle_socketcall (tfd, &trv, res);
 		    break;
 		default:
 		    fprintf (stderr, "syscall %d unhandled\n", trv.syscall);
