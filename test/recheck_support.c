@@ -462,7 +462,10 @@ long read_recheck (size_t count)
 	use_count = pread->count;
     }
 
-    if (is_cache_file && pentry->retval >= 0) {
+    if ((is_cache_file&IS_PIPE)==IS_PIPE) {
+	readData += sizeof(uint64_t) + sizeof(int);
+    }
+    if ((is_cache_file&CACHE_MASK) && pentry->retval >= 0) {
 	struct stat64 st;
 	if (!cache_files_opened[pread->fd].is_open_cache_file) {
 	    printf ("[BUG] cache file should be opened but it is not\n");
@@ -528,7 +531,8 @@ long read_recheck (size_t count)
 			printf ("[MISMATCH] read returns different values\n");
 			LPRINT ("[MISMATCH] read returns different values - read/expected:\n");
 			for (i = 0; i < rc; i++) {
-			    LPRINT ("%02x/%02x ", tmpbuf[i], readData[i]);
+			    if (tmpbuf[i] != readData[i]) LPRINT ("*");
+			    LPRINT ("%02x/%02x ", tmpbuf[i]&0xff, readData[i]&0xff);
 			    if (i%16 == 15) LPRINT ("\n");
 			}
 			LPRINT ("\n");
@@ -543,6 +547,23 @@ long read_recheck (size_t count)
     end_timing_func (SYS_read);
     return rc;
 }
+
+#ifdef PRINT_VALUES
+inline void print_buffer (u_char* buffer, int len)
+{
+    int i;
+    LPRINT ("{");
+    for (i = 0; i < len; i++) { 
+	u_char ch = buffer[i];
+	if (ch >= 32 && ch <= 126) {
+	    LPRINT ("%c", ch);
+	} else {
+	    LPRINT ("\\%o", ch);
+	}
+    }
+    LPRINT ("}\n");
+}
+#endif
 
 long recv_recheck ()
 {
@@ -580,6 +601,17 @@ long recv_recheck ()
     LPRINT ("recv: returns %ld errno %d\n", rc, errno);
     end_timing (SYS_socketcall, rc);
 
+#ifdef PRINT_VALUES
+    print_buffer (precv->buf, rc);
+#endif
+    // Hack to investigate X behavior - skip events?
+    if (rc-pentry->retval == 32) {
+	LPRINT ("Trying to skip X event - ugh - just a temporary? hack!!!\n");
+	for (i = 0; i < pentry->retval; i++) {
+	    ((char *)precv->buf)[i] = ((char *)precv->buf)[i+32];
+	}
+	rc = pentry->retval;
+    }
     check_retval ("recv", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	LPRINT ("About to compare %p and %p\n", precv->buf, recvData);
@@ -587,25 +619,39 @@ long recv_recheck ()
 	    if (precv->partial_read_start > 0) {
 		if (memcmp (precv->buf, recvData, precv->partial_read_start)) {
 		    printf ("[MISMATCH] partial recv start returns different values\n");
-		    LPRINT ("[MISMATCH] partial recv start returns different values - read/expected:\n");
+		    LPRINT ("[MISMATCH] partial recv %lu start returns different values - read/expected:\n", pentry->clock);
+		    for (i = 0; i < precv->partial_read_start; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    LPRINT ("\n");
+		    
+		    handle_mismatch();
 		}
 	    } 
 	    if (precv->partial_read_end < rc) {
 		if (memcmp (precv->buf+precv->partial_read_end, recvData+precv->partial_read_end, 
 			    rc-precv->partial_read_end)) {
-		    printf ("[MISMATCH] partial recv start returns different values\n");
-		    LPRINT ("[MISMATCH] partial recv start returns different values - read/expected:\n");
+		    printf ("[MISMATCH] partial recv end returns different values\n");
+		    LPRINT ("[MISMATCH] partial recv %lu end returns different values - read/expected:\n", pentry->clock);
+		    for (i = precv->partial_read_end; i < rc; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    handle_mismatch();
 		}
 	    }
 	    add_to_taintbuf (pentry, RETBUF, precv->buf, rc);
 	} else {
 	    if (memcmp (precv->buf, recvData, rc)) {
 		printf ("[MISMATCH] recv returns different values\n");
-		LPRINT ("[MISMATCH] recv returns different values - read/expected:\n");
+		LPRINT ("[MISMATCH] recv %lu returns different values - read/expected:\n", pentry->clock);
 		if (memcmp (precv->buf, recvData, rc)) {
 		    for (i = 0; i < rc; i++) {
 			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
 			if (i%16 == 15) LPRINT ("\n");
+		    }
+		    LPRINT ("\n");
+		    for (i = 0; i < rc; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
 		    }
 		    LPRINT ("\n");
 		    handle_mismatch();
@@ -621,7 +667,7 @@ long recvmsg_recheck ()
 {
     struct recheck_entry* pentry;
     struct recvmsg_recheck* precvmsg;
-    u_long to_copy;
+    u_long to_cmp;
     int rc, i;
 
     start_timing_func ();
@@ -629,17 +675,21 @@ long recvmsg_recheck ()
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
     precvmsg = (struct recvmsg_recheck *) bufptr;
-    struct recvfrom_retvals* pvals = (struct recvfrom_retvals *) bufptr;
-    char* data = &pvals->buf;
+    char* data = bufptr + sizeof (struct recvmsg_recheck);
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    LPRINT ( "recvmsg: sockfd %d msg %p flags %d returns %ld clock %lu\n", 
-	     precvmsg->sockfd, precvmsg->msg, precvmsg->flags, pentry->retval, pentry->clock);
+    LPRINT ("recvmsg: sockfd %d msg %lx flags %x returns %ld clock %lu\n", 
+	     precvmsg->sockfd, (u_long) precvmsg->msg, precvmsg->flags, pentry->retval, pentry->clock);
+    if (precvmsg->partial_read) LPRINT ("         partial read start %d end %d\n", precvmsg->partial_read_start, precvmsg->partial_read_end);
 #endif
 
     memcpy (precvmsg->msg, data, sizeof(struct msghdr));
+    LPRINT ("recvmsg: namelen %d iovlen %d controllen %d\n", 
+	    precvmsg->msg->msg_namelen, precvmsg->msg->msg_iovlen, precvmsg->msg->msg_controllen);
     data += sizeof(struct msghdr);
+    memcpy (precvmsg->msg->msg_iov, data, sizeof(struct iovec)*precvmsg->msg->msg_iovlen);
+    data += sizeof(struct iovec)*precvmsg->msg->msg_iovlen;
 
     u_long block[6];
     block[0] = precvmsg->sockfd;
@@ -652,6 +702,9 @@ long recvmsg_recheck ()
     check_retval ("recvmsg", pentry->clock, pentry->retval, rc);
     if (rc >= 0) {
 	struct recvmsg_retvals* pretvals = (struct recvmsg_retvals *) data;
+	data += sizeof(struct recvmsg_retvals);
+	LPRINT ("namelen %d controllen %ld flags %x\n", pretvals->msg_namelen, pretvals->msg_controllen,
+		pretvals->msg_flags);
 	if (pretvals->msg_namelen != precvmsg->msg->msg_namelen) {
 	    fprintf (stderr, "recvmsg returns namelen %d instead of %d\n", precvmsg->msg->msg_namelen, pretvals->msg_namelen);
 	    handle_mismatch();
@@ -664,20 +717,70 @@ long recvmsg_recheck ()
 	    fprintf (stderr, "recvmsg returns controllen %d instead of %d\n", precvmsg->msg->msg_flags, pretvals->msg_flags);
 	    handle_mismatch();
 	}
-	int remaining_data = rc;
-	for (i = 0; i < precvmsg->msg->msg_iovlen; i++) {
-	    to_copy = precvmsg->msg->msg_iov[i].iov_len;
-	    if (to_copy < rc) to_copy = rc;
-	    if (memcmp (precvmsg->msg->msg_iov[i].iov_base, data, to_copy)) {
-		fprintf (stderr, "recvmsg differs in data in iov %d\n", i);
+	if (pretvals->msg_namelen > 0) {
+	    if (memcmp(data, precvmsg->msg->msg_name, precvmsg->msg->msg_namelen)) {
+		fprintf (stderr, "recvmsg returns different name: %s instead of %s\n", data, (char *) precvmsg->msg->msg_name);
 		handle_mismatch();
 	    }
-	    data += to_copy;
-	    remaining_data -= to_copy;
+	}
+	if (pretvals->msg_controllen > 0) {
+	    if (memcmp(data, precvmsg->msg->msg_control, precvmsg->msg->msg_controllen)) {
+		fprintf (stderr, "recvmsg returns different control: %s instead of %s\n", data, (char *) precvmsg->msg->msg_control);
+		handle_mismatch();
+	    }
+	}
+	if (precvmsg->partial_read) {
+	    u_long compared = 0;
+	    int j, mismatch = 0;
+	    for (i = 0; i < precvmsg->msg->msg_iovlen; i++) {
+		for (j = 0; j < precvmsg->msg->msg_iov[i].iov_len; j++) {
+		    if (compared < precvmsg->partial_read_start || 
+			compared >= precvmsg->partial_read_end) {
+			if (data[compared] != ((char *) precvmsg->msg->msg_iov[i].iov_base)[j]) {
+			    LPRINT("byte %lu iovec %u offset %u differs\n", compared, i, j);
+			    mismatch = 1;
+			}
+		    }
+		    compared++;
+		}
+	    }
+	    if (mismatch) handle_mismatch();
+	} else {
+	    int remaining_data = rc;
+	    for (i = 0; i < precvmsg->msg->msg_iovlen; i++) {
+		to_cmp = precvmsg->msg->msg_iov[i].iov_len;
+		if (to_cmp < rc) to_cmp = rc;
+		if (memcmp (precvmsg->msg->msg_iov[i].iov_base, data, to_cmp)) {
+		    u_int j;
+		    fprintf (stderr, "recvmsg differs in data in iov %d\n", i);
+		    print_buffer (precvmsg->msg->msg_iov[i].iov_base, to_cmp);
+		    print_buffer ((u_char *) data, to_cmp);
+		    for (j = 0; j < to_cmp; j++) {
+			if (((char *) precvmsg->msg->msg_iov[i].iov_base)[j] != data[j]) {
+			    LPRINT ("%d ", j);
+			}
+		    }
+		    LPRINT ("differs\n");
+		    handle_mismatch();
+		}
+		data += to_cmp;
+		remaining_data -= to_cmp;
+	    }
 	}
     }
     end_timing_func (SYS_socketcall);
     return rc;
+}
+
+static inline void fill_taintedbuf(char* data, char* buf, u_long len)
+{
+    u_long i;
+    char* tainted = data;
+    char* outbuf = data + len;
+
+    for (i = 0; i < len; i++) {
+	if (!tainted[i] && buf[i] != outbuf[i]) buf[i] = outbuf[i];
+    }
 }
 
 long write_recheck ()
@@ -685,7 +788,7 @@ long write_recheck ()
     struct recheck_entry* pentry;
     struct write_recheck* pwrite;
     char* data;
-    int rc, i;
+    int rc;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -703,11 +806,7 @@ long write_recheck ()
 	printf ("[ERROR] Should not be writing to a cache file\n");
 	handle_mismatch();
     }
-    char* tainted = data;
-    char* outbuf = data + pwrite->count;
-    for (i = 0; i < pwrite->count; i++) {
-	if (!tainted[i]) ((char *)(pwrite->buf))[i] = outbuf[i];
-    }
+    fill_taintedbuf (data, (char *) pwrite->buf, pwrite->count);
 
     start_timing();
     rc = syscall(SYS_write, pwrite->fd, pwrite->buf, pwrite->count);
@@ -722,7 +821,7 @@ long writev_recheck ()
     struct recheck_entry* pentry;
     struct writev_recheck* pwritev;
     char* data;
-    int rc, i, j;
+    int rc, i;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -742,24 +841,9 @@ long writev_recheck ()
     memcpy (pwritev->iov, data, pwritev->iovcnt * sizeof(struct iovec));
     data += pwritev->iovcnt * sizeof(struct iovec);
     for (i = 0; i < pwritev->iovcnt; i++) {
-	char* tainted = data;
-	char* outbuf = data + pwritev->iov[i].iov_len;
-	LPRINT ("{");
-	for (j = 0; j < pwritev->iov[i].iov_len; j++) {
-	    if (!tainted[j]) ((char *) (pwritev->iov[i].iov_base))[j] = outbuf[j];
-	    { 
-	      u_char ch = ((char *) pwritev->iov[i].iov_base)[j];
-	      if (ch >= 32 && ch <= 126) {
-		LPRINT ("%c", ch);
-	      } else {
-		LPRINT ("\%u", ch);
-	      }
-	    }
-	}
+	fill_taintedbuf (data, pwritev->iov[i].iov_base, pwritev->iov[i].iov_len);
 	data += pwritev->iov[i].iov_len*2;
-	LPRINT (",%d}", pwritev->iov[i].iov_len);
     }
-    LPRINT ("\n");
 
     start_timing();
     rc = syscall(SYS_writev, pwritev->fd, pwritev->iov, pwritev->iovcnt);
@@ -773,8 +857,8 @@ long send_recheck ()
 {
     struct recheck_entry* pentry;
     struct send_recheck* psend;
-    char* data, *tainted, *outbuf;
-    int rc, i;
+    char* data;
+    int rc;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -788,15 +872,7 @@ long send_recheck ()
     LPRINT ( "send: sockfd %d buf %p len %d flags %d rc %ld clock %lu\n", psend->sockfd, psend->buf, psend->len, psend->flags, pentry->retval, pentry->clock);
 #endif
 
-    tainted = data;
-    outbuf = data + psend->len;
-    for (i = 0; i < psend->len; i++) {
-	if (!tainted[i]) {
-	    if (((char *) (psend->buf))[i] != outbuf[i]) {
-		((char *) (psend->buf))[i] = outbuf[i];
-	    }
-	}
-    }
+    fill_taintedbuf (data, psend->buf, psend->len);
 
     u_long block[6];
     block[0] = psend->sockfd;
@@ -817,7 +893,7 @@ long sendmsg_recheck ()
     struct sendmsg_recheck* psendmsg;
     char* data;
     u_int i;
-    int rc, j;
+    int rc;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -838,18 +914,10 @@ long sendmsg_recheck ()
     memcpy (psendmsg->msg->msg_iov, data, psendmsg->msg->msg_iovlen*sizeof(struct iovec));
     data += psendmsg->msg->msg_iovlen*sizeof(struct iovec);
     for (i = 0; i < psendmsg->msg->msg_iovlen; i++) {
-	char* tainted = data;
-	char* outbuf = data + psendmsg->msg->msg_iov[i].iov_len;
-	for (j = 0; j < psendmsg->msg->msg_iov[i].iov_len; j++) {
-	    if (!tainted[j]) ((char *) (psendmsg->msg->msg_iov[i].iov_base))[j] = outbuf[j];
-	}
+	fill_taintedbuf (data, psendmsg->msg->msg_iov[i].iov_base, psendmsg->msg->msg_iov[i].iov_len);
 	data += psendmsg->msg->msg_iov[i].iov_len*2;
     }
-    char* tainted = data;
-    char* outbuf = data + psendmsg->msg->msg_controllen;
-    for (i = 0; i < psendmsg->msg->msg_controllen; i++) {
-	if (!tainted[i]) ((char *) psendmsg->msg->msg_control)[i] = outbuf[i];
-    }
+    fill_taintedbuf (data, psendmsg->msg->msg_control, psendmsg->msg->msg_controllen);
 
     u_long block[6];
     block[0] = psendmsg->sockfd;
@@ -2343,7 +2411,7 @@ long ioctl_recheck ()
     struct recheck_entry* pentry;
     struct ioctl_recheck* pioctl;
     char* addr;
-    int rc, i;
+    int rc;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -2373,11 +2441,7 @@ long ioctl_recheck ()
 #endif
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
-	    char* tainted = addr;
-	    char* outbuf = addr + pioctl->size;
-	    for (i = 0; i < pioctl->size; i ++) {
-		if (!tainted[i]) pioctl->arg[i] = outbuf[i];
-	    }
+	    fill_taintedbuf (addr, pioctl->arg, pioctl->size);
 	}
         start_timing();
 	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);

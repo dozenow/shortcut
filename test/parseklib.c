@@ -73,14 +73,12 @@ void default_printfcn(FILE *out, struct klog_result *res) {
 	*/
 }
 
-static void default_signal_printfcn(FILE *out, struct klog_result *res) {
-	struct repsignal *sig;
-	sig = &res->signal->sig;
-
-	while (sig) {
-		fprintf(out, "         !!-- Has signal %d --!!\n", sig->signr);
-		sig = sig->next;
-	}
+static void default_signal_printfcn(FILE *out, struct klog_result *res) 
+{
+    struct klog_signal* p;
+    for (p = res->signal; p != NULL; p = p->next) {
+	fprintf(out, "         !!-- Has signal %d --!!\n", p->signr);
+    }
 }
 
 static void free_active_psrs(struct klogfile *log) {
@@ -271,28 +269,25 @@ static int read_psr_chunk(struct klogfile *log) {
 		}
 
 		if (apsr->psr.flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n;
-			do {
-				n = apsr->signal;
-				apsr->signal = malloc(sizeof(struct klog_signal));
-				/* FIXME: exit cleanly */
-				assert(apsr->signal);
-
-				if (n == NULL) {
-					apsr->signal->sig.next = NULL;
-				} else {
-					apsr->signal->sig.next = &n->sig;
-				}
-				apsr->signal->next = n;
-
-				debugf("Reading signal\n");
-				rc = read(log->fd, &apsr->signal->raw, 172);
-				if (rc != 172) {
-					fprintf (stderr, "read of signal returns %ld, errno = %d\n", rc, errno);
-					goto out_free;
-				}
-				apsr->signal->sig.signr = *(int *)apsr->signal->raw;
-			} while (*(char **)(apsr->signal->raw+168));
+		    struct klog_signal* tail = NULL;
+		    struct klog_signal* pklogsignal;
+		    do {
+			pklogsignal = malloc(sizeof(struct klog_signal));
+			assert (pklogsignal);
+			rc = read(log->fd, &pklogsignal->raw, 172);
+			if (rc != 172) {
+			    fprintf (stderr, "read of signal returns %ld, errno = %d\n", rc, errno);
+			    goto out_free;
+			}
+			pklogsignal->signr = *((int *) pklogsignal->raw);
+			pklogsignal->next = NULL;
+			if (tail == NULL) {
+			    apsr->signal = pklogsignal;
+			} else {
+			    tail->next = pklogsignal;
+			}
+			tail = pklogsignal;
+		    } while (*(char **)(pklogsignal->raw+168));			
 		} else {
 			apsr->signal = NULL;
 		}
@@ -447,10 +442,10 @@ static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t*
 			data_size += sizeof(u_long);
 		}
 		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n = psrs[i].signal;
-			do {
+			struct klog_signal* n;
+			for (n = psrs[i].signal; n; n = n->next) {
 				data_size += 172;
-			} while (n->next);
+			} 
 		}
 
 		data_size += psrs[i].retparams_size;
@@ -508,14 +503,14 @@ static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t*
 		}
 
 		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n = res->signal;
-			do {
+			struct klog_signal *n;
+			for (n = res->signal; n; n = n->next) {
 			    rc = write(destfd, n->raw, 172);
 			    if (rc != 172) {
 				fprintf(stderr, "Couldn't record raw signal\n");
 				return -1;
 			    }
-			} while (n->next);
+			} 
 		}
 	}
 

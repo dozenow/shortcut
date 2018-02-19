@@ -2,6 +2,7 @@
 # Take in line number, generate backward slice from pinout file
 
 import sys
+import re
 
 pinout = sys.argv[1]
 lineno = int(sys.argv[2])
@@ -138,38 +139,76 @@ def findNextBSlice(cnt):
         
 cnt = 0
 lines = {}
+sources = {}
 
-def source (line):
-    d = line.find("#src_mem[")
-    if d > 0:
-        d += 9
-        e = line.find("]", d)
-        (saddr,staint,ssize) = line[d:e].split(":")
-        addr = int(saddr,16)
-        size = int(ssize)
-        return addr
+def addSource (source):
+    """ add locations from a single source to the set if it is tainted """
+    (loc,staint,length) = source.split(":")
+    taint = int(staint)
+    if taint:
+        if (loc in regname):
+            sources[regname[loc]] = taint
+        elif loc[0] == 'F':
+            sources["flags"] = taint
+        else:
+            sources["0x" + loc] = taint
 
-def findStore (loc, cnt):
+def addSources (cnt):
+    line = lines[cnt]
+    print cnt, line
+    src = line.find("src_")
+    if src >= 0:
+        b = line.find("[", src) + 1
+        e = line.find("]", src)
+        sources = line[b:e].split(",")
+        for source in sources:
+            addSource (source)
+    ndx = line.find("ndx_")
+    if ndx >= 0:
+        b = line.find("[", ndx) + 1
+        e = line.find("]", ndx)
+        sources = line[b:e].split(",")
+        for source in sources:
+            addSource (source)
+
+def findStore (cnt):
     while cnt > 0:
         cnt -= 1
-        d = lines[cnt].find("#dst_mem[")
-        if d > 0:
-            d += 9
-            e = lines[cnt].find("]", d)
-            if e > 0:
-                (saddr,staint,ssize) = lines[cnt][d:e].split(":")
-                addr = int(saddr,16)
-                size = int(ssize)
-                if loc >= addr and loc < addr+size:
-                    print cnt, ":", lines[cnt]
-                    return (cnt,source(lines[cnt]))
-        if lines[cnt].find("[TAINT_INFO]") >= 0:
-            tokens = lines[cnt][d:].split()
-            addr = int(tokens[2], 16)
-            end = int(tokens[3], 16)
-            if loc >= addr and loc < end:
-                print cnt, ":", lines[cnt]
-                return (cnt,source(lines[cnt]))
+        line = lines[cnt]
+        if "[SLICE]" in line:
+            if line.split()[0][1:] == "div":
+                if "eax" in sources or "edx" in sources:
+                    if "eax" in sources:
+                        del sources["eax"]
+                    if "edx" in sources:
+                        del sources["edx"]
+                    return cnt
+            else:
+                tokens = line.split()
+                if tokens[1] == "dword" or tokens[1] == "byte" or tokens[1] == "xmmword":
+                    destination = tokens[3][1:-2]
+                else:
+                    destination = line.split()[1][:-1]
+                if destination in sources:
+                    del sources[destination]
+                    return cnt
+        if line.find("[TAINT_INFO]") >= 0:
+            tokens = line.split()
+            if tokens[3] == "#eax":
+                if "eax" in sources:
+                    print cnt, ":", line
+                    del sources["eax"]
+                    return cnt
+            else:
+                addr = int(tokens[3], 16)
+                size = int(tokens[4], 16)
+                for source in sources:
+                    if source[:2] == "0x":
+                        loc = int (source, 16)
+                        if loc >= addr and loc < addr+size:
+                            print cnt, ":", lines[cnt]
+                            return cnt
+    return 0
 
 # Read in and cache lines up to slicing point
 fh = open (pinout, "r")
@@ -180,6 +219,11 @@ for line in fh:
         break
 fh.close()
 
-(cnt,addr) = findStore(0x8529346, cnt)
-findStore(addr, cnt)
+cnt = cnt - 1
+addSources (cnt)
+while cnt > 0 and len(sources) > 0:
+    print sources
+
+    cnt = findStore (cnt)
+    addSources (cnt)
 

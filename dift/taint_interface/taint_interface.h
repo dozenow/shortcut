@@ -139,6 +139,7 @@ TAINTSIGN taint_wregwreg2wreg (int dst_reg, int base_reg, int index_reg);
 TAINTSIGN taint_mix_cwde ();
 TAINTSIGN taint_mix_reg_offset (int reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags);
 TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, uint32_t set_flags, uint32_t clear_flags);
+TAINTSIGN taint_mixmov_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, uint32_t set_flags, uint32_t clear_flags);
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 
 				       uint32_t set_flags, uint32_t clear_flags);
 TAINTSIGN taint_mix_mem (u_long mem_loc, uint32_t size, uint32_t set_flags, uint32_t clear_flags, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size);

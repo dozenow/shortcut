@@ -2796,6 +2796,8 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		    tainted = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+ZF_INDEX] ? 1 : 0;
 		} else if (!strncmp(ins_str, "jb ", 3) || !strncmp(ins_str, "jnae ", 5) || !strncmp(ins_str, "jc ", 3) || !strncmp(ins_str, "jnb ", 4) || !strncmp(ins_str, "jae ", 4) || !strncmp(ins_str, "jnc ", 4)) {
 		    tainted = current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+CF_INDEX] ? 1 : 0;
+		} else if (!strncmp(ins_str, "jbe ", 4) || !strncmp(ins_str, "jna ", 4) || !strncmp(ins_str, "jnbe ", 5) || !strncmp(ins_str, "ja ", 3)) {
+		    tainted = (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+CF_INDEX] | current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+ZF_INDEX]) ? 1 : 0;
 		} else if (!strncmp(ins_str, "jle ", 4) || !strncmp(ins_str, "jng ", 4) || !strncmp(ins_str, "jnle ", 5) || !strncmp(ins_str, "jg ", 3)) {
 		    tainted = (current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+ZF_INDEX] | current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+OF_INDEX] | current_thread->shadow_reg_table[REG_EFLAGS*REG_SIZE+SF_INDEX]) ? 1 : 0;
 		} else {
@@ -3054,7 +3056,8 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
 	} else {
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	}
-	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #ndx_reg[%d:%d:%u,%d:%d:%u] #mem_value %u", mem_loc, mem_tainted, mem_size, base_reg, still_tainted ? base_tainted : 0, base_reg_size, 
+			   index_reg, still_tainted ? index_tainted : 0, index_reg_size, get_mem_value32 (mem_loc, mem_size));
     }
 }
 
@@ -3463,9 +3466,10 @@ TAINTSIGN fw_slice_regmemflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
 	} else {
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	}
-	OUTPUT_SLICE_INFO ("#src_memregregflag[%d:%d:%u,%d:%d:%u,%lx:%d:%u,%d:%d:%u] #dest_reg_value %u base_reg_value %u, mem_value %u, index_reg_value %u, flag %x, flag tainted %d executed %d", 
-			   dest_reg, dest_reg_tainted, dest_reg_size, base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, *dest_reg_value->dword, base_reg_value, 
-			   get_mem_value32 (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
+	OUTPUT_SLICE_INFO ("#src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u,%d:%d:%u,F%x:%d:-] #dst_reg[%d:%d:%u] #dest_reg_value %u base_reg_value %u, mem_value %u, index_reg_value %u, executed %d", 
+			   dest_reg, dest_reg_tainted, dest_reg_size, mem_loc, mem_tainted2, mem_size, base_reg, base_tainted, base_reg_size, index_reg, index_tainted, index_reg_size, flag, tainted4, 
+			   dest_reg, dest_reg_tainted, dest_reg_size, *dest_reg_value->dword, base_reg_value, 
+			   get_mem_value32 (mem_loc, mem_size), index_reg_value, executed);
     } else {
 	if (executed) {
 	    VERIFY_BASE_INDEX;
@@ -3488,8 +3492,9 @@ TAINTSIGN fw_slice_regmemflag_cmov (ADDRINT ip, char* ins_str, int dest_reg, uin
 		}
 		while (*s != '\0') *t++ = *s++;
 		OUTPUT_SLICE (ip, "%s", changed_str);
-		OUTPUT_SLICE_INFO ("#src_memregregflag[%d:%d:%u,%lx:%d:%u,%d:%d:%u] #reg_value %u, mem_value %u, reg_value %u, flag %x, flag tainted %d executed %d", 
-				   base_reg, base_tainted, base_reg_size, mem_loc, mem_tainted2, mem_size, index_reg, index_tainted, index_reg_size, base_reg_value, get_mem_value32 (mem_loc, mem_size), index_reg_value, flag, tainted4, executed);
+		OUTPUT_SLICE_INFO ("#src_memregregflag[%lx:%d:%u,%d:%d:%u,%d:%d:%u,f%x:%d:-] #dst_reg[%d:%d:%u] #base_value %u, mem_value %u, index_value %u, executed %d", 
+				   mem_loc, mem_tainted2, mem_size, base_reg, base_tainted, base_reg_size, index_reg, index_tainted, index_reg_size, flag, tainted4, 
+				   dest_reg, dest_reg_tainted, dest_reg_size, base_reg_value, get_mem_value32 (mem_loc, mem_size), index_reg_value, executed);
 	    }
 	}
 	// If flag not tainted and mov not executed, then this is a noop in the slice
@@ -4286,6 +4291,21 @@ TAINTSIGN taint_mix_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off,
     for (i = 1; i < dst_size; i++) {
 	t = merge_taints(shadow_reg_table[dst_off + i], t);
     } 
+    for (i = 0; i < src_size; i++) {
+	t = merge_taints(shadow_reg_table[src_off + i], t);
+    } 
+    for (i = 0; i < dst_size; i++) {
+	shadow_reg_table[dst_off + i] = t;
+    }
+    set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+}
+
+TAINTSIGN taint_mixmov_reg2reg_offset (int dst_off, uint32_t dst_size, int src_off, uint32_t src_size, uint32_t set_flags, uint32_t clear_flags)
+{
+    unsigned i;
+    taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+
+    taint_t t = shadow_reg_table[dst_off];
     for (i = 0; i < src_size; i++) {
 	t = merge_taints(shadow_reg_table[src_off + i], t);
     } 

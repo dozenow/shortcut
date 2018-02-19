@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 75640
-//#define EXTRA_DEBUG_STOP 75641
+//#define EXTRA_DEBUG 0
+//#define EXTRA_DEBUG_STOP 300000
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -846,7 +846,7 @@ static inline void sys_read_stop(int rc)
                 if (filter_input()) {
                     size_t start = 0;
                     size_t end = 0;
-                    if (get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+                    if (get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
                         recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
                         add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
 			OUTPUT_TAINT_INFO_THREAD (current_thread, "read %lx %lx", (u_long) ri->buf+start, (u_long) end-start);  
@@ -1028,7 +1028,7 @@ static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_l
     tci.fileno = 0;
     tci.data = 0;
     create_taints_from_buffer_unfiltered (buf, size, &tci, tokens_fd);
-    OUTPUT_TAINT_INFO_THREAD (current_thread, "%s %lx %lx", sysname, (u_long)buf, (u_long)buf+size);
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "%s %lx %lx", sysname, (u_long)buf, (u_long)size);
     add_modified_mem_for_final_check ((u_long)buf, size);
 }
 
@@ -1547,20 +1547,19 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
     // recv and read are similar so they can share the same info struct
     struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
     if (tdata->recheck_handle) {
-	// For now, just verify recv inputs - I'm sure we'll need to change this at some point to handle partial reads
 	OUTPUT_SLICE(0, "call recv_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 
 	size_t start, end;
-	if (filter_input() && get_partial_taint_byte_range(current_thread->syscall_cnt, &start, &end)) {
+	if (filter_input() && get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
 	    fprintf (stderr, "partial recv taint: %u %u\n", start, end);
 	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 1, start, end, *ppthread_log_clock);
-	    add_modified_mem_for_final_check ((u_long)buf + start, end-start);
 	    if (retaddrlen > 0) {
+		add_modified_mem_for_final_check ((u_long)buf + start, end-start);
 		if (start > 0) clear_mem_taints ((u_long) buf, start);
 		if ((int) end < retaddrlen) clear_mem_taints ((u_long) buf + end, retaddrlen-end);
 	    }
-	    OUTPUT_TAINT_INFO_THREAD (current_thread, "read %lx %lx", (u_long) ri->buf+start, (u_long) end-start);  
+	    OUTPUT_TAINT_INFO_THREAD (current_thread, "recv %lx %lx", (u_long) buf+start, (u_long) end-start);  
 	} else {
 	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, *ppthread_log_clock);
 	    if (retaddrlen > 0) clear_mem_taints ((u_long)buf, retaddrlen); 
@@ -1622,10 +1621,40 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 {
     struct recvmsg_info* rmi;
     if (tdata->recheck_handle) {
-	// For now, just verify recv inputs - I'm sure we'll need to change this at some point to handle partial reads
 	OUTPUT_SLICE(0, "call recvmsg_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
-	recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, *ppthread_log_clock);
+
+	size_t start, end;
+	if (filter_input() && get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
+	    fprintf (stderr, "partial recvmsg taint: %u %u\n", start, end);
+	    int retlen = recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, 1, start, end, *ppthread_log_clock);
+	    if (retlen > 0) {
+		// One byte at a time is simple, but may be a little slow
+		u_long bytes_so_far = 0;
+		for (u_long i = 0; i < msg->msg_iovlen && bytes_so_far < (u_long) retlen; i++) {
+		    for (u_long j = 0; j < msg->msg_iov[i].iov_len && bytes_so_far < (u_long) retlen; j++) {
+			if (start > bytes_so_far || end <= bytes_so_far) {
+			    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base+j, 1);
+			} else {
+			    add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
+			    OUTPUT_TAINT_INFO_THREAD (current_thread, "readmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
+			}
+			bytes_so_far++;
+		    }
+		}
+	    }
+	} else {
+	    int retlen = recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, 0, 0, 0, *ppthread_log_clock);
+	    if (retlen > 0) {
+		for (u_int i = 0; i < msg->msg_iovlen; i++) {
+		    u_int toclear = (msg->msg_iov[i].iov_len < (u_int) retlen) ? msg->msg_iov[i].iov_len : retlen;
+		    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base, toclear);
+		    retlen -= toclear;
+		    if (retlen == 0) break;
+		}
+		if (retlen > 0) fprintf (stderr, "recvmsg: cannot clear enough bytes\n");
+	    }
+	}
     }
     rmi = (struct recvmsg_info *) malloc(sizeof(struct recvmsg_info));
     if (rmi == NULL) {
@@ -2245,15 +2274,17 @@ static inline void sys_eventfd2_start (struct thread_data* tdata, unsigned int c
 
 static inline void sys_poll_start (struct thread_data* tdata, struct pollfd* fds, u_int nfds, int timeout)
 {
-    if (tdata->recheck_handle) {
-	OUTPUT_SLICE(0, "push edx");
-	OUTPUT_SLICE_INFO ("");
-	OUTPUT_SLICE(0, "call poll_recheck");
-	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
-	OUTPUT_SLICE(0, "pop edx");
-	OUTPUT_SLICE_INFO ("");
-	recheck_poll (tdata->recheck_handle, fds, nfds, timeout, *ppthread_log_clock);
-    }
+    recheck_poll (tdata->recheck_handle, fds, nfds, timeout, *ppthread_log_clock);
+}
+
+static inline void sys_poll_stop (long rc)
+{
+    OUTPUT_SLICE(0, "push edx");
+    OUTPUT_SLICE_INFO ("");
+    OUTPUT_SLICE(0, "call poll_recheck");
+    OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+    OUTPUT_SLICE(0, "pop edx");
+    OUTPUT_SLICE_INFO ("");
 }
 
 static inline void sys_kill_start (struct thread_data* tdata, pid_t pid, int sig)
@@ -2605,6 +2636,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 void syscall_end(int sysnum, ADDRINT ret_value)
 {
     int rc = (int) ret_value;
+
     switch(sysnum) {
         case SYS_clone:
             sys_clone_stop (rc);
@@ -2702,6 +2734,12 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	    break;
         case SYS_sched_getaffinity:
             sys_sched_getaffinity_stop (rc);
+            break;
+        case SYS_poll:
+            sys_poll_stop (rc);
+            break;
+        case SYS_rt_sigaction:
+            sys_rt_sigaction_stop (rc);
             break;
         case SYS_socketcall:
         {
@@ -5209,7 +5247,16 @@ static void instrument_bit_scan (INS ins)
     } else {
         REG srcreg = INS_OperandReg (ins, 1);
         fw_slice_src_reg (ins, srcreg);
-	instrument_taint_mix_reg2reg (ins, dstreg, srcreg, ZF_FLAG, 0);
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_mixmov_reg2reg_offset),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_UINT32, get_reg_off(dstreg),
+		       IARG_UINT32, REG_Size(dstreg),
+		       IARG_UINT32, get_reg_off(srcreg),
+		       IARG_UINT32, REG_Size(srcreg),
+		       IARG_UINT32, ZF_FLAG,
+		       IARG_UINT32, 0,
+		       IARG_END);
     }
 }
 
@@ -5387,10 +5434,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = false;
 
-    if (ip == 0xb757d684) print_me = true;
-
-#if 0
-    #define ADDR_TO_CHECK 0xb5e32e38
+#if 1
+    #define ADDR_TO_CHECK 0xbfffff10
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);
@@ -5398,11 +5443,11 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
 	print_me = true;
     }
 #endif
-#if 0
+#if 1
     static int old_taint = 0;
-    int new_taint = is_mem_arg_tainted(0xbffffeff, 1);
+    int new_taint = is_mem_arg_tainted(0xbfffff10, 1);
     if (new_taint != old_taint) {
-	printf ("New taint for 0xbffffeff: %d old taint %d clock %lu\n", new_taint, old_taint, *ppthread_log_clock);
+	printf ("New taint for 0xbfffff10: %d old taint %d clock %lu\n", new_taint, old_taint, *ppthread_log_clock);
 	old_taint = new_taint;
 	print_me = true;
     }
@@ -5415,7 +5460,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
 	    printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
 	}
 	PIN_UnlockClient();
-	printf ("0xbfffffe6 tainted: %d value: %x\n", is_mem_arg_tainted(0xbffffeff, 1), *((u_char *) 0xbffffeff));
+	printf ("0xbfffff10 tainted: %d value: %x\n", is_mem_arg_tainted(0xbfffff10, 1), *((u_char *) 0xbfffff10));
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));

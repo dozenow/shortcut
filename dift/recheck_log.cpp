@@ -154,7 +154,7 @@ static void check_one_reg_argument (const char* call, int arg_index) //index sta
 
 static long calculate_partial_read_size (int is_cache_file, int partial_read, size_t start, size_t end, long total_size) { 
 	if (partial_read == 0) return 0;
-	if (is_cache_file == 0) return 0;
+	if ((is_cache_file&CACHE_MASK) == 0) return 0;
 	else {
 		long result = 0;
 		if (start > 0) result += start;
@@ -207,7 +207,7 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, res->retparams, rrchk.readlen);
     //put the content that we need to verify into the recheck log, so that we don't have to deal with cached files in the recheck logic (which requires sprintf causing segfault)
-    if (partial_read && is_cache_file) { 
+    if (partial_read && (is_cache_file&CACHE_MASK)) { 
 	    if (partial_read_start > 0) 
 		    write_data_into_recheck_log (handle->recheckfd, (char*)buf, partial_read_start);
 	    if ((long)partial_read_end < res->retval) 
@@ -245,21 +245,26 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     return res->retval;
 }
 
-int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, u_long clock)
+int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
 {
     struct recvmsg_recheck rmchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
 
     check_reg_arguments ("recvmsg", 3); 
-    if (is_mem_arg_tainted ((u_long) msg, sizeof(struct msghdr))) fprintf (stderr, "[ERROR] recvmsg: msg is tainted\n");
+    if (is_mem_arg_tainted ((u_long) msg, sizeof(struct msghdr))) fprintf (stderr, "[ERROR] recvmsg: msg is tainted, clock %lu\n", clock);
+    if (is_mem_arg_tainted ((u_long) msg->msg_iov, sizeof(struct iovec)*msg->msg_iovlen)) fprintf (stderr, "[ERROR] recvmsg: msg iov is tainted, clock %lu\n", clock);
     
     write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, 
-				   sizeof(struct recvmsg_recheck) + sizeof(struct msghdr) + res->retparams_size, clock);
+				   sizeof(struct recvmsg_recheck) + sizeof(struct msghdr) + sizeof(struct iovec)*msg->msg_iovlen+res->retparams_size, clock);
     rmchk.sockfd = sockfd;
     rmchk.msg = msg;
     rmchk.flags = flags;
+    rmchk.partial_read = partial_read;
+    rmchk.partial_read_start = partial_read_start;
+    rmchk.partial_read_end = partial_read_end;
     write_data_into_recheck_log (handle->recheckfd, &rmchk, sizeof(rmchk));
     write_data_into_recheck_log (handle->recheckfd, msg, sizeof(struct msghdr));
+    write_data_into_recheck_log (handle->recheckfd, msg->msg_iov, sizeof(struct iovec)*msg->msg_iovlen); 
     write_data_into_recheck_log (handle->recheckfd, res->retparams, res->retparams_size);
 
     return res->retval;
@@ -292,7 +297,7 @@ int recheck_writev (struct recheck_handle* handle, int fd, struct iovec* iov, in
 
     u_long count = 0;
     for (int i = 0; i < iovcnt; i++) {
-	if (is_mem_arg_tainted ((u_long) &iov[i], sizeof(iov[i]))) fprintf (stderr, "[INFO] iov entry %d is tainted\n", i);
+	if (is_mem_arg_tainted ((u_long) &iov[i], sizeof(iov[i]))) fprintf (stderr, "[INFO] iov entry %d is tainted clock %lu\n", i, clock);
 	count += iov[i].iov_len;
     }
     write_header_into_recheck_log (handle->recheckfd, SYS_writev, res->retval, sizeof(wrchk) + iovcnt*sizeof(struct iovec) + count*2, clock);
@@ -1068,9 +1073,9 @@ int recheck_getresuid (struct recheck_handle* handle, uid_t* ruid, uid_t* euid, 
     gchk.ruid = ruid;
     gchk.euid = euid;
     gchk.suid = suid;
-    gchk.ruidval = *ruid;
-    gchk.euidval = *euid;
-    gchk.suidval = *suid;
+    gchk.ruidval = *((uid_t *) res->retparams);
+    gchk.euidval = *(((uid_t *) res->retparams)+1);
+    gchk.suidval = *(((uid_t *) res->retparams)+2);
     write_data_into_recheck_log (handle->recheckfd, &gchk, sizeof(gchk));
 
     return 0;
@@ -1087,9 +1092,9 @@ int recheck_getresgid (struct recheck_handle* handle, gid_t* rgid, gid_t* egid, 
     gchk.rgid = rgid;
     gchk.egid = egid;
     gchk.sgid = sgid;
-    gchk.rgidval = *rgid;
-    gchk.egidval = *egid;
-    gchk.sgidval = *sgid;
+    gchk.rgidval = *((gid_t *) res->retparams);
+    gchk.egidval = *(((gid_t *) res->retparams)+1);
+    gchk.sgidval = *(((gid_t *) res->retparams)+2);
     write_data_into_recheck_log (handle->recheckfd, &gchk, sizeof(gchk));
 
     return 0;
