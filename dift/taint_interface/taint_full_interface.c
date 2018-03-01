@@ -3085,6 +3085,27 @@ TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t m
     }
 }
 
+//src mem is stack address and dst mem is the address in the operand of pop
+// also, the asssumption here is the esp is not tainted so the address of the source mem is absolute
+TAINTSIGN fw_slice_pop_mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, u_long dst_mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
+{
+    u_long mem_loc = dst_mem_loc; //used by the following macro 
+    VERIFY_BASE_INDEX_WRITE_RANGE;
+    int src_mem_tainted = is_mem_tainted (src_mem_loc, mem_size);
+    if (src_mem_tainted || still_tainted) {
+        if (src_mem_tainted != 1) print_extra_move_mem (ip, src_mem_loc, mem_size, src_mem_tainted);
+	OUTPUT_SLICE (ip, "push %s [0x%lx]", memSizeToPrefix(mem_size), src_mem_loc);
+	OUTPUT_SLICE_INFO ("(former pop instruction)");
+        if (!still_tainted)
+            OUTPUT_SLICE (ip, "pop %s [0x%lx]", memSizeToPrefix(mem_size), dst_mem_loc);
+        else { 
+            OUTPUT_SLICE (ip, "%s", ins_str);
+        }
+	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u], dst_mem[%lx:%d:%u] #src_mem_value %d", mem_loc, tainted, mem_size, dst_mem_loc, tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+	add_modified_mem_for_final_check (dst_mem_loc, mem_size);
+    }
+}
+
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX_WRITE_RANGE;
@@ -3216,6 +3237,9 @@ TAINTSIGN fw_slice_push_mem (ADDRINT ip, u_long mem_loc, u_long dst_mem_loc, uin
     if (tainted || still_tainted) {
 	// Need to do this in two steps as no mem to mem move
 	if (tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, tainted);
+        // xdou: shouldn't we also check still_tainted to see if the inst uses relative addressing here?
+        // also, the asssumption here is the esp is not tainted so the address of the dst mem is absolute
+        if (still_tainted) fprintf (stderr, "[Warning] fw_slice_push_mem may use relative addressing.\n");
 	OUTPUT_SLICE (ip, "push %s [0x%lx]", memSizeToPrefix(mem_size), mem_loc);
 	OUTPUT_SLICE_INFO ("(former push instruction)");
 	OUTPUT_SLICE (ip, "pop %s [0x%lx]", memSizeToPrefix(mem_size), dst_mem_loc);

@@ -60,8 +60,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 4000
-//#define EXTRA_DEBUG_STOP 5132
+//#define EXTRA_DEBUG 70000
+//#define EXTRA_DEBUG_STOP 400
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -4321,7 +4321,22 @@ static void instrument_push(INS ins)
 static void instrument_pop(INS ins)
 {
     if (INS_OperandIsMemory(ins, 0)) {
-	assert (0); // Curretntly don't handle this as we would need to do a mem to mem copy
+        REG base_reg = INS_OperandMemoryBaseReg (ins, 0);
+        REG index_reg = INS_OperandMemoryIndexReg (ins, 0);
+        SETUP_BASE_INDEX (base_reg, index_reg);
+        char* ins_str = get_copy_of_disasm (ins);
+        INS_InsertCall (ins, IPOINT_AFTER, 
+                AFUNPTR (fw_slice_pop_mem), 
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_INST_PTR, 
+                IARG_PTR, ins_str, 
+                IARG_MEMORYREAD_EA, 
+                IARG_MEMORYWRITE_EA, 
+                IARG_UINT32, INS_MemoryReadSize(ins), 
+                PASS_BASE_INDEX, 
+                IARG_END);
+        instrument_taint_mem2mem (ins);
+        put_copy_of_disasm (ins_str);
     } else if (INS_OperandIsReg(ins, 0)) {
 	REG reg = INS_OperandReg(ins, 0);
 	INS_InsertCall(ins, IPOINT_BEFORE,
@@ -5184,11 +5199,13 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     //if (*((u_char *) 0x8ace130) != old_val) {
       printf ("#%x %s, %ld,%lld mem %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
       PIN_LockClient();
-      if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+      IMG img;
+      if (IMG_Valid(img = IMG_FindByAddress(ip))) { 
+          ADDRINT offset = IMG_LoadOffset(img);
+          printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(img).c_str(), ip - offset);
       }
       PIN_UnlockClient();
-      printf ("0x8ace130 tainted: %d new value: %x\n", is_mem_arg_tainted(0x8ace130, 1), *((u_char *) 0x8ace130));
+      //printf ("0x8ace130 tainted: %d new value: %x\n", is_mem_arg_tainted(0x8ace130, 1), *((u_char *) 0x8ace130));
       printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 	      is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
@@ -6663,9 +6680,17 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
 }
 
+void PIN_FAST_ANALYSIS_CALL print_function_name (char* name)
+{
+#if 0
+    printf ("[debug] %s\n", name);
+    fflush (stdout);
+#endif
+}
+
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 {
-    PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x\n", current_thread->record_pid, type, check, rtn_addr);
+    PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x, clock %lu\n", current_thread->record_pid, type, check, rtn_addr, *ppthread_log_clock);
 }
 
 void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
