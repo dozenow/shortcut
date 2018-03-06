@@ -60,8 +60,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 70000
-//#define EXTRA_DEBUG_STOP 400
+//#define EXTRA_DEBUG 250400
+//#define EXTRA_DEBUG_STOP 251000
+//#define EXTRA_DEBUG_FUNCTION
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -278,7 +279,7 @@ static inline void slice_thread_wait (struct thread_data* tdata)
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "push edx");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
-
+i
     OUTPUT_SLICE_THREAD (tdata, 0, "push %d", tdata->record_pid); 
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "call recheck_thread_wait");
@@ -6682,10 +6683,14 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 
 void PIN_FAST_ANALYSIS_CALL print_function_name (char* name)
 {
-#if 0
-    printf ("[debug] %s\n", name);
-    fflush (stdout);
+#ifdef EXTRA_DEBUG
+    if (*ppthread_log_clock < EXTRA_DEBUG) return;
 #endif
+#ifdef EXTRA_DEBUG_STOP
+    if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
+#endif
+    printf ("[debug function call enter] %s\n", name);
+    fflush (stdout);
 }
 
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
@@ -6719,6 +6724,14 @@ void routine (RTN rtn, VOID* v)
         return;
     }
     name = RTN_Name(rtn).c_str();
+#ifdef EXTRA_DEBUG_FUNCTION
+    RTN_Open(rtn);
+    RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name, 
+            IARG_FAST_ANALYSIS_CALL, 
+            IARG_PTR, strdup (name), 
+            IARG_END);
+    RTN_Close(rtn);
+#endif
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
 

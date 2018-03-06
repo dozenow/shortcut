@@ -993,7 +993,9 @@ static inline uint32_t set_cmem_taints_one(u_long mem_loc, uint32_t size, taint_
     leaf_t = mem_root[index];
 
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    memset(leaf_t + low_index, value, set_size * sizeof(taint_t));
+    //memset(leaf_t + low_index, value, set_size * sizeof(taint_t)); //xdou:err... how could this original memset be possibly right....this bug must be there for a long time and no one finds it....
+    for (unsigned int i = 0; i < set_size; ++i) 
+        leaf_t[low_index+i] = value;
 
     return set_size;
 }
@@ -3096,12 +3098,12 @@ TAINTSIGN fw_slice_pop_mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, u_lon
         if (src_mem_tainted != 1) print_extra_move_mem (ip, src_mem_loc, mem_size, src_mem_tainted);
 	OUTPUT_SLICE (ip, "push %s [0x%lx]", memSizeToPrefix(mem_size), src_mem_loc);
 	OUTPUT_SLICE_INFO ("(former pop instruction)");
-        if (!still_tainted)
+        if (!still_tainted) {
             OUTPUT_SLICE (ip, "pop %s [0x%lx]", memSizeToPrefix(mem_size), dst_mem_loc);
-        else { 
+        } else { 
             OUTPUT_SLICE (ip, "%s", ins_str);
         }
-	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u], dst_mem[%lx:%d:%u] #src_mem_value %d", mem_loc, tainted, mem_size, dst_mem_loc, tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u], dst_mem[%lx:%d:%u] #src_mem_value %d", mem_loc, src_mem_tainted, mem_size, dst_mem_loc, 0, mem_size, get_mem_value32 (mem_loc, mem_size));
 	add_modified_mem_for_final_check (dst_mem_loc, mem_size);
     }
 }
