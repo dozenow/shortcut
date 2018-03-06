@@ -1093,6 +1093,7 @@ struct replay_thread {
 
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
+	int __user* rp_pthread_status_addr;  //The user-level address where we store the replay status
 };
 
 /* Prototypes */
@@ -2308,6 +2309,7 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 			return NULL;
 		}
 	}
+	prp->rp_pthread_status_addr = 0;
 
 	get_replay_group(prg);
 
@@ -2429,7 +2431,7 @@ dump_user_stack (void)
 	int i = 0;
 
 	struct pt_regs* regs = get_pt_regs (NULL);
-	printk ("sp is %lx\n", regs->sp);
+	printk ("sp is %lx, bp is %lx\n", regs->sp, regs->bp);
 	p = (u_long __user *) regs->sp;
 	do {
 		get_user (v, p);
@@ -2444,7 +2446,7 @@ dump_user_stack (void)
 		}
 	} while (p);
 	p = (u_long __user *) regs->sp;
-	for (i = 0; i < 250; i++) {
+	for (i = 0; i < 150; i++) {
 		get_user (v, p);
 		printk ("value at address %p is 0x%08lx\n", p, v);
 		p++;
@@ -2667,7 +2669,7 @@ reserve_memory (u_long addr, u_long len)
 	BUG_ON(!reserved_mem_list);
 
 	len = (len % PAGE_SIZE == 0) ? len : len - (len % PAGE_SIZE) + PAGE_SIZE; // pad to nearest page size
-	MPRINT ("Inserting reserved memory from %lx to %lx\n", addr, addr+len);
+	MPRINT ("Pid %d Inserting reserved memory from %lx to %lx, clock is %lu\n", current->pid, addr, addr+len, get_clock_value ());
 
 	iter = ds_list_iter_create (reserved_mem_list);
 	while ((pmapping = ds_list_iter_next (iter)) != NULL) {
@@ -6996,6 +6998,7 @@ sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, v
 asmlinkage long
 sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_long __user * replay_hook)
 {
+	DPRINT ("pid %d dumbass_link %p %p status %p %d \n", current->pid, record_hook, replay_hook, status, *status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
 		if (prt->rp_record_hook) {
@@ -7138,7 +7141,7 @@ sys_pthread_block (u_long clock)
         //moved this to above the check below. Some weird pin attach issue that I was having before where I think this was getting update while we're in this syscall?
 	// not sure how or why, but we were failing on a can't find thread to run w/ the clock value of preplay_clock == clock
 	rg_lock (prg->rg_rec_group); 
-	MPRINT("Replay Pid %d called sys_pthread_block w/ user clock val %ld when replay clock val is %ld\n",current->pid, clock, *(prt->rp_preplay_clock));
+	MPRINT("Replay Pid %d called sys_pthread_block w/ user clock val %ld when replay clock val is %ld, user status %d\n",current->pid, clock, *(prt->rp_preplay_clock), prt->rp_pthread_status_addr?*(prt->rp_pthread_status_addr):-1);
 
 
 	while (*(prt->rp_preplay_clock) < clock || prt->rp_status == REPLAY_STATUS_RESTART_CKPT){ 
@@ -7173,8 +7176,8 @@ sys_pthread_block (u_long clock)
 					if (tmp->rp_pin_thread_data) {
 						put_user (tmp->rp_pin_thread_data, tmp->rp_pin_curthread_ptr);
 					} else if (prt->rp_pin_thread_data) {
-						printk ("Pid %d: I have pin thread data but switching thread %d (recpid %d) does not\n", 
-							current->pid, tmp->rp_replay_pid, tmp->rp_record_thread->rp_record_pid);
+						printk ("Pid %d: I have pin thread data but switching thread %d (recpid %d) does not, clock %ld\n", 
+							current->pid, tmp->rp_replay_pid, tmp->rp_record_thread->rp_record_pid, *(prt->rp_preplay_clock));
 						tmp->rp_pin_switch_before_attach = 1;
 					}
 
@@ -7239,7 +7242,7 @@ sys_pthread_block (u_long clock)
 		}
 	}
 	//moved this to outside the while loop, see the comment before the lock above (which was also moved to outside the while loop)
-	MPRINT ("Pid %d sys_pthread_block, preplay_clock %ld, attaching %d, rp_status %d\n", current->pid, *(prt->rp_preplay_clock), prt->rp_pin_attaching, prt->rp_status);
+	MPRINT ("Pid %d sys_pthread_block, preplay_clock %ld, attaching %d, rp_status %d, user status %d\n", current->pid, *(prt->rp_preplay_clock), prt->rp_pin_attaching, prt->rp_status, prt->rp_pthread_status_addr?*(prt->rp_pthread_status_addr):-1);
 	rg_unlock (prg->rg_rec_group);
 	/* 
 	 * there's one case where we hit this function and we don't make it into the block above. Basically, pin will restart this function call 
@@ -7324,9 +7327,11 @@ asmlinkage long sys_pthread_full (void)
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
+	DPRINT ("Pid %d sys_pthread_status %p, %d\n", current->pid, status, *status);
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {
+		current->replay_thrd->rp_pthread_status_addr = status;
 		put_user (2, status);
 	} else {
 		put_user (3, status);
@@ -8860,7 +8865,7 @@ record_read (unsigned int fd, char __user * buf, size_t count)
 			}
 			*((u_int *) pretval) = 0;
 			if (copy_from_user (pretval+sizeof(u_int), buf, rc)) { 
-				printk ("record_read: can't copy to buffer\n"); 
+				printk ("[BUG] record_read: can't copy to buffer\n"); 
 				ARGSKFREE(pretval, rc+sizeof(u_int));	
 				return -EFAULT;
 			}							
@@ -10721,7 +10726,7 @@ record_munmap (unsigned long addr, size_t len)
 	rc = sys_munmap (addr, len);
 	new_syscall_done (91, rc);
 	new_syscall_exit (91, NULL);
-	DPRINT ("Pid %d records munmap of addr %lx returning %ld\n", current->pid, addr, rc);
+	printk ("Pid %d records munmap of addr %lx len %u returning %ld\n", current->pid, addr, len, rc);
 	rg_unlock(current->record_thrd->rp_group);
 
 	return rc;
@@ -12270,7 +12275,7 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 			tsk->replay_thrd = new_replay_thread(prg, prt, pid, 0, current->replay_thrd->rp_cache_files,
 							     current->replay_thrd->rp_mmap_files);
 		} else {
-		  tsk->replay_thrd = new_replay_thread(prg, prt, pid, 0, NULL, NULL);
+			tsk->replay_thrd = new_replay_thread(prg, prt, pid, 0, NULL, NULL);
 			copy_replay_cache_files (current->replay_thrd->rp_cache_files, tsk->replay_thrd->rp_cache_files);
 			copy_replay_cache_files (current->replay_thrd->rp_mmap_files, tsk->replay_thrd->rp_mmap_files);
 		}
@@ -12280,10 +12285,6 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 		//this occurs no matter what! 
 
 		copy_sysv_mappings(current->replay_thrd, tsk->replay_thrd);
-
-		
-
-
 
 		// inherit the parent's app_syscall_addr
 		tsk->replay_thrd->app_syscall_addr = current->replay_thrd->app_syscall_addr;
@@ -12306,13 +12307,14 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 		}
 
 		if (!(clone_flags&CLONE_VM)) {
-			printk ("This is a fork-style clone - reset the user log appropriately\n");
+			printk ("This is a fork-style clone - reset the user log appropriately: (should we set pthread_status to PTHREAD_LOG_REP_AFTER_FORK?)\n");
 			tsk->replay_thrd->rp_record_thread->rp_user_log_addr = current->replay_thrd->rp_record_thread->rp_user_log_addr;
 #ifdef USE_EXTRA_DEBUG_LOG
 			tsk->replay_thrd->rp_record_thread->rp_user_extra_log_addr = current->replay_thrd->rp_record_thread->rp_user_extra_log_addr;
 #endif
 			tsk->replay_thrd->rp_record_thread->rp_ignore_flag_addr = current->replay_thrd->rp_record_thread->rp_ignore_flag_addr;
 		}
+		tsk->replay_thrd->rp_pthread_status_addr = current->replay_thrd->rp_pthread_status_addr;
 		
 		// read the rest of the log
 		read_log_data (tsk->replay_thrd->rp_record_thread);
@@ -12379,6 +12381,9 @@ long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt
 }
 #endif
 
+static long
+replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr);
+
 long 
 shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {	
@@ -12396,7 +12401,8 @@ shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs 
 		// Allow Pin to do so, by calling replay_clone
 		if (is_pin_attached() && current->replay_thrd->is_pin_vfork) {
 			int child_pid;
-			child_pid = replay_clone(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+			//child_pid = replay_clone(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+			child_pid = replay_vfork(clone_flags | CLONE_VFORK, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
 			current->replay_thrd->is_pin_vfork = 0;
 			printk("[Pin Clone?]: child_pid = %d\n", child_pid);
 			return child_pid;
@@ -13855,11 +13861,18 @@ record_vfork_handler (struct task_struct* tsk)
 	tsk->record_thrd->rp_next_thread = current->record_thrd->rp_next_thread;
 	current->record_thrd->rp_next_thread = tsk->record_thrd;
 	
-	tsk->record_thrd->rp_user_log_addr = 0; // Should not write to user log before exec - otherwise violates vfork principles
+	//xdou: convert vfork to clone; so these are not used
+	/*tsk->record_thrd->rp_user_log_addr = 0; // Should not write to user log before exec - otherwise violates vfork principles
 #ifdef USE_EXTRA_DEBUG_LOG
 	tsk->record_thrd->rp_user_extra_log_addr = 0;
 #endif
+	*/
 	tsk->record_thrd->rp_ignore_flag_addr = current->record_thrd->rp_ignore_flag_addr;
+	tsk->record_thrd->rp_user_log_addr = current->record_thrd->rp_user_log_addr;
+#ifdef USE_EXTRA_DEBUG_LOG
+	tsk->record_thrd->rp_user_extra_log_addr = current->record_thrd->rp_user_extra_log_addr;
+#endif
+	tsk->record_thrd->rp_record_hook = current->record_thrd->rp_record_hook;
 	
 	// allocate a slab for retparams
 	slab = VMALLOC (argsalloc_size);
@@ -13882,13 +13895,58 @@ static long
 record_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {
 	long rc;
+	struct pthread_log_head __user * phead = NULL;
+#ifdef USE_DEBUG_LOG
+	struct pthread_log_data __user * start, *old_start = NULL;
+#else
+	char __user * start, *old_start = NULL;
+	u_long old_expected_clock, old_num_expected_records;
+#endif
+#ifdef USE_EXTRA_DEBUG_LOG
+	struct pthread_extra_log_head __user * pehead = NULL;
+	char __user * estart, *old_estart = NULL;
+#endif
 
 	new_syscall_enter (190);
 
 	/* On clone, we reset the user log.  On, vfork we do not do this because the parent and child share one
            address space.  This sharing will get fixed on exec. */
+	//xdou: the above statement is true if pin is not attached; if pin is attached, vfork is converted to clone without CLONE_VM being set, and mess up our user log if the child process has some user operations after vfork and before execve
+	//So the quick solution is convert the vfork to clone on both recording and replay, by forcing the parent and child not to share the memory address at all, since it'll be overwritten by execve later anyway
+	//The other solution is that we have to deal with the mismatch where we have the vfork on recording and clone used by pin on replay, by allocating some memory for the user log of the child process
+	phead = (struct pthread_log_head __user *) current->record_thrd->rp_user_log_addr;
+#ifdef USE_DEBUG_LOG
+	start = (struct pthread_log_data __user *) ((char __user *) phead + sizeof (struct pthread_log_head));
+#else
+	start = (char __user *) phead + sizeof (struct pthread_log_head);
+#endif
+	get_user (old_start, &phead->next);
+	put_user (start, &phead->next);
+#ifdef USE_EXTRA_DEBUG_LOG
+	pehead = (struct pthread_extra_log_head __user *) current->record_thrd->rp_user_extra_log_addr;
+	estart = (char __user *) pehead + sizeof (struct pthread_extra_log_head);
+	get_user (old_estart, &pehead->next);
+	put_user (estart, &pehead->next);
+#endif
 
-	rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+#ifndef USE_DEBUG_LOG
+	get_user (old_expected_clock, &phead->expected_clock);
+	put_user (0, &phead->expected_clock);
+	get_user (old_num_expected_records, &phead->num_expected_records);
+	put_user (0, &phead->num_expected_records);
+#endif
+
+	rc = do_fork (clone_flags & (~CLONE_VM)/*force child to run on a seperate memory address*/, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+
+	put_user (old_start, &phead->next);
+#ifdef USE_EXTRA_DEBUG_LOG
+	put_user (old_estart, &pehead->next);
+#endif
+#ifndef USE_DEBUG_LOG
+	put_user (old_expected_clock, &phead->expected_clock);
+	put_user (old_num_expected_records, &phead->num_expected_records);
+#endif			
+
 	MPRINT ("Pid %d records vfork returning %ld\n", current->pid, rc);
 	new_syscall_done (190, rc);
 	new_syscall_exit (190, NULL);
@@ -13965,26 +14023,35 @@ replay_vfork_handler (struct task_struct* tsk)
 	// Fix up the circular thread list
 	tsk->replay_thrd->rp_next_thread = current->replay_thrd->rp_next_thread;
 	current->replay_thrd->rp_next_thread = tsk->replay_thrd;
-	
+	printk ("This is a fork-style clone - reset the user log appropriately\n");
+	tsk->replay_thrd->rp_record_thread->rp_user_log_addr = current->replay_thrd->rp_record_thread->rp_user_log_addr;
+#ifdef USE_EXTRA_DEBUG_LOG
+	tsk->replay_thrd->rp_record_thread->rp_user_extra_log_addr = current->replay_thrd->rp_record_thread->rp_user_extra_log_addr;
+#endif
+	tsk->replay_thrd->rp_record_thread->rp_ignore_flag_addr = current->replay_thrd->rp_record_thread->rp_ignore_flag_addr;
+	tsk->replay_thrd->rp_replay_hook = current->replay_thrd->rp_replay_hook;
+	tsk->replay_thrd->gdb_state = current->replay_thrd->gdb_state;
+	tsk->replay_thrd->rp_pthread_status_addr = current->replay_thrd->rp_pthread_status_addr;
 	// read the rest of the log
 	read_log_data (tsk->replay_thrd->rp_record_thread);
 	
 	prept = current->replay_thrd;
 	tsk->replay_thrd->rp_status = REPLAY_STATUS_RUNNING; // Child needs to run first to complete vfork
 	tsk->thread.ip = (u_long) ret_from_fork_2;
-	current->replay_thrd->rp_status = REPLAY_STATUS_ELIGIBLE; // So we need to wait
+	//current->replay_thrd->rp_status = REPLAY_STATUS_ELIGIBLE; // So we need to wait
+	put_user (2, current->replay_thrd->rp_pthread_status_addr); //corresponding to PTHREAD_LOG_REPLAY; change this before waiting for the child (in fork.c)
 	rg_unlock(prg->rg_rec_group);
 }
 
 static long
 replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {
-	struct task_struct* tsk = NULL;
 	struct replay_thread* prt = current->replay_thrd;
 	struct replay_group* prg = prt->rp_group;
 	struct syscall_result* psr = NULL;
 	pid_t pid;
-	long ret, rc;
+	//long ret, rc;
+	long rc;
 
 	// See above comment about user log
 
@@ -13998,8 +14065,14 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 		prt->rp_saved_rc = rc;
 	}
+	pid = rc;
 
 	DPRINT ("Pid %d replay_vfork syscall exit:rc=%ld\n", current->pid, rc);
+
+	if (clone_flags & CLONE_PARENT_SETTID) { 
+		printk ("Pid %d vfork set parent tid : FIXME\n", current->pid);
+	}
+
 	if (rc > 0) {
 		// We need to keep track of whether or not a signal was attached
 		// to this system call; sys_clone_internal will clear the flag
@@ -14007,7 +14080,12 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		int rp_sigpending = test_thread_flag (TIF_SIGPENDING);
 
 		// We also need to create a child here 
-		pid = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+		// xdou: the parent is blocked here, so its wait clock and wait status should be updated; otherwise, other threads may try to wake this thread up before vfork returns, creating a deadlock
+		prt->rp_wait_clock = prt->rp_stop_clock_save;
+		prt->rp_status = REPLAY_STATUS_WAIT_CLOCK;
+		put_user (4, current->replay_thrd->rp_pthread_status_addr); //corresponding to PTHREAD_LOG_REP_AFTER_FORK
+		pid = do_fork (clone_flags & (~CLONE_VM)/*as in record_vfork*/, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+
 		MPRINT ("Pid %d in replay_vfork spawns child %d\n", current->pid, pid);
 		if (pid < 0) {
 			printk ("[DIFF]replay_vfork: second vfork failed, rc=%d\n", pid);
@@ -14021,7 +14099,7 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		}
 
 		// Next, we have to wait while child runs 
-		DPRINT ("replay_vfork: pid %d going to sleep\n", current->pid);
+		/*DPRINT ("replay_vfork: pid %d going to sleep\n", current->pid);
 		ret = wait_event_interruptible_timeout (prt->rp_waitq, prt->rp_status == REPLAY_STATUS_RUNNING, SCHED_TO);
 
 		rg_lock(prg->rg_rec_group);
@@ -14031,15 +14109,15 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 			rg_unlock(prg->rg_rec_group);
 			sys_exit (0);
 		}
-		rg_unlock(prg->rg_rec_group);
+		rg_unlock(prg->rg_rec_group);*/
 	}
 		
 	if (prt->app_syscall_addr == 0) {
 		get_next_syscall_exit (prt, prg, psr);
 	}
 	if (rc > 0 && prt->app_syscall_addr) {
-		MPRINT ("Return real child pid %d to Pin instead of recorded child pid %ld\n", tsk->pid, rc);
-		return tsk->pid;
+		MPRINT ("Return real child pid %d to Pin instead of recorded child pid %ld\n", pid, rc);
+		return pid;
 	}
 
 	return rc;
@@ -14134,10 +14212,6 @@ record_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 
 	return rc;
 }
-
-
-
-
 
 static asmlinkage long 
 replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned long fd, unsigned long pgoff)

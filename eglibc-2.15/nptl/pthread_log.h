@@ -4,7 +4,7 @@
 /* Note: must update both user-level and kernel headers together */
 
 // Debug log uses uncompressed format
-//#define USE_DEBUG_LOG //BE CAREFUL: going live with this flag turned on is not supported for multi-thread program
+#define USE_DEBUG_LOG //BE CAREFUL: going live with this flag turned on is not supported for multi-thread program
 
 // This creates a separate log for debugging
 //#define USE_EXTRA_DEBUG_LOG

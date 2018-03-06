@@ -444,7 +444,7 @@ pthread_log_record (int retval, unsigned long type, unsigned long check, int is_
     data->check = check;
     data->errno = errno; // May have changed in ignore region
     head->ignore_flag = is_entry;
-    DPRINT ("Added record to log: clock %lu retval %d type %lu check %lx\n", data->clock, data->retval, data->type, data->check);
+    //DPRINT ("Added record to log: clock %lu retval %d type %lu check %lx\n", data->clock, data->retval, data->type, data->check);
     (head->next)++; // Increment to next log record
     if (head->next == head->end) {
 	pthread_log_full();
@@ -459,6 +459,7 @@ pthread_log_replay (unsigned long type, unsigned long check)
     struct pthread_log_data* data;
     int i, retval;
 
+    if (pthread_log_status == PTHREAD_LOG_REP_AFTER_FORK) check_recording();
     if (head == NULL) return 0;
     data = head->next;
 
@@ -571,7 +572,7 @@ pthread_log_record (int retval, unsigned long type, unsigned long check, int is_
     }
 
     head->ignore_flag = is_entry;
-    DPRINT ("Added record to log: clock %lu retval %d type %lu check %lx errno %d\n", new_clock, retval, type, check, errno);
+    //DPRINT ("Added record to log: clock %lu retval %d type %lu check %lx errno %d\n", new_clock, retval, type, check, errno);
 }
 
 int 
@@ -582,6 +583,7 @@ pthread_log_replay (unsigned long type, unsigned long check)
     unsigned long next_clock;
     int num_fake_calls, i, retval;
 
+    if (pthread_log_status == PTHREAD_LOG_REP_AFTER_FORK) check_recording();
     if (head == NULL) return 0;
     if (!is_replaying()) {
             pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay.\n");
