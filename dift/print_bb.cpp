@@ -22,6 +22,7 @@
 #define OP_RELREAD2         5
 #define OP_BRANCH_TAKEN     6
 #define OP_BRANCH_NOT_TAKEN 7
+#define OP_JMP_INDIRECT     8
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 u_long print_stop = 1000000;
@@ -303,6 +304,20 @@ void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
     write_to_buffer (ip);
 }
 
+void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
+{
+    write_to_buffer (OP_JMP_INDIRECT);
+    write_to_buffer (ip);
+    write_to_buffer (value);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
+{
+    write_to_buffer (OP_JMP_INDIRECT);
+    write_to_buffer (ip);
+    write_to_buffer (*((u_int *) loc));
+}
+
 #else
 void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
 {
@@ -373,11 +388,30 @@ void track_trace(TRACE trace, void* data)
 			       IARG_END);
 	    }
 	    if (INS_IsBranch(ins)) {
+		if (INS_Opcode(ins) == XED_ICLASS_JMP) {
+		    if (INS_IsIndirectBranchOrCall(ins)) {
+			if (INS_OperandIsReg(ins, 0)) {
+			    REG reg = INS_OperandReg(ins, 0);
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_jmp_reg), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_REG_VALUE, reg,
+					   IARG_END);
+			} else {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_jmp_mem), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_MEMORYREAD_EA,
+					   IARG_END);
+			}
+		    }
+		} else {
 		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_branch), 
 				   IARG_FAST_ANALYSIS_CALL,
 				   IARG_INST_PTR,
 				   IARG_BRANCH_TAKEN,
 				   IARG_END);
+		}
 	    }
 	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
 		if (INS_Stutters(BBL_InsHead(bbl))) {

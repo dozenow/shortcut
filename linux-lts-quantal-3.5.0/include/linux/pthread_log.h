@@ -44,13 +44,14 @@ struct pthread_log_head {
 	char stack[DEFAULT_STACKSIZE];
 };
 
+#endif
+
 #define NONZERO_RETVAL_FLAG 0x80000000
 #define FAKE_CALLS_FLAG     0x40000000
 #define SKIPPED_CLOCK_FLAG  0x20000000
 #define ERRNO_CHANGE_FLAG   0x10000000
 #define CLOCK_MASK          0x0fffffff
 
-#endif
 
 #ifdef USE_EXTRA_DEBUG_LOG
 struct pthread_extra_log_head {

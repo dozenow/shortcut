@@ -25,7 +25,7 @@ using namespace std;
 #define OP_CHECK(val) get_value()
 //#define DPRINT printf
 //#define MYASSERT assert
-//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("Expected %lx got %d syscall %ld bb_cnt %ld\n", lval, val, *ppthread_log_clock, bb_cnt); assert (0); } }
+//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("Expected %lx got %x syscall %ld bb_cnt %ld\n", lval, val, *ppthread_log_clock, bb_cnt); fail_and_exit(); } }
 
 #define OP_CALL             0
 #define OP_RETURN           1
@@ -35,6 +35,9 @@ using namespace std;
 #define OP_RELREAD2         5
 #define OP_BRANCH_TAKEN     6
 #define OP_BRANCH_NOT_TAKEN 7
+#define OP_JMP_INDIRECT     8
+
+static void fail_and_exit();
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 u_long print_stop = 1000000;
@@ -61,6 +64,7 @@ map<u_long, struct index_div> indexes;
 u_long prev_bb, bb_cnt = 0;
 bool deviation;
 bool debug_on;
+u_long cur_clock = 0;
 
 static void print_results ()
 {
@@ -68,6 +72,7 @@ static void print_results ()
 	printf ("0x%lx %s %lu\n", iter->second.addr, iter->second.is_write ? "rangev_write" : "rangev", 
 		iter->second.value);
     }
+    fflush (stdout);
 }
 
 static void get_values ()
@@ -75,11 +80,11 @@ static void get_values ()
     long rc = read (logfd, buffer, sizeof(buffer));
     if (rc < 0) {
 	fprintf (stderr, "file read fails\n");
-	exit (1);
+	fail_and_exit();
     }
     if (rc == 0) {
 	fprintf (stderr, "no more values in file\n");
-	exit (1);
+	fail_and_exit();
     }
     ndx = 0;
     bufsize = rc/sizeof(u_long);
@@ -104,11 +109,11 @@ static inline u_long skip_to_end ()
 	    long rc = read(logfd, buffer+bufsize, 4096);
 	    if (rc < 0) {
 		fprintf (stderr, "oveflow: file read fails\n");
-		exit (1);
+		fail_and_exit();
 	    }
 	    if (rc == 0) {
 		fprintf (stderr, "overflow: no more values in file\n");
-		exit (1);
+		fail_and_exit();
 	    }
 	    bufsize += rc/sizeof(u_long);
 	}
@@ -140,6 +145,14 @@ int fd; // File descriptor for the replay device
 TLS_KEY tls_key; // Key for accessing TLS. 
 
 int get_record_pid(void);
+
+static void fail_and_exit ()
+{
+    fprintf (stderr, "Exit after assertion fail\n");
+    print_results();
+    try_to_exit (fd, PIN_GetPid());
+    PIN_ExitApplication(0);
+}
 
 inline void increment_syscall_cnt (struct thread_data* ptdata, int syscall_num)
 {
@@ -212,7 +225,6 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
 	if (clock != *ppthread_log_clock) {
 	    fprintf (stderr, "Expected syscall clock %ld, got value %ld\n", *ppthread_log_clock, clock);
 	}
-	bb_cnt = 0;
 
 	if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
 	    check_clock_before_syscall (fd, (int) syscall_num);
@@ -309,8 +321,13 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 	    i++;
 	} else if (val > OP_BRANCH_NOT_TAKEN) {
 	    if (start_bb) {
+#if 0
+	      // Why was it like this before???
 		u_long end_bb = buf[i+1];
 		DPRINT ("%d: %lx\n", i+1, end_bb);
+#endif
+		u_long end_bb = buf[i];
+		DPRINT ("%d: %lx\n", i, end_bb);
 		DPRINT ("BB %lx-%lx\n", start_bb, end_bb);
 		auto iter = bb.find(end_bb);
 		if (iter == bb.end()) {
@@ -388,7 +405,7 @@ static void build_new_bb_list (u_long* old_buf, int end, u_long* new_buf, int& n
 
 static inline void handle_index_diverge (ADDRINT ip, uint32_t memloc, u_long logaddr, bool is_write)
 {
-    printf ("Memory access type write at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
+  //printf ("Memory access type write at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
     u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
     auto iter = indexes.find(ip);
     if (iter == indexes.end()) {
@@ -456,13 +473,13 @@ void find_best_match ()
 
     if (best_val == INT_MAX) {
 	fprintf (stderr, "deviation at %x bb %lx syscall %ld is too large to handle\n", deviation_ip, bb_cnt, *ppthread_log_clock);
-	exit (1);
+	fail_and_exit();
     }
 
     // Spit out the deviation for the checks file
     int iter = (buffer1[0] == buffer1[best_i] || buffer2[0] == buffer2[best_j]);
-    printf ("0x%x ctrl_diverge -1,%ld,%ld orig_branch %c iter %d\n", 
-	    deviation_ip, *ppthread_log_clock, bb_cnt, deviation_taken ? 't' : 'n', iter);
+    printf ("0x%x ctrl_diverge %d,%ld,%ld orig_branch %c iter %d\n", 
+	    deviation_ip, current_thread->record_pid, *ppthread_log_clock, bb_cnt, deviation_taken ? 't' : 'n', iter);
 
     int skip1 = 0;
     bool first = true;
@@ -506,15 +523,15 @@ void find_best_match ()
     if (buffer1[0] == buffer1[best_i] && best_i) {
 	// Loop
 	printf ("0x%lx ctrl_block_instrument_orig branch -\n", buffer1[best_i]);	
-	printf ("0x%x ctrl_merge -1,%ld,%ld\n", deviation_ip, *ppthread_log_clock, new_bb_cnt);
+	printf ("0x%x ctrl_merge %d,%ld,%ld\n", deviation_ip, current_thread->record_pid, *ppthread_log_clock, new_bb_cnt);
 	loop1 = true;
     } else if (buffer2[0] == buffer2[best_j]) {
 	// Loop
 	printf ("0x%lx ctrl_block_instrument_alt branch -\n", buffer2[best_j]);	
-	printf ("0x%x ctrl_merge -1,%ld,%ld\n", deviation_ip, *ppthread_log_clock, new_bb_cnt);
+	printf ("0x%x ctrl_merge %d,%ld,%ld\n", deviation_ip, current_thread->record_pid, *ppthread_log_clock, new_bb_cnt);
 	loop2 = true;
     } else {
-	printf ("0x%lx ctrl_merge -1,%ld,%ld\n", buffer1[best_i], *ppthread_log_clock, new_bb_cnt);
+	printf ("0x%lx ctrl_merge %d,%ld,%ld\n", buffer1[best_i], current_thread->record_pid, *ppthread_log_clock, new_bb_cnt);
     }
 
     // Find the correct index to restart comparison
@@ -546,7 +563,10 @@ void find_best_match ()
 	    }
 	}
     }
-    assert (i != devndx);
+    if (i == devndx) {
+	fprintf (stderr, "Cannot find value %lx in deviation buffer\n", target_val);
+	fail_and_exit();
+    }
 
     DPRINT ("Search for value %lx in original original buffer\n", target_val);
     bool loop1_check = loop1;
@@ -593,7 +613,10 @@ void find_best_match ()
 	    }
 	    return find_best_match();
 	}
-	assert (buffer[ndx] == dev_buffer[i]);
+	if (buffer[ndx] != dev_buffer[i]) {
+	    fprintf (stderr, "Mismatch processing remaining records\n");
+	    fail_and_exit();
+	}
 	if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_BRANCH_NOT_TAKEN) {
 	    if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_RELREAD2) {
 		if (buffer[ndx+1] != dev_buffer[i+2]) {
@@ -622,7 +645,10 @@ static void PIN_FAST_ANALYSIS_CALL trace_bbl (ADDRINT ip)
 	if (ip == prev_bb) find_best_match ();
 	return;
     }
-
+    if (cur_clock != *ppthread_log_clock) {
+	cur_clock = *ppthread_log_clock;
+	bb_cnt = 0;
+    }
     bb_cnt++;
     prev_ndx = ndx;
     prev_bb = get_value();
@@ -741,6 +767,49 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
     }
 }
 
+void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
+{
+    OP_CHECK (OP_JMP_INDIRECT);
+    OP_CHECK(ip);
+    u_long logvalue = get_value();
+    if (value != logvalue) {
+	fprintf (stderr, "Indirect jmp at ip %x value %x logged value %lx\n", ip, value, logvalue);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
+{
+    OP_CHECK (OP_JMP_INDIRECT);
+    OP_CHECK(ip);
+    u_long logvalue = get_value();
+    u_long value = *((u_long *)loc);
+    if (value != logvalue) {
+	fprintf (stderr, "Indirect jmp at ip %x value %lx logged value %lx\n", ip, value, logvalue);
+    }
+}
+
+#if 0 
+// This is handy for random debugging tasks so leaving commented out
+static void PIN_FAST_ANALYSIS_CALL jnf_debug (ADDRINT ip, const CONTEXT* ctx)
+{
+    char val[16];
+
+    PIN_GetContextRegval (ctx, LEVEL_BASE::REG_XMM1, (UINT8 *) &val);    
+    fprintf (stderr, "Instruction %x syscall %ld xmm1: 0x", ip, *ppthread_log_clock);
+    for (int i = 0; i < 16; i++) {
+	fprintf (stderr, "%02x", val[i]);
+    }
+    fprintf (stderr, "\n");
+
+    PIN_GetContextRegval (ctx, LEVEL_BASE::REG_XMM2, (UINT8 *) &val);    
+    fprintf (stderr, "Instruction %x syscall %ld xmm2: 0x", ip, *ppthread_log_clock);
+    for (int i = 0; i < 16; i++) {
+	fprintf (stderr, "%02x", val[i]);
+    }
+    fprintf (stderr, "\n");
+}
+#endif
+
 void track_trace(TRACE trace, void* data)
 {
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after, IARG_INST_PTR, IARG_END);
@@ -760,6 +829,16 @@ void track_trace(TRACE trace, void* data)
 			   IARG_END);
 	}
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#if 0
+	    // Leaving this as a template for random debugging tasks
+	    if (INS_Address(ins) == 0xb72b0668) {
+		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(jnf_debug),
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_INST_PTR, 
+			       IARG_CONST_CONTEXT,
+			       IARG_END);
+	    }
+#endif
 	    if(INS_IsSyscall(ins)) {
 		INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), 
 			       IARG_FAST_ANALYSIS_CALL,
@@ -773,11 +852,30 @@ void track_trace(TRACE trace, void* data)
 			       IARG_END);
 	    }
 	    if (INS_IsBranch(ins)) {
+		if (INS_Opcode(ins) == XED_ICLASS_JMP) {
+		    if (INS_IsIndirectBranchOrCall(ins)) {
+			if (INS_OperandIsReg(ins, 0)) {
+			    REG reg = INS_OperandReg(ins, 0);
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_jmp_reg), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_REG_VALUE, reg,
+					   IARG_END);
+			} else {
+			    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_jmp_mem), 
+					   IARG_FAST_ANALYSIS_CALL,
+					   IARG_INST_PTR,
+					   IARG_MEMORYREAD_EA,
+					   IARG_END);
+			}
+		    }
+		} else {
 		    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_branch), 
 				   IARG_FAST_ANALYSIS_CALL,
 				   IARG_INST_PTR,
 				   IARG_BRANCH_TAKEN,
 				   IARG_END);
+		}
 	    }
 	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
 		if (INS_Stutters(BBL_InsHead(bbl))) {

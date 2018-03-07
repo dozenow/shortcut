@@ -40,7 +40,7 @@
 //#define DEBUG_PRINT
 
 #ifdef DEBUG_PRINT
-#define debugf(...) printf(__VA_ARGS__)
+#define debugf(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define debugf(...)
 #endif
@@ -73,14 +73,12 @@ void default_printfcn(FILE *out, struct klog_result *res) {
 	*/
 }
 
-static void default_signal_printfcn(FILE *out, struct klog_result *res) {
-	struct repsignal *sig;
-	sig = &res->signal->sig;
-
-	while (sig) {
-		fprintf(out, "         !!-- Has signal %d --!!\n", sig->signr);
-		sig = sig->next;
-	}
+static void default_signal_printfcn(FILE *out, struct klog_result *res) 
+{
+    struct klog_signal* p;
+    for (p = res->signal; p != NULL; p = p->next) {
+	fprintf(out, "         !!-- Has signal %d --!!\n", p->signr);
+    }
 }
 
 static void free_active_psrs(struct klogfile *log) {
@@ -182,6 +180,7 @@ static int read_psr_chunk(struct klogfile *log) {
 	}
 
 	log->active_start_idx += log->active_num_psrs;
+	log->cur_idx = 0;
 	log->active_num_psrs = count;
 
 	/* Now handle each psr */
@@ -270,28 +269,25 @@ static int read_psr_chunk(struct klogfile *log) {
 		}
 
 		if (apsr->psr.flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n;
-			do {
-				n = apsr->signal;
-				apsr->signal = malloc(sizeof(struct klog_signal));
-				/* FIXME: exit cleanly */
-				assert(apsr->signal);
-
-				if (n == NULL) {
-					apsr->signal->sig.next = NULL;
-				} else {
-					apsr->signal->sig.next = &n->sig;
-				}
-				apsr->signal->next = n;
-
-				debugf("Reading signal\n");
-				rc = read(log->fd, &apsr->signal->raw, 172);
-				if (rc != 172) {
-					fprintf (stderr, "read of signal returns %ld, errno = %d\n", rc, errno);
-					goto out_free;
-				}
-				apsr->signal->sig.signr = *(int *)apsr->signal->raw;
-			} while (*(char **)(apsr->signal->raw+168));
+		    struct klog_signal* tail = NULL;
+		    struct klog_signal* pklogsignal;
+		    do {
+			pklogsignal = malloc(sizeof(struct klog_signal));
+			assert (pklogsignal);
+			rc = read(log->fd, &pklogsignal->raw, 172);
+			if (rc != 172) {
+			    fprintf (stderr, "read of signal returns %ld, errno = %d\n", rc, errno);
+			    goto out_free;
+			}
+			pklogsignal->signr = *((int *) pklogsignal->raw);
+			pklogsignal->next = NULL;
+			if (tail == NULL) {
+			    apsr->signal = pklogsignal;
+			} else {
+			    tail->next = pklogsignal;
+			}
+			tail = pklogsignal;
+		    } while (*(char **)(pklogsignal->raw+168));			
 		} else {
 			apsr->signal = NULL;
 		}
@@ -341,6 +337,7 @@ struct klogfile *parseklog_open(const char *filename) {
 	ret->cur_idx = 0;
 
 	ret->expected_clock = 0;
+	ret->expected_write_clock = 0;
 
 out:
 	return ret;
@@ -412,7 +409,8 @@ int parseklog_cur_chunk_size(struct klogfile *log) {
 	return log->active_num_psrs;
 }
 
-int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
+static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t* pexpected_write_clock, int destfd) 
+{
 	int i;
 	int rc;
 	u_long data_size;
@@ -444,10 +442,10 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 			data_size += sizeof(u_long);
 		}
 		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n = psrs[i].signal;
-			do {
+			struct klog_signal* n;
+			for (n = psrs[i].signal; n; n = n->next) {
 				data_size += 172;
-			} while (n->next);
+			} 
 		}
 
 		data_size += psrs[i].retparams_size;
@@ -460,22 +458,22 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 	}
 
 	/* For each psr */
-	u_long prev_start_clock;
-	u_long prev_stop_clock;
 	for (i = 0; i < count; i++) {
 		struct syscall_result *apsr = &psrs[i].psr;
 		struct klog_result *res = &psrs[i];
 
 		/* If (has clock) write clock */
 		if (apsr->flags & SR_HAS_START_CLOCK_SKIP) {
-			/* The 2 is magic... */
-			u_long record_clock = res->start_clock-prev_start_clock-2;
+			u_long record_clock = res->start_clock-*pexpected_write_clock;
+			*pexpected_write_clock = res->start_clock;
 			rc = write(destfd, &record_clock, sizeof(u_long));
 			if (rc != sizeof(u_long)) {
 				fprintf(stderr, "Couldn't record start_clock\n");
 				return -1;
 			}
 		}
+		(*pexpected_write_clock)++;
+
 		/* If (has retval) write retval */
 		if (apsr->flags & SR_HAS_NONZERO_RETVAL) {
 			rc = write(destfd, &res->retval, sizeof(long));
@@ -485,36 +483,35 @@ int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd) {
 			}
 		}
 		if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) {
-			/* The 2 is magic... */
-			u_long record_clock = res->stop_clock-prev_stop_clock-2;
+			u_long record_clock = res->stop_clock-*pexpected_write_clock;
+			*pexpected_write_clock = res->stop_clock;
 			rc = write(destfd, &record_clock, sizeof(u_long));
 			if (rc != sizeof(u_long)) {
 				fprintf(stderr, "Couldn't record start_clock\n");
 				return -1;
 			}
 		}
+		(*pexpected_write_clock)++;
+
 		/* If (has retparams) write retparams */
 		if (res->retparams_size) {
 			rc = write(destfd, res->retparams, res->retparams_size);
 			if (rc != res->retparams_size) {
-				fprintf(stderr, "Couldn't record retparams_size\n");
+				fprintf(stderr, "Couldn't record retparams_size ret %d, params %p size %d, err %d\n", rc, res->retparams, res->retparams_size, errno);
 				return -1;
 			}
 		}
 
 		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n = res->signal;
-			do {
+			struct klog_signal *n;
+			for (n = res->signal; n; n = n->next) {
 			    rc = write(destfd, n->raw, 172);
 			    if (rc != 172) {
 				fprintf(stderr, "Couldn't record raw signal\n");
 				return -1;
 			    }
-			} while (n->next);
+			} 
 		}
-
-		prev_stop_clock = res->stop_clock;
-		prev_start_clock = res->start_clock;
 	}
 
 	return 0;
@@ -524,7 +521,7 @@ int parseklog_write_chunk(struct klogfile *log, int destfd) {
 	long rc;
 
 	/* Write the header */
-	rc = parseklog_do_write_chunk(log->active_num_psrs, log->active_psrs, destfd);
+	rc = parseklog_do_write_chunk(log->active_num_psrs, log->active_psrs, &log->expected_write_clock, destfd);
 
 	return rc;
 }

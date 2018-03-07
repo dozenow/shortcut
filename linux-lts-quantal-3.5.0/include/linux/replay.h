@@ -227,6 +227,8 @@ struct fw_slice_info {
 struct go_live_process_map { 
     int record_pid;
     int current_pid;
+    __user char* taintbuf; // Location of taintbuf in process address space
+    __user u_long* taintndx; // Location of taintbuf index in process address space
     int wait; //for futex wait
     int value; //for futex wait 
 };

@@ -2,6 +2,7 @@
 # Take in line number, generate backward slice from pinout file
 
 import sys
+import re
 
 pinout = sys.argv[1]
 lineno = int(sys.argv[2])
@@ -136,11 +137,81 @@ def findNextBSlice(cnt):
                     break
 
         
+cnt = 0
+lines = {}
+sources = {}
+
+def addSource (source):
+    """ add locations from a single source to the set if it is tainted """
+    (loc,staint,length) = source.split(":")
+    taint = int(staint)
+    if taint:
+        if (loc in regname):
+            sources[regname[loc]] = taint
+        elif loc[0] == 'F':
+            sources["flags"] = taint
+        else:
+            sources["0x" + loc] = taint
+
+def addSources (cnt):
+    line = lines[cnt]
+    print cnt, line
+    src = line.find("src_")
+    if src >= 0:
+        b = line.find("[", src) + 1
+        e = line.find("]", src)
+        sources = line[b:e].split(",")
+        for source in sources:
+            addSource (source)
+    ndx = line.find("ndx_")
+    if ndx >= 0:
+        b = line.find("[", ndx) + 1
+        e = line.find("]", ndx)
+        sources = line[b:e].split(",")
+        for source in sources:
+            addSource (source)
+
+def findStore (cnt):
+    while cnt > 0:
+        cnt -= 1
+        line = lines[cnt]
+        if "[SLICE]" in line:
+            if line.split()[0][1:] == "div":
+                if "eax" in sources or "edx" in sources:
+                    if "eax" in sources:
+                        del sources["eax"]
+                    if "edx" in sources:
+                        del sources["edx"]
+                    return cnt
+            else:
+                tokens = line.split()
+                if tokens[1] == "dword" or tokens[1] == "byte" or tokens[1] == "xmmword":
+                    destination = tokens[3][1:-2]
+                else:
+                    destination = line.split()[1][:-1]
+                if destination in sources:
+                    del sources[destination]
+                    return cnt
+        if line.find("[TAINT_INFO]") >= 0:
+            tokens = line.split()
+            if tokens[3] == "#eax":
+                if "eax" in sources:
+                    print cnt, ":", line
+                    del sources["eax"]
+                    return cnt
+            else:
+                addr = int(tokens[3], 16)
+                size = int(tokens[4], 16)
+                for source in sources:
+                    if source[:2] == "0x":
+                        loc = int (source, 16)
+                        if loc >= addr and loc < addr+size:
+                            print cnt, ":", lines[cnt]
+                            return cnt
+    return 0
 
 # Read in and cache lines up to slicing point
 fh = open (pinout, "r")
-cnt = 0
-lines = {}
 for line in fh:
     lines[cnt] = line;
     cnt = cnt + 1
@@ -148,11 +219,11 @@ for line in fh:
         break
 fh.close()
 
-cnt = cnt-1
-target = lines[cnt]
-print target,
+cnt = cnt - 1
+addSources (cnt)
+while cnt > 0 and len(sources) > 0:
+    print sources
 
-while (cnt > 0):
-    findSources(lines[cnt])
-    print "Source: ", sorted(sources.keys());
-    cnt = findNextBSlice(cnt)
+    cnt = findStore (cnt)
+    addSources (cnt)
+

@@ -1666,7 +1666,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
         int index;
-        index = atomic_add_return (1, &go_live_clock->num_threads);
+        index = atomic_add_return (1, &go_live_clock->num_threads)-1;
         SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");
@@ -1675,6 +1675,8 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
             //write the process map
             go_live_clock->process_map[index].record_pid = record_pid;
             go_live_clock->process_map[index].current_pid = current->pid;
+	    go_live_clock->process_map[index].taintbuf = NULL; // Will be set by each slice when started
+	    go_live_clock->process_map[index].taintndx = NULL; // Ditto
             go_live_clock->process_map[index].value = 0;
             go_live_clock->process_map[index].wait = 0;
         }
@@ -1972,7 +1974,6 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		mutex_unlock(&slice_task_mutex);
 
 		DPRINT ("Slice daemon thread %d gets task pid %d recheck file %s\n", current->pid, pstask->slice_pid, pstask->recheck_filename);
-
 		retval = copy_to_user (filename, pstask->recheck_filename, sizeof(pstask->recheck_filename));
 		if (retval < 0) {
 			printk ("sys_execute_fw_slice: copy_to_user returns %ld\n", retval);

@@ -3168,7 +3168,7 @@ int set_pin_address (u_long pin_address, u_long pin_chk, u_long thread_data, u_l
 		prept->rp_pin_curthread_ptr = curthread_ptr;
 
 		if (prept->rp_pin_switch_before_attach) {
-			printk ("switched before this attach so update current thread\n");	
+			DPRINT ("switched before this attach so update current thread\n");	
 			put_user (prept->rp_pin_thread_data, prept->rp_pin_curthread_ptr);
 		}
 		if (prept->rp_pin_attaching) {
@@ -4295,7 +4295,7 @@ replay_full_ckpt (long rc)
 	
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, first_proc->pid);
 	retval = replay_full_checkpoint_hdr_to_disk (ckpt, precg->rg_id, clock, proc_count, curr_ckpt_tsk, current, &pos);
-        printk ("Pid %d after replay_full_checkpoint_hdr_to_disk pos %lld\n", current->pid, pos);
+        MPRINT ("Pid %d after replay_full_checkpoint_hdr_to_disk pos %lld\n", current->pid, pos);
 	if (retval) return retval;
 
 	// First write out data for this process
@@ -4303,7 +4303,7 @@ replay_full_ckpt (long rc)
 	       current->pid,(u_long)current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
 	       (u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr, (u_long)current->clear_child_tid);
 	curr_ckpt_tsk = btree_lookup32(&proc_btree, current->pid);       
-	printk("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
+	MPRINT("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
 
 
 	retval = replay_full_checkpoint_proc_to_disk (ckpt, current, 
@@ -4330,7 +4330,7 @@ replay_full_ckpt (long rc)
 			curr_ckpt_tsk = btree_lookup32(&proc_btree, tsk->pid);       
 			//not sure we want or need these two cases! 
 			if(prt->rp_ckpt_pthread_block_clock){				
-				printk("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
+				MPRINT("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
 				retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
 									      prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
 									      argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
@@ -4341,7 +4341,7 @@ replay_full_ckpt (long rc)
 									      (u_long) prt->rp_replay_hook, &pos); 	       
 			}
 			else { 
-				printk("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
+				MPRINT("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
 				       prt->rp_replay_pid, 
 				       prt->rp_record_thread->rp_record_pid, 
 				       prt->rp_expected_clock,
@@ -4492,7 +4492,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	MPRINT ("Pid %d set_record_group_id to %llu\n", current->pid, rg_id);
 	rg_unlock (precg); //I'm worried that the other threads might need to grab the lock later	
 	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
-        if (num_procs) { 
+        if (go_live && num_procs) { 
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 atomic_set (&go_live_clock->num_remaining_threads, num_procs);
                 atomic_set (&go_live_clock->wait_for_other_threads, num_procs);
@@ -5842,6 +5842,7 @@ get_next_clock (struct replay_thread* prt, struct replay_group* prg, long wait_c
 		}
 	}
 	(*prt->rp_preplay_clock)++;
+	put_user (prt->rp_pin_thread_data, prt->rp_pin_curthread_ptr); // JNF fix
 	rg_unlock (prg->rg_rec_group);
         MPRINT ("Pid %d incremented replay clock to %ld\n", current->pid, *(prt->rp_preplay_clock));
 	return retval;
@@ -6280,6 +6281,7 @@ get_next_syscall_exit (struct replay_thread* prt, struct replay_group* prg, stru
 
 					tmp->rp_status = REPLAY_STATUS_RUNNING;
 					if (tmp->rp_pin_thread_data) {
+						DPRINT ("Assigning curthread %p to thread data at %lx\n", tmp->rp_pin_curthread_ptr, tmp->rp_pin_thread_data);
 						put_user (tmp->rp_pin_thread_data, tmp->rp_pin_curthread_ptr);
 					} else if (prt->rp_pin_thread_data) {
 						printk ("Pid %d: I have pin thread data but switching thread %d (recpid %d) does not\n", 
@@ -6393,6 +6395,7 @@ get_next_syscall_exit (struct replay_thread* prt, struct replay_group* prg, stru
 	}
 
 
+	put_user (prt->rp_pin_thread_data, prt->rp_pin_curthread_ptr); // JNF fix
 	(*prt->rp_preplay_clock)++;
 	MPRINT ("Pid %d incremented replay clock on syscall %d exit to %ld\n", current->pid, psr->sysnum, *(prt->rp_preplay_clock));
 	prect->rp_count += 1;
@@ -7030,7 +7033,6 @@ sys_pthread_log (u_long log_addr, int __user * ignore_addr)
 		current->replay_thrd->rp_record_thread->rp_ignore_flag_addr = ignore_addr;
 		read_user_log (current->replay_thrd->rp_record_thread);
 		MPRINT ("Read user log into address %lx for thread %d\n", log_addr, current->pid);
-		printk ("sys_prthread_log called by pid %d which is replaying\n", current->pid);
 	} else {
 		printk ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
 		return -EINVAL;
@@ -12313,6 +12315,9 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 			tsk->replay_thrd->rp_record_thread->rp_user_extra_log_addr = current->replay_thrd->rp_record_thread->rp_user_extra_log_addr;
 #endif
 			tsk->replay_thrd->rp_record_thread->rp_ignore_flag_addr = current->replay_thrd->rp_record_thread->rp_ignore_flag_addr;
+			// New address space - but thread data in same place
+			tsk->replay_thrd->rp_pin_thread_data   = current->replay_thrd->rp_pin_thread_data;  
+			tsk->replay_thrd->rp_pin_curthread_ptr = current->replay_thrd->rp_pin_curthread_ptr;  
 		}
 		tsk->replay_thrd->rp_pthread_status_addr = current->replay_thrd->rp_pthread_status_addr;
 		
@@ -13332,6 +13337,7 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 	struct replay_thread* prt = current->replay_thrd;
 	
 	if (is_pin_attached())	{
+		MPRINT ("Pid %d in pin rt_sigaction branch\n", current->pid);
 		rc = prt->rp_saved_rc;
 		retparams = prt->rp_saved_retparams;
 
@@ -13355,6 +13361,7 @@ replay_rt_sigaction (int sig, const struct sigaction __user *act, struct sigacti
 			syscall_mismatch();
 		}
 	} else {
+		MPRINT ("Pid %d in normal branch\n", current->pid);
 		rc = get_next_syscall (174, &retparams);
 		if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 	}

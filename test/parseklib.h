@@ -291,7 +291,7 @@ struct syscall_result {
 
 struct klog_signal {
 	char raw[172];
-	struct repsignal sig;
+	int signr;
 	struct klog_signal *next;
 };
 
@@ -328,6 +328,7 @@ struct klogfile {
 	loff_t cur_idx;
 
 	loff_t expected_clock;
+	loff_t expected_write_clock;
 
 	loff_t active_start_idx;
 	loff_t active_num_psrs;
@@ -353,7 +354,6 @@ struct klog_result *parseklog_get_next_psr_from_chunk (struct klogfile *log);
 int parseklog_read_next_chunk(struct klogfile *log);
 int parseklog_cur_chunk_size(struct klogfile *log);
 int parseklog_write_chunk(struct klogfile *log, int destfd);
-int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd);
 
 void parseklog_set_signalprint(struct klogfile *log,
 		void (*printfcn)(FILE *out, struct klog_result *));

@@ -30,6 +30,7 @@
 #define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE_CTRL_FLOW] comes with %08x*/\\n\"\n", ## __VA_ARGS__, ip);
 #define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format " /*", ## __VA_ARGS__);
 #define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_VERIFICATION] " format "*/\\n\"\n", ## __VA_ARGS__);
+#define OUTPUT_TAINT_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"/* [TAINT_INFO] " format " */\\n\"\n", ## __VA_ARGS__);
 #define DEBUG_INFO printf
 #else
 #define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__)
@@ -39,6 +40,7 @@
 #define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__);
 #define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__)
 #define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(x,...)
+#define OUTPUT_TAINT_INFO_THREAD(x,...)
 #define DEBUG_INFO(x,...)
 #endif
 
@@ -241,6 +243,7 @@ struct clone_info {
     int flags;
     pid_t* ptid;
     pid_t* ctid;
+    pid_t child_pid;
 };
 
 struct sched_getaffinity_info {

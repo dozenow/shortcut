@@ -229,13 +229,13 @@ int filter_regex(char* buf, int len) {
 // Assumes syscalls are uniquely ordered in a replay group,
 // so don't the pid
 // xdou:why??? the syscall here is the index in each thread I think, not the global replay clock
-int filter_byte_range(int syscall, int byteoffset)
+int filter_byte_range(pid_t pid, int syscall, int byteoffset)
 {
     struct filter_byterange* fbr;
     list_for_each_entry(fbr, &filter_byte_ranges, list) {
-        if (fbr->syscall == syscall &&
-                byteoffset >= fbr->start_offset &&
-                byteoffset < fbr->end_offset)
+        if (fbr->pid == pid && fbr->syscall == syscall &&
+	    byteoffset >= fbr->start_offset &&
+	    byteoffset < fbr->end_offset)
         {
             return 1;
         }
@@ -243,14 +243,14 @@ int filter_byte_range(int syscall, int byteoffset)
     return 0;
 }
 
-int get_partial_taint_byte_range (int syscall, size_t* start, size_t* end) {
+int get_partial_taint_byte_range (pid_t pid, int syscall, size_t* start, size_t* end) 
+{
     struct filter_byterange* fbr;
     list_for_each_entry(fbr, &filter_byte_ranges, list) {
-        if (fbr->syscall == syscall)
-        {
-			*start = fbr->start_offset;
-			*end = fbr->end_offset;
-            return 1;
+        if (fbr->pid == pid && fbr->syscall == syscall) {
+		*start = fbr->start_offset;
+		*end = fbr->end_offset;
+		return 1;
         }
     }
     return 0;
@@ -446,7 +446,7 @@ void create_taints_from_buffer(void* buf, int size,
     start = taint_num;
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
-                !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
+	    !filter_byte_range(tci->record_pid, tci->syscall_cnt, tci->offset + i)) {
 	    if (taint_num != start) {
 		write_tokens_info(outfd, start, tci, taint_num-start);
 		start = taint_num;
