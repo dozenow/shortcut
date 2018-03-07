@@ -61,7 +61,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG  306200
+#define EXTRA_DEBUG  0
 #define EXTRA_DEBUG_STOP 306600
 //#define EXTRA_DEBUG_FUNCTION
 
@@ -5442,7 +5442,7 @@ static void instrument_bswap (INS ins)
 		   IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT ebx_val, ADDRINT esi_val)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -5451,7 +5451,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
-    bool print_me = false;
+    bool print_me = true;
 #if 0
     #define ADDR_TO_CHECK 0xbfffff10
     static u_char old_val = 0xe3; // random - just to see initial value please
@@ -5472,7 +5472,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
 #endif
 
     if (print_me) {
-	printf ("#%x %s, clock %ld, pid %d bb %lld\n", ip, ins, *ppthread_log_clock, current_thread->record_pid, current_thread->ctrl_flow_info.index);
+	printf ("#%x %s, clock %ld, pid %d bb %lld, mem loc %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->record_pid, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
 	PIN_LockClient();
 	if (IMG_Valid(IMG_FindByAddress(ip))) {
 	    printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
@@ -5487,7 +5487,6 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins)
     }
 }
 
-#if 0
 // This seems to defeat the purpose of the extra debugging 
 // which is to enable ad-hoc detailed debugging
 void debug_print (INS ins) 
@@ -5560,7 +5559,6 @@ void debug_print (INS ins)
 		       IARG_END);
     }
 }
-#endif
 
 void instruction_instrumentation(INS ins, void *v)
 {
@@ -6272,13 +6270,14 @@ void trace_instrumentation(TRACE trace, void* v)
 #endif
 	bool track_this_bb = false;
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
-#ifdef EXTRA_DEBUG
+/*#ifdef EXTRA_DEBUG
 	  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
 			 IARG_FAST_ANALYSIS_CALL,
 			 IARG_INST_PTR,
 			 IARG_PTR, get_copy_of_disasm (ins),
 			 IARG_END);
-#endif
+#endif*/
+            debug_print (ins);
 #ifdef TRACK_CTRL_FLOW_DIVERGE
 	    if (current_thread->ctrl_flow_info.merge_insts->find(INS_Address(ins)) != current_thread->ctrl_flow_info.merge_insts->end()) {
 		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_merge_point,
