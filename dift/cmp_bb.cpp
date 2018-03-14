@@ -65,6 +65,7 @@ u_long prev_bb, bb_cnt = 0;
 bool deviation;
 bool debug_on;
 u_long cur_clock = 0;
+//u_long dev_calls = 0;
 
 static void print_results ()
 {
@@ -101,7 +102,7 @@ static inline u_long skip_to_end ()
     int skip_ndx = ndx;
     u_long val;
 
-    DPRINT ("skip to end from ndx %d prev bb is %lu\n", ndx, prev_bb);
+    DPRINT ("skip to end from ndx %d prev bb is %lx\n", ndx, prev_bb);
     do {
 	if (skip_ndx >= bufsize-1) {
 	    // Overflow
@@ -119,7 +120,7 @@ static inline u_long skip_to_end ()
 	}
 	assert (skip_ndx < bufsize); // Eventually, will need to handle overflow
 	val = buffer[skip_ndx];
-	if (val == OP_CALL || (val >= OP_RELREAD && val <= OP_BRANCH_NOT_TAKEN)) {
+	if (val == OP_CALL || (val >= OP_RELREAD && val <= OP_JMP_INDIRECT)) {
 	    skip_ndx++; // Skip over extra info
 	}
 	skip_ndx++;
@@ -150,6 +151,7 @@ static void fail_and_exit ()
 {
     fprintf (stderr, "Exit after assertion fail\n");
     print_results();
+    fflush(stdout);
     try_to_exit (fd, PIN_GetPid());
     PIN_ExitApplication(0);
 }
@@ -217,8 +219,8 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
 
 	u_long op = get_value();
 	if (op != 2) {
-	    fprintf (stderr, "Expected syscall, got value %lx\n", op);
-	    exit (1);
+	    fprintf (stderr, "Expected syscall, got value %lx, clock %ld sysnum %d\n", op, *ppthread_log_clock, syscall_num);
+	    fail_and_exit();
 	}
 	
 	u_long clock = get_value();
@@ -285,9 +287,10 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 {
     u_long start_bb = 0;
 
+    DPRINT ("extract_basic_blocks: end = %d\n", end);
     for (int i = 0; i < end; i++) {
 	u_long val = buf[i];
-	DPRINT ("%d: %lx\n", i, val);
+	DPRINT (">%d: %lx\n", i, val);
 	if (val >= OP_RELREAD && val <= OP_RELREAD2) {
 	    DPRINT ("%d: %lx\n", i+1, buf[i+1]);
 	    i++;
@@ -295,7 +298,7 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 		DPRINT ("%d: %lx\n", i+1, buf[i+1]);
 		i++;
 	    }
-	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN || val == OP_JMP_INDIRECT) {
 	    if (start_bb) {
 		u_long end_bb = buf[i+1];
 		DPRINT ("%d: %lx\n", i+1, end_bb);
@@ -318,8 +321,9 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 		}
 		start_bb = 0;
 	    }
+	    if (val == OP_JMP_INDIRECT && !is_devbuf) i++;
 	    i++;
-	} else if (val > OP_BRANCH_NOT_TAKEN) {
+	} else if (val > OP_JMP_INDIRECT) {
 	    if (start_bb) {
 #if 0
 	      // Why was it like this before???
@@ -349,6 +353,7 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 	    start_bb = val;
 	}
     }
+    DPRINT ("extract_basic_blocks done\n");
 }
 
 static void print_bb (u_long start_bb, u_long end_bb, u_long* new_buf, int& new_ndx,
@@ -366,19 +371,27 @@ static void build_new_bb_list (u_long* old_buf, int end, u_long* new_buf, int& n
 {
     u_long start_bb = 0;
 
+    DPRINT ("build_new_bb_list: is_devbuf=%d end = %d\n", is_devbuf, end);
     for (int i = 0; i < end; i++) {
 	u_long val = old_buf[i];
+	DPRINT ("build_new_bb_list: val 0x%lx\n", val);
 	if (val >= OP_RELREAD && val <= OP_RELREAD2) {
 	    i++; 
 	    if (is_devbuf) i++;
-	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN) {
+	} else if (val == OP_CALL || val == OP_BRANCH_TAKEN || val == OP_BRANCH_NOT_TAKEN || val == OP_JMP_INDIRECT) {
 	    if (start_bb) {
 		u_long end_bb = old_buf[i+1];
-		print_bb (start_bb, end_bb, new_buf, new_ndx, bb);
+		if (new_ndx == 0) {
+		    // If first block is split, just ignore all but the last splits
+		    new_buf[new_ndx++] = bb[end_bb];
+		} else {
+		    print_bb (start_bb, end_bb, new_buf, new_ndx, bb);
+		}
 		new_buf[new_ndx++] = val;
 		new_buf[new_ndx++] = end_bb;
 		start_bb = 0;
 	    }
+	    if (val == OP_JMP_INDIRECT && !is_devbuf) i++;
 	    i++;
 	} else if (val == OP_RETURN) {
 	    if (start_bb) {
@@ -405,7 +418,6 @@ static void build_new_bb_list (u_long* old_buf, int end, u_long* new_buf, int& n
 
 static inline void handle_index_diverge (ADDRINT ip, uint32_t memloc, u_long logaddr, bool is_write)
 {
-  //printf ("Memory access type write at ip %x clock %lu bb %lu differs: addr %x vs. %lx\n", ip, *ppthread_log_clock, bb_cnt, memloc, logaddr);
     u_long diff = memloc > logaddr ? memloc-logaddr : logaddr-memloc;
     auto iter = indexes.find(ip);
     if (iter == indexes.end()) {
@@ -450,13 +462,13 @@ void find_best_match ()
 	} else {
 	    start_j = 0;
 	}
-	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_BRANCH_NOT_TAKEN) {
+	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_JMP_INDIRECT) {
 	    i += 2;
 	    skip_i += 2;
 	}
 	int skip_j = 0;
 	for (int j = start_j; j < bufend2; j++) {
-	    while (buffer2[j] >= OP_BRANCH_TAKEN && buffer2[j] <= OP_BRANCH_NOT_TAKEN) {
+	    while (buffer2[j] >= OP_BRANCH_TAKEN && buffer2[j] <= OP_JMP_INDIRECT) {
 		j += 2;
 		skip_j += 2;
 	    }
@@ -484,7 +496,7 @@ void find_best_match ()
     int skip1 = 0;
     bool first = true;
     for (int i = 1; i < best_i; i++) {
-	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_BRANCH_NOT_TAKEN) {
+	while (buffer1[i] >= OP_BRANCH_TAKEN && buffer1[i] <= OP_JMP_INDIRECT) {
 	    if (!first) {
 		if (buffer1[i] == OP_BRANCH_TAKEN) {
 		    printf ("0x%lx ctrl_block_instrument_orig branch t\n", buffer1[i+1]);
@@ -502,7 +514,7 @@ void find_best_match ()
     first = true;
     int skip2 = 0;
     for (int i = 1; i < best_j; i++) {
-	while (buffer2[i] >= OP_BRANCH_TAKEN && buffer2[i] <= OP_BRANCH_NOT_TAKEN) {
+	while (buffer2[i] >= OP_BRANCH_TAKEN && buffer2[i] <= OP_JMP_INDIRECT) {
 	    if (!first) {
 		if (buffer2[i] == OP_BRANCH_TAKEN) {
 		    printf ("0x%lx ctrl_block_instrument_alt branch t\n", buffer2[i+1]);
@@ -537,11 +549,12 @@ void find_best_match ()
     // Find the correct index to restart comparison
     DPRINT ("Extra log records: %d\n", end_ndx - best_i);
     DPRINT ("Extra deviation log records: %d\n", devndx - best_j);
-    if (best_i && splits.count(target_val)) {
+    DPRINT ("best_i %d best_j %d target %lx split? %d\n", best_i, best_j, target_val, splits.count(target_val));
+    if (splits.count(target_val)) {
 	DPRINT ("target was split\n");
 	// Because of split bbs, target may not be in list - make it end of bb, call, or return
 	for (int i = best_i+1; i < bufend1; i++) {
-	    if (buffer1[i] == OP_BRANCH_TAKEN || buffer1[i] == OP_BRANCH_NOT_TAKEN) {
+	    if (buffer1[i] == OP_BRANCH_TAKEN || buffer1[i] == OP_BRANCH_NOT_TAKEN || buffer1[i] == OP_JMP_INDIRECT) {
 		target_val = buffer1[i+1];
 		break;
 	    } else if (buffer1[i] <= OP_RETURN) {
@@ -592,7 +605,10 @@ void find_best_match ()
 	    }
 	}
     }
-    assert (j != end_ndx);
+    if (j == end_ndx) {
+	fprintf (stderr, "Cannot find value %lx in original buffer\n", target_val);
+	fail_and_exit();
+    }
 
     ndx = j+1;
     bb_cnt = new_bb_cnt;
@@ -757,6 +773,7 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 
     u_long logtaken = (op == OP_BRANCH_TAKEN);
     if (taken != logtaken) {
+	DPRINT ("Deviation at branch %x\n", ip);
 	dev_buffer[0] = prev_bb;
 	dev_buffer[1] = taken ? OP_BRANCH_TAKEN : OP_BRANCH_NOT_TAKEN;
 	dev_buffer[2] = ip;
@@ -764,27 +781,58 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 	deviation_ip = ip;
 	deviation_taken = logtaken;
 	deviation = true;
+	//dev_calls = 0;
     }
 }
 
 void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
 {
+    if (deviation) {
+	dev_buffer[devndx++] = OP_JMP_INDIRECT;
+	dev_buffer[devndx++] = ip;
+	assert (devndx < BUF_SIZE);
+	return;
+    }
+
     OP_CHECK (OP_JMP_INDIRECT);
     OP_CHECK(ip);
     u_long logvalue = get_value();
     if (value != logvalue) {
-	fprintf (stderr, "Indirect jmp at ip %x value %x logged value %lx\n", ip, value, logvalue);
+	DPRINT ("Deviation at jmp %x\n", ip);
+	dev_buffer[0] = prev_bb;
+	dev_buffer[1] = OP_JMP_INDIRECT;
+	dev_buffer[2] = ip;
+	devndx = 3;
+	deviation_ip = ip;
+	deviation_taken = true;
+	deviation = true;
+	//dev_calls = 0;
     }
 }
 
 void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
 {
+    if (deviation) {
+	dev_buffer[devndx++] = OP_JMP_INDIRECT;
+	dev_buffer[devndx++] = ip;
+	assert (devndx < BUF_SIZE);
+	return;
+    }
+
     OP_CHECK (OP_JMP_INDIRECT);
     OP_CHECK(ip);
     u_long logvalue = get_value();
     u_long value = *((u_long *)loc);
     if (value != logvalue) {
-	fprintf (stderr, "Indirect jmp at ip %x value %lx logged value %lx\n", ip, value, logvalue);
+	DPRINT ("Deviation at jmp mem %x\n", ip);
+	dev_buffer[0] = prev_bb;
+	dev_buffer[1] = OP_JMP_INDIRECT;
+	dev_buffer[2] = ip;
+	devndx = 3;
+	deviation_ip = ip;
+	deviation_taken = true;
+	deviation = true;
+	//dev_calls = 0;
     }
 }
 
@@ -878,7 +926,7 @@ void track_trace(TRACE trace, void* data)
 		}
 	    }
 	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
-		if (INS_Stutters(BBL_InsHead(bbl))) {
+		if (INS_Stutters(ins)) {
 		    if (INS_IsMemoryRead(ins)) {
 			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread_stutters), 
 				       IARG_FAST_ANALYSIS_CALL,
@@ -959,7 +1007,8 @@ static void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT ip)
     if (deviation) {
 	dev_buffer[devndx++] = OP_CALL;
 	dev_buffer[devndx++] = ip;
-	assert (devndx < BUF_SIZE);
+	if (devndx >= BUF_SIZE) fail_and_exit();
+	//dev_calls++;
 	find_best_match ();
 	return;
     }
@@ -972,8 +1021,10 @@ static void PIN_FAST_ANALYSIS_CALL after_function_call()
 {
     if (deviation) {
 	dev_buffer[devndx++] = OP_RETURN;
-	assert (devndx < BUF_SIZE);
-	find_best_match ();
+	if (devndx >= BUF_SIZE) fail_and_exit();
+	find_best_match();
+	//if (dev_calls == 0) find_best_match ();
+	//dev_calls--;
 	return;
     }
 
