@@ -192,6 +192,7 @@ void syscall_after (ADDRINT ip)
     if (*ppthread_log_clock >= print_stop) { 
 #ifdef COMPACT
 	flush_buffer();
+	fflush(stdout);
 #endif
         fprintf (stderr, "exit.\n");
         try_to_exit (fd, PIN_GetPid());
@@ -425,7 +426,7 @@ void track_trace(TRACE trace, void* data)
 		}
 	    }
 	    if (INS_MemoryBaseReg(ins) != LEVEL_BASE::REG_INVALID() || INS_MemoryIndexReg(ins) != LEVEL_BASE::REG_INVALID()) {
-		if (INS_Stutters(BBL_InsHead(bbl))) {
+		if (INS_Stutters(ins)) {
 		    if (INS_IsMemoryRead(ins)) {
 			INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(trace_relread_stutters), 
 				       IARG_FAST_ANALYSIS_CALL,
