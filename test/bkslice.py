@@ -185,13 +185,36 @@ def findStore (cnt):
                     return cnt
             else:
                 tokens = line.split()
-                if tokens[1] == "dword" or tokens[1] == "byte" or tokens[1] == "xmmword":
-                    destination = tokens[3][1:-2]
+                if tokens[1] == "dword":
+                    oplen = 4
+                    destination = int(tokens[3][1:-2],16)
+                elif tokens[1] == "xmmword":
+                    oplen = 16
+                    destination = int(tokens[3][1:-2],16)
+                elif tokens[1] == "byte":
+                    oplen = 1
+                    if tokens[3].find('+'):
+                        destination = 0
+                    else:
+                        destination = int(tokens[3][1:-2],16)
                 else:
+                    oplen = 0
                     destination = line.split()[1][:-1]
-                if destination in sources:
-                    del sources[destination]
+
+                found = False
+                if oplen > 0:
+                    for i in range(oplen):
+                        trydest = "0x%x" % (destination+i)
+                        if trydest in sources:
+                            del sources[trydest]
+                            found = True
+                else:
+                    if destination in sources:
+                        del sources[destination]
+                        found = True
+                if found:
                     return cnt
+
         if line.find("[TAINT_INFO]") >= 0:
             tokens = line.split()
             if tokens[3] == "#eax":
