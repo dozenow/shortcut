@@ -115,7 +115,7 @@ inline void print_timings (void)
 #define end_timing_func(x)
 #endif
 
-static char buf[1024*1024];
+static char buf[2*1024*1024];
 static char tmpbuf[1024*1024];
 static char taintbuf_filename[256];
 static char slicelog_filename[256];
@@ -1712,7 +1712,7 @@ long gettimeofday_recheck () {
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
+    LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu bufptr %p, buf %p\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock, bufptr, buf);
 #endif
     start_timing();
     rc = syscall (SYS_gettimeofday, &tv, &tz);

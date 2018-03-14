@@ -980,24 +980,31 @@ static inline uint32_t set_cmem_taints(u_long mem_loc, uint32_t size, taint_t* v
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
 
+    if (set_size != size) fprintf (stderr, "set_cmem_taints doesn't taint all memory address.\n");
     return set_size;
 }
 
 /* Set a continuous range of memory to one taint value */
 static inline uint32_t set_cmem_taints_one(u_long mem_loc, uint32_t size, taint_t value)
 {
-    uint32_t set_size = get_mem_split(mem_loc, size);
-    taint_t* leaf_t;
-    unsigned index = mem_loc >> LEAF_TABLE_BITS;
-    if(!mem_root[index]) mem_root[index] = new_leaf_table(mem_loc);
-    leaf_t = mem_root[index];
+    uint32_t count = 0;
+    uint32_t total_size = size;
+    while (count < total_size) { 
+        uint32_t set_size = get_mem_split(mem_loc, size);
+        taint_t* leaf_t;
+        unsigned index = mem_loc >> LEAF_TABLE_BITS;
+        if(!mem_root[index]) mem_root[index] = new_leaf_table(mem_loc);
+        leaf_t = mem_root[index];
 
-    unsigned low_index = mem_loc & LEAF_INDEX_MASK;
-    //memset(leaf_t + low_index, value, set_size * sizeof(taint_t)); //xdou:err... how could this original memset be possibly right....this bug must be there for a long time and no one finds it....
-    for (unsigned int i = 0; i < set_size; ++i) 
-        leaf_t[low_index+i] = value;
-
-    return set_size;
+        unsigned low_index = mem_loc & LEAF_INDEX_MASK;
+        //memset(leaf_t + low_index, value, set_size * sizeof(taint_t)); //xdou:err... how could this original memset be possibly right....this bug must be there for a long time and no one finds it....
+        for (unsigned int i = 0; i < set_size; ++i) 
+            leaf_t[low_index+i] = value;
+        count += set_size;
+        mem_loc += set_size;
+        size -= set_size;
+    }
+    return count;
 }
 
 static inline uint32_t clear_cmem_taints(u_long mem_loc, uint32_t size)
@@ -1993,7 +2000,7 @@ TAINTSIGN taint_mix_fpureg2mem (u_long mem_loc, uint32_t mem_size, int reg, uint
         taint_t t = merge_reg_taints (reg, reg_size, 0); //because of the convertion from double-precision
         uint32_t ret = set_cmem_taints_one (mem_loc, mem_size, t);
         if (ret != mem_size)
-            fprintf (stderr, "[ERROR]taint_fpureg2mem: set_cmem_taints_one returns different size %u %u\n", ret, mem_size);
+            fprintf (stderr, "[ERROR]taint_fpureg2mem: set_cmem_taints_one returns different size %u %u, mem_loc %lx\n", ret, mem_size, mem_loc);
     }
 }
 
@@ -4286,6 +4293,14 @@ TAINTSIGN taint_bswap_offset (int reg_offset)
     t = shadow_reg_table[reg_offset+1];
     shadow_reg_table[reg_offset+1] = shadow_reg_table[reg_offset+2];
     shadow_reg_table[reg_offset+2] = t;
+}
+
+TAINTSIGN taint_ldmxcsr_check (u_long mem_loc)
+{
+    if (is_mem_arg_tainted (mem_loc, 4)) {
+        fprintf (stderr, "[BUG] need to actually taint mxcsr register.\n");
+        assert (0);
+    }
 }
 
 TAINTSIGN taint_mix_regreg2reg_offset (int dst_off, uint32_t dst_size, int src1_off, uint32_t src1_size, int src2_off, uint32_t src2_size, 

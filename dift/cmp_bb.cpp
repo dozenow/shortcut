@@ -25,7 +25,7 @@ using namespace std;
 #define OP_CHECK(val) get_value()
 //#define DPRINT printf
 //#define MYASSERT assert
-//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("Expected %lx got %x syscall %ld bb_cnt %ld\n", lval, val, *ppthread_log_clock, bb_cnt); fail_and_exit(); } }
+//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("line %d Expected %x got %lx syscall %ld bb_cnt %ld\n", __LINE__, val, lval, *ppthread_log_clock, bb_cnt); debug_print_value (); /*fail_and_exit();*/ } }
 
 #define OP_CALL             0
 #define OP_RETURN           1
@@ -41,9 +41,11 @@ static void fail_and_exit();
 
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 u_long print_stop = 1000000;
+u_long print_start = 0;
 u_long* ppthread_log_clock = NULL;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
+KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print start"); //not supported yet
 KNOB<string> KnobFilename(KNOB_MODE_WRITEONCE, "pintool", "f", "/tmp/bb.out", "output filename");
 
 long global_syscall_cnt = 0;
@@ -95,6 +97,27 @@ static inline u_long get_value ()
     if (ndx == bufsize) get_values();
     return (buffer[ndx++]);
 }
+
+static inline void debug_print_value ()
+{
+    int back = ndx<30?ndx:30;
+    while (back >= 0) {
+        printf ("    -%d value %lu(%lx)\n", back, buffer[ndx-back], buffer[ndx-back]);
+        --back;
+    }
+    int forward = (bufsize-ndx-1>30)?30:bufsize-ndx-1;
+    for (int i = 1;i<forward; ++i) {
+        printf ("    +%d value %lu(%lx)\n", i, buffer[ndx+i], buffer[ndx+i]);
+    }
+}
+
+static inline void debug_print_devvalue (int devndx)
+{
+    for (int i = 1;i<devndx; ++i) {
+        printf ("    +%d dev_value %lu(%lx)\n", i, dev_buffer[i], dev_buffer[i]);
+    }
+}
+
 
 static inline u_long skip_to_end ()
 {
@@ -172,6 +195,7 @@ inline void increment_syscall_cnt (struct thread_data* ptdata, int syscall_num)
 	    current_thread->syscall_cnt++;
 	}
     }
+    DPRINT ("syscall num %d clock %lu\n", syscall_num, *ppthread_log_clock);
 }
 
 void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
@@ -613,13 +637,18 @@ void find_best_match ()
 	    }
 	    return find_best_match();
 	}
-	if (buffer[ndx] != dev_buffer[i]) {
-	    fprintf (stderr, "Mismatch processing remaining records\n");
+
+        if (buffer[ndx] != dev_buffer[i]) {
+	    fprintf (stderr, "Mismatch processing remaining records, clock is %lu\n", *ppthread_log_clock);
+            printf ("Mismatch records: %d:%lx vs. %d:%lx\n", ndx, buffer[ndx], i, dev_buffer[i]);
+            debug_print_value ();
+            debug_print_devvalue (devndx);
 	    fail_and_exit();
 	}
 	if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_BRANCH_NOT_TAKEN) {
 	    if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_RELREAD2) {
 		if (buffer[ndx+1] != dev_buffer[i+2]) {
+                    DPRINT ("handleing index divergence %d:%lx vs. %d:%lx\n", ndx+1, buffer[ndx+1], i+2, dev_buffer[i+2]);
 		    handle_index_diverge (dev_buffer[i+1], dev_buffer[i+2], buffer[ndx+1], (buffer[ndx] == OP_RELWRITE));
 		}
 		i++;
@@ -757,6 +786,7 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 
     u_long logtaken = (op == OP_BRANCH_TAKEN);
     if (taken != logtaken) {
+        DPRINT ("trace_branch: ip %x taken %u logtaken %lu\n", ip, taken, logtaken);
 	dev_buffer[0] = prev_bb;
 	dev_buffer[1] = taken ? OP_BRANCH_TAKEN : OP_BRANCH_NOT_TAKEN;
 	dev_buffer[2] = ip;
@@ -1065,6 +1095,7 @@ int main(int argc, char** argv)
 
     string logfilename = KnobFilename.Value();
     print_stop = atoi(KnobPrintStop.Value().c_str());
+    print_start = atoi(KnobPrintStart.Value().c_str());
     
     // Try to map the log clock for this epoch
     ppthread_log_clock = map_shared_clock(fd);

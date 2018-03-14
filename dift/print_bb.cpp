@@ -13,6 +13,8 @@
 #include <iostream>
 
 #define COMPACT
+//#define PRINT if((*ppthread_log_clock>250580&&*ppthread_log_clock<250599)||(*ppthread_log_clock>718800&&*ppthread_log_clock<7198899))printf
+//#define PRINT printf
 
 #define OP_CALL             0
 #define OP_RETURN           1
@@ -29,9 +31,7 @@ u_long print_stop = 1000000;
 u_long* ppthread_log_clock = NULL;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
-#ifdef COMPACT
 KNOB<string> KnobFilename(KNOB_MODE_WRITEONCE, "pintool", "f", "/tmp/bb.out", "output filename");
-#endif
 
 long global_syscall_cnt = 0;
 /* Toggle between which syscall count to use */
@@ -228,12 +228,12 @@ void PIN_FAST_ANALYSIS_CALL trace_bbl (ADDRINT ip)
 #ifdef COMPACT
     write_to_buffer (ip);
 #else
-    printf ("%x   ", ip);
+    PRINT ("%x   ", ip);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
+	PRINT("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
     } else {
-	printf("unknown\n");
+	PRINT("unknown\n");
     }
     PIN_UnlockClient();
 #endif
@@ -244,10 +244,10 @@ void PIN_FAST_ANALYSIS_CALL trace_bbl_stutters (ADDRINT ip, uint32_t first_iter)
 #ifdef COMPACT
     if (first_iter) write_to_buffer (ip);
 #else
-    printf ("%x   ", ip);
+    PRINT ("%x   first_iter:%u    ", ip, first_iter);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
-	printf("%s -- img %s static %#x (stutters %d)\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip), first_iter);
+	PRINT ("%s -- img %s static %#x (stutters %d)\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip), first_iter);
     } else {
 	printf("unknown\n");
     }
@@ -321,22 +321,22 @@ void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
 #else
 void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
 {
-    printf ("Instruction %x reads memory location %x\n", ip, memloc);
+    PRINT ("Instruction %x reads memory location %x\n", ip, memloc);
 }
 
 void PIN_FAST_ANALYSIS_CALL trace_relwrite (ADDRINT ip, uint32_t memloc)
 {
-    printf ("Instruction %x writes memory location %x\n", ip, memloc);
+    PRINT ("Instruction %x writes memory location %x\n", ip, memloc);
 }
 
 void PIN_FAST_ANALYSIS_CALL trace_relread2 (ADDRINT ip, uint32_t memloc)
 {
-    printf ("Instruction %x reads memory location %x\n", ip, memloc);
+    PRINT ("Instruction %x reads memory location %x\n", ip, memloc);
 }
 
 void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 {
-    printf ("Instruction %x branch taken=%d\n", ip, taken);
+    PRINT ("Instruction %x branch taken=%d\n", ip, taken);
 }
 
 void trace_relread_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
@@ -353,6 +353,17 @@ void trace_relread2_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter)
 {
     trace_relread2(ip,memloc);
 }
+
+void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
+{
+    PRINT ("Instruction %x branch value %x\n", ip, value);
+}
+
+void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
+{
+    PRINT ("Instruction %x branch value %x\n", ip, loc);
+}
+
 #endif
 
 
@@ -522,12 +533,12 @@ void PIN_FAST_ANALYSIS_CALL after_function_call ()
 #else
 void PIN_FAST_ANALYSIS_CALL before_function_call(ADDRINT name, ADDRINT rtn_addr)
 {
-    printf("Before call to %s (%#x)\n", (char *) name, rtn_addr);
+    PRINT ("Before call to %s (%#x)\n", (char *) name, rtn_addr);
 }
 
 void PIN_FAST_ANALYSIS_CALL after_function_call(ADDRINT name, ADDRINT rtn_addr)
 {
-    printf("After call to %s (%#x)\n", (char *) name, rtn_addr);
+    PRINT ("After call to %s (%#x)\n", (char *) name, rtn_addr);
 }
 #endif
 

@@ -32,7 +32,7 @@
 #include <map>
 using namespace std;
 
-#include "util.h" //why doesn't this fail? 
+#include "util.h" 
 #include "list.h"
 #include "linkage_common.h"
 #include "taint_interface/taint_interface.h"
@@ -61,9 +61,10 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG  0
-#define EXTRA_DEBUG_STOP 306600
-//#define EXTRA_DEBUG_FUNCTION
+#define EXTRA_DEBUG  718800
+#define EXTRA_DEBUG_STOP 718900
+#define EXTRA_DEBUG_FUNCTION
+//9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -3681,6 +3682,15 @@ static void instrument_taint_clear_reg (INS ins, REG reg, int set_flags, int cle
 		   IARG_END);
 }
 
+static void instrument_taint_clear_mem (INS ins)
+{
+    INS_InsertCall (ins, IPOINT_BEFORE, 
+            AFUNPTR (clear_mem_taints),
+            IARG_MEMORYWRITE_EA, 
+            IARG_UINT32, INS_MemoryWriteSize(ins), 
+            IARG_END);
+}
+
 static void instrument_taint_clear_fpureg (INS ins, REG reg, int set_flags, int clear_flags, int is_load)
 {
     INS_InsertCall(ins, IPOINT_BEFORE,
@@ -5442,7 +5452,17 @@ static void instrument_bswap (INS ins)
 		   IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT ebx_val, ADDRINT esi_val)
+static void instrument_ldmxcsr (INS ins)
+{
+    //here I assume the mem value to be loaded into mxcsr is not tainted, so ldmxcsr and stmscr don't need to be included in the slice
+    INS_InsertCall(ins, IPOINT_BEFORE, 
+            AFUNPTR(taint_ldmxcsr_check),
+            IARG_FAST_ANALYSIS_CALL, 
+            IARG_MEMORYREAD_EA, 
+            IARG_END);
+}
+
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -5451,7 +5471,18 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
-    bool print_me = true;
+    bool print_me = false;
+    print_me = true;
+#if 0
+    if (mem_loc1 >= 0xb2900000 &&  mem_loc1 <= 0xb2910000) {
+        print_me = true;
+        printf ("mem value at %lx is %u\n", mem_loc1, *(unsigned int*)mem_loc1);
+    }
+    if (mem_loc2 >= 0xb2900000 &&  mem_loc2 <= 0xb2910000) {
+        print_me = true;
+        printf ("mem value at %lx is %u\n", mem_loc2, *(unsigned int*)mem_loc2);
+    }
+#endif
 #if 0
     #define ADDR_TO_CHECK 0xbfffff10
     static u_char old_val = 0xe3; // random - just to see initial value please
@@ -5482,6 +5513,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
+        printf ("ecx value %u edx %u\n", value1, value2);
 	printf ("\n");
 	fflush (stdout);
     }
@@ -5509,8 +5541,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_MEMORYREAD2_EA, 
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -5519,8 +5551,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_MEMORYWRITE_EA,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_END);
 	} else {
 	    assert (0);
@@ -5533,8 +5565,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_ADDRINT, 0,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_END);
 	} else {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -5543,8 +5575,8 @@ void debug_print (INS ins)
 			   IARG_PTR, str,
 			   IARG_MEMORYWRITE_EA, 
 			   IARG_ADDRINT, 0,
-			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_END);
 	}
     } else { 
@@ -5554,8 +5586,8 @@ void debug_print (INS ins)
 		       IARG_PTR, str,
 		       IARG_ADDRINT, 0,
 		       IARG_ADDRINT, 0,
-		       IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
-		       IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 			
+		       IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
+		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 		       IARG_END);
     }
 }
@@ -6138,6 +6170,14 @@ void instruction_instrumentation(INS ins, void *v)
 		instrument_bswap (ins);
 		slice_handled = 1;
 		break;
+            case XED_ICLASS_LDMXCSR:
+                instrument_ldmxcsr (ins);
+                slice_handled = 1;
+                break;
+            case XED_ICLASS_STMXCSR:
+                instrument_taint_clear_mem (ins);
+                slice_handled = 1;
+                break;
             default:
                 if (INS_IsNop(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument noop %s\n",
@@ -6270,14 +6310,9 @@ void trace_instrumentation(TRACE trace, void* v)
 #endif
 	bool track_this_bb = false;
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
-/*#ifdef EXTRA_DEBUG
-	  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
-			 IARG_FAST_ANALYSIS_CALL,
-			 IARG_INST_PTR,
-			 IARG_PTR, get_copy_of_disasm (ins),
-			 IARG_END);
-#endif*/
+#ifdef EXTRA_DEBUG
             debug_print (ins);
+#endif
 #ifdef TRACK_CTRL_FLOW_DIVERGE
 	    if (current_thread->ctrl_flow_info.merge_insts->find(INS_Address(ins)) != current_thread->ctrl_flow_info.merge_insts->end()) {
 		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_merge_point,
@@ -6565,11 +6600,12 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
-       if (i.pid == ptdata->record_pid || i.pid == -1 || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG || i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
+       if (i.pid == ptdata->record_pid || i.pid == -1) {
            if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
                index.clock = i.clock;
                index.index = i.index;
 	       index.ip = i.ip; 
+               assert (index.ip != 0);
 	       index.orig_taken = (i.branch_flag == 't');
 	       index.extra_loop_iterations = 0;
 	       index.orig_path_nonempty = false;
@@ -6605,6 +6641,7 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
+                   assert (0);
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
 		   if (i.branch_flag != '-') {
@@ -7024,6 +7061,18 @@ void PIN_FAST_ANALYSIS_CALL print_function_name (char* name)
     fflush (stdout);
 }
 
+void PIN_FAST_ANALYSIS_CALL print_function_name_and_params (char* name, uint32_t arg1)
+{
+#ifdef EXTRA_DEBUG
+    if (*ppthread_log_clock < EXTRA_DEBUG) return;
+#endif
+#ifdef EXTRA_DEBUG_STOP
+    if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
+#endif
+    printf ("[CODE] %s\n", (char*)arg1);
+}
+
+
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 {
     PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x, clock %lu\n", current_thread->record_pid, type, check, rtn_addr, *ppthread_log_clock);
@@ -7049,20 +7098,27 @@ void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr)
 //TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
 void routine (RTN rtn, VOID* v)
 { 
-    const char *name;
-    //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...
-    if (IMG_Name(IMG_FindByAddress(RTN_Address(rtn))).find("libpthread") == string::npos) {
-        return;
-    }
-    name = RTN_Name(rtn).c_str();
+    const char *name = RTN_Name(rtn).c_str();
 #ifdef EXTRA_DEBUG_FUNCTION
     RTN_Open(rtn);
     RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name, 
             IARG_FAST_ANALYSIS_CALL, 
             IARG_PTR, strdup (name), 
             IARG_END);
+    if (strcmp(name, "_ZN11CodeletMarkC2ERP25InterpreterMacroAssemblerPKcN9Bytecodes4CodeE") == 0)
+    {
+        RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name_and_params,
+                IARG_FAST_ANALYSIS_CALL, 
+                IARG_PTR, strdup (name), 
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                IARG_END);
+    }
     RTN_Close(rtn);
 #endif
+    //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...
+    if (IMG_Name(IMG_FindByAddress(RTN_Address(rtn))).find("libpthread") == string::npos) {
+        return;
+    }
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
 

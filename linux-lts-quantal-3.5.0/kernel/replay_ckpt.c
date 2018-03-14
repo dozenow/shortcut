@@ -1582,7 +1582,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
-	if (slicelib == NULL) {
+	if (slicelib != NULL) {
 	    // Signal handlers will be restored from slice execution
             //advance the file pos
             *ppos += sizeof (struct k_sigaction)*_NSIG;
