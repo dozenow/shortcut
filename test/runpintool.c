@@ -18,7 +18,7 @@ int main (int argc, char* argv[])
     char* dirname, *pintool;
     pid_t cpid, mpid;
     int fd, rc, status, i;
-    int attach_gdb = 1;
+    int attach_gdb = 0;
     int args_index = 1;
     char* attach_offset = NULL; //the position(clock_value) where we start to attach pin
 
