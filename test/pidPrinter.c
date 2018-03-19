@@ -39,7 +39,7 @@ int main()
             }
 
 		//printf("The process id is %d addr is %p\n", processID, &processID);
-            sprintf(tmp, "%d+%d=%d", processID, x, y);
+            sprintf(tmp, "%d=%d-%d", processID, x, y);
             //fstat (1, &stat);
             printf ("The process id is %s, int address %p, string address %p\n", tmp, &processID, tmp);
 	}

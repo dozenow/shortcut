@@ -89,6 +89,7 @@
 
 #define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
 
+using namespace std;
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
 
@@ -265,10 +266,11 @@ struct ctrl_flow_block_index {
     uint32_t merge_ip;
     uint32_t extra_loop_iterations;
     queue<pair<u_long,char> > orig_path; // List of branches taken and not
-    queue<pair<u_long,char> > alt_path; // List of branches taken and not
+    vector<queue<pair<u_long,char>>> alt_path; // List of branches taken and not
     bool orig_path_nonempty; // For loops 
-    bool alt_path_nonempty; // For loops
+    vector<bool> alt_path_nonempty; // For loops
     uint32_t iter_count; // For loops - maximum number of iterations to add
+    int alt_path_count;  //How many possible paths between divergence and merge point
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
@@ -279,6 +281,8 @@ struct ctrl_flow_block_index {
 #define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT  3
 #define CTRL_FLOW_BLOCK_TYPE_MERGE           4
 #define CTRL_FLOW_BLOCK_TYPE_DISTANCE        5
+#define CTRL_FLOW_POSSIBLE_PATH_BEGIN        6
+#define CTRL_FLOW_POSSIBLE_PATH_END          7
 
 struct ctrl_flow_param {
     int type;
@@ -288,6 +292,7 @@ struct ctrl_flow_param {
     int pid;
     int iter_count;
     char branch_flag;
+    int alt_branch_count;
 };
 
 struct check_syscall { 
@@ -302,11 +307,13 @@ struct ctrl_flow_checkpoint {
     // other stuff in thread_data don't need to be checkpointed. Otherwise, add it here
     taint_t reg_table[NUM_REGS * REG_SIZE];
     std::stack<struct flag_taints>* flag_taints;
+    int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
 };
 
 struct ctrl_flow_info { 
     u_long clock; // Current clock value
     uint64_t index; // Current index value
+    int alt_path_index;  //which path we are in
     //struct ctrl_flow_block_index block_index;  //current block index
     std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
     std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
@@ -314,10 +321,13 @@ struct ctrl_flow_info {
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
 
-    std::set<uint32_t> *that_branch_store_set_reg;
-    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+    /*std::set<uint32_t> *that_branch_store_set_reg;
+    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back*/
 
-    set<uint32_t> *diverge_insts; 
+    //these two vectors cover all alternative branches
+    vector<set<uint32_t>> *alt_branch_store_set_reg;
+    vector<map<u_long, struct ctrl_flow_origin_value>> *alt_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+
     set<uint32_t> *merge_insts; 
     set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
 
@@ -330,9 +340,10 @@ struct ctrl_flow_info {
     bool is_in_diverged_branch_first_inst;
     bool is_rolled_back;
     bool changed_jump;
-    bool change_original_branch;
+    bool change_original_branch; //xdou: don't think this flag is actively used
+    bool is_in_first_pass; //We run a two-pass algorithm to first figure the union of store sets from all possible branches and then generate slice for each branch
+    bool is_in_second_pass;
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
-    struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
 
 struct mutex_info_cache {
