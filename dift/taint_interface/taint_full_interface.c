@@ -50,8 +50,8 @@ struct slab_alloc leaf_table_alloc;
 #endif
 
 // Use this for extra control flow tracking debugging
-#define CFDEBUG(x,...);
-//#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
+//#define CFDEBUG(x,...);
+#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
  
 // File-descriptor tainting
 // A mapping of open fds to taint values.
@@ -1162,6 +1162,7 @@ static int init_check_map (const char* check_filename)
 	char line[256];
 	char addr[64], type[64], value[64], extra1[64], extra2[64], extra3[64], extra4[64];
 	struct taint_check tc;
+        int* alt_branch_count = NULL;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
             if (line[0] == '#')  //for comments
@@ -1217,12 +1218,15 @@ static int init_check_map (const char* check_filename)
 		    param.branch_flag = extra2[0];
 		    param.iter_count = atoi(extra4);
                     param.ip = ip;
+                    param.alt_branch_count = 0;
+                    alt_branch_count = &param.alt_branch_count;
                     ctrl_flow_params.push_back(param);
                 } else if (!strcmp(type, "ctrl_merge")) {
                     struct ctrl_flow_param param;
                     param.type = CTRL_FLOW_BLOCK_TYPE_MERGE;
 		    sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
 		    param.ip = ip;
+                    alt_branch_count = NULL;
 		    ctrl_flow_params.push_back(param);
                 } else if (!strncmp (type, "ctrl_block_instrument_orig", 26)) {
                     struct ctrl_flow_param param;
@@ -1230,6 +1234,13 @@ static int init_check_map (const char* check_filename)
 		    param.branch_flag = extra1[0];
                     param.ip = ip;
 		    ctrl_flow_params.push_back(param);
+                } else if (!strncmp (type, "ctrl_possible_alt_path_begin", 24)) {//note: put this tag in checks file even if it's an empty alternative path
+                    struct ctrl_flow_param param;
+                    param.type = CTRL_FLOW_POSSIBLE_PATH_BEGIN;
+                    *alt_branch_count = *alt_branch_count + 1;
+                } else if (!strncmp (type, "ctrl_possible_alt_path_end", 22)) {//note: put this tag in checks file even if it's an empty alternative path
+                    struct ctrl_flow_param param;
+                    param.type = CTRL_FLOW_POSSIBLE_PATH_END;
                 } else if (!strncmp (type, "ctrl_block_instrument_alt", 25)) {
                     struct ctrl_flow_param param;
                     param.type = CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT;
@@ -2696,6 +2707,7 @@ inline void ctrl_flow_checkpoint (const CONTEXT* ctx, struct ctrl_flow_checkpoin
     memcpy (ckpt->reg_table, current_thread->shadow_reg_table, sizeof (taint_t)*NUM_REGS*REG_SIZE);
     ckpt->flag_taints = new std::stack<struct flag_taints> (*current_thread->saved_flag_taints);
     ckpt->clock = *ppthread_log_clock;
+    ckpt->slice_fp_top = current_thread->slice_fp_top;
  
 }
 
@@ -2725,6 +2737,7 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
     // Restore old index value
     CFDEBUG ("Restoring index value from %lld to %lld\n", current_thread->ctrl_flow_info.index, current_thread->ctrl_flow_info.save_index);
     current_thread->ctrl_flow_info.index = current_thread->ctrl_flow_info.save_index;
+    current_thread->slice_fp_top = ckpt->slice_fp_top;
 
     PIN_ExecuteAt (&ckpt->context);
 
@@ -2794,6 +2807,11 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 	    current_thread->ctrl_flow_info.index+ndx_incr != current_thread->ctrl_flow_info.diverge_point->front().index) {
 	    // If not an exact match, then look for generic match on instruction
 	    std::map<u_long, struct ctrl_flow_block_index>::iterator it = current_thread->ctrl_flow_info.diverge_inst->find(ip);
+            if (it->second.orig_taken != taken) { 
+                // If the checks file takes another direction, let's see if there's another entry in the checks taking this expected direction
+		CFDEBUG ("Found a potential divergence ip %x, but it takes another branch than expected. Let's try to find another one.", ip);
+                it = current_thread->ctrl_flow_info.diverge_inst->find(ip);
+            }
 	    if (it != current_thread->ctrl_flow_info.diverge_inst->end()) {
 		CFDEBUG ("Found a potential divergence ip %x inst %s flag taint ", ip, ins_str);
 		int tainted = 0;
@@ -2815,12 +2833,9 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		}
 
 		if (tainted) {
-		    
-		    bool need_swap = ((it->second.orig_taken && !taken) ||(!it->second.orig_taken && taken));
-		    CFDEBUG ("is loop %d orig taken %d taken %d orig nonempty %d alt nonempty %d\n", it->second.ip == it->second.merge_ip, it->second.orig_taken, taken, it->second.orig_path_nonempty, it->second.alt_path_nonempty);
+		    CFDEBUG ("is loop %d orig taken %d taken %d orig nonempty %d alt nonempty %d alt_path_index %d\n", it->second.ip == it->second.merge_ip, it->second.orig_taken, taken, it->second.orig_path_nonempty, it->second.alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index], current_thread->ctrl_flow_info.alt_path_index);
 		    if (it->second.ip == it->second.merge_ip && 
-			((!need_swap && !it->second.orig_path_nonempty) || 
-			 (need_swap && !it->second.alt_path_nonempty))) {
+			!it->second.orig_path_nonempty) {
 			CFDEBUG ("This is an extra iteration for a loop\n");
 			it->second.extra_loop_iterations++;
 		    } else {
@@ -2840,14 +2855,10 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 			dp.merge_ip = it->second.merge_ip;
 			dp.orig_path = it->second.orig_path;
 			dp.alt_path = it->second.alt_path;
+                        dp.alt_path_nonempty = it->second.alt_path_nonempty;
+                        dp.orig_path_nonempty = it->second.orig_path_nonempty;
 			dp.extra_loop_iterations = it->second.extra_loop_iterations; // Use this to generate unique jump targets
-			if (need_swap) {
-			    dp.orig_path_nonempty = it->second.alt_path_nonempty;
-			    dp.alt_path_nonempty = it->second.orig_path_nonempty;
-			} else {
-			    dp.orig_path_nonempty = it->second.orig_path_nonempty;
-			    dp.alt_path_nonempty = it->second.alt_path_nonempty;
-			}
+                        dp.alt_path_count = it->second.alt_path_count;
 			current_thread->ctrl_flow_info.diverge_point->push_front(dp);
 		    }
 		}
@@ -2940,6 +2951,7 @@ static void cleanup_after_merge()
     current_thread->ctrl_flow_info.that_branch_store_set_reg->clear();
     current_thread->ctrl_flow_info.that_branch_store_set_mem->clear();
     current_thread->ctrl_flow_info.is_rolled_back = false;
+    current_thread->ctrl_flow_info.alt_path_index = 0;
 }
 
 TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx) 
@@ -2989,8 +3001,8 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 	} else if (current_thread->ctrl_flow_info.is_in_diverged_branch) {
 	    
 	    //if (!current_thread->ctrl_flow_info.diverge_point->front().alt_path.empty()) {
-	    if (ip == current_thread->ctrl_flow_info.diverge_point->front().ip && current_thread->ctrl_flow_info.diverge_point->front().alt_path_nonempty) {
-		current_thread->ctrl_flow_info.diverge_point->front().alt_path_nonempty = false; // Only skip once
+	    if (ip == current_thread->ctrl_flow_info.diverge_point->front().ip && current_thread->ctrl_flow_info.diverge_point->front().alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index]) {
+		current_thread->ctrl_flow_info.diverge_point->front().alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index] = false; // Only skip once
 		CFDEBUG ("Alternate path: not yet at merge point\n");
 	    } else {
 		CFDEBUG ("Merge point - alternate branch bb 0x%x merge 0x%x\n", ip, current_thread->ctrl_flow_info.diverge_point->front().merge_ip); 

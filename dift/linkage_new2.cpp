@@ -6577,6 +6577,18 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     return TRUE;
 }
 
+static void destroy_ctrl_flow_info (struct thread_data* ptdata)
+{
+    if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
+    if (tdata->ctrl_flow_info.diverge_inst) delete tdata->ctrl_flow_info.diverge_inst;
+    if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
+    if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
+    if (tdata->ctrl_flow_info.alt_branch_store_set_reg) delete tdata->ctrl_flow_info.alt_branch_store_set_reg;
+    if (tdata->ctrl_flow_info.alt_branch_store_set_mem) delete tdata->ctrl_flow_info.alt_branch_store_set_mem;
+    if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
+    if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
+}
+
 static void init_ctrl_flow_info (struct thread_data* ptdata)
 {
    ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_index>();
@@ -6585,9 +6597,8 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
-   ptdata->ctrl_flow_info.that_branch_store_set_reg = new std::set<uint32_t> ();
-   ptdata->ctrl_flow_info.that_branch_store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
-   ptdata->ctrl_flow_info.diverge_insts = new std::set<uint32_t> ();
+   ptdata->ctrl_flow_info.alt_branch_store_set_reg = new vector<set<uint32_t>> ();
+   ptdata->ctrl_flow_info.alt_branch_store_set_mem = new vector<map<u_long, struct ctrl_flow_origin_value>>();
    ptdata->ctrl_flow_info.merge_insts = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
@@ -6595,8 +6606,10 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.change_jump = false;
+   ptdata->ctrl_flow_info.alt_path_index  = 0;
 
    struct ctrl_flow_block_index index;
+   int alt_path_index = -1; //which alt path we are in
    index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
@@ -6609,9 +6622,10 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 	       index.orig_taken = (i.branch_flag == 't');
 	       index.extra_loop_iterations = 0;
 	       index.orig_path_nonempty = false;
-	       index.alt_path_nonempty = false;
+               index.alt_path_nonempty.resize (i.alt_branch_count);
+               index.alt_path_count = i.alt_branch_count;
+               index.alt_path.resize (i.alt_branch_count);
 	       index.iter_count = i.iter_count;
-	       ptdata->ctrl_flow_info.diverge_insts->insert(i.ip);
           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
 	       index.merge_ip = i.ip;
 	       if (i.pid == -1) {
@@ -6638,6 +6652,10 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 		   }
 		   index.orig_path_nonempty = true;
 	       }
+           } else if (i.type == CTRL_FLOW_POSSIBLE_PATH_BEGIN) {
+               ++alt_path_index;
+           } else if (i.type == CTRL_FLOW_POSSIBLE_PATH_END) {
+               alt_path_index = -1;
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
@@ -6645,9 +6663,9 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
 		   if (i.branch_flag != '-') {
-		       index.alt_path.push(make_pair(i.ip,i.branch_flag));
+		       index.alt_path[alt_path_index].push(make_pair(i.ip,i.branch_flag));
 		   }
-		   index.alt_path_nonempty = true;
+		   index.alt_path_nonempty[alt_path_index] = true;
 	       }
 	   }
        }
@@ -7039,14 +7057,7 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     }
     if (tdata->slice_buffer) delete tdata->slice_buffer;
     if (tdata->address_taint_set) delete tdata->address_taint_set;
-    // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
-    if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
-    if (tdata->ctrl_flow_info.diverge_inst) delete tdata->ctrl_flow_info.diverge_inst;
-    if (tdata->ctrl_flow_info.store_set_reg) delete tdata->ctrl_flow_info.store_set_reg;
-    if (tdata->ctrl_flow_info.store_set_mem) delete tdata->ctrl_flow_info.store_set_mem;
-    if (tdata->ctrl_flow_info.diverge_insts) delete tdata->ctrl_flow_info.diverge_insts;
-    if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
-    if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
+    destroy_ctrl_flow_info (tdata);
 }
 
 void PIN_FAST_ANALYSIS_CALL print_function_name (char* name)
