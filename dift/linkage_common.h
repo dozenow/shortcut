@@ -258,6 +258,12 @@ struct ctrl_flow_origin_value {
     char value;
 };
 
+struct ctrl_flow_branch_info {
+    u_long ip;
+    char branch_flag;
+    int tag;
+};
+
 struct ctrl_flow_block_index { 
     u_long clock;
     uint64_t index;
@@ -265,8 +271,8 @@ struct ctrl_flow_block_index {
     bool orig_taken;
     uint32_t merge_ip;
     uint32_t extra_loop_iterations;
-    queue<pair<u_long,char> > orig_path; // List of branches taken and not
-    vector<queue<pair<u_long,char>>> alt_path; // List of branches taken and not
+    queue<struct ctrl_flow_branch_info> orig_path; // List of branches taken and not
+    vector<queue<struct ctrl_flow_branch_info> > alt_path; // List of branches taken and not
     bool orig_path_nonempty; // For loops 
     vector<bool> alt_path_nonempty; // For loops
     uint32_t iter_count; // For loops - maximum number of iterations to add
@@ -293,6 +299,7 @@ struct ctrl_flow_param {
     int iter_count;
     char branch_flag;
     int alt_branch_count;
+    int tag;  //used for nested divergence
 };
 
 struct check_syscall { 
@@ -325,8 +332,8 @@ struct ctrl_flow_info {
     std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back*/
 
     //these two vectors cover all alternative branches
-    vector<set<uint32_t>> *alt_branch_store_set_reg;
-    vector<map<u_long, struct ctrl_flow_origin_value>> *alt_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+    vector<set<uint32_t> > *alt_branch_store_set_reg;
+    vector<map<u_long, struct ctrl_flow_origin_value> > *alt_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
 
     set<uint32_t> *merge_insts; 
     set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
@@ -343,6 +350,7 @@ struct ctrl_flow_info {
     bool change_original_branch; //xdou: don't think this flag is actively used
     bool is_in_first_pass; //We run a two-pass algorithm to first figure the union of store sets from all possible branches and then generate slice for each branch
     bool is_in_second_pass;
+    bool is_nested_jump; //True if this is a nested divergence
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
  };
 

@@ -154,6 +154,11 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
     long rc;
     int i;
 
+    if (go_live_clock == NULL) { 
+        fprintf (stderr, "cannot dump_taintbuf\n");
+        return -1;
+    }
+
     // We need to dump ALL the taintbufs for every slice here - this will only work 
     // for multithreaded apps - not for multiprocess.
     for (i = 0; i < go_live_clock->num_threads; i++) {
@@ -203,7 +208,14 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p record pid %d\n", 
 	     tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename), record_pid);
 #endif
-    go_live_clock = clock_addr;
+
+    if (clock_addr)
+        go_live_clock = clock_addr;
+    else {
+        fprintf (stderr, "Running a single-threaded program and has no shared clock page?\n");
+        go_live_clock = NULL;
+    }
+
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
@@ -221,12 +233,14 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     }
 
     // Update shared data with taintbuf info
-    for (i = 0; i < go_live_clock->num_threads; i++) {
-	if (go_live_clock->process_map[i].record_pid == record_pid) {
-	    go_live_clock->process_map[i].taintbuf = taintbuf;
-	    go_live_clock->process_map[i].taintndx = &taintndx;
-	    break;
-	} 
+    if (go_live_clock) {
+        for (i = 0; i < go_live_clock->num_threads; i++) {
+            if (go_live_clock->process_map[i].record_pid == record_pid) {
+                go_live_clock->process_map[i].taintbuf = taintbuf;
+                go_live_clock->process_map[i].taintndx = &taintndx;
+                break;
+            } 
+        }
     }
 
     strcpy(taintbuf_filename, filename);

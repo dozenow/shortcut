@@ -1158,17 +1158,18 @@ static int init_check_map (const char* check_filename)
 {
     FILE* file = fopen (check_filename, "r");
     if (!file) return -ENOENT;
+    int alt_branch_count = 0;
+    int last_diverge_param_index = 0;
     while (!feof (file)) {
 	char line[256];
 	char addr[64], type[64], value[64], extra1[64], extra2[64], extra3[64], extra4[64];
 	struct taint_check tc;
-        int* alt_branch_count = NULL;
 
 	if (fgets (line, sizeof(line), file) != NULL) {
             if (line[0] == '#')  //for comments
                 continue;
 	  if (sscanf(line, "%63s %63s %63s %63s %63s %63s %63s", addr, type, value, 
-		     extra1, extra2, extra3, extra4) >= 2) {
+		     extra1, extra2, extra3, extra4) >= 1) {
 		u_long ip = strtoul(addr, NULL, 0);
 		if (ip == 0 && strlen (addr) == 0) {
 		    fprintf (stderr, "check %s: invalid address\n", line);
@@ -1219,30 +1220,42 @@ static int init_check_map (const char* check_filename)
 		    param.iter_count = atoi(extra4);
                     param.ip = ip;
                     param.alt_branch_count = 0;
-                    alt_branch_count = &param.alt_branch_count;
                     ctrl_flow_params.push_back(param);
+                    alt_branch_count = 0;
+                    last_diverge_param_index = ctrl_flow_params.size() - 1;
                 } else if (!strcmp(type, "ctrl_merge")) {
                     struct ctrl_flow_param param;
                     param.type = CTRL_FLOW_BLOCK_TYPE_MERGE;
 		    sscanf (value, "%d,%lu,%llu", &param.pid, &param.clock, &param.index);
 		    param.ip = ip;
-                    alt_branch_count = NULL;
+                    ctrl_flow_params[last_diverge_param_index].alt_branch_count = alt_branch_count;
+                    alt_branch_count = 0;
 		    ctrl_flow_params.push_back(param);
                 } else if (!strncmp (type, "ctrl_block_instrument_orig", 26)) {
                     struct ctrl_flow_param param;
+                    if (!strncmp (value, "tag_", 4))
+                        param.tag = atoi(value+4);
+                    else 
+                        param.tag = -1;
                     param.type = CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG;
 		    param.branch_flag = extra1[0];
                     param.ip = ip;
 		    ctrl_flow_params.push_back(param);
-                } else if (!strncmp (type, "ctrl_possible_alt_path_begin", 24)) {//note: put this tag in checks file even if it's an empty alternative path
+                } else if (!strncmp (type, "ctrl_possible_alt_path_begin", 28)) {//note: put this tag in checks file even if it's an empty alternative path
                     struct ctrl_flow_param param;
                     param.type = CTRL_FLOW_POSSIBLE_PATH_BEGIN;
-                    *alt_branch_count = *alt_branch_count + 1;
-                } else if (!strncmp (type, "ctrl_possible_alt_path_end", 22)) {//note: put this tag in checks file even if it's an empty alternative path
+                    ++ alt_branch_count;
+		    ctrl_flow_params.push_back(param);
+                } else if (!strncmp (type, "ctrl_possible_alt_path_end", 26)) {//note: put this tag in checks file even if it's an empty alternative path
                     struct ctrl_flow_param param;
                     param.type = CTRL_FLOW_POSSIBLE_PATH_END;
+		    ctrl_flow_params.push_back(param);
                 } else if (!strncmp (type, "ctrl_block_instrument_alt", 25)) {
                     struct ctrl_flow_param param;
+                    if (!strncmp (value, "tag_", 4))
+                        param.tag = atoi(value+4);
+                    else 
+                        param.tag = -1;
                     param.type = CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT;
 		    param.branch_flag = extra1[0];
                     param.ip = ip;
@@ -1268,7 +1281,7 @@ static int init_check_map (const char* check_filename)
                     // This is a workaround for not modifying java's random stack addresses
                     ignored_inst.push_back (ip);
 		} else { 
-		    fprintf (stderr, "check %s: invalid type\n", line);
+		    fprintf (stderr, "check %s: invalid type, type is %s\n", line, type);
 		    return -1;
 		}
 	    } else {
@@ -2675,7 +2688,8 @@ static void init_ctrl_flow_this_branch (ADDRINT ip, const CONTEXT* ctx, std::set
         ctrl_flow_init_reg (ip, REG(i), ctx, current_thread->shadow_reg_table);
     }
     //always restore EFLAGS TODO
-    print_extra_move_flag (ip, NULL, 0);
+    //not sure about this anymore since we force each path to follow specified blocks and jumps, and therefore, a jump relies on any flag on one path will still take the same direction
+    //print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(store_set_mem)) { 
         u_long mem_loc = i.first;
         int tainted = is_mem_tainted (mem_loc, 1);
@@ -2693,7 +2707,7 @@ static void taint_ctrl_flow_branch (ADDRINT ip, taint_t ctrl_flow_taint, std::se
         ctrl_flow_taint_reg (REG(i), ctrl_flow_taint);
     }
     //always restore EFLAGS TODO
-    print_extra_move_flag (ip, NULL, 0);
+    //print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(store_set_mem)) { 
         ctrl_flow_taint_mem (i.first, 1, ctrl_flow_taint);
     }
@@ -2755,7 +2769,7 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
         if (base_tainted || index_tainted) {
 	    fprintf (stderr, "XXX - tainted base/index write should be OK as long as we verify equality to effective address?\n");
         }
-        map<u_long, struct ctrl_flow_origin_value> *mem_map = (current_thread->ctrl_flow_info.is_in_diverged_branch == false? current_thread->ctrl_flow_info.store_set_mem: current_thread->ctrl_flow_info.that_branch_store_set_mem);
+        map<u_long, struct ctrl_flow_origin_value> *mem_map = (current_thread->ctrl_flow_info.is_in_diverged_branch == false? current_thread->ctrl_flow_info.store_set_mem: &((*current_thread->ctrl_flow_info.alt_branch_store_set_mem)[current_thread->ctrl_flow_info.alt_path_index]));
         uint32_t offset = 0;
         //also store the original taint value for this mem address
         while (offset < size) {
@@ -2790,7 +2804,7 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue)
     }
     if (current_thread->ctrl_flow_info.is_in_diverged_branch) {
 	CFDEBUG ("[CONTROL_FLOW_REG] ip %x reg %d @ %lu_%llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index, *regvalue->dword);
-	current_thread->ctrl_flow_info.that_branch_store_set_reg->insert (reg);
+	current_thread->ctrl_flow_info.alt_branch_store_set_reg->at(current_thread->ctrl_flow_info.alt_path_index).insert (reg);
     }
 }
 
@@ -2807,9 +2821,9 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 	    current_thread->ctrl_flow_info.index+ndx_incr != current_thread->ctrl_flow_info.diverge_point->front().index) {
 	    // If not an exact match, then look for generic match on instruction
 	    std::map<u_long, struct ctrl_flow_block_index>::iterator it = current_thread->ctrl_flow_info.diverge_inst->find(ip);
-            if (it->second.orig_taken != taken) { 
+            if (it != current_thread->ctrl_flow_info.diverge_inst->end() && it->second.orig_taken != taken) { 
                 // If the checks file takes another direction, let's see if there's another entry in the checks taking this expected direction
-		CFDEBUG ("Found a potential divergence ip %x, but it takes another branch than expected. Let's try to find another one.", ip);
+		CFDEBUG ("Found a potential divergence ip %x, but it takes another branch than expected. Let's try to find another one\n", ip);
                 it = current_thread->ctrl_flow_info.diverge_inst->find(ip);
             }
 	    if (it != current_thread->ctrl_flow_info.diverge_inst->end()) {
@@ -2833,7 +2847,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		}
 
 		if (tainted) {
-		    CFDEBUG ("is loop %d orig taken %d taken %d orig nonempty %d alt nonempty %d alt_path_index %d\n", it->second.ip == it->second.merge_ip, it->second.orig_taken, taken, it->second.orig_path_nonempty, it->second.alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index], current_thread->ctrl_flow_info.alt_path_index);
+		    CFDEBUG ("is loop %d orig taken %d taken %d orig nonempty %d alt nonempty %d alt_path_index %d\n", it->second.ip == it->second.merge_ip, it->second.orig_taken, taken, it->second.orig_path_nonempty, (int)it->second.alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index], current_thread->ctrl_flow_info.alt_path_index);
 		    if (it->second.ip == it->second.merge_ip && 
 			!it->second.orig_path_nonempty) {
 			CFDEBUG ("This is an extra iteration for a loop\n");
@@ -2884,7 +2898,16 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                 current_thread->ctrl_flow_info.changed_jump = false;
                 current_thread->ctrl_flow_info.change_jump = true;
 		current_thread->ctrl_flow_info.save_index = current_thread->ctrl_flow_info.index+ndx_incr-1;
-		CFDEBUG ("At divergence, the index is %lld\n", current_thread->ctrl_flow_info.index+ndx_incr-1);
+                for (int i = 0; i < current_thread->ctrl_flow_info.diverge_point->front().alt_path_count; ++i) {
+                    set<uint32_t> new_map;
+                    current_thread->ctrl_flow_info.alt_branch_store_set_reg->push_back (new_map);
+                }
+                for (int i = 0; i < current_thread->ctrl_flow_info.diverge_point->front().alt_path_count; ++i) {
+                    map<u_long, struct ctrl_flow_origin_value> new_map;
+                    current_thread->ctrl_flow_info.alt_branch_store_set_mem->push_back (new_map);
+                }
+
+		CFDEBUG ("----- At divergence, the index is %lld\n", current_thread->ctrl_flow_info.index+ndx_incr-1);
                 if (ins_str[0] != 'j') { 
 		    fprintf (stderr, "unrecognized basic block exit instruction. currently assume it's always jump instruction 0x%x %s \n", ip, ins_str);
                     assert (0);
@@ -2910,11 +2933,30 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 		char prefix[64];
 		make_label_prefix (prefix, current_thread->ctrl_flow_info.diverge_point->front());
 
-		OUTPUT_SLICE (ip, "%s %s_this_branch_init", changed_inst, prefix); 
+		/*OUTPUT_SLICE (ip, "%s %s_this_branch_init", changed_inst, prefix); 
 		OUTPUT_SLICE_INFO ("#src_flag[FM?:1:4] #branch_taken %d block_index %llu", !taken, current_thread->ctrl_flow_info.index+ndx_incr-1);
 		OUTPUT_SLICE (0, "jmp %s_that_branch_init", prefix);
 		OUTPUT_SLICE_INFO ("")
 		OUTPUT_SLICE (0, "%s_that_branch_execute_and_taint:", prefix);
+		OUTPUT_SLICE_INFO ("")*/
+
+                //all paths now share the same initialization block; the original one above share different ones
+                OUTPUT_SLICE (0, "pushfd");
+                OUTPUT_SLICE_INFO ("");
+		OUTPUT_SLICE (0, "%s_init:", prefix); //this label is not necessary for correctness; only for readability
+		OUTPUT_SLICE_INFO ("")
+		OUTPUT_SLICE (0, "call %s_init_from_orig_path", prefix); 
+		OUTPUT_SLICE_INFO ("");
+                for (int i = 0; i<current_thread->ctrl_flow_info.diverge_point->front().alt_path_count; ++i){
+                    OUTPUT_SLICE (0, "call %s_init_from_alt_path_%d", prefix, i);
+                    OUTPUT_SLICE_INFO ("");
+                }
+                OUTPUT_SLICE (0, "popfd");
+                OUTPUT_SLICE_INFO ("");
+
+		OUTPUT_SLICE (ip, "%s %s_orig_branch_execute_and_taint", changed_inst, prefix); 
+		OUTPUT_SLICE_INFO ("#src_flag[FM?:1:4] #branch_taken %d block_index %llu", !taken, current_thread->ctrl_flow_info.index+ndx_incr-1);
+		OUTPUT_SLICE (0, "%s_alt_branch_execute_and_taint:", prefix); //only for readability of the slice
 		OUTPUT_SLICE_INFO ("")
 
                 return;
@@ -2948,8 +2990,8 @@ static void cleanup_after_merge()
     }
     current_thread->ctrl_flow_info.store_set_reg->clear();
     current_thread->ctrl_flow_info.store_set_mem->clear();
-    current_thread->ctrl_flow_info.that_branch_store_set_reg->clear();
-    current_thread->ctrl_flow_info.that_branch_store_set_mem->clear();
+    current_thread->ctrl_flow_info.alt_branch_store_set_reg->clear();
+    current_thread->ctrl_flow_info.alt_branch_store_set_mem->clear();
     current_thread->ctrl_flow_info.is_rolled_back = false;
     current_thread->ctrl_flow_info.alt_path_index = 0;
 }
@@ -2978,21 +3020,25 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
 		OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
 		OUTPUT_SLICE_INFO ("");
-		OUTPUT_SLICE (ip, "%s_that_branch_init:", label_prefix);
+		OUTPUT_SLICE (ip, "%s_init_from_orig_path:", label_prefix);
 		OUTPUT_SLICE_INFO ("");
 		CFDEBUG ("[CTRL_FLOW] initialization of original reg/mem values\n");
 		init_ctrl_flow_the_other_branch (ip, current_thread->ctrl_flow_info.store_set_reg, current_thread->ctrl_flow_info.store_set_mem);
+                OUTPUT_SLICE (0, "ret");
+                OUTPUT_SLICE_INFO ("")
 		CFDEBUG ("[CTRL_FLOW] initialization of original reg/mem values done\n");
-		OUTPUT_SLICE (ip, "jmp %s_that_branch_execute_and_taint", label_prefix);
-		OUTPUT_SLICE_INFO ("");
 		OUTPUT_SLICE (0, "%s_branch_end:", label_prefix); // Use 0x0 so that postprocessing program doesn't reorder verifications above this point (d'oh!)
 		OUTPUT_SLICE_INFO ("");
 		
-		//then we need to also taint the other branch since we rolled back and remove all previously taint information
+		//then we need to also taint all other branches since we rolled back and remove all previously taint information based on all store sets from all branches
+                //We don't have to initialize these values from these store sets that were not tainted before the merge point, as now we have a super initialization block after the divergence point
+                //Note: it should be the same if we initialize untainted reg/mem from store sets at the merge point or at the divergece point; I used to have a shared google doc explaining this 
+                //Currently, they're all initialized at the divergence point and some of them are initialized at the end of the merge point
 		//
 		//TODO well, I think this might break the current taint backtracing tool
 		//
-		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+                for (int i = 0; i<current_thread->ctrl_flow_info.diverge_point->front().alt_path_count; ++i) 
+                    taint_ctrl_flow_branch (ip, 1, &current_thread->ctrl_flow_info.alt_branch_store_set_reg->at(i), &current_thread->ctrl_flow_info.alt_branch_store_set_mem->at(i));
 		cleanup_after_merge ();
 		CFDEBUG ("[CTRL_FLOW] This control flow is handled.\n");
 
@@ -3005,33 +3051,51 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
 		current_thread->ctrl_flow_info.diverge_point->front().alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index] = false; // Only skip once
 		CFDEBUG ("Alternate path: not yet at merge point\n");
 	    } else {
-		CFDEBUG ("Merge point - alternate branch bb 0x%x merge 0x%x\n", ip, current_thread->ctrl_flow_info.diverge_point->front().merge_ip); 
-
-		current_thread->ctrl_flow_info.is_in_diverged_branch = false;
-		current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
+		CFDEBUG ("----- Merge point - alternate branch bb 0x%x merge 0x%x, alt_path_index %d\n", ip, current_thread->ctrl_flow_info.diverge_point->front().merge_ip, current_thread->ctrl_flow_info.alt_path_index); 
+                int alt_branch_index = current_thread->ctrl_flow_info.alt_path_index;
 		
 		char label_prefix[32];
 		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
 
 		CFDEBUG ("[CTRL_FLOW_THE_OTHER_BRANCH] taint_ctrl_flow_branch: the other branch: merge before this block, %x\n", ip);
 		//TODO: we need to assign a meaningful value to the ctrl_flow_taint instead of 1
-		init_ctrl_flow_this_branch (ip, ctx, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
-		taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+		init_ctrl_flow_this_branch (ip, ctx, &current_thread->ctrl_flow_info.alt_branch_store_set_reg->at(alt_branch_index), &current_thread->ctrl_flow_info.alt_branch_store_set_mem->at(alt_branch_index));
+                //xdou:I believe this is unnecessary
+		//taint_ctrl_flow_branch (ip, 1, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
 		OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
 		OUTPUT_SLICE_INFO ("");
-		OUTPUT_SLICE (ip, "%s_this_branch_init:", label_prefix);
+		OUTPUT_SLICE (ip, "%s_init_from_alt_path_%d:", label_prefix, alt_branch_index);
 		OUTPUT_SLICE_INFO ("");
 		CFDEBUG ("[CTRL_FLOW] initialization of original reg/mem values\n");
 		
-		init_ctrl_flow_the_other_branch (ip, current_thread->ctrl_flow_info.that_branch_store_set_reg, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+		init_ctrl_flow_the_other_branch (ip, &current_thread->ctrl_flow_info.alt_branch_store_set_reg->at(alt_branch_index), &current_thread->ctrl_flow_info.alt_branch_store_set_mem->at(alt_branch_index));
+                OUTPUT_SLICE (0, "ret");
+                OUTPUT_SLICE_INFO ("");
+
 		CFDEBUG ("[CTRL_FLOW] initialization of original reg/mem values done\n");
 
-		//let's roll back to the diverge point and take the original branch
-		current_thread->ctrl_flow_info.is_in_original_branch = true;
-		current_thread->ctrl_flow_info.change_jump = true;
-		current_thread->ctrl_flow_info.is_rolled_back = true;
-		CFDEBUG ("About to roll back\n");
-		ctrl_flow_rollback (&current_thread->ctrl_flow_info.ckpt, current_thread->ctrl_flow_info.that_branch_store_set_mem);
+		CFDEBUG ("---- About to roll back\n");
+                if (alt_branch_index == current_thread->ctrl_flow_info.diverge_point->front().alt_path_count -1) { 
+                    CFDEBUG ("--- Merge point - has explored all alternative paths; now rollback to the original path.\n");
+                    current_thread->ctrl_flow_info.is_in_diverged_branch = false;
+                    //let's roll back to the diverge point and take the original branch
+                    current_thread->ctrl_flow_info.is_in_original_branch = true;
+                    current_thread->ctrl_flow_info.change_jump = true;
+                    current_thread->ctrl_flow_info.is_rolled_back = true;
+                    current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
+                    OUTPUT_SLICE (ip, "%s_orig_branch_execute_and_taint:", label_prefix); 
+                    OUTPUT_SLICE_INFO ("");
+                } else { 
+                    //explore the next alternative path
+                    current_thread->ctrl_flow_info.change_jump = true;
+                    current_thread->ctrl_flow_info.changed_jump = false;
+                    current_thread->ctrl_flow_info.is_rolled_back = true;
+                    current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst = true;
+                    ++current_thread->ctrl_flow_info.alt_path_index;
+                    OUTPUT_SLICE (ip, "%s_alt_branch_%d_execute_and_taint:", label_prefix, alt_branch_index + 1); 
+                    OUTPUT_SLICE_INFO ("");
+                }
+		ctrl_flow_rollback (&current_thread->ctrl_flow_info.ckpt, &current_thread->ctrl_flow_info.alt_branch_store_set_mem->at(alt_branch_index));
 	    }
 	}
     }
@@ -3568,6 +3632,10 @@ static void change_jump (uint32_t mask, const CONTEXT* ctx, char* ins_str)
 	} else {
 	    value &= ~(ZF_MASK|SF_MASK|OF_MASK);
 	}
+    } else if (!strncmp (ins_str, "jl ", 3)) {
+        if ((!!(value & SF_MASK) != !!(value & OF_MASK))) {
+	    value &= ~(SF_MASK|OF_MASK);
+	}
     } else {
 	if (mask & CF_FLAG) value ^= CF_MASK;
 	if (mask & PF_FLAG) value ^= PF_MASK;
@@ -3610,7 +3678,7 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 {
 #ifdef TRACK_CTRL_FLOW_DIVERGE
     if (current_thread->ctrl_flow_info.is_in_original_branch) {
-	CFDEBUG ("Original branch ip 0x%x taken %d target %x next %lx\n", ip, taken, target, current_thread->ctrl_flow_info.diverge_point->front().orig_path.front().first);
+	CFDEBUG ("Original branch ip 0x%x taken %d target %x next %lx\n", ip, taken, target, current_thread->ctrl_flow_info.diverge_point->front().orig_path.front().ip);
 	CFDEBUG ("Flag tainted %d is_diverged_branch %d change jump %d\n", is_flag_tainted(mask), current_thread->ctrl_flow_info.is_in_diverged_branch, current_thread->ctrl_flow_info.change_jump);
 	if (current_thread->ctrl_flow_info.change_original_branch) { 
 	    CFDEBUG ("Restart orig branch - change the jump here ip 0x%x\n", ip);
@@ -3619,10 +3687,11 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	}
 	if (!current_thread->ctrl_flow_info.change_jump) { 
 	    // Track the original path and see if we diverge
-	    pair<u_long, char> orig_branch = current_thread->ctrl_flow_info.diverge_point->front().orig_path.front();
+	    struct ctrl_flow_branch_info orig_branch = current_thread->ctrl_flow_info.diverge_point->front().orig_path.front();
 	    current_thread->ctrl_flow_info.diverge_point->front().orig_path.pop();
-	    if ((orig_branch.second == 't' && !taken) || (orig_branch.second == 'n' && taken)) {
-		CFDEBUG ("Uh-oh! Original path not going expeced direction orig branch 0x%lx, ip 0x%x orig %c taken %d\n", orig_branch.first, ip, orig_branch.second, taken);
+	    if ((orig_branch.branch_flag == 't' && !taken) || (orig_branch.branch_flag == 'n' && taken)) {
+		fprintf (stderr, "Uh-oh! Original path not going expeced direction orig branch 0x%lx, ip 0x%x orig %c taken %d\n", orig_branch.ip, ip, orig_branch.branch_flag, taken);
+		fprintf (stderr, "Not sure this is handled correctly\n");
 		// We are going to "abort" this control flow divergence
 		char label_prefix[256];
 		make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
@@ -3648,9 +3717,11 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	if (current_thread->ctrl_flow_info.is_in_diverged_branch_first_inst) {
 	    if ((current_thread->ctrl_flow_info.diverge_point->front().orig_taken && !taken) ||
 		(!current_thread->ctrl_flow_info.diverge_point->front().orig_taken && taken)) {
-		CFDEBUG ("It appears that execution takes alternate path\n");
-		swap (current_thread->ctrl_flow_info.diverge_point->front().orig_path, 
-		      current_thread->ctrl_flow_info.diverge_point->front().alt_path);
+		fprintf (stderr, "It appears that execution takes alternate path\n");
+                //The swap method won't work if there are multiple alternative paths, as I don't know which one to swap with
+                assert (0);
+		//swap (current_thread->ctrl_flow_info.diverge_point->front().orig_path, 
+		 //     current_thread->ctrl_flow_info.diverge_point->front().alt_path);
 	    } else {
 		CFDEBUG ("Execution takes expected path\n");
 	    }
@@ -3660,11 +3731,37 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 		CFDEBUG ("Jump at 0x%x was changed\n", ip);
 		current_thread->ctrl_flow_info.changed_jump = false;
 	    } else {
-		pair<u_long, char> alt_branch = current_thread->ctrl_flow_info.diverge_point->front().alt_path.front();
-		current_thread->ctrl_flow_info.diverge_point->front().alt_path.pop();
-		CFDEBUG ("Alternate branch %lx was taken %c at branch %x taken %d\n", alt_branch.first, alt_branch.second, ip, taken);
-		if ((alt_branch.second == 't' && !taken) || (alt_branch.second == 'n' && taken)) {
-		    CFDEBUG ("Change jump direction\n");
+                assert (current_thread->ctrl_flow_info.diverge_point->front().alt_path[current_thread->ctrl_flow_info.alt_path_index].size() > 0);
+		struct ctrl_flow_branch_info alt_branch = current_thread->ctrl_flow_info.diverge_point->front().alt_path[current_thread->ctrl_flow_info.alt_path_index].front();
+		current_thread->ctrl_flow_info.diverge_point->front().alt_path[current_thread->ctrl_flow_info.alt_path_index].pop();
+		CFDEBUG ("Alternate branch %lx was taken %c at branch %x taken %d\n", alt_branch.ip, alt_branch.branch_flag, ip, taken);
+                if (alt_branch.tag != -1) { 
+                    CFDEBUG ("This is a nested divergence.\n");
+                    current_thread->ctrl_flow_info.is_nested_jump = true;
+                    //add special labels here
+                    char changed_inst[64] = {0};
+                    char *t = changed_inst;
+                    char *p = ins_str;
+                    for (; *p != ' '; p++, t++) *t = *p;
+                    char prefix[64];
+                    make_label_prefix (prefix, current_thread->ctrl_flow_info.diverge_point->front());
+                    OUTPUT_SLICE (0, "%s %s_taken_from_tag_%d", changed_inst, prefix, alt_branch.tag);
+                    OUTPUT_SLICE_INFO ("");
+                    OUTPUT_SLICE (0, "jmp %s_not_taken_from_tag_%d", prefix, alt_branch.tag);
+                    OUTPUT_SLICE_INFO ("");
+                    //I output redudant blocks (blocks before this tag are shared by serveral paths) and redundant jumps 
+                    //But it should be correct and these redundant blocks are skipped during slice execution anyway
+                    if (alt_branch.branch_flag == 't') {
+                        OUTPUT_SLICE (0, "%s_taken_from_tag_%d:", prefix, alt_branch.tag);
+                        OUTPUT_SLICE_INFO ("");
+                    } else if (alt_branch.branch_flag == 'n') { 
+                        OUTPUT_SLICE (0, "%s_not_taken_from_tag_%d:", prefix, alt_branch.tag);
+                        OUTPUT_SLICE_INFO ("");
+                    }
+
+                }
+                if ((alt_branch.branch_flag == 't' && !taken) || (alt_branch.branch_flag == 'n' && taken)) {
+                    CFDEBUG ("Change jump direction\n");
 		    change_jump(mask, ctx, ins_str);
 		}
 	    }
@@ -3678,6 +3775,8 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
             current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
         } else if (current_thread->ctrl_flow_info.is_in_diverged_branch && current_thread->ctrl_flow_info.change_jump) { 
 	    current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
+        } else if (current_thread->ctrl_flow_info.is_nested_jump && current_thread->ctrl_flow_info.is_in_diverged_branch) {
+            current_thread->ctrl_flow_info.is_nested_jump = false;
         } else {
 #endif
 	    char change_str[64];

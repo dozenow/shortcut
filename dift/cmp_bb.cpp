@@ -46,7 +46,7 @@ u_long print_start = 0;
 u_long* ppthread_log_clock = NULL;
 
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
-KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print start"); //not supported yet
+KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "0", "syscall print start"); 
 KNOB<string> KnobFilename(KNOB_MODE_WRITEONCE, "pintool", "f", "/tmp/bb.out", "output filename");
 
 long global_syscall_cnt = 0;

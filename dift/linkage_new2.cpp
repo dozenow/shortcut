@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG  718800
-#define EXTRA_DEBUG_STOP 718900
-#define EXTRA_DEBUG_FUNCTION
+#define EXTRA_DEBUG  0
+#define EXTRA_DEBUG_STOP 69
+//#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -5509,7 +5509,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
 	}
 	PIN_UnlockClient();
-	printf ("0xbfffff10 tainted: %d value: %x\n", is_mem_arg_tainted(0xbfffff10, 1), *((u_char *) 0xbfffff10));
+	printf ("0xbffff5b4 tainted: %d value: %x\n", is_mem_arg_tainted(0xbffff5b4, 1), *((u_char *) 0xbffff5b4));
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
@@ -6577,7 +6577,7 @@ BOOL follow_child(CHILD_PROCESS child, void* data)
     return TRUE;
 }
 
-static void destroy_ctrl_flow_info (struct thread_data* ptdata)
+static void destroy_ctrl_flow_info (struct thread_data* tdata)
 {
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
     if (tdata->ctrl_flow_info.diverge_inst) delete tdata->ctrl_flow_info.diverge_inst;
@@ -6597,8 +6597,8 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.store_set_mem = new std::map<u_long, struct ctrl_flow_origin_value> ();
-   ptdata->ctrl_flow_info.alt_branch_store_set_reg = new vector<set<uint32_t>> ();
-   ptdata->ctrl_flow_info.alt_branch_store_set_mem = new vector<map<u_long, struct ctrl_flow_origin_value>>();
+   ptdata->ctrl_flow_info.alt_branch_store_set_reg = new vector<set<uint32_t> > ();
+   ptdata->ctrl_flow_info.alt_branch_store_set_mem = new vector<map<u_long, struct ctrl_flow_origin_value> >();
    ptdata->ctrl_flow_info.merge_insts = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
@@ -6607,13 +6607,14 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.change_jump = false;
    ptdata->ctrl_flow_info.alt_path_index  = 0;
+   ptdata->ctrl_flow_info.is_nested_jump = false;
 
    struct ctrl_flow_block_index index;
    int alt_path_index = -1; //which alt path we are in
    index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
-       if (i.pid == ptdata->record_pid || i.pid == -1) {
+       if (i.pid == ptdata->record_pid || i.pid == -1 || (i.type != CTRL_FLOW_BLOCK_TYPE_DIVERGENCE && i.type != CTRL_FLOW_BLOCK_TYPE_MERGE)) {
            if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
                index.clock = i.clock;
                index.index = i.index;
@@ -6641,29 +6642,38 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 	       ptdata->ctrl_flow_info.merge_insts->insert(i.ip);
 	       index.ip = 0;
 	       while (!index.orig_path.empty()) index.orig_path.pop();
-	       while (!index.alt_path.empty()) index.alt_path.pop();
+               index.alt_path.clear();
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG) {
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Orig path entry without preceeding diverge entry\n");
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);	
 		   if (i.branch_flag != '-') {
-		       index.orig_path.push(make_pair(i.ip,i.branch_flag));
-		   }
+                       struct ctrl_flow_branch_info in;
+                       in.ip = i.ip;
+                       in.branch_flag = i.branch_flag;
+                       in.tag = i.tag;
+		       index.orig_path.push(in);
+		   } 
 		   index.orig_path_nonempty = true;
 	       }
            } else if (i.type == CTRL_FLOW_POSSIBLE_PATH_BEGIN) {
                ++alt_path_index;
-           } else if (i.type == CTRL_FLOW_POSSIBLE_PATH_END) {
-               alt_path_index = -1;
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
+               if (alt_path_index < 0) { 
+                   fprintf (stderr, "Alt path index is not set.\n");
+               }
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
                    assert (0);
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
 		   if (i.branch_flag != '-') {
-		       index.alt_path[alt_path_index].push(make_pair(i.ip,i.branch_flag));
+                       struct ctrl_flow_branch_info in;
+                       in.ip = i.ip;
+                       in.branch_flag = i.branch_flag;
+                       in.tag = i.tag;
+		       index.alt_path[alt_path_index].push(in);
 		   }
 		   index.alt_path_nonempty[alt_path_index] = true;
 	       }

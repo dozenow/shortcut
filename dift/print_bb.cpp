@@ -12,7 +12,7 @@
 #include <sys/time.h>
 #include <iostream>
 
-#define COMPACT
+//#define COMPACT
 #define PRINT if(*ppthread_log_clock>print_start)printf
 
 #define OP_CALL             0
@@ -347,7 +347,6 @@ void PIN_FAST_ANALYSIS_CALL trace_relread2 (ADDRINT ip, uint32_t memloc)
 void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 {
     PRINT ("Instruction %x branch taken=%d\n", ip, taken);
-    printf ("%x\n", ip);
 }
 
 void trace_relread_stutters (ADDRINT ip, uint32_t memloc, uint32_t first_iter) 
