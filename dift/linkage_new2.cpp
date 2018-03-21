@@ -3194,7 +3194,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 			   IARG_END);
 	}
     } else {
-	if (str[0] == 'j') {
+	if (str[0] == 'j' && strncmp(str, "jmp", 3)) {
 	    INS_InsertCall(ins, IPOINT_BEFORE,
 			   AFUNPTR(fw_slice_condjump),
 			   IARG_FAST_ANALYSIS_CALL,
