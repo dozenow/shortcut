@@ -176,6 +176,8 @@ def findStore (cnt):
         cnt -= 1
         line = lines[cnt]
         if "[SLICE]" in line:
+            if line.split()[0][1:] == "cmp":
+                continue # Compare does not store to first operand
             if line.split()[0][1:] == "div":
                 if "eax" in sources or "edx" in sources:
                     if "eax" in sources:
@@ -229,6 +231,7 @@ def findStore (cnt):
                     if source[:2] == "0x":
                         loc = int (source, 16)
                         if loc >= addr and loc < addr+size:
+                            del sources[source]
                             print cnt, ":", lines[cnt]
                             return cnt
     return 0
