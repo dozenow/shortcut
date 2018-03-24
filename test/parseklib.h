@@ -213,9 +213,10 @@ struct sem_retvals {
 
 // retvals for shmat, since we need to save additional information
 struct shmat_retvals {
-	int    call;
-	u_long size;
-	u_long raddr;
+    u_long len;
+    int    call;
+    u_long size;
+    u_long raddr;
 };
 
 struct set_thread_area_retvals {
