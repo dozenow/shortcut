@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-        recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff xcmp 
+        recheck_support.o preprocess_asm.class process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff xcmp xdump pidinator 
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -64,6 +64,9 @@ sdaemon: libutil.a sdaemon.cpp parseklib.o libutil.a
 
 xdiff: libutil.a xdiff.cpp parseklib.o libutil.a
 	g++ $(CFLAGS) $(LDFLAGS) parseklib.o xdiff.cpp libutil.a -o xdiff -std=c++0x
+
+xdump: libutil.a xdump.cpp parseklib.o libutil.a
+	g++ $(CFLAGS) $(LDFLAGS) parseklib.o xdump.cpp libutil.a -o xdump -std=c++0x
 
 rewriteklog: parseklib.o
 
