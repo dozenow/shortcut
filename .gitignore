@@ -45,6 +45,10 @@ test/streamserver
 test/fullsend
 test/traces
 test/sdaemon
+test/pidinator
+test/xdump
+test/xdiff
+test/parsecheckpoint
 test/find_diverge
 test/dev/.tmp_versions
 test/dev/Module.symvers
