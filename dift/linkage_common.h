@@ -21,24 +21,24 @@
 #include "../test/parseulib.h"
 #include "track_pthread.h"
 
-//#define PRINT_DEBUG_INFO
+#define PRINT_DEBUG_INFO
 #ifdef PRINT_DEBUG_INFO
 #define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__);
 #define OUTPUT_SLICE_THREAD(thread,addr,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE] #%08x ", ## __VA_ARGS__, addr);
-#define OUTPUT_SLICE_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_INFO] " format "*/\\n\"\n", ## __VA_ARGS__);
-#define OUTPUT_SLICE_EXTRA_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE_EXTRA] comes with %08x*/\\n\"\n", ## __VA_ARGS__, ip);
-#define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE_CTRL_FLOW] comes with %08x*/\\n\"\n", ## __VA_ARGS__, ip);
+#define OUTPUT_SLICE_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_INFO] " format "*/\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
+#define OUTPUT_SLICE_EXTRA_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE_EXTRA] comes with %08x*/\\n\"\n", ## __VA_ARGS__, ip); thread->slice_linecnt++;
+#define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE_CTRL_FLOW] comes with %08x*/\\n\"\n", ## __VA_ARGS__, ip); thread->slice_linecnt++;
 #define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format " /*", ## __VA_ARGS__);
-#define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_VERIFICATION] " format "*/\\n\"\n", ## __VA_ARGS__);
-#define OUTPUT_TAINT_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"/* [TAINT_INFO] " format " */\\n\"\n", ## __VA_ARGS__);
+#define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_VERIFICATION] " format "*/\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
+#define OUTPUT_TAINT_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"/* [TAINT_INFO] " format " */\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define DEBUG_INFO printf
 #else
-#define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__)
-#define OUTPUT_SLICE_THREAD(thread,addr,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__)
+#define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); 
+#define OUTPUT_SLICE_THREAD(thread,addr,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define OUTPUT_SLICE_INFO_THREAD(x,...)
-#define OUTPUT_SLICE_EXTRA_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__);
-#define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__);
-#define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__)
+#define OUTPUT_SLICE_EXTRA_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
+#define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
+#define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(x,...)
 #define OUTPUT_TAINT_INFO_THREAD(x,...)
 #define DEBUG_INFO(x,...)
@@ -251,6 +251,10 @@ struct sched_getaffinity_info {
     size_t size;
 };
 
+struct shmat_info {
+    void* raddr;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -386,6 +390,7 @@ struct thread_data {
 	struct sigaction_info sigaction_info_cache;
         struct clone_info clone_info_cache;
         struct sched_getaffinity_info sched_getaffinity_info_cache;
+	struct shmat_info shmat_info_cache;
     } op;
 
     void* save_syscall_info;
@@ -409,6 +414,8 @@ struct thread_data {
     queue<string>* slice_buffer;  //generated slice is put on this buffer first:::: deprecated
     FILE* slice_output_file;        //and then written to this file
     FILE* main_output_file;        
+    u_long slice_linecnt;
+    u_long slice_filecnt;
 
     union {
         struct mutex_info_cache mutex_info_cache;

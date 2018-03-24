@@ -217,7 +217,7 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     return 0;
 }
 
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
 {
     struct recv_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
@@ -234,9 +234,9 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     rrchk.buf = buf;
     rrchk.len = len;
     rrchk.flags = flags;
-    rrchk.partial_read = partial_read;
-    rrchk.partial_read_start = partial_read_start;
-    rrchk.partial_read_end = partial_read_end;
+    rrchk.partial_read_cnt = partial_read_cnt;
+    memcpy (rrchk.partial_read_starts, partial_read_starts, partial_read_cnt*sizeof(size_t));
+    memcpy (rrchk.partial_read_ends, partial_read_ends, partial_read_cnt*sizeof(size_t));
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     struct recvfrom_retvals* pretvals = (struct recvfrom_retvals *) res->retparams;
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, &pretvals->buf, rrchk.readlen);
@@ -245,7 +245,7 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     return res->retval;
 }
 
-int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock)
+int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
 {
     struct recvmsg_recheck rmchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
@@ -259,9 +259,9 @@ int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* m
     rmchk.sockfd = sockfd;
     rmchk.msg = msg;
     rmchk.flags = flags;
-    rmchk.partial_read = partial_read;
-    rmchk.partial_read_start = partial_read_start;
-    rmchk.partial_read_end = partial_read_end;
+    rmchk.partial_read_cnt = partial_read_cnt;
+    memcpy (rmchk.partial_read_starts, partial_read_starts, partial_read_cnt*sizeof(size_t));
+    memcpy (rmchk.partial_read_ends, partial_read_ends, partial_read_cnt*sizeof(size_t));
     write_data_into_recheck_log (handle->recheckfd, &rmchk, sizeof(rmchk));
     write_data_into_recheck_log (handle->recheckfd, msg, sizeof(struct msghdr));
     write_data_into_recheck_log (handle->recheckfd, msg->msg_iov, sizeof(struct iovec)*msg->msg_iovlen); 
@@ -1538,6 +1538,38 @@ int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock)
     return 0;
 }
 
+int recheck_inotify_init1 (struct recheck_handle* handle, int flags, u_long clock)
+{
+    struct inotify_init1_recheck ichk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_inotify_init1);
+
+    check_reg_arguments ("inotify_init1", 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_inotify_init1, res->retval, sizeof(struct inotify_init1_recheck), clock);
+    ichk.flags = flags;
+    write_data_into_recheck_log (handle->recheckfd, &ichk, sizeof(ichk));
+
+    return 0;
+}
+
+int recheck_inotify_add_watch (struct recheck_handle* handle, int fd, char* pathname, uint32_t mask, u_long clock)
+{
+    struct inotify_add_watch_recheck ichk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_inotify_add_watch);
+
+    check_reg_arguments ("inotify_add_watch", 2);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1)) fprintf (stderr, "[ERROR] inotify_add_watch pathname is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_inotify_add_watch, res->retval, 
+				   sizeof(struct inotify_add_watch_recheck) + strlen(pathname)+1, clock);
+    ichk.fd = fd;
+    ichk.pathname = pathname;
+    ichk.mask = mask;
+    write_data_into_recheck_log (handle->recheckfd, &ichk, sizeof(ichk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
+
+    return 0;
+}
+
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock)
 {
     struct sched_getaffinity_recheck schk;
@@ -1612,3 +1644,58 @@ int recheck_clone (struct recheck_handle* handle, u_long clock)
     return res->retval;
 }
 
+int recheck_shmget (struct recheck_handle* handle, key_t key, size_t size, int shmflg, u_long clock)
+{
+    struct shmget_recheck sgchk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_ipc);
+    check_reg_arguments ("shmget", 4);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ipc, res->retval, sizeof(struct shmget_recheck), clock);
+    sgchk.key = key;
+    sgchk.size = size;
+    sgchk.shmflg = shmflg;
+    write_data_into_recheck_log (handle->recheckfd, &sgchk, sizeof(sgchk));
+
+    return 0;
+}
+
+int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void* raddr, int shmflg, u_long clock)
+{
+    struct shmat_recheck sachk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_ipc);
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EBX, 4, 0)) fprintf (stderr, "[ERROR] register ebx (arg 1) for shmat is tainted\n");
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDX, 4, 0)) fprintf (stderr, "[ERROR] register edx (arg 3) for shmat is tainted\n");
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_ESI, 4, 0)) fprintf (stderr, "[ERROR] register esi (arg 4) for shmat is tainted\n");
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDI, 4, 0)) fprintf (stderr, "[ERROR] register edi (arg 5) for shmat is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ipc, res->retval, sizeof(struct shmat_recheck), clock);
+    sachk.is_shmid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+    sachk.shmid = shmid;
+    sachk.shmaddr = shmaddr;
+    sachk.raddr = raddr;
+    sachk.shmflg = shmflg;
+
+    if (res->retval != -1) {
+	sachk.raddrval = ((struct shmat_retvals *) res->retparams)->raddr;
+    }
+    write_data_into_recheck_log (handle->recheckfd, &sachk, sizeof(sachk));
+
+    return 0;
+}
+
+int recheck_ipc_rmid (struct recheck_handle* handle, int shmid, int cmd, u_long clock)
+{
+    struct ipc_rmid_recheck irchk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_ipc);
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EBX, 4, 0)) fprintf (stderr, "[ERROR] register ebx (arg 1) for shmat is tainted\n");
+    if (is_reg_arg_tainted(LEVEL_BASE::REG_EDX, 4, 0)) fprintf (stderr, "[ERROR] register edx (arg 3) for shmat is tainted\n");
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ipc, res->retval, sizeof(struct ipc_rmid_recheck), clock);
+    irchk.is_shmid_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
+    irchk.shmid = shmid;
+    irchk.cmd = cmd;
+
+    write_data_into_recheck_log (handle->recheckfd, &irchk, sizeof(irchk));
+
+    return 0;
+}

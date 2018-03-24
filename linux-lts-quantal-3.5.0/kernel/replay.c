@@ -4403,7 +4403,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4572,6 +4572,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	}
 
 	if (consumed > 0) argsconsume(prect, consumed);
+
+	if (PRINT_TIME) {
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("after reading log data %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 
 	if (linker) {
 		strncpy (current->replay_thrd->rp_group->rg_rec_group->rg_linker, linker, MAX_LOGDIR_STRLEN);

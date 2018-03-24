@@ -129,6 +129,8 @@ next_line (int fd, char *const buffer, char **cp, char **re,
 int
 __get_nprocs ()
 {
+#if 0
+ REPLAY: This is a real problem? removing for better Arnold detrminism
   static int cached_result;
   static time_t timestamp;
 
@@ -137,6 +139,7 @@ __get_nprocs ()
   atomic_read_barrier ();
   if (now == prev)
     return cached_result;
+#endif
 
   /* XXX Here will come a test for the new system call.  */
 
@@ -225,9 +228,11 @@ __get_nprocs ()
     }
 
  out:
+#if 0
   cached_result = result;
   atomic_write_barrier ();
   timestamp = now;
+#endif
 
   return result;
 }

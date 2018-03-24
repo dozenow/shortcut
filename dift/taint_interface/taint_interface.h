@@ -102,7 +102,7 @@ TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
   TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
-  int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata);
+int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata, bool is_first_thread);
 void fw_slice_print_footer (struct thread_data* tdata);
 
 
@@ -238,6 +238,7 @@ int is_reg_arg_tainted (int reg, uint32_t size, uint32_t is_upper8);
 int is_mem_arg_tainted (u_long mem_loc, uint32_t size);
 int is_flag_tainted (uint32_t flag);
 void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size);
+  void remove_modified_mem_for_final_check (u_long mem_loc, u_long size);
 
 int check_is_syscall_ignored (int pid, u_long index);
 
@@ -249,6 +250,7 @@ TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32
 TAINTSIGN fw_slice_fpureg2mem (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_track_fp_stack_top (ADDRINT ip, const CONTEXT* ctx);
 TAINTSIGN taint_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx, uint32_t opcode);
+TAINTSIGN taint_fpu_cmov (int dst_oreg, int src_oreg, uint32_t size, const CONTEXT* ctx, uint32_t mask, BOOL executed);
 TAINTSIGN taint_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx);
 TAINTSIGN taint_clear_fpureg_offset (int offset, int size, uint32_t set_flags, uint32_t clear_flags, const CONTEXT* ctx, uint32_t is_load);
 TAINTSIGN taint_mix_fpureg (int reg, uint32_t reg_size, const CONTEXT* ctx);
@@ -258,6 +260,9 @@ TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, 
 TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx);
 TAINTSIGN taint_load_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx);
 TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t set_flags, uint32_t clear_flags);
+
+int fw_slice_rotate_file (struct thread_data* tdata);
+
 #ifdef __cplusplus
 }
 #endif

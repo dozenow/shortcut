@@ -20,10 +20,10 @@
 #include <unordered_set>
 using namespace std;
 
-#define DPRINT(...)
+//#define DPRINT(...)
 #define MYASSERT(c)
 #define OP_CHECK(val) get_value()
-//#define DPRINT printf
+#define DPRINT printf
 //#define MYASSERT assert
 //#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("Expected %lx got %x syscall %ld bb_cnt %ld\n", lval, val, *ppthread_log_clock, bb_cnt); fail_and_exit(); } }
 
@@ -615,7 +615,8 @@ void find_best_match ()
     for (i = i+1; i < devndx; i++, ndx++) {
 	DPRINT ("Records: %d:%lx vs. %d:%lx\n", ndx, buffer[ndx], i, dev_buffer[i]);
 	if ((buffer[ndx] == OP_BRANCH_TAKEN && dev_buffer[i] == OP_BRANCH_NOT_TAKEN) ||
-	    (buffer[ndx] == OP_BRANCH_NOT_TAKEN && dev_buffer[i] == OP_BRANCH_TAKEN)) {
+	    (buffer[ndx] == OP_BRANCH_NOT_TAKEN && dev_buffer[i] == OP_BRANCH_TAKEN) ||
+	    (i+2 < devndx && buffer[ndx] == OP_JMP_INDIRECT && dev_buffer[i] == OP_JMP_INDIRECT && buffer[ndx+2] != dev_buffer[i+2])) {
 	    DPRINT ("Another deviation at indexes %d %d\n", ndx, i);
 	    deviation_ip = dev_buffer[i+1];
 	    deviation_taken = (buffer[ndx] == OP_BRANCH_TAKEN);

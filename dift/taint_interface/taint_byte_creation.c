@@ -243,17 +243,20 @@ int filter_byte_range(pid_t pid, int syscall, int byteoffset)
     return 0;
 }
 
-int get_partial_taint_byte_range (pid_t pid, int syscall, size_t* start, size_t* end) 
+int get_partial_taint_byte_range (pid_t pid, int syscall, size_t* starts, size_t* ends) 
 {
     struct filter_byterange* fbr;
+    int cnt = 0;
+
     list_for_each_entry(fbr, &filter_byte_ranges, list) {
         if (fbr->pid == pid && fbr->syscall == syscall) {
-		*start = fbr->start_offset;
-		*end = fbr->end_offset;
-		return 1;
+	    assert (cnt <= MAX_REGIONS);
+	    starts[cnt] = fbr->start_offset;
+	    ends[cnt] = fbr->end_offset;
+	    cnt++;
         }
     }
-    return 0;
+    return cnt;
 }
 
 #if defined(USE_SHMEM) || defined(USE_NW)
@@ -405,8 +408,6 @@ void create_taints_from_buffer(void* buf, int size,
 			       int outfd,
 			       char* channel_name)
 {
-
-    int i = 0;
     taint_t start;
     u_long buf_addr = (u_long) buf;
     if (size <= 0) return;
@@ -443,6 +444,23 @@ void create_taints_from_buffer(void* buf, int size,
         }
     }
 
+    if (filter_input()) {	
+	struct filter_byterange* fbr;
+
+	start = taint_num;
+	list_for_each_entry(fbr, &filter_byte_ranges, list) {
+	    if (fbr->pid == tci->record_pid && (long) fbr->syscall == tci->syscall_cnt) {
+		int i;
+		for (i = fbr->start_offset; i < fbr->end_offset; i++) {
+		    if (i < size) create_and_taint_option(buf_addr + i);
+		}
+	    }
+
+	}
+	write_tokens_info(outfd, start, tci, size);
+    }
+
+#if 0
     start = taint_num;
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
@@ -457,6 +475,7 @@ void create_taints_from_buffer(void* buf, int size,
         create_and_taint_option(buf_addr + i);
     }
     write_tokens_info(outfd, start, tci, size);
+#endif
 }
 
 void create_taints_from_buffer_unfiltered(void* buf, int size, 
@@ -1062,9 +1081,9 @@ void build_filters_from_file(const char* filter_filename) {
     while ((read = getline(&line, &len, filter_f)) != -1) {
         //sscanf(line, "-%c %d,%d,%d,%d\n", &filter_type, &pid, &syscall, &start_offset, &end_offset);
 	if (line[0] == '#') continue;
-        sscanf(line, "-%c %s\n", &filter_type, filter);
+        if (sscanf(line, "-%c %s\n", &filter_type, filter) == 2) {
 
-        switch (filter_type) {
+	    switch (filter_type) {
             case 'b':
                 add_input_filter(FILTER_BYTERANGE, (void*) filter);
                 break;
@@ -1073,7 +1092,8 @@ void build_filters_from_file(const char* filter_filename) {
 		break;
             default:
                 break;
-        }
+	    }
+	}
     }
 
 
