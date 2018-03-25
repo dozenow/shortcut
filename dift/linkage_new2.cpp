@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG  0
-#define EXTRA_DEBUG_STOP 69
+//#define EXTRA_DEBUG  0
+//#define EXTRA_DEBUG_STOP 69
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -6587,12 +6587,13 @@ static void destroy_ctrl_flow_info (struct thread_data* tdata)
     if (tdata->ctrl_flow_info.alt_branch_store_set_mem) delete tdata->ctrl_flow_info.alt_branch_store_set_mem;
     if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
     if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
+    if (tdata->ctrl_flow_info.tracked_orig_path) delete tdata->ctrl_flow_info.tracked_orig_path;
 }
 
 static void init_ctrl_flow_info (struct thread_data* ptdata)
 {
    ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_index>();
-   ptdata->ctrl_flow_info.diverge_inst = new std::map<u_long,struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.diverge_inst = new std::multimap<u_long,struct ctrl_flow_block_index>();
    ptdata->ctrl_flow_info.clock = 0;
    ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
@@ -6603,18 +6604,20 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
    ptdata->ctrl_flow_info.is_in_original_branch = false;
-   ptdata->ctrl_flow_info.is_in_diverged_branch_first_inst = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
-   ptdata->ctrl_flow_info.change_jump = false;
    ptdata->ctrl_flow_info.alt_path_index  = 0;
    ptdata->ctrl_flow_info.is_nested_jump = false;
+   ptdata->ctrl_flow_info.is_tracking_orig_path = false;
+   ptdata->ctrl_flow_info.tracked_orig_path = new deque<struct ctrl_flow_branch_info>();
+   ptdata->ctrl_flow_info.swap_index = -1;
 
    struct ctrl_flow_block_index index;
    int alt_path_index = -1; //which alt path we are in
    index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 
        struct ctrl_flow_param i = *iter;
-       if (i.pid == ptdata->record_pid || i.pid == -1 || (i.type != CTRL_FLOW_BLOCK_TYPE_DIVERGENCE && i.type != CTRL_FLOW_BLOCK_TYPE_MERGE)) {
+       //fprintf (stderr, "ip %x type %d pid %d, current pid %d, alt_branch_count %d\n", i.ip, i.type, i.pid, ptdata->record_pid, i.alt_branch_count);
+       if (i.pid == ptdata->record_pid || i.pid == -1) {
            if (i.type == CTRL_FLOW_BLOCK_TYPE_DIVERGENCE) {
                index.clock = i.clock;
                index.index = i.index;
@@ -6626,6 +6629,15 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
                index.alt_path_nonempty.resize (i.alt_branch_count);
                index.alt_path_count = i.alt_branch_count;
                index.alt_path.resize (i.alt_branch_count);
+               struct ctrl_flow_branch_info in;
+               in.ip = i.ip;
+               in.branch_flag = i.branch_flag;
+               in.tag = -1;
+               index.orig_path.push (in);
+               for (int j = 0; j<i.alt_branch_count; ++j) {
+                   while (!index.alt_path[j].empty()) index.alt_path[j].pop();
+                   index.alt_path_nonempty[j] = false;
+               }
 	       index.iter_count = i.iter_count;
           } else if (i.type == CTRL_FLOW_BLOCK_TYPE_MERGE) { 
 	       index.merge_ip = i.ip;
@@ -6634,15 +6646,16 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 		       fprintf (stderr, "merge entry without preceeding diverge entry\n");
 		   } else {
 		       // Add wild card divergence
-		       (*ptdata->ctrl_flow_info.diverge_inst)[index.ip] = index;
+		       *ptdata->ctrl_flow_info.diverge_inst->insert (make_pair(index.ip, index));
 		   }
 	       } else {
 		   ptdata->ctrl_flow_info.diverge_point->push_back (index);
 	       }
 	       ptdata->ctrl_flow_info.merge_insts->insert(i.ip);
 	       index.ip = 0;
-	       while (!index.orig_path.empty()) index.orig_path.pop();
+               while (!index.orig_path.empty()) index.orig_path.pop();
                index.alt_path.clear();
+               alt_path_index = -1;
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ORIG) {
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Orig path entry without preceeding diverge entry\n");
@@ -6659,13 +6672,19 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 	       }
            } else if (i.type == CTRL_FLOW_POSSIBLE_PATH_BEGIN) {
                ++alt_path_index;
+               //always push the divergence block into the alternative path
+               //If we have several alternative paths, some of them may take the same direction at the divergence point as the original path
+               assert (i.branch_flag != '-');
+               struct ctrl_flow_branch_info in;
+               in.tag = -1;
+               in.branch_flag = i.branch_flag;
+               index.alt_path[alt_path_index].push(in);
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
                if (alt_path_index < 0) { 
                    fprintf (stderr, "Alt path index is not set.\n");
                }
 	       if (index.ip == 0) {
 		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
-                   assert (0);
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
 		   if (i.branch_flag != '-') {

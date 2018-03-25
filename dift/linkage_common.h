@@ -276,7 +276,7 @@ struct ctrl_flow_block_index {
     bool orig_path_nonempty; // For loops 
     vector<bool> alt_path_nonempty; // For loops
     uint32_t iter_count; // For loops - maximum number of iterations to add
-    int alt_path_count;  //How many possible paths between divergence and merge point
+    int alt_path_count;  //How many possible alternative paths between divergence and merge point
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
@@ -315,6 +315,7 @@ struct ctrl_flow_checkpoint {
     taint_t reg_table[NUM_REGS * REG_SIZE];
     std::stack<struct flag_taints>* flag_taints;
     int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
+    uint64_t save_index;  //The block index before exploring alternative paths
 };
 
 struct ctrl_flow_info { 
@@ -323,7 +324,7 @@ struct ctrl_flow_info {
     int alt_path_index;  //which path we are in
     //struct ctrl_flow_block_index block_index;  //current block index
     std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
-    std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
+    std::multimap<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
 
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
@@ -338,19 +339,17 @@ struct ctrl_flow_info {
     set<uint32_t> *merge_insts; 
     set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
 
-    bool change_jump;  //true if this jump is the divergence point
-
     //checkpoint and rollback
-    uint64_t save_index; // Value prior to alternate path exploration
     bool is_in_original_branch;
     bool is_in_diverged_branch;
-    bool is_in_diverged_branch_first_inst;
     bool is_rolled_back;
     bool changed_jump;
-    bool change_original_branch; //xdou: don't think this flag is actively used
-    bool is_in_first_pass; //We run a two-pass algorithm to first figure the union of store sets from all possible branches and then generate slice for each branch
-    bool is_in_second_pass;
     bool is_nested_jump; //True if this is a nested divergence
+    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards; we have to figure out which path is the original path for this instance...
+    deque<struct ctrl_flow_branch_info>* tracked_orig_path; //Used with the above flag
+    int swap_index; //The index of the alternative path that will be swapped with the original path; used by wildcard matching
+    FILE* saved_slice_output_file; 
+    
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
  };
 
