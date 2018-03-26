@@ -706,8 +706,12 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE (0, "push edx");
 	OUTPUT_SLICE_INFO ("");
+	OUTPUT_SLICE (0, "push ecx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "call open_recheck");
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE (0, "pop ecx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "pop edx");
 	OUTPUT_SLICE_INFO ("");
 	recheck_open (tdata->recheck_handle, filename, flags, mode, *ppthread_log_clock);
@@ -1308,8 +1312,12 @@ static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf,
 {
     struct write_info* wi = &tdata->op.write_info_cache;
     if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "push edx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE(0, "call write_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE (0, "pop edx");
+	OUTPUT_SLICE_INFO ("");
 	recheck_write (tdata->recheck_handle, fd, buf, count, *ppthread_log_clock);
     }
     wi->fd = fd;
@@ -1921,26 +1929,50 @@ static inline void sys_time_stop (int rc)
     if (rc >= 0 && t != NULL) taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
 }
 
+static inline void sys_mremap_start (struct thread_data* tdata, void* old_address, size_t old_size, size_t new_size, int flags, void* new_address)
+{
+    fprintf (stderr, "mremap: old_address 0x%lx old_size 0x%x new_size 0x%x flags 0x%x new_address 0x%lx clock %lu\n", (u_long) old_address, old_size, new_size, flags, (u_long) new_address, *ppthread_log_clock);
+}
+
+static inline void sys_mremap_stop (int rc) 
+{
+    fprintf (stderr, "mremap: rc 0x%x\n", rc);
+}
+
 static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
     LOG_PRINT ("start to handle clock_gettime %p\n", tp);
     struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
+    info->clk_id = clk_id;
     info->tp = tp;
     tdata->save_syscall_info = (void*) info;
     if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call clock_gettime_recheck");
-	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
-	recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+	if (clk_id == CLOCK_MONOTONIC) {
+	    // By the definition of CLOCK_MONOTONIC, we should be able to substitute value from recording here
+	    struct timespec tpout;
+	    int rc = recheck_clock_gettime_monotonic (tdata->recheck_handle, &tpout);
+	    OUTPUT_SLICE (0, "mov eax, 0");
+	    OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+	    if (rc == 0) {
+		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_sec, tpout.tv_sec);
+		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_nsec, tpout.tv_nsec);
+		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+		clear_mem_taints((u_long) &tp, sizeof(tpout));
+	    }
+	} else {
+	    OUTPUT_SLICE (0, "call clock_gettime_recheck");
+	    OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	    recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+	} 
     }
 }
 
-static inline void sys_clock_gettime_stop (int rc) { 
+static inline void sys_clock_gettime_stop (int rc) 
+{ 
     struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
-    if (rc == 0) { 
-        taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
+    if (rc == 0 && ri->clk_id != CLOCK_MONOTONIC) {
+	taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
     }
-    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
-    current_thread->save_syscall_info = 0;
-    LOG_PRINT ("Done with clock_gettime.\n");
 }
 
 static inline void sys_clock_getres_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
@@ -2640,7 +2672,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
-            fprintf (stderr, "[UNHANDLED] for read-only mmap region detection.\n");
+	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
+            fprintf (stderr, "[UNHANDLED] mremap for read-only mmap region detection.\n");
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -2802,6 +2835,9 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	    break;
         case SYS_time:
             sys_time_stop (rc);
+            break;
+        case SYS_mremap:
+            sys_mremap_stop (rc);
             break;
         case SYS_getdents:
 	    sys_getdents_stop(rc);
@@ -5897,6 +5933,7 @@ void instruction_instrumentation(INS ins, void *v)
 	case XED_ICLASS_PSUBD:
 	case XED_ICLASS_PSUBQ:
 	case XED_ICLASS_PMADDWD:
+	case XED_ICLASS_PMAXUB:
 	case XED_ICLASS_PMULHUW:
 	case XED_ICLASS_PMINUB:
 	case XED_ICLASS_PMULLW:
@@ -6268,6 +6305,7 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FWAIT:
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:
+	    case XED_ICLASS_PREFETCHNTA:
                 //ignored
                 slice_handled = 1;
                 break;
@@ -7022,7 +7060,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 #endif
         } 
 
-#if 1
+#if 0
 	// Experimental
 	// Patch environment variables here
 	char target_str[] = "DBUS_SESSION_BUS_ADDRESS=";
@@ -7165,15 +7203,65 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
     }
 }
 
+#if 0
+void before_malloc (ADDRINT bytes)
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_libc_malloc thread %d clock %lu bytes %d", current_thread->record_pid, *ppthread_log_clock, bytes);
+}
+
+void after_malloc (ADDRINT ret) 
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_libc_malloc thread %d clock %lu reutrns 0x%x", current_thread->record_pid, *ppthread_log_clock, ret);
+}
+
+void before_int_malloc (ADDRINT av, ADDRINT bytes)
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_int_malloc thread %d clock %lu av %x bytes %d", current_thread->record_pid, *ppthread_log_clock, av, bytes);
+}
+
+void after_int_malloc (ADDRINT ret) 
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_int_malloc thread %d clock %lu reutrns 0x%x", current_thread->record_pid, *ppthread_log_clock, ret);
+}
+#endif
+
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
     PTHREAD_DEBUG (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
 
+
 //TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
 void routine (RTN rtn, VOID* v)
 { 
     const char *name;
+
+#if 0
+    // Useful if we are trying to debug a malloc issue(?)
+    name = RTN_Name(rtn).c_str();
+    if (!strcmp (name, "__libc_malloc")) {
+        RTN_Open(rtn);
+        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_malloc,
+		       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		       IARG_END);
+        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_malloc,
+		       IARG_FUNCRET_EXITPOINT_VALUE,  
+		       IARG_END);
+        RTN_Close(rtn);
+    }
+    if (!strcmp (name, "_int_malloc")) {
+        RTN_Open(rtn);
+        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_int_malloc,
+		       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		       IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+		       IARG_END);
+        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_int_malloc,
+		       IARG_FUNCRET_EXITPOINT_VALUE,  
+		       IARG_END);
+        RTN_Close(rtn);
+    }
+#endif
+
     //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...
     if (IMG_Name(IMG_FindByAddress(RTN_Address(rtn))).find("libpthread") == string::npos) {
         return;
@@ -7181,17 +7269,14 @@ void routine (RTN rtn, VOID* v)
     name = RTN_Name(rtn).c_str();
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
-
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
                 IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
                 IARG_END);
         RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_pthread_replay,
-                IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCRET_EXITPOINT_VALUE,  
                 IARG_END);
-
         RTN_Close(rtn);
     } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
         RTN_Open(rtn);

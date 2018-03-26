@@ -466,11 +466,11 @@ int patch_klog (string recheck_filename)
 	sprintf (oldfile, "%s/klog.id.%ld", altdirname, it.first);
 	sprintf (newfile, "%s/tklog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
 	sprintf (oldfile, "%s/ulog.id.%ld", altdirname, it.first);
 	sprintf (newfile, "%s/tulog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
     }
 
     for (auto it: clone_map) {
@@ -478,11 +478,11 @@ int patch_klog (string recheck_filename)
 	sprintf (oldfile, "%s/tklog.id.%ld", altdirname, it.second);
 	sprintf (newfile, "%s/klog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
 	sprintf (oldfile, "%s/tulog.id.%ld", altdirname, it.second);
 	sprintf (newfile, "%s/ulog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
     }
     
     DPRINT ("Done with directory\n");

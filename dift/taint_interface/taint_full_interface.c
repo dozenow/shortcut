@@ -3127,7 +3127,7 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #ndx_reg[%d:%d:%u,%d:%d:%u] #mem_value %u", mem_loc, mem_tainted, mem_size, base_reg, still_tainted ? base_tainted : 0, base_reg_size, 
 			   index_reg, still_tainted ? index_tainted : 0, index_reg_size, get_mem_value32 (mem_loc, mem_size));
     }
-    if (current_thread->slice_linecnt > 10000000) fw_slice_rotate_file (current_thread);
+    OUTPUT_SLICE_CHECK_ROTATE;
 }
 
 TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, const CONTEXT* ctx, uint32_t fp_stack_change, BASE_INDEX_ARGS) 

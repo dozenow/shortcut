@@ -31,6 +31,7 @@
 #define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format " /*", ## __VA_ARGS__);
 #define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "[SLICE_VERIFICATION] " format "*/\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define OUTPUT_TAINT_INFO_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"/* [TAINT_INFO] " format " */\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
+#define OUTPUT_SLICE_CHECK_ROTATE if (current_thread->slice_linecnt > 2500000) fw_slice_rotate_file (current_thread);
 #define DEBUG_INFO printf
 #else
 #define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); 
@@ -40,6 +41,7 @@
 #define OUTPUT_SLICE_CTRL_FLOW_THREAD(thread,ip,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define OUTPUT_SLICE_VERIFICATION_THREAD(thread,format,...) fprintf (thread->slice_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__); thread->slice_linecnt++;
 #define OUTPUT_SLICE_VERIFICATION_INFO_THREAD(x,...)
+#define OUTPUT_SLICE_CHECK_ROTATE if (current_thread->slice_linecnt > 10000000) fw_slice_rotate_file (current_thread);
 #define OUTPUT_TAINT_INFO_THREAD(x,...)
 #define DEBUG_INFO(x,...)
 #endif
@@ -194,6 +196,7 @@ struct getrusage_info {
 };
 
 struct clock_gettime_info {
+    clockid_t clk_id;
     struct timespec* tp;
 };
 

@@ -275,12 +275,13 @@ int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t coun
     struct write_recheck wrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_write);
 
+    check_reg_arguments ("write", 2);
+
     write_header_into_recheck_log (handle->recheckfd, SYS_write, res->retval, sizeof (struct write_recheck)+count*2, clock);
     wrchk.fd = fd;
     wrchk.buf = buf;
     wrchk.count = count;
-
-    check_reg_arguments ("write", 3);
+    wrchk.is_count_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0);
     
     write_data_into_recheck_log (handle->recheckfd, &wrchk, sizeof(wrchk));
     write_taintmask_into_recheck_log (handle, (u_long ) buf, count);
@@ -427,7 +428,7 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     struct open_recheck orchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_open);
 
-    check_reg_arguments ("open", 2);
+    check_reg_arguments ("open", 1);
     if (is_mem_arg_tainted ((u_long) filename, strlen(filename)+1)) fprintf (stderr, "[ERROR] open filename is tainted: %s\n", filename);
 
     write_header_into_recheck_log (handle->recheckfd, SYS_open, res->retval, sizeof (struct open_recheck) + strlen(filename) + 1, clock);
@@ -437,6 +438,7 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     } else {
 	orchk.has_retvals = 0;
     }
+    orchk.is_flags_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0);
     orchk.flags = flags;
     orchk.is_mode_tainted = is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0);
     orchk.mode = mode;
@@ -795,6 +797,15 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
     
     return 0;
+}
+
+/* Odd function: we can skip this syscall and return value from log if CLOCK_MONOTONIC */
+int recheck_clock_gettime_monotonic (struct recheck_handle* handle, struct timespec* tp_out) 
+{
+    struct klog_result* res = skip_to_syscall (handle, SYS_clock_gettime);
+    check_reg_arguments ("clock_gettime (monotonic)", 2);
+    memcpy (tp_out, res->retparams, sizeof(struct timespec));
+    return res->retval;
 }
 
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock) {

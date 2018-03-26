@@ -89,6 +89,7 @@ struct execve_recheck {
 struct open_recheck {
     int has_retvals;
     struct open_retvals retvals;
+    int is_flags_tainted;
     int flags;
     int is_mode_tainted;
     int mode;
@@ -148,6 +149,7 @@ struct write_recheck {
     int fd;
     void* buf;
     size_t count;
+    int is_count_tainted;
 };
 /* Followed by data actually written with taints */
 
@@ -535,6 +537,7 @@ int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long 
 int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize, u_long clock);
 int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock);
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
+int recheck_clock_gettime_monotonic (struct recheck_handle* handle, struct timespec* tp_out) ;
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock);

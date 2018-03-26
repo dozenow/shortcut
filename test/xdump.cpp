@@ -41,11 +41,14 @@ void read_filters (char* filename)
 }
 #endif
 
-static int get_msglen(u_char* pbuf)
+static int get_msglen(u_char* pbuf, u_long syscall, int start)
 {
-    if (pbuf[0] == 0x1) {
+    if (pbuf[start] == 0x1) {
 	return 32 + 4 * (*(u_int *)(pbuf+4));
     } else {
+	if (pbuf[start] == 0x1c) {
+	    printf ("filter syscall %lu,%d,%d\n", syscall,start+12,start+16);
+	}
 	return 32;
     }
 }
@@ -71,13 +74,13 @@ void print_msgs (char* klogfilename)
 			struct recvfrom_retvals* pretvals = (struct recvfrom_retvals *) res->retparams;
 			u_char* pbuf = (u_char *) &pretvals->buf;
 
-			int msglen = get_msglen(pbuf);
+			int msglen = get_msglen(pbuf, syscall, 0);
 
 			printf ("{");
 			for (long i = 0; i < res->retval; i++) {
 			    if (msglen == 0) {
 				printf ("}\n{");
-				msglen = get_msglen(pbuf);
+				msglen = get_msglen(pbuf, syscall, i);
 			    }
 			    printf ("%02x", pbuf[i] & 0xff);
 			    msglen--;
