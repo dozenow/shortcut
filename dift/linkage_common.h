@@ -411,7 +411,6 @@ struct thread_data {
     struct thread_data*      next;
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
-    boost::icl::interval_set<unsigned long> *address_taint_set;
     struct ctrl_flow_info ctrl_flow_info;
 
     queue<string>* slice_buffer;  //generated slice is put on this buffer first:::: deprecated

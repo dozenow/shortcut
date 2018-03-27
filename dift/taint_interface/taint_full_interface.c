@@ -79,6 +79,7 @@ map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
 vector<struct check_syscall> ignored_syscall;
 vector<u_long> ignored_inst;
+boost::icl::interval_set<unsigned long> address_taint_set;
 
 #ifdef TAINT_STATS
 struct taint_stats_profile {
@@ -2647,7 +2648,7 @@ inline char* print_regval(char* valuebuf, const PIN_REGISTER* reg_value, uint32_
 void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size) 
 { 
     interval<unsigned long>::type mem_interval = interval<unsigned long>::closed(mem_loc, mem_loc+size-1);
-    current_thread->address_taint_set->insert (mem_interval);
+    address_taint_set.insert (mem_interval);
 }
 
 TAINTSIGN ctrl_flow_init_reg (ADDRINT ip, REG reg, const CONTEXT* ctx, taint_t* reg_table) 
@@ -5169,8 +5170,8 @@ int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata, bool
     OUTPUT_MAIN_THREAD (tdata, "popfd");
     if (is_first_thread) {
 	OUTPUT_MAIN_THREAD (tdata, "call downprotect_mem");
+	OUTPUT_MAIN_THREAD (tdata, "jmp ckpt_mem");
     }
-    OUTPUT_MAIN_THREAD (tdata, "jmp ckpt_mem");
     OUTPUT_MAIN_THREAD (tdata, "slice_begins:");
 
     tdata->slice_filecnt = 1;
@@ -5240,7 +5241,7 @@ class AddrToRestore {
 void remove_modified_mem_for_final_check (u_long mem_loc, u_long size)
 {
     interval<unsigned long>::type mem_interval = interval<unsigned long>::closed(mem_loc, mem_loc+size-1);
-    current_thread->address_taint_set->erase (mem_interval);
+    address_taint_set.erase (mem_interval);
 }
 
 static void fw_slice_check_final_mem_taint (struct thread_data* tdata) 
@@ -5248,8 +5249,7 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
     u_long pushed = 0;
     /* First build up a list of ranges to restore */
     list<AddrToRestore> restoreAddress;
-    for(interval_set<unsigned long>::iterator iter = tdata->address_taint_set->begin();
-	iter != tdata->address_taint_set->end(); ++iter) {
+    for(interval_set<unsigned long>::iterator iter = address_taint_set.begin(); iter != address_taint_set.end(); ++iter) {
 	// We need to deal with partial taint
 	u_long bytes_to_restore = 0;
 	u_long addr;
@@ -5301,8 +5301,8 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
 
 void fw_slice_print_footer (struct thread_data* tdata)
 {
-    OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem");
     if (tdata->record_pid == first_thread) {
+	OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem");
 	OUTPUT_MAIN_THREAD (tdata, "call upprotect_mem");
     }
     OUTPUT_MAIN_THREAD (tdata, "slice_ends:");
@@ -5310,9 +5310,9 @@ void fw_slice_print_footer (struct thread_data* tdata)
     OUTPUT_MAIN_THREAD (tdata, "mov eax, 350");
     OUTPUT_MAIN_THREAD (tdata, "int 0x80");
     
-    fw_slice_check_final_mem_taint (tdata);
-
     if (tdata->record_pid == first_thread) {
+	fw_slice_check_final_mem_taint (tdata);
+	OUTPUT_MAIN_THREAD (tdata, "call pthread_go_live");
 	handle_downprotected_pages (tdata);
 	handle_upprotected_pages (tdata);
     }

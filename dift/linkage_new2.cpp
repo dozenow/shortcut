@@ -216,7 +216,6 @@ inline void sync_slice_buffer (struct thread_data* tdata)
 
     //TODO: probably need to wakeup other sleeping threads if necesary  (only happens if one thread terminates before the checkpoint clock)
     //setup pthread properly
-    print_function_call_inst (tdata, "pthread_go_live", 0);
 
     OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
@@ -6810,7 +6809,6 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     }
 
     /* Some of these should be global, not per-thread */
-    current_thread->address_taint_set = new boost::icl::interval_set<unsigned long>();
     current_thread->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (current_thread);
 
@@ -6952,7 +6950,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         return;
     }
 
-    ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (ptdata);
 
@@ -7175,7 +7172,6 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
         tdata->slice_output_file = NULL;
     }
     if (tdata->slice_buffer) delete tdata->slice_buffer;
-    if (tdata->address_taint_set) delete tdata->address_taint_set;
     // JNF: xxx if you have a subroutine for allocating control flow, best to have one for deallocating control flow stuff
     if (tdata->ctrl_flow_info.diverge_point) delete tdata->ctrl_flow_info.diverge_point;
     if (tdata->ctrl_flow_info.diverge_inst) delete tdata->ctrl_flow_info.diverge_inst;
