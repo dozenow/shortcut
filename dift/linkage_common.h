@@ -324,7 +324,7 @@ struct ctrl_flow_info {
     int alt_path_index;  //which path we are in
     //struct ctrl_flow_block_index block_index;  //current block index
     std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
-    std::multimap<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
+    std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
 
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
@@ -341,14 +341,17 @@ struct ctrl_flow_info {
 
     //checkpoint and rollback
     bool is_in_original_branch;
+    bool is_in_original_branch_first_inst;
     bool is_in_diverged_branch;
     bool is_rolled_back;
     bool changed_jump;
     bool is_nested_jump; //True if this is a nested divergence
-    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards; we have to figure out which path is the original path for this instance...
+    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
+    bool is_orig_path_tracked; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
     deque<struct ctrl_flow_branch_info>* tracked_orig_path; //Used with the above flag
     int swap_index; //The index of the alternative path that will be swapped with the original path; used by wildcard matching
     FILE* saved_slice_output_file; 
+    multimap<int, bool> *handled_tags; //used for nested divergence
     
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
  };

@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG  0
-//#define EXTRA_DEBUG_STOP 69
-//#define EXTRA_DEBUG_FUNCTION
+#define EXTRA_DEBUG  718800
+#define EXTRA_DEBUG_STOP 718900
+#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -149,6 +149,7 @@ extern map<ADDRINT, struct wait_state*> active_wait;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
+extern u_long jump_count;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -2785,6 +2786,7 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
 	}
 #endif
+	fprintf(stderr, "%d: finish generating slice and calling try_to_exit\n", PIN_GetTid());
         //wake up other threads
         //don't combine this loop with the next one
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
@@ -2802,7 +2804,6 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 	while (!calling_dd || is_pin_attaching(dev_fd)) {
 		usleep (1000);
 	}
-	fprintf(stderr, "%d: calling try_to_exit\n", PIN_GetTid());
 	try_to_exit(dev_fd, PIN_GetPid());
 	PIN_ExitApplication(0); 
     }
@@ -5509,11 +5510,12 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
 	}
 	PIN_UnlockClient();
-	printf ("0xbffff5b4 tainted: %d value: %x\n", is_mem_arg_tainted(0xbffff5b4, 1), *((u_char *) 0xbffff5b4));
+	//printf ("0xbffff5b4 tainted: %d value: %x\n", is_mem_arg_tainted(0xbffff5b4, 1), *((u_char *) 0xbffff5b4));
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
         printf ("ecx value %u edx %u\n", value1, value2);
+        printf ("jump_diverge index %lu\n", jump_count);
 	printf ("\n");
 	fflush (stdout);
     }
@@ -6178,6 +6180,11 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_taint_clear_mem (ins);
                 slice_handled = 1;
                 break;
+            case XED_ICLASS_CDQ:
+                instrument_taint_reg2reg (ins, LEVEL_BASE::REG_EDX, LEVEL_BASE::REG_EAX, 0);
+                fw_slice_src_reg (ins, LEVEL_BASE::REG_EAX);
+                slice_handled = 1;
+                break;
             default:
                 if (INS_IsNop(ins)) {
                     INSTRUMENT_PRINT(log_f, "%#x: not instrument noop %s\n",
@@ -6588,12 +6595,13 @@ static void destroy_ctrl_flow_info (struct thread_data* tdata)
     if (tdata->ctrl_flow_info.merge_insts) delete tdata->ctrl_flow_info.merge_insts;
     if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
     if (tdata->ctrl_flow_info.tracked_orig_path) delete tdata->ctrl_flow_info.tracked_orig_path;
+    if (tdata->ctrl_flow_info.handled_tags) delete tdata->ctrl_flow_info.handled_tags;
 }
 
 static void init_ctrl_flow_info (struct thread_data* ptdata)
 {
    ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_index>();
-   ptdata->ctrl_flow_info.diverge_inst = new std::multimap<u_long,struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.diverge_inst = new std::map<u_long,struct ctrl_flow_block_index>();
    ptdata->ctrl_flow_info.clock = 0;
    ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
@@ -6604,12 +6612,15 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
    ptdata->ctrl_flow_info.is_in_original_branch = false;
+   ptdata->ctrl_flow_info.is_in_original_branch_first_inst = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.alt_path_index  = 0;
    ptdata->ctrl_flow_info.is_nested_jump = false;
    ptdata->ctrl_flow_info.is_tracking_orig_path = false;
    ptdata->ctrl_flow_info.tracked_orig_path = new deque<struct ctrl_flow_branch_info>();
    ptdata->ctrl_flow_info.swap_index = -1;
+   ptdata->ctrl_flow_info.is_orig_path_tracked = false;
+   ptdata->ctrl_flow_info.handled_tags = new multimap<int, bool>();
 
    struct ctrl_flow_block_index index;
    int alt_path_index = -1; //which alt path we are in
@@ -6646,7 +6657,8 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 		       fprintf (stderr, "merge entry without preceeding diverge entry\n");
 		   } else {
 		       // Add wild card divergence
-		       *ptdata->ctrl_flow_info.diverge_inst->insert (make_pair(index.ip, index));
+                       //fprintf (stderr, "add wildcard ip %lx\n", index.ip);
+		       ptdata->ctrl_flow_info.diverge_inst->insert (make_pair(index.ip, index));
 		   }
 	       } else {
 		   ptdata->ctrl_flow_info.diverge_point->push_back (index);
@@ -6676,6 +6688,7 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
                //If we have several alternative paths, some of them may take the same direction at the divergence point as the original path
                assert (i.branch_flag != '-');
                struct ctrl_flow_branch_info in;
+               in.ip = i.ip;
                in.tag = -1;
                in.branch_flag = i.branch_flag;
                index.alt_path[alt_path_index].push(in);
