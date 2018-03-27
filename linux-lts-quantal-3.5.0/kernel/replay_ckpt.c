@@ -1859,8 +1859,9 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		//restore the registers
-		DPRINT ("sys_execute_fw_slice starts: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
-				regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
+		printk ("sys_execute_fw_slice ends: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
+			regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, 
+			regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
 		if (slice_info->fpu_is_allocated) { 
 			struct fpu* fpu = &(current->thread.fpu);
@@ -1868,7 +1869,6 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			fpu->has_fpu = slice_info->fpu_has_fpu;
 			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
 		}
-		DPRINT ("sys_execute_fw_slice ends: .\n");
 		if (replay_debug) dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
                 //destroy replay group if necessary
@@ -1901,7 +1901,12 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 			do_gettimeofday (&tv);
                         printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
                 }
+
+		printk ("Pid %d returning to user-space with the following vmas:\n", current->pid);
+		print_vmas (current);
+
 		return 0;
+
 	} else if (finish == 2) {
 
 		struct slice_task* pstask;

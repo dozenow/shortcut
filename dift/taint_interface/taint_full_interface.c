@@ -5171,6 +5171,8 @@ int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata, bool
     if (is_first_thread) {
 	OUTPUT_MAIN_THREAD (tdata, "call downprotect_mem");
 	OUTPUT_MAIN_THREAD (tdata, "jmp ckpt_mem");
+    } else {
+	OUTPUT_MAIN_THREAD (tdata, "sub esp, 12"); // 16-byte alignment adjusting for 4-byte offset
     }
     OUTPUT_MAIN_THREAD (tdata, "slice_begins:");
 
@@ -5290,21 +5292,21 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
 	addrRestore->printPop();
     }
 
-    OUTPUT_MAIN_THREAD (tdata, "jmp slice_ends");
+    OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem_done");
 
     for (int i = 0; i < NUM_REGS*REG_SIZE; i++) {
-            if (tdata->shadow_reg_table[i]) {
-                DEBUG_INFO ("[CHECK_REG] $reg(%d) is tainted, index %d, thread id %d record pid %d\n", i/REG_SIZE, i, tdata->threadid, tdata->record_pid);
-            }
+	if (tdata->shadow_reg_table[i]) {
+	    DEBUG_INFO ("[CHECK_REG] $reg(%d) is tainted, index %d, thread id %d record pid %d\n", i/REG_SIZE, i, tdata->threadid, tdata->record_pid);
+	}
     }
 }
 
 void fw_slice_print_footer (struct thread_data* tdata)
 {
-    if (tdata->record_pid == first_thread) {
-	OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem");
-	OUTPUT_MAIN_THREAD (tdata, "call upprotect_mem");
+    if (tdata->record_pid != first_thread) {
+	OUTPUT_MAIN_THREAD (tdata, "add esp, 12");
     }
+
     OUTPUT_MAIN_THREAD (tdata, "slice_ends:");
     OUTPUT_MAIN_THREAD (tdata, "mov ebx, 1");
     OUTPUT_MAIN_THREAD (tdata, "mov eax, 350");
@@ -5312,7 +5314,6 @@ void fw_slice_print_footer (struct thread_data* tdata)
     
     if (tdata->record_pid == first_thread) {
 	fw_slice_check_final_mem_taint (tdata);
-	OUTPUT_MAIN_THREAD (tdata, "call pthread_go_live");
 	handle_downprotected_pages (tdata);
 	handle_upprotected_pages (tdata);
     }

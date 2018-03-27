@@ -1330,6 +1330,7 @@ int should_call_recplay_exit_start() {
 
 }
 
+#if 0
 void print_memory_areas (void) 
 {
 	struct vm_area_struct *existing_mmap;
@@ -1346,6 +1347,7 @@ void print_memory_areas (void)
 		existing_mmap = existing_mmap->vm_next;
 	}
 }
+#endif
 
 // Cannot unlink shared path page when a replay group is deallocated, so we queue the work up for later
 struct replay_paths_to_free {
@@ -4898,9 +4900,10 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	} else {
                 ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
         }
+	printk ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
 
 	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
-		current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
+		     current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
 
 	if (go_live) {

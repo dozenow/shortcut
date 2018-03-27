@@ -209,66 +209,9 @@ inline void print_function_call_inst (struct thread_data* tdata, const char* fun
     va_end (list);
 }
 
-inline void sync_slice_buffer (struct thread_data* tdata)
-{
-    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-
-    //TODO: probably need to wakeup other sleeping threads if necesary  (only happens if one thread terminates before the checkpoint clock)
-    //setup pthread properly
-
-    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-
-    DEBUG_INFO ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
-    //let's re-create necessary pthread state for this thread
-    DEBUG_INFO ("Figure out all valid mutex at this point\n");
-    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case MUTEX_AFTER_LOCK: 
-                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
-                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-        }
-    }
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case COND_BEFORE_WAIT: 
-                    //normally, the mutex should already be held by this thread
-                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
-                    break;
-                case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-        }
-    }
-
-    //output the footer and restore untainted memory address
-    fw_slice_print_footer (tdata);
-}
-
 //tdata: the previous thread that has to wait 
 static inline void slice_thread_wait (struct thread_data* tdata) 
 {
-    printf ("call recheck_thread_wait, record_pid %d\n", tdata->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     //necessary: preserve registers before function calls
@@ -299,7 +242,6 @@ static inline void slice_thread_wait (struct thread_data* tdata)
 //tdata: the previous thread that has to wakes up the current thread (with record pid as wakeup_record_pid)
 static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_record_pid) 
 {
-    printf ("call recheck_thread_wakeup, to wakeup pid %d (record_pid), current record_pid %d\n", wakeup_record_pid, tdata->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "push eax");
@@ -324,6 +266,107 @@ static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_re
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+}
+
+static inline void slice_synchronize (struct thread_data* main_thread, struct thread_data* other_thread)
+{
+    OUTPUT_MAIN_THREAD (main_thread, "pushfd");
+    OUTPUT_MAIN_THREAD (main_thread, "push eax");
+    OUTPUT_MAIN_THREAD (main_thread, "push ecx");
+    OUTPUT_MAIN_THREAD (main_thread, "push edx");
+    OUTPUT_MAIN_THREAD (main_thread, "push %d", other_thread->record_pid); 
+    OUTPUT_MAIN_THREAD (main_thread, "call recheck_thread_wakeup");
+    OUTPUT_MAIN_THREAD (main_thread, "add esp, 4");
+    OUTPUT_MAIN_THREAD (main_thread, "push %d", main_thread->record_pid); 
+    OUTPUT_MAIN_THREAD (main_thread, "call recheck_thread_wait");
+    OUTPUT_MAIN_THREAD (main_thread, "add esp, 4");
+    OUTPUT_MAIN_THREAD (main_thread, "pop edx");
+    OUTPUT_MAIN_THREAD (main_thread, "pop ecx");
+    OUTPUT_MAIN_THREAD (main_thread, "pop eax");
+    OUTPUT_MAIN_THREAD (main_thread, "popfd");
+}
+		
+static void restore_pthread_state (struct thread_data* tdata)
+{
+    // Not sure this is right - move to track_pthread.cpp anyway
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            switch (iter->second->state) { 
+                case MUTEX_AFTER_LOCK: 
+		    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
+		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+		    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+        }
+    }
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+
+    slice_thread_wakeup (tdata, current_thread->record_pid);
+}
+
+// Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
+static void restore_my_pthread_state (struct thread_data* tdata)
+{
+    // Not sure this is right - move to track_pthread.cpp anyway
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            switch (iter->second->state) { 
+                case MUTEX_AFTER_LOCK: 
+		    OUTPUT_MAIN_THREAD (tdata, "pushfd"); 
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+		    OUTPUT_MAIN_THREAD (tdata, "popfd");
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+        }
+    }
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_MAIN_THREAD (tdata, "pushfd");
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_MAIN_THREAD (tdata, "popfd");
+        }
+    }
 }
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
@@ -2668,6 +2711,8 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
+	    fprintf (stderr, "mprotect addr 0x%lx len 0x%x prot 0x%x clock %lu\n", (u_long)syscallarg0, 
+		     (int)syscallarg1, (int)syscallarg2, *ppthread_log_clock);
             change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
@@ -2936,25 +2981,44 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     }
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= checkpoint_clock) { 
-#if 0
-	struct fd_struct* fds;
-	//TODO: socks, x server ...
-	printf ("opened files: \n");
-	list_for_each_entry (fds, &open_fds->fds, list) {
-		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
+
+	if (current_thread->record_pid != first_thread) {
+	    fprintf (stderr, "[ERROR] Current assumption is that checkpointing thread is the first thread\n");
 	}
-#endif
-        //wake up other threads
-        //don't combine this loop with the next one
+
+	// First, restore memory addresses 
+	OUTPUT_MAIN_THREAD (current_thread, "jmp restore_mem");
+	OUTPUT_MAIN_THREAD (current_thread, "restore_mem_done:");
+
+        // Second, wake up other threads so that they can restore their pthread state
+	// Wait for them to respond so that we know that they are done
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            if (iter->second != current_thread) 
-                slice_thread_wakeup (current_thread, iter->second->record_pid);
+            if (iter->second != current_thread) {
+		// We do this in the main c file since slice c file has returned at this point
+		slice_synchronize (current_thread, iter->second);
+
+		// And this goes in the slice c file for the other threads
+		restore_pthread_state (iter->second);
+	    }
         }
 
-        //dump slice buffer for all active threads
+	// Third, restore pthread state for this thread and adjust pthread status, readjust jiggled mem protections
+	restore_my_pthread_state (current_thread);
+	OUTPUT_MAIN_THREAD (current_thread, "call pthread_go_live"); // Switch pthread_status
+	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
+
+	// Forth, another barrier, so that all threads resume execution only when memory state is
+	// completely restored
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            sync_slice_buffer (iter->second);
-        }
+            if (iter->second != current_thread) {
+		slice_synchronize (current_thread, iter->second);               // Main thread wakes and waits for ack
+		slice_thread_wait (iter->second);	                        // This waits to be woken
+		slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
+		fw_slice_print_footer (iter->second);
+	    }
+	}
+
+	fw_slice_print_footer (current_thread);	
 
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -7161,7 +7225,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
-    //sync_slice_buffer (tdata); 
+
     //TODO: we need to call this function if the thread ends earlier before the checkpoint clock?
     //and we also need to make sure this thread wakes up other necessary threads
     active_threads.erase(tdata->record_pid);
@@ -7182,13 +7246,14 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     if (tdata->ctrl_flow_info.insts_instrumented) delete tdata->ctrl_flow_info.insts_instrumented;
 }
 
-void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
+void before_pthread_replay (ADDRINT type, ADDRINT check)
 {
-    PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x\n", current_thread->record_pid, type, check, rtn_addr);
+    fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u\n", current_thread->record_pid, type, check);
 }
 
-void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
+void after_pthread_replay (ADDRINT ret) 
 {
+    fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d\n", current_thread->record_pid, ret);
     if (current_thread != previous_thread) { 
         //well, a thread switch happens and this thread now executes
         //previous thread needs to sleep and wakes up this thread
@@ -7266,7 +7331,6 @@ void routine (RTN rtn, VOID* v)
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
-                IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
                 IARG_END);

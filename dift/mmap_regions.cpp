@@ -129,7 +129,16 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 {
     DPRINT (stderr, "handle protection for range from 0x%lx size %lx: type %d\n", start, size, type);
     if (type == 1) {
-	// unmap than map anonymous read-write
+	// mprotect read-write
+	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mprotect);
+	OUTPUT_MAIN_THREAD (tdata, "mov ebx, 0x%lx", start);
+	OUTPUT_MAIN_THREAD (tdata, "mov ecx, 0x%lx", size);
+	int flags = PROT_READ|PROT_WRITE;
+	if (ex_pages.test(start/PAGE_SIZE)) flags |= PROT_EXEC;
+	OUTPUT_MAIN_THREAD (tdata, "mov edx, %d", flags);
+	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
+#if 0
+	// unmap than map anonymous read-write - when do we need to do this?
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_munmap);
 	OUTPUT_MAIN_THREAD (tdata, "mov ebx, 0x%lx", start);
 	OUTPUT_MAIN_THREAD (tdata, "mov ecx, 0x%lx", size);
@@ -143,6 +152,7 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 	OUTPUT_MAIN_THREAD (tdata, "mov edi, -1");
 	OUTPUT_MAIN_THREAD (tdata, "mov ebp, 0");
 	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
+#endif
     } else if (type == 2) {
 	// mmap anonymous read-write
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mmap2);
