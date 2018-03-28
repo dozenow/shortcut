@@ -147,6 +147,7 @@ extern map<ADDRINT, struct wait_state*> active_wait;
 u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
+u_long dumbass_link_addr = 0;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -3007,6 +3008,9 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 	// Third, restore pthread state for this thread and adjust pthread status, readjust jiggled mem protections
 	restore_my_pthread_state (current_thread);
 	OUTPUT_MAIN_THREAD (current_thread, "call pthread_go_live"); // Switch pthread_status
+	if (dumbass_link_addr) {
+	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", dumbass_link_addr); // Reset the dumbass link pthread_log_status to PTHREAD_LOG_OFF
+	}
 	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
 
 	// Forth, another barrier, so that all threads resume execution only when memory state is
@@ -3054,6 +3058,10 @@ static void instrument_syscall(ADDRINT syscall_num,
     }
     if (sysnum == 56) {
 	tdata->status_addr = (u_long) syscallarg0;
+    }
+    if (sysnum == 58) {
+	if (dumbass_link_addr != 0) fprintf (stderr, "[ERROR] dumbass link address getting set multiple times - need collection(!)'\n");
+	dumbass_link_addr = (u_long) syscallarg0;
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
 	sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
