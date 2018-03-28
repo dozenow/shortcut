@@ -113,7 +113,7 @@ void init_logs(void);
 #endif
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 struct thread_data* previous_thread; // used for tracking thread switching
-int first_thread = 1;
+pid_t first_thread = 0;
 int child = 0;
 char** main_prev_argv = 0;
 char group_directory[256];
@@ -150,6 +150,7 @@ u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
 extern u_long jump_count;
+u_long dumbass_link_addr = 0;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -212,67 +213,9 @@ inline void print_function_call_inst (struct thread_data* tdata, const char* fun
     va_end (list);
 }
 
-inline void sync_slice_buffer (struct thread_data* tdata)
-{
-    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-
-    //TODO: probably need to wakeup other sleeping threads if necesary  (only happens if one thread terminates before the checkpoint clock)
-    //setup pthread properly
-    print_function_call_inst (tdata, "pthread_go_live", 0);
-
-    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-    OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-
-    DEBUG_INFO ("Now finalizing slice for thread id %d, record_pid %d\n", tdata->threadid, tdata->record_pid);
-    //let's re-create necessary pthread state for this thread
-    DEBUG_INFO ("Figure out all valid mutex at this point\n");
-    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case MUTEX_AFTER_LOCK: 
-                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
-                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-        }
-    }
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case COND_BEFORE_WAIT: 
-                    //normally, the mutex should already be held by this thread
-                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
-                    break;
-                case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-        }
-    }
-
-    //output the footer and restore untainted memory address
-    fw_slice_print_footer (tdata);
-}
-
 //tdata: the previous thread that has to wait 
 static inline void slice_thread_wait (struct thread_data* tdata) 
 {
-    printf ("call recheck_thread_wait, record_pid %d\n", tdata->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     //necessary: preserve registers before function calls
@@ -302,7 +245,6 @@ static inline void slice_thread_wait (struct thread_data* tdata)
 //tdata: the previous thread that has to wakes up the current thread (with record pid as wakeup_record_pid)
 static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_record_pid) 
 {
-    printf ("call recheck_thread_wakeup, to wakeup pid %d (record_pid), current record_pid %d\n", wakeup_record_pid, tdata->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "push eax");
@@ -327,6 +269,107 @@ static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_re
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
+}
+
+static inline void slice_synchronize (struct thread_data* main_thread, struct thread_data* other_thread)
+{
+    OUTPUT_MAIN_THREAD (main_thread, "pushfd");
+    OUTPUT_MAIN_THREAD (main_thread, "push eax");
+    OUTPUT_MAIN_THREAD (main_thread, "push ecx");
+    OUTPUT_MAIN_THREAD (main_thread, "push edx");
+    OUTPUT_MAIN_THREAD (main_thread, "push %d", other_thread->record_pid); 
+    OUTPUT_MAIN_THREAD (main_thread, "call recheck_thread_wakeup");
+    OUTPUT_MAIN_THREAD (main_thread, "add esp, 4");
+    OUTPUT_MAIN_THREAD (main_thread, "push %d", main_thread->record_pid); 
+    OUTPUT_MAIN_THREAD (main_thread, "call recheck_thread_wait");
+    OUTPUT_MAIN_THREAD (main_thread, "add esp, 4");
+    OUTPUT_MAIN_THREAD (main_thread, "pop edx");
+    OUTPUT_MAIN_THREAD (main_thread, "pop ecx");
+    OUTPUT_MAIN_THREAD (main_thread, "pop eax");
+    OUTPUT_MAIN_THREAD (main_thread, "popfd");
+}
+		
+static void restore_pthread_state (struct thread_data* tdata)
+{
+    // Not sure this is right - move to track_pthread.cpp anyway
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            switch (iter->second->state) { 
+                case MUTEX_AFTER_LOCK: 
+		    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
+		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+		    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+        }
+    }
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+
+    slice_thread_wakeup (tdata, current_thread->record_pid);
+}
+
+// Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
+static void restore_my_pthread_state (struct thread_data* tdata)
+{
+    // Not sure this is right - move to track_pthread.cpp anyway
+    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            switch (iter->second->state) { 
+                case MUTEX_AFTER_LOCK: 
+		    OUTPUT_MAIN_THREAD (tdata, "pushfd"); 
+                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
+                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
+		    OUTPUT_MAIN_THREAD (tdata, "popfd");
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+        }
+    }
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_MAIN_THREAD (tdata, "pushfd");
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_MAIN_THREAD (tdata, "popfd");
+        }
+    }
 }
 
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
@@ -691,7 +734,7 @@ static inline void sys_execve_start(struct thread_data* tdata, char* filename, c
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
 	long retval = recheck_execve (tdata->recheck_handle, filename, argv, envp, *ppthread_log_clock);
 	if (retval == 0) { // This means exec should not return
-	    fw_slice_print_footer (tdata);
+	    fw_slice_print_footer (tdata, 0, 0);
 	    close_recheck_log (tdata->recheck_handle); 
 	}
     }
@@ -708,8 +751,12 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE (0, "push edx");
 	OUTPUT_SLICE_INFO ("");
+	OUTPUT_SLICE (0, "push ecx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "call open_recheck");
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE (0, "pop ecx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "pop edx");
 	OUTPUT_SLICE_INFO ("");
 	recheck_open (tdata->recheck_handle, filename, flags, mode, *ppthread_log_clock);
@@ -959,66 +1006,6 @@ static inline void sys_pread_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
-static inline void sys_getdents_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
-{
-    struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
-    gdi->fd = fd;
-    gdi->buf = dirp;
-    gdi->count = count;
-    if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call getdents_recheck");
-	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-	recheck_getdents (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
-    }
-}
-
-static void sys_getdents_stop (int rc) 
-{
-    struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
-    if (rc > 0) clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
-}
-
-static inline void sys_getdents64_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
-{
-    struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
-    gdi->fd = fd;
-    gdi->buf = dirp;
-    gdi->count = count;
-    if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call getdents64_recheck");
-	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-	recheck_getdents64 (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
-    }
-}
-
-static void sys_getdents64_stop (int rc) 
-{
-    struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
-    if (rc > 0) clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
-}
-
-static inline void sys_readlink_start(struct thread_data* tdata, char* path, char* buf, size_t bufsiz)
-{
-    if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call readlink_recheck");
-	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz, *ppthread_log_clock);
-    }
-}
-
-static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* arg)
-{
-    struct ioctl_info* ii = &tdata->op.ioctl_info_cache;
-    ii->fd = fd;
-    ii->buf = arg;
-    ii->retval_size = 0;
-    if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call ioctl_recheck");
-	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-	ii->retval_size = recheck_ioctl (tdata->recheck_handle, fd, cmd, arg, *ppthread_log_clock);
-    }
-}
-
 static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_long size) 
 {
     struct taint_creation_info tci;
@@ -1048,6 +1035,105 @@ static inline void taint_syscall_retval (const char* sysname)
     OUTPUT_TAINT_INFO_THREAD (current_thread, "%s #eax", sysname);
 }
 
+static inline void sys_getdents_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
+{
+    struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
+    gdi->fd = fd;
+    gdi->buf = dirp;
+    gdi->count = count;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call getdents_recheck");
+	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_getdents (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
+    }
+}
+
+// Can I find this definition as user level?
+struct linux_dirent {
+    unsigned long        d_ino;
+    unsigned long        d_off;
+    unsigned short	 d_reclen;
+    char		 d_name[1];
+};
+
+static void sys_getdents_stop (int rc) 
+{
+    struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
+    if (rc > 0) {
+	clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
+
+	// Except for inodes, which will be tainted (consistent with stat syscalls)
+	char* p = gdi->buf; 
+	while ((u_long) p - (u_long) gdi->buf < (u_long) rc) {
+	    struct linux_dirent* de = (struct linux_dirent *) p;
+	    taint_syscall_memory_out ("getdents", (char *) &de->d_ino, sizeof(de->d_ino));
+	    if (de->d_reclen <= 0) break;
+	    p += de->d_reclen; 
+	}
+    }
+}
+
+static inline void sys_getdents64_start(struct thread_data* tdata, unsigned int fd, char* dirp, unsigned int count)
+{
+    struct getdents64_info* gdi = &tdata->op.getdents64_info_cache;
+    gdi->fd = fd;
+    gdi->buf = dirp;
+    gdi->count = count;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call getdents64_recheck");
+	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_getdents64 (tdata->recheck_handle, fd, dirp, count, *ppthread_log_clock);
+    }
+}
+
+// Can I find this definition at user level?
+struct linux_dirent64 {
+	__u64		d_ino;
+	__s64		d_off;
+	unsigned short	d_reclen;
+	unsigned char	d_type;
+	char		d_name[0];
+};
+
+static void sys_getdents64_stop (int rc) 
+{
+    struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
+    if (rc > 0) {
+	clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
+
+	// Except for inodes, which will be tainted (consistent with stat syscalls)
+	char* p = gdi->buf; 
+	while ((u_long) p - (u_long) gdi->buf < (u_long) rc) {
+	    struct linux_dirent64* de = (struct linux_dirent64 *) p;
+	    taint_syscall_memory_out ("getdents64", (char *) &de->d_ino, sizeof(de->d_ino));
+	    if (de->d_reclen <= 0) break;
+	    p += de->d_reclen; 
+	}
+    }
+}
+
+static inline void sys_readlink_start(struct thread_data* tdata, char* path, char* buf, size_t bufsiz)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call readlink_recheck");
+	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_readlink (tdata->recheck_handle, path, buf, bufsiz, *ppthread_log_clock);
+    }
+}
+
+static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* arg)
+{
+    struct ioctl_info* ii = &tdata->op.ioctl_info_cache;
+    ii->fd = fd;
+    ii->buf = arg;
+    ii->retval_size = 0;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call ioctl_recheck");
+	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	ii->retval_size = recheck_ioctl (tdata->recheck_handle, fd, cmd, arg, *ppthread_log_clock);
+    }
+}
+
 static inline void sys_mkdir_start(struct thread_data* tdata, char* filename, int mode)
 {
     if (tdata->recheck_handle) {
@@ -1063,6 +1149,24 @@ static inline void sys_unlink_start(struct thread_data* tdata, char* filename)
 	OUTPUT_SLICE (0, "call unlink_recheck");
         OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
 	recheck_unlink (tdata->recheck_handle, filename, *ppthread_log_clock);
+    } 
+}
+
+static inline void sys_inotify_init1_start(struct thread_data* tdata, int flags)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call inotify_init1_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_inotify_init1 (tdata->recheck_handle, flags, *ppthread_log_clock);
+    } 
+}
+
+static inline void sys_inotify_add_watch_start(struct thread_data* tdata, int fd, char* pathname, uint32_t mask)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call inotify_add_watch_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_inotify_add_watch (tdata->recheck_handle, fd, pathname, mask, *ppthread_log_clock);
     } 
 }
 
@@ -1249,30 +1353,16 @@ static void sys_mmap_stop(int rc)
     }
 }
 
-#if 0
-static void sys_munmap_start(struct thread_data* tdata, u_long addr, int len)
-{
-    struct mmap_info* mmi = &tdata->op.mmap_info_cache;
-    mmi->addr = addr;
-    mmi->length = len;
-    tdata->save_syscall_info = (void *) mmi;
-}
-
-static void sys_munmap_stop(int rc)
-{
-    struct mmap_info* mmi = (struct mmap_info*) current_thread->save_syscall_info;
-    if (rc == 0) {
-	fprintf (stderr, "munmap at clock %ld addr %lx len %x\n", *ppthread_log_clock, mmi->addr, mmi->length);
-    }
-}
-#endif
-
 static inline void sys_write_start(struct thread_data* tdata, int fd, char* buf, size_t count)
 {
     struct write_info* wi = &tdata->op.write_info_cache;
     if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "push edx");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE(0, "call write_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE (0, "pop edx");
+	OUTPUT_SLICE_INFO ("");
 	recheck_write (tdata->recheck_handle, fd, buf, count, *ppthread_log_clock);
     }
     wi->fd = fd;
@@ -1552,16 +1642,20 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 	OUTPUT_SLICE(0, "call recv_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 
-	size_t start, end;
-	if (filter_input() && get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
-	    fprintf (stderr, "partial recv taint: %u %u\n", start, end);
-	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 1, start, end, *ppthread_log_clock);
-	    if (retaddrlen > 0) {
-		add_modified_mem_for_final_check ((u_long)buf + start, end-start);
-		if (start > 0) clear_mem_taints ((u_long) buf, start);
-		if ((int) end < retaddrlen) clear_mem_taints ((u_long) buf + end, retaddrlen-end);
+	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
+	int regions;
+	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends)) > 0) {
+	    if (regions > 0) {
+		int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, regions, starts, ends, *ppthread_log_clock);
+		if (retaddrlen > 0) {
+		    clear_mem_taints ((u_long)buf, retaddrlen); 
+		    for (int i = 0; i < regions; i++) {
+			fprintf (stderr, "partial recv taint: %u %u\n", starts[i], ends[i]);
+			add_modified_mem_for_final_check ((u_long)buf + starts[i], ends[i]-starts[i]);
+			OUTPUT_TAINT_INFO_THREAD (current_thread, "recv %lx %lx", (u_long) buf+starts[i], (u_long) ends[i]-starts[i]);  
+		    }
+		}
 	    }
-	    OUTPUT_TAINT_INFO_THREAD (current_thread, "recv %lx %lx", (u_long) buf+start, (u_long) end-start);  
 	} else {
 	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, *ppthread_log_clock);
 	    if (retaddrlen > 0) clear_mem_taints ((u_long)buf, retaddrlen); 
@@ -1626,16 +1720,20 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 	OUTPUT_SLICE(0, "call recvmsg_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
 
-	size_t start, end;
-	if (filter_input() && get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
-	    fprintf (stderr, "partial recvmsg taint: %u %u\n", start, end);
-	    int retlen = recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, 1, start, end, *ppthread_log_clock);
+	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
+	int regions;
+	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends))) {
+	    fprintf (stderr, "recvmsg: regions is %d\n", regions);
+	    int retlen = recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, regions, starts, ends, *ppthread_log_clock);
 	    if (retlen > 0) {
 		// One byte at a time is simple, but may be a little slow
 		u_long bytes_so_far = 0;
+		int region_cnt = 0;
 		for (u_long i = 0; i < msg->msg_iovlen && bytes_so_far < (u_long) retlen; i++) {
 		    for (u_long j = 0; j < msg->msg_iov[i].iov_len && bytes_so_far < (u_long) retlen; j++) {
-			if (start > bytes_so_far || end <= bytes_so_far) {
+			if (region_cnt == regions || 
+			    (starts[region_cnt] > bytes_so_far || ends[region_cnt] <= bytes_so_far)) {
+			    if (region_cnt < regions && ends[region_cnt] <= bytes_so_far) region_cnt++;
 			    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			} else {
 			    add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
@@ -1876,26 +1974,50 @@ static inline void sys_time_stop (int rc)
     if (rc >= 0 && t != NULL) taint_syscall_memory_out ("time", (char *) t, sizeof(time_t));
 }
 
+static inline void sys_mremap_start (struct thread_data* tdata, void* old_address, size_t old_size, size_t new_size, int flags, void* new_address)
+{
+    fprintf (stderr, "mremap: old_address 0x%lx old_size 0x%x new_size 0x%x flags 0x%x new_address 0x%lx clock %lu\n", (u_long) old_address, old_size, new_size, flags, (u_long) new_address, *ppthread_log_clock);
+}
+
+static inline void sys_mremap_stop (int rc) 
+{
+    fprintf (stderr, "mremap: rc 0x%x\n", rc);
+}
+
 static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
     LOG_PRINT ("start to handle clock_gettime %p\n", tp);
     struct clock_gettime_info* info = &tdata->op.clock_gettime_info_cache;
+    info->clk_id = clk_id;
     info->tp = tp;
     tdata->save_syscall_info = (void*) info;
     if (tdata->recheck_handle) {
-	OUTPUT_SLICE (0, "call clock_gettime_recheck");
-	OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
-	recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+	if (clk_id == CLOCK_MONOTONIC) {
+	    // By the definition of CLOCK_MONOTONIC, we should be able to substitute value from recording here
+	    struct timespec tpout;
+	    int rc = recheck_clock_gettime_monotonic (tdata->recheck_handle, &tpout);
+	    OUTPUT_SLICE (0, "mov eax, 0");
+	    OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+	    if (rc == 0) {
+		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_sec, tpout.tv_sec);
+		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_nsec, tpout.tv_nsec);
+		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
+		clear_mem_taints((u_long) &tp, sizeof(tpout));
+	    }
+	} else {
+	    OUTPUT_SLICE (0, "call clock_gettime_recheck");
+	    OUTPUT_SLICE_INFO("%lu", *ppthread_log_clock);
+	    recheck_clock_gettime (tdata->recheck_handle, clk_id, tp, *ppthread_log_clock);
+	} 
     }
 }
 
-static inline void sys_clock_gettime_stop (int rc) { 
+static inline void sys_clock_gettime_stop (int rc) 
+{ 
     struct clock_gettime_info* ri = (struct clock_gettime_info*) &current_thread->op.clock_gettime_info_cache;
-    if (rc == 0) { 
-        taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
+    if (rc == 0 && ri->clk_id != CLOCK_MONOTONIC) {
+	taint_syscall_memory_out ("clock_gettime", (char*) ri->tp, sizeof(struct timespec));
     }
-    memset (&current_thread->op.clock_gettime_info_cache, 0, sizeof(struct clock_gettime_info));
-    current_thread->save_syscall_info = 0;
-    LOG_PRINT ("Done with clock_gettime.\n");
 }
 
 static inline void sys_clock_getres_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
@@ -2387,6 +2509,51 @@ static inline void sys_prctl_start (struct thread_data* tdata, int option, u_lon
     }
 }
 
+static inline void sys_shmget_start (struct thread_data* tdata, key_t key, size_t size, int shmflg)
+{ 
+    fprintf (stderr, "[WARNING]: Calling shmget key 0x%x size 0x%x shmflag 0x%x\n", key, size, shmflg);
+    OUTPUT_SLICE(0, "call shmget_recheck");
+    OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+    recheck_shmget (tdata->recheck_handle, key, size, shmflg, *ppthread_log_clock);
+}
+
+static inline void sys_shmget_stop (int rc) 
+{
+    taint_syscall_retval ("shmget");
+}
+
+static inline void sys_shmat_start (struct thread_data* tdata, int shmid, void* shmaddr, void* raddr, int shmflg)
+{ 
+    struct shmat_info* si = &current_thread->op.shmat_info_cache; 
+    si->raddr = raddr;
+
+    fprintf (stderr, "[WARNING]: Calling shmat shmid 0x%x shmaddr 0x%lx raddr 0x%lx shmflag 0x%x\n", shmid, (u_long) shmaddr, (u_long) raddr, shmflg);
+    OUTPUT_SLICE (0, "push ecx");
+    OUTPUT_SLICE_INFO ("");
+    OUTPUT_SLICE (0, "call shmat_recheck");
+    OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+    OUTPUT_SLICE (0, "pop ecx");
+    OUTPUT_SLICE_INFO ("");
+    recheck_shmat (tdata->recheck_handle, shmid, shmaddr, raddr, shmflg, *ppthread_log_clock);
+}
+
+static inline void sys_shmat_stop (int rc) 
+{
+    struct shmat_info* si = &current_thread->op.shmat_info_cache; 
+    fprintf (stderr, "sys_shmat returns %d raddr 0x%lx\n", rc, *((u_long *)si->raddr));
+}
+
+static inline void sys_ipc_rmid_start (struct thread_data* tdata, int shmid, int cmd)
+{ 
+    OUTPUT_SLICE (0, "push ecx");
+    OUTPUT_SLICE_INFO ("");
+    OUTPUT_SLICE (0, "call ipc_rmid_recheck");
+    OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+    OUTPUT_SLICE (0, "pop ecx");
+    OUTPUT_SLICE_INFO ("");
+    recheck_ipc_rmid (tdata->recheck_handle, shmid, cmd, *ppthread_log_clock);
+}
+
 static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
 {
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
@@ -2459,6 +2626,39 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_unlink:
             sys_unlink_start (tdata, (char*) syscallarg0);
             break;
+        case SYS_inotify_init1:
+	    sys_inotify_init1_start (tdata, (int) syscallarg0);
+	    break;
+        case SYS_inotify_add_watch:
+	    sys_inotify_add_watch_start (tdata, (int) syscallarg0, (char *) syscallarg1, (uint32_t) syscallarg2);
+	    break;
+        case SYS_ipc: {
+	    u_int call = (u_int) syscallarg0;
+            tdata->socketcall = call;
+	    switch (call) {
+	    case SHMGET:
+		sys_shmget_start (tdata, (key_t) syscallarg1, (size_t) syscallarg2, (int) syscallarg3);
+		break; 
+	    case SHMAT:
+		sys_shmat_start (tdata, (int) syscallarg1, (void *) syscallarg2, (void *) syscallarg3, (int) syscallarg4);
+		break;
+	    case SHMCTL: {
+		u_int opcode = (u_int) syscallarg2 & 0xff;
+		switch (opcode) {
+		case IPC_RMID:
+		    sys_ipc_rmid_start (tdata, (int) syscallarg1, (int) syscallarg2);
+		    break;
+		default:
+		    fprintf (stderr, "shmctl shmid %x unhandled opcode %d %d\n", (int) syscallarg1, opcode, IPC_RMID);
+		}
+		break;
+	    }
+	    default:
+		fprintf (stderr, "Unhandled ipc call type %u\n", call);
+		break;
+	    }
+	    break;
+        }
         case SYS_socketcall:
         {
             int call = (int) syscallarg0;
@@ -2516,11 +2716,13 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
+	    fprintf (stderr, "mprotect addr 0x%lx len 0x%x prot 0x%x clock %lu\n", (u_long)syscallarg0, 
+		     (int)syscallarg1, (int)syscallarg2, *ppthread_log_clock);
             change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
-            fprintf (stderr, "[UNHANDLED] for read-only mmap region detection.\n");
-            break;
+	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
+            fprintf (stderr, "[UNHANDLED] mremap for read-only mmap region detection.\n");
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -2640,9 +2842,11 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
     }
 }
 
-void syscall_end(int sysnum, ADDRINT ret_value)
+void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 {
     int rc = (int) ret_value;
+
+    detect_slice_ordering (sysnum);
 
     switch(sysnum) {
         case SYS_clone:
@@ -2680,16 +2884,14 @@ void syscall_end(int sysnum, ADDRINT ret_value)
         case SYS_mmap2:
             sys_mmap_stop(rc);
             break;
-#if 0
-        case SYS_munmap:
-            sys_munmap_stop(rc);
-            break;
-#endif
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);
 	    break;
         case SYS_time:
             sys_time_stop (rc);
+            break;
+        case SYS_mremap:
+            sys_mremap_stop (rc);
             break;
         case SYS_getdents:
 	    sys_getdents_stop(rc);
@@ -2770,35 +2972,71 @@ void syscall_end(int sysnum, ADDRINT ret_value)
     	        case SYS_SEND:
 		    sys_send_stop(rc);
 		    break;
-                default:
-                    break;
             }
             current_thread->socketcall = 0;
             break;
         }
+        case SYS_ipc: {
+	    switch (current_thread->socketcall) {
+	    case SHMGET:
+		sys_shmget_stop (rc);
+		break;
+	    case SHMAT:
+		sys_shmat_stop (rc);
+		break;
+	    }
+            current_thread->socketcall = 0;
+	    break;
+	}
     }
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= checkpoint_clock) { 
-#if 0
-	struct fd_struct* fds;
-	//TODO: socks, x server ...
-	printf ("opened files: \n");
-	list_for_each_entry (fds, &open_fds->fds, list) {
-		printf ("opened file %s\n", ((struct open_info*)fds->data)->name);
+
+	if (current_thread->record_pid != first_thread) {
+	    fprintf (stderr, "[ERROR] Current assumption is that checkpointing thread is the first thread\n");
 	}
-#endif
 	fprintf(stderr, "%d: finish generating slice and calling try_to_exit\n", PIN_GetTid());
-        //wake up other threads
-        //don't combine this loop with the next one
+
+	// First, restore memory addresses 
+	OUTPUT_MAIN_THREAD (current_thread, "jmp restore_mem");
+	OUTPUT_MAIN_THREAD (current_thread, "restore_mem_done:");
+
+        // Second, wake up other threads so that they can restore their pthread state
+	// Wait for them to respond so that we know that they are done
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            if (iter->second != current_thread) 
-                slice_thread_wakeup (current_thread, iter->second->record_pid);
+            if (iter->second != current_thread) {
+		// We do this in the main c file since slice c file has returned at this point
+		slice_synchronize (current_thread, iter->second);
+
+		// And this goes in the slice c file for the other threads
+		restore_pthread_state (iter->second);
+	    }
         }
 
-        //dump slice buffer for all active threads
+	// Third, restore pthread state for this thread and adjust pthread status, readjust jiggled mem protections
+	restore_my_pthread_state (current_thread);
+	OUTPUT_MAIN_THREAD (current_thread, "call pthread_go_live"); // Switch pthread_status
+	if (dumbass_link_addr) {
+	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", dumbass_link_addr); // Reset the dumbass link pthread_log_status to PTHREAD_LOG_OFF
+	}
+	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
+
+	// Forth, another barrier, so that all threads resume execution only when memory state is
+	// completely restored
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            sync_slice_buffer (iter->second);
-        }
+            if (iter->second != current_thread) {
+		slice_synchronize (current_thread, iter->second);               // Main thread wakes and waits for ack
+		slice_thread_wait (iter->second);	                        // This waits to be woken
+		slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
+		fw_slice_print_footer (iter->second, 0, 0);
+	    }
+	}
+
+	if (rc == -1) {
+	    fprintf (stderr, "I think I should change sysret %d to %d when I see rc=-1 and errno=%d - is this right???\n", rc, -ret_errno, ret_errno);
+	    rc = -ret_errno;
+	}
+	fw_slice_print_footer (current_thread, 1, rc); // Do we care about errno here
 
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -2827,6 +3065,10 @@ static void instrument_syscall(ADDRINT syscall_num,
     }
     if (sysnum == 56) {
 	tdata->status_addr = (u_long) syscallarg0;
+    }
+    if (sysnum == 58) {
+	if (dumbass_link_addr != 0) fprintf (stderr, "[ERROR] dumbass link address getting set multiple times - need collection(!)'\n");
+	dumbass_link_addr = (u_long) syscallarg0;
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
 	sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
@@ -2897,9 +3139,12 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
 	PIN_SetContextReg (ctxt, LEVEL_BASE::REG_EAX, current_thread->record_pid);
     }
 
-    if (segment_length && *ppthread_log_clock > segment_length) {
-    } else {
-	syscall_end(current_thread->sysnum, ret_value);
+    if (!(segment_length && *ppthread_log_clock > segment_length)) {
+	ADDRINT ret_errno = 0;
+	if (ret_value == (ADDRINT) -1) {
+	    ret_errno = PIN_GetSyscallErrno(ctxt, std);
+	}
+	syscall_end(current_thread->sysnum, ret_value, ret_errno);
     }
 
     if (current_thread->syscall_in_progress) {
@@ -5339,8 +5584,6 @@ static void instrument_fpu_cmov (INS ins, int flags)
     REG dstreg = INS_OperandReg (ins, 0);
     REG srcreg = INS_OperandReg (ins, 1);
     char* str = get_copy_of_disasm (ins);
-    // For now, just check if inputs are tainted
-    // If any are tainted, we will need to do more work
     INS_InsertCall(ins, IPOINT_BEFORE,
 		   AFUNPTR(fw_slice_fpu_cmov),
 		   IARG_FAST_ANALYSIS_CALL,
@@ -5353,6 +5596,16 @@ static void instrument_fpu_cmov (INS ins, int flags)
                    IARG_CONST_CONTEXT,
                    IARG_UINT32, flags,
 		   IARG_EXECUTING,
+		   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_fpu_cmov),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, translate_reg(dstreg),
+		   IARG_UINT32, translate_reg(srcreg),
+		   IARG_UINT32, REG_Size(srcreg),
+                   IARG_CONST_CONTEXT,
+		   IARG_EXECUTING,
+                   IARG_UINT32, flags,
 		   IARG_END);
     put_copy_of_disasm (str);
 }
@@ -5386,7 +5639,7 @@ static void instrument_fpu_calc (INS ins, int fp_stack_change)
         assert (0);
     }
     if (fp_stack_change == FP_POP) { 
-        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, 0);
     }
 }
 
@@ -5411,7 +5664,7 @@ static void instrument_fpu_cmp (INS ins, int fp_stack_change)
         assert (0);
     }
     if (fp_stack_change == FP_POP) { 
-        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, fp_stack_change);
+        instrument_taint_clear_fpureg (ins, REG_ST0, -1, -1, 0);
     }
 }
 
@@ -5464,7 +5717,7 @@ static void instrument_ldmxcsr (INS ins)
             IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, const CONTEXT* ctx)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -5474,34 +5727,26 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = false;
+
     print_me = true;
+
 #if 0
-    if (mem_loc1 >= 0xb2900000 &&  mem_loc1 <= 0xb2910000) {
-        print_me = true;
-        printf ("mem value at %lx is %u\n", mem_loc1, *(unsigned int*)mem_loc1);
-    }
-    if (mem_loc2 >= 0xb2900000 &&  mem_loc2 <= 0xb2910000) {
-        print_me = true;
-        printf ("mem value at %lx is %u\n", mem_loc2, *(unsigned int*)mem_loc2);
-    }
-#endif
-#if 0
-    #define ADDR_TO_CHECK 0xbfffff10
+    #define ADDR_TO_CHECK 0xb7324fa4
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);
 	old_val = *((u_char *) ADDR_TO_CHECK);
 	print_me = true;
     }
-#endif
-#if 0
     static int old_taint = 0;
-    int new_taint = is_mem_arg_tainted(0xbfffff10, 1);
+    int new_taint = is_mem_arg_tainted(ADDR_TO_CHECK, 1);
     if (new_taint != old_taint) {
-	printf ("New taint for 0xbfffff10: %d old taint %d clock %lu\n", new_taint, old_taint, *ppthread_log_clock);
+	printf ("New taint for %x: %d old taint %d clock %lu\n", ADDR_TO_CHECK, new_taint, old_taint, *ppthread_log_clock);
 	old_taint = new_taint;
 	print_me = true;
     }
+    if (mem_loc1 >= 0xa755c000 && mem_loc1 < 0xa755c000 + 0x60000) print_me = true;
+    if (mem_loc2 >= 0xa755c000 && mem_loc2 < 0xa755c000 + 0x60000) print_me = true;
 #endif
 
     if (print_me) {
@@ -5511,20 +5756,40 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	    printf ("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
 	}
 	PIN_UnlockClient();
-	//printf ("0xbffff5b4 tainted: %d value: %x\n", is_mem_arg_tainted(0xbffff5b4, 1), *((u_char *) 0xbffff5b4));
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
         printf ("ecx value %u edx %u\n", value1, value2);
         printf ("jump_diverge index %lu\n", jump_count);
+
+	PIN_REGISTER value;
+	PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
+	int top =  (int) ((*value.word >> 11 ) & 0x7);
+	printf ("fpu taints top %d thr %d: %d %d %d %d %d %d %d %d -> ", top, current_thread->slice_fp_top,
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST0, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST1, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST2, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST3, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST4, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST5, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST6, 10, 0),
+		is_reg_arg_tainted (LEVEL_BASE::REG_ST7, 10, 0));
+	printf ("(76543210) %d%d%d%d%d%d%d%d\n",
+		is_reg_arg_tainted ((7 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((6 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((5 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((4 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((3 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((2 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((1 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0), 
+		is_reg_arg_tainted ((0 + top)%8 + LEVEL_BASE::REG_ST0, 10, 0));
 	printf ("\n");
 	fflush (stdout);
     }
 }
 
-// This seems to defeat the purpose of the extra debugging 
-// which is to enable ad-hoc detailed debugging
-void debug_print (INS ins) 
+#ifdef EXTRA_DEBUG
+static void debug_print (INS ins) 
 {
     char* str = get_copy_of_disasm (ins);
     int count = INS_MemoryOperandCount (ins);
@@ -5541,11 +5806,14 @@ void debug_print (INS ins)
     if (count == 2) {
 	if (mem1read && mem2read) {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_INST_PTR,
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA, 
 			   IARG_MEMORYREAD2_EA, 
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -5556,6 +5824,7 @@ void debug_print (INS ins)
 			   IARG_MEMORYWRITE_EA,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
 	    assert (0);
@@ -5570,6 +5839,7 @@ void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
 	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)debug_print_inst, 
@@ -5580,6 +5850,7 @@ void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	}
     } else { 
@@ -5591,9 +5862,11 @@ void debug_print (INS ins)
 		       IARG_ADDRINT, 0,
 		       IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+		       IARG_CONST_CONTEXT,
 		       IARG_END);
     }
 }
+#endif
 
 void instruction_instrumentation(INS ins, void *v)
 {
@@ -5791,6 +6064,7 @@ void instruction_instrumentation(INS ins, void *v)
 	case XED_ICLASS_PSUBD:
 	case XED_ICLASS_PSUBQ:
 	case XED_ICLASS_PMADDWD:
+	case XED_ICLASS_PMAXUB:
 	case XED_ICLASS_PMULHUW:
 	case XED_ICLASS_PMINUB:
 	case XED_ICLASS_PMULLW:
@@ -6162,6 +6436,7 @@ void instruction_instrumentation(INS ins, void *v)
 	    case XED_ICLASS_FWAIT:
             case XED_ICLASS_FLDCW:
             case XED_ICLASS_FNSTCW:
+	    case XED_ICLASS_PREFETCHNTA:
                 //ignored
                 slice_handled = 1;
                 break;
@@ -6319,7 +6594,7 @@ void trace_instrumentation(TRACE trace, void* v)
 	bool track_this_bb = false;
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 #ifdef EXTRA_DEBUG
-            debug_print (ins);
+	  debug_print (ins);
 #endif
 #ifdef TRACK_CTRL_FLOW_DIVERGE
 	    if (current_thread->ctrl_flow_info.merge_insts->find(INS_Address(ins)) != current_thread->ctrl_flow_info.merge_insts->end()) {
@@ -6728,13 +7003,12 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     } else {
 	current_thread->recheck_handle = NULL;
     }	
-    if (fw_slice_print_header(recheck_group, current_thread) < 0) {
+    if (fw_slice_print_header(recheck_group, current_thread, 0) < 0) {
         fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
         return;
     }
 
     /* Some of these should be global, not per-thread */
-    current_thread->address_taint_set = new boost::icl::interval_set<unsigned long>();
     current_thread->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (current_thread);
 
@@ -6871,12 +7145,11 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 	ptdata->recheck_handle = NULL;
     }	
     //ptdata->slice_buffer = new queue<string>();
-    if (fw_slice_print_header(recheck_group, ptdata) < 0) {
+    if (fw_slice_print_header(recheck_group, ptdata, !first_thread) < 0) {
         fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
         return;
     }
 
-    ptdata->address_taint_set = new boost::icl::interval_set<unsigned long>();
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (ptdata);
 
@@ -6903,7 +7176,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
         restore_state_from_disk(ptdata);
     }
 
-    if (first_thread) {
+    if (first_thread == 0) {
 #ifdef EXEC_INPUTS
         int acc = 0;
         char** args;
@@ -6911,7 +7184,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 #endif
 
         //PIN_AddFollowChildProcessFunction(follow_child, ptdata);
-        first_thread = 0;
+        first_thread = ptdata->record_pid;
         if (!ptdata->syscall_cnt) {
             ptdata->syscall_cnt = 1;
         }
@@ -7088,7 +7361,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 {
     struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, threadid);
-    //sync_slice_buffer (tdata); 
+
     //TODO: we need to call this function if the thread ends earlier before the checkpoint clock?
     //and we also need to make sure this thread wakes up other necessary threads
     active_threads.erase(tdata->record_pid);
@@ -7099,7 +7372,6 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
         tdata->slice_output_file = NULL;
     }
     if (tdata->slice_buffer) delete tdata->slice_buffer;
-    if (tdata->address_taint_set) delete tdata->address_taint_set;
     destroy_ctrl_flow_info (tdata);
 }
 
@@ -7132,8 +7404,9 @@ void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
     PTHREAD_DEBUG ("[DEBUG] before pthread_replay for %d, type %u, check %u, rtn addr %x, clock %lu\n", current_thread->record_pid, type, check, rtn_addr, *ppthread_log_clock);
 }
 
-void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret) 
+void after_pthread_replay (ADDRINT ret) 
 {
+    fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d\n", current_thread->record_pid, ret);
     if (current_thread != previous_thread) { 
         //well, a thread switch happens and this thread now executes
         //previous thread needs to sleep and wakes up this thread
@@ -7144,10 +7417,33 @@ void after_pthread_replay (ADDRINT rtn_addr, ADDRINT ret)
     }
 }
 
+#if 0
+void before_malloc (ADDRINT bytes)
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_libc_malloc thread %d clock %lu bytes %d", current_thread->record_pid, *ppthread_log_clock, bytes);
+}
+
+void after_malloc (ADDRINT ret) 
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_libc_malloc thread %d clock %lu reutrns 0x%x", current_thread->record_pid, *ppthread_log_clock, ret);
+}
+
+void before_int_malloc (ADDRINT av, ADDRINT bytes)
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_int_malloc thread %d clock %lu av %x bytes %d", current_thread->record_pid, *ppthread_log_clock, av, bytes);
+}
+
+void after_int_malloc (ADDRINT ret) 
+{
+    OUTPUT_TAINT_INFO_THREAD (current_thread, "_int_malloc thread %d clock %lu reutrns 0x%x", current_thread->record_pid, *ppthread_log_clock, ret);
+}
+#endif
+
 void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
 {
     PTHREAD_DEBUG (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
+
 
 //TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
 void routine (RTN rtn, VOID* v)
@@ -7159,6 +7455,7 @@ void routine (RTN rtn, VOID* v)
             IARG_FAST_ANALYSIS_CALL, 
             IARG_PTR, strdup (name), 
             IARG_END);
+#if 0
     if (strcmp(name, "_ZN11CodeletMarkC2ERP25InterpreterMacroAssemblerPKcN9Bytecodes4CodeE") == 0)
     {
         RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name_and_params,
@@ -7167,6 +7464,7 @@ void routine (RTN rtn, VOID* v)
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
                 IARG_END);
     }
+#endif
     RTN_Close(rtn);
 #endif
     //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...
@@ -7175,17 +7473,13 @@ void routine (RTN rtn, VOID* v)
     }
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
-
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
-                IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
                 IARG_END);
         RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_pthread_replay,
-                IARG_ADDRINT, RTN_Address(rtn), 
                 IARG_FUNCRET_EXITPOINT_VALUE,  
                 IARG_END);
-
         RTN_Close(rtn);
     } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
         RTN_Open(rtn);

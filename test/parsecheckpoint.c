@@ -354,7 +354,7 @@ int main (int argc, char* argv[])
 			for (; i<map_count - 1; ++i) { 
 				rc = read (fd, &pvmas, sizeof(pvmas));
 				assert (rc == sizeof (pvmas));
-				printf ("\t \t start %lx end %lx\n", pvmas.vmas_start, pvmas.vmas_end);
+				printf ("\t \t start %lx end %lx flags 0x%08x file %s\n", pvmas.vmas_start, pvmas.vmas_end, pvmas.vmas_flags, pvmas.vmas_file);
 				if (mm_region_fd) {
 					if (pvmas.vmas_start != end_addr) { 
 						if (start_addr) { 

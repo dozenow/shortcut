@@ -684,7 +684,8 @@ void find_best_match ()
         }
 
 	if ((buffer[ndx] == OP_BRANCH_TAKEN && dev_buffer[i] == OP_BRANCH_NOT_TAKEN) ||
-	    (buffer[ndx] == OP_BRANCH_NOT_TAKEN && dev_buffer[i] == OP_BRANCH_TAKEN)) {
+	    (buffer[ndx] == OP_BRANCH_NOT_TAKEN && dev_buffer[i] == OP_BRANCH_TAKEN) ||
+	    (i+2 < devndx && buffer[ndx] == OP_JMP_INDIRECT && dev_buffer[i] == OP_JMP_INDIRECT && buffer[ndx+2] != dev_buffer[i+2])) {
 	    DPRINT ("Another deviation at indexes %d %d\n", ndx, i);
 	    deviation_ip = dev_buffer[i+1];
 	    deviation_taken = (buffer[ndx] == OP_BRANCH_TAKEN);

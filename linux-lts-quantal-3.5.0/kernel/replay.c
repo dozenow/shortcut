@@ -1331,6 +1331,7 @@ int should_call_recplay_exit_start() {
 
 }
 
+#if 0
 void print_memory_areas (void) 
 {
 	struct vm_area_struct *existing_mmap;
@@ -1347,6 +1348,7 @@ void print_memory_areas (void)
 		existing_mmap = existing_mmap->vm_next;
 	}
 }
+#endif
 
 // Cannot unlink shared path page when a replay group is deallocated, so we queue the work up for later
 struct replay_paths_to_free {
@@ -4405,7 +4407,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4573,7 +4575,15 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		return rc;
 	}
 
+	printk ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
+
 	if (consumed > 0) argsconsume(prect, consumed);
+
+	if (PRINT_TIME) {
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("after reading log data %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	}
 
 	if (linker) {
 		strncpy (current->replay_thrd->rp_group->rg_rec_group->rg_linker, linker, MAX_LOGDIR_STRLEN);
@@ -4894,9 +4904,10 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	} else {
                 ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
         }
+	printk ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
 
 	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
-		current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
+		     current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
 
 	if (go_live) {

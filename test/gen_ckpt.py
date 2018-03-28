@@ -60,6 +60,9 @@ ts_start = datetime.datetime.now()
 
 if len(input_asm_file) is 0:
 # Run the pin tool to generate slice info and the recheck log
+        for oldfile in glob.glob(outputdir + '/exslice*'):
+            os.unlink (oldfile);
+
         outfd = open(outputdir+"/pinout", "w")
         checkfilename = outputdir+"/checks"
         if (taint_filter > 0):
@@ -83,29 +86,37 @@ if len(input_asm_file) is 0:
         p.wait()
         outfd.close()
 
-        input_asm_file = glob.glob(outputdir + '/exslice.*.c')
+        input_asm_file = glob.glob(outputdir + '/exslice[123456789]*.*.c')
 ts_pin = datetime.datetime.now()
 
-
-# Convert asm to c file
+record_pids = {}
 for asm_file in input_asm_file:
     if args.compile_only:
         print "compiling " + asm_file
     record_pid = asm_file[asm_file.rfind (".", 0, -3)+1:-2]
-    fcnt = 1;
-        # And compile it
-    pool = Pool(processes=7)
-    linkstr = "gcc -shared "+outputdir+"/exslice." + record_pid + ".o -o "+outputdir+"/exslice." + record_pid + ".so recheck_support.o"
+    begin = asm_file.find("exslice") + 7
+    end = asm_file.find(".")
+    filecnt = int(asm_file[begin:end])
+    print asm_file, record_pid, filecnt
+    if (not record_pid in record_pids) or filecnt > record_pids[record_pid]:
+        record_pids[record_pid] = filecnt;
+
+linkstrs = {}
+pool = Pool(processes=7)
+for (record_pid,fcnt) in record_pids.items():
+
+    linkstrs[record_pid] = "gcc -shared "+outputdir+"/exslice." + record_pid + ".o -o "+outputdir+"/exslice." + record_pid + ".so recheck_support.o"
     pool.apply_async (compMain, (outputdir, record_pid))
     for i in range(fcnt):
         strno = str(i + 1)
         pool.apply_async (compSlice, (outputdir, strno, record_pid))
-        linkstr += " " + outputdir + "/exslice" + strno + "." + record_pid + ".o"
+        linkstrs[record_pid] += " " + outputdir + "/exslice" + strno + "." + record_pid + ".o"
 
-    pool.close()
-    pool.join()
-    os.system(linkstr)
-    #TODO: this is not real parallization
+pool.close()
+pool.join()
+
+for record_pid in record_pids.keys():
+    os.system(linkstrs[record_pid])
 
 ts_compile = datetime.datetime.now()
 

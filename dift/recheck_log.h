@@ -5,6 +5,8 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
+#define MAX_REGIONS 20
+
 //****
 //note: there are kernel-level structures corresponding to these two in replay.h.  Both must be changed together.
 //note2: the atomic_t in linux is integer on 32bit
@@ -60,9 +62,9 @@ struct recv_recheck {
     size_t len;
     int flags;
     size_t readlen;
-    int partial_read; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
-    size_t partial_read_start;
-    size_t partial_read_end;
+    int partial_read_cnt; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_starts[MAX_REGIONS];
+    size_t partial_read_ends[MAX_REGIONS];
 };
 /* Followed by variable length read data */
 
@@ -70,9 +72,9 @@ struct recvmsg_recheck {
     int sockfd;
     struct msghdr* msg;
     int flags;
-    int partial_read;
-    size_t partial_read_start;
-    size_t partial_read_end;
+    int partial_read_cnt; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_starts[MAX_REGIONS];
+    size_t partial_read_ends[MAX_REGIONS];
 };
 /* Followed by message structure and sub-structures */
 
@@ -87,6 +89,7 @@ struct execve_recheck {
 struct open_recheck {
     int has_retvals;
     struct open_retvals retvals;
+    int is_flags_tainted;
     int flags;
     int is_mode_tainted;
     int mode;
@@ -146,6 +149,7 @@ struct write_recheck {
     int fd;
     void* buf;
     size_t count;
+    int is_count_tainted;
 };
 /* Followed by data actually written with taints */
 
@@ -413,6 +417,17 @@ struct unlink_recheck {
 };
 /* Followed by filename */
 
+struct inotify_init1_recheck {
+    int flags;
+};
+
+struct inotify_add_watch_recheck {
+    int fd;
+    char* pathname;
+    uint32_t mask;
+};
+/* Followed by pathname */
+
 struct sched_getaffinity_recheck {
     pid_t pid;
     char is_pid_tainted;
@@ -436,6 +451,28 @@ struct prctl_recheck {
 };
 /* Followed by optional data depending on option */
 
+struct shmget_recheck {
+    key_t key;
+    size_t size;
+    int shmflg;
+};
+
+struct shmat_recheck {
+    int is_shmid_tainted;
+    int shmid;
+    void* shmaddr;
+    void* raddr;
+    int shmflg;
+    u_long raddrval;
+};
+
+struct ipc_rmid_recheck {
+    int is_shmid_tainted;
+    int shmid;
+    int cmd;
+};
+
+
 /* Prototypes */
 struct recheck_handle;
 
@@ -443,8 +480,8 @@ struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t 
 int close_recheck_log (struct recheck_handle* handle);
 int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock);
-int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long clock);
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
+int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 int recheck_execve (struct recheck_handle* handle, char* filename, char* argv[], char* envp[], u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);
@@ -500,14 +537,20 @@ int recheck_set_tid_address (struct recheck_handle* handle, int* tidptr, u_long 
 int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct sigaction* act, struct sigaction* oact, size_t sigsetsize, u_long clock);
 int recheck_rt_sigprocmask (struct recheck_handle* handle, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize, u_long clock);
 int recheck_clock_gettime (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, u_long clock);
+int recheck_clock_gettime_monotonic (struct recheck_handle* handle, struct timespec* tp_out) ;
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock);
+int recheck_inotify_init1 (struct recheck_handle* handle, int flags, u_long clock);
+int recheck_inotify_add_watch (struct recheck_handle* handle, int fd, char* pathname, uint32_t mask, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
 int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u_long clock);
 int recheck_setrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
 int recheck_prctl (struct recheck_handle* handle, int option, u_long arg2, u_long arg3, u_long arg4, u_long arg5, u_long clock);
 int recheck_clone (struct recheck_handle* handle, u_long clock);
 int recheck_pipe (struct recheck_handle* handle, int pipefd[2], u_long clock);
+int recheck_shmget (struct recheck_handle* handle, key_t key, size_t size, int shmflg, u_long clock);
+int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void* raddr, int shmflg, u_long clock);
+int recheck_ipc_rmid (struct recheck_handle* handle, int shmid, int cmd, u_long clock);
 
 #endif

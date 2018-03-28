@@ -80,8 +80,8 @@ static void handle_time (int fd, struct taint_retval* trv, struct klog_result* r
 	u_long rc = read (fd, &res->retval, sizeof(long));
 	assert (rc == sizeof(long));
     } else {
-	u_long rc = read (fd, (char *) res->retparams + sizeof(long), trv->size);
-	assert (rc == trv->size);
+	u_long rc = read (fd, (char *) res->retparams, sizeof(time_t));
+	assert (rc == sizeof(time_t));
     }
 }
 
@@ -112,6 +112,14 @@ static void handle_read (int fd, struct taint_retval* trv, struct klog_result* r
 	res->retparams = newentry;
 	DPRINT ("read buffer replaced\n");
     }
+}
+
+static void handle_getdents (int fd, struct taint_retval* trv, struct klog_result* res) 
+{
+    assert (trv->rettype == RETBUF);
+    int rc = read (fd, (char *) res->retparams, res->retval);
+    DPRINT ("getdents rc is %ld\n", res->retval);
+    assert (rc == res->retval);
 }
 
 static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result* res)
@@ -192,23 +200,23 @@ static void handle_gettimeofday (int fd, struct taint_retval* trv, struct klog_r
     }
 }
 
-static void handle_clock_getres (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_clock_gettime (int fd, struct taint_retval* trv, struct klog_result* res)
 {
     int rc;
     
-    if (trv->rettype == CLOCK_GETRES) {
-	rc = read (fd, (char*)res->retparams, sizeof(struct timespec));
+    if (trv->rettype == CLOCK_GETTIME) {
+	rc = read (fd, (char *) res->retparams, sizeof (struct timespec));
 	assert (rc == sizeof(struct timespec));
     } else {
 	assert (0);
     }
 }
     
-static void handle_clock_gettime (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_clock_getres (int fd, struct taint_retval* trv, struct klog_result* res)
 {
     int rc;
     
-    if (trv->rettype == CLOCK_GETTIME) {
+    if (trv->rettype == CLOCK_GETRES) {
 	rc = read (fd, (char *) res->retparams, sizeof (struct timespec));
 	assert (rc == sizeof(struct timespec));
     } else {
@@ -337,6 +345,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 		    break;
 		case SYS_set_tid_address:
 		case SYS_getpgrp:
+		case SYS_ipc:
 		    handle_retval (tfd, &trv, res);
 		    break;
 		case SYS_clone:
@@ -375,6 +384,10 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
                 case SYS_clock_getres:
                     handle_clock_getres (tfd, &trv, res);
                     break;
+		case SYS_getdents:
+		case SYS_getdents64:
+		    handle_getdents (tfd, &trv, res);
+		    break;
 		default:
 		    fprintf (stderr, "syscall %d unhandled\n", trv.syscall);
 		    return -1;
@@ -466,11 +479,11 @@ int patch_klog (string recheck_filename)
 	sprintf (oldfile, "%s/klog.id.%ld", altdirname, it.first);
 	sprintf (newfile, "%s/tklog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
 	sprintf (oldfile, "%s/ulog.id.%ld", altdirname, it.first);
 	sprintf (newfile, "%s/tulog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
     }
 
     for (auto it: clone_map) {
@@ -478,11 +491,11 @@ int patch_klog (string recheck_filename)
 	sprintf (oldfile, "%s/tklog.id.%ld", altdirname, it.second);
 	sprintf (newfile, "%s/klog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
 	sprintf (oldfile, "%s/tulog.id.%ld", altdirname, it.second);
 	sprintf (newfile, "%s/ulog.id.%ld", altdirname, it.second);
 	rc = rename (oldfile, newfile);
-	if (rc != 0) fprintf (stderr, "Cannot rename %s to %sn", oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot rename %s to %s\n", oldfile, newfile);
     }
     
     DPRINT ("Done with directory\n");
@@ -527,13 +540,13 @@ int main(int argc, char **argv)
     // For now, the daemon will be single-threaded - just call into the kernel and get some work
     while (1) {
 
-	DPRINT ("Registering for upcall\n");
+	fprintf (stderr, "Registering for upcall\n");
 	syscall (350, 3, recheck_filename);
-	DPRINT ("Received upcall for file %s\n", recheck_filename);
+	fprintf (stderr, "Received upcall for file %s\n", recheck_filename);
 
 	// Generate the patched klog file
 	long rc = patch_klog (recheck_filename);
-	DPRINT ("Patch klog returns %ld\n", rc);
+	fprintf (stderr, "Patch klog returns %ld\n", rc);
 
 	// Let the kernel know that we succeeded (or failed - boo!)
 	syscall (350, 4, recheck_filename, rc);
