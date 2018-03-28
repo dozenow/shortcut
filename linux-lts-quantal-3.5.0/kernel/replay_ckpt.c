@@ -103,7 +103,7 @@ struct recheck_entry {
 };
 
 void dump_reg_struct (struct pt_regs* r) {
-	printk ("eax, %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax, %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
+	printk ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
 		r->ax, r->bx, r->cx, r->dx, r->si, r->di, r->bp, r->sp, r->ds, r->es, r->fs, r->gs, r->orig_ax, r->ip, r->cs, r->flags, r->ss);
 }
 
@@ -1135,6 +1135,9 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
+	printk ("Registers after checkpoint restore record_pid %d\n", current->pid);
+	dump_reg_struct (get_pt_regs(NULL));
+
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
 	restore_sysv_mappings (file, ppos);
 
@@ -1785,19 +1788,18 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		regs->sp += RECHECK_FILE_NAME_LEN + sizeof(long);
 		regs->bp += RECHECK_FILE_NAME_LEN + sizeof(long);
 		slice_info = get_fw_slice_info (regs);
+
 		regs_cache = &slice_info->regs;
-		//restore the registers
-		printk ("sys_execute_fw_slice ends: ip to jump %lx, current ip %lx, ds %lx %lx, gs %lx %lx, sp %lx %lx, ss %lx %lx, cx %lx %lx, bp %lx %lx\n", 
-			regs_cache->ip, regs->ip, regs_cache->ds, regs->ds, regs_cache->gs, regs->gs, regs_cache->sp, regs->sp, regs_cache->ss, 
-			regs->ss, regs_cache->cx, regs->cx, regs_cache->bp, regs->bp);
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
+		printk ("Registers after sliece execute %d\n", current->pid);
+		dump_reg_struct (get_pt_regs(NULL));
+
 		if (slice_info->fpu_is_allocated) { 
 			struct fpu* fpu = &(current->thread.fpu);
 			fpu->last_cpu = slice_info->fpu_last_cpu;
 			fpu->has_fpu = slice_info->fpu_has_fpu;
 			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
 		}
-		if (replay_debug) dump_reg_struct (regs);
 		set_thread_flag (TIF_IRET);
                 //destroy replay group if necessary
                 if (slice_info->slice_clock) {

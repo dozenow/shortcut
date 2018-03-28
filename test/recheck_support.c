@@ -1094,8 +1094,8 @@ long writev_recheck ()
     piovec = (struct iovec *) data;
     data += pwritev->iovcnt * sizeof(struct iovec);
     for (i = 0; i < pwritev->iovcnt; i++) {
-	piovec[i].iov_base = fill_taintedbuf (data, piovec[i].iov_base, pwritev->iov[i].iov_len);
-	data += pwritev->iov[i].iov_len*2;
+	piovec[i].iov_base = fill_taintedbuf (data, piovec[i].iov_base, piovec[i].iov_len);
+	data += piovec[i].iov_len*2;
 #ifdef PRINT_VALUES
 	print_buffer ((u_char *) data, pwritev->iov[i].iov_len);
 #endif

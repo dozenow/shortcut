@@ -324,7 +324,7 @@ int main (int argc, char* argv[])
 		printf ("\t record pid %d, retval %ld, pthreadclock %lu\n", cpdata.record_pid, cpdata.retval, cpdata.pthreadclock);
 		rc = read (fd, &regs, sizeof(regs));
 		assert (rc == sizeof(regs));
-		printf ("\t registers info: ip %lx\n", regs.ip);
+		printf ("\t registers info: ax %lx bx %lx cx %lx dx %lx ip %lx\n", regs.ax, regs.bx, regs.cx, regs.dx, regs.ip);
 		restore_sysv_mappings (fd);
 		rc = read (fd, &fpu_allocated, sizeof(char));
 		assert (rc == sizeof(char));
