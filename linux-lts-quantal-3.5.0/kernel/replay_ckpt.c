@@ -1574,25 +1574,25 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		MPRINT ("Pid %d resume ckpt set GDT entry %d base_addr %x limit %x\n", current->pid, GDT_ENTRY_TLS_MIN+i, desc.base_addr, desc.limit);
 	}
 
-	// Next, read the rlimit info
-	copied = vfs_read(file, (char *) &current->signal->rlim, sizeof(struct rlimit)*RLIM_NLIMITS, ppos);
-	if (copied != sizeof(struct rlimit)*RLIM_NLIMITS) {
-		printk ("replay_full_resume_proc_from_disk: tried to read rlimits, got rc %d\n", copied);
-		rc = copied;
-		goto exit;
-	}
-
 	if (slicelib != NULL) {
-	    // Signal handlers will be restored from slice execution
+	    // rlim and signal handlers will be restored from slice execution
             //advance the file pos
-            *ppos += sizeof (struct k_sigaction)*_NSIG;
+            *ppos += sizeof (struct k_sigaction)*_NSIG + sizeof(struct rlimit)*RLIM_NLIMITS;
         } else {
-	    copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
-	    if (copied != sizeof(struct k_sigaction)*_NSIG) {
-		printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
-		rc = copied;
-		goto exit;
-	    }
+		// Next, read the rlimit info
+		copied = vfs_read(file, (char *) &current->signal->rlim, sizeof(struct rlimit)*RLIM_NLIMITS, ppos);
+		if (copied != sizeof(struct rlimit)*RLIM_NLIMITS) {
+			printk ("replay_full_resume_proc_from_disk: tried to read rlimits, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+
+		copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
+		if (copied != sizeof(struct k_sigaction)*_NSIG) {
+			printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
 	}
 	
 	MPRINT ("replay_full_resume_proc_from_disk done\n");
