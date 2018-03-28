@@ -2838,6 +2838,8 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 {
     int rc = (int) ret_value;
 
+    detect_slice_ordering (sysnum);
+
     switch(sysnum) {
         case SYS_clone:
             sys_clone_stop (rc);
