@@ -3486,6 +3486,7 @@ void recheck_wait_proc_init ()
 
 void recheck_thread_wait (int record_pid)
 {
+    LPRINT ("Wait thread %d begins\n", record_pid);
     if (go_live_clock) {
         struct go_live_process_map* process_map = go_live_clock->process_map;
         int i = 0;
@@ -3518,10 +3519,12 @@ void recheck_thread_wait (int record_pid)
             syscall (SYS_futex, &p->wait, FUTEX_WAIT, p->wait, NULL, NULL, 0);
         }
     }
+    LPRINT ("Wait thread %d ends\n", record_pid);
 }
 
 void recheck_thread_wakeup (int record_pid)
 {
+    LPRINT ("Wakeup thread %d begins\n", record_pid);
     if (go_live_clock) {
         struct go_live_process_map* process_map = go_live_clock->process_map;
         int i = 0;
@@ -3555,6 +3558,7 @@ void recheck_thread_wakeup (int record_pid)
                 ;
         }
     }
+    LPRINT ("Wakeup thread %d ends\n", record_pid);
 }
 
 int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 

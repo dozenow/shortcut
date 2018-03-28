@@ -5301,13 +5301,16 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
     }
 }
 
-void fw_slice_print_footer (struct thread_data* tdata)
+void fw_slice_print_footer (struct thread_data* tdata, int is_ckpt_thread, long rc)
 {
     if (tdata->record_pid != first_thread) {
 	OUTPUT_MAIN_THREAD (tdata, "add esp, 12");
     }
 
     OUTPUT_MAIN_THREAD (tdata, "slice_ends:");
+
+    OUTPUT_MAIN_THREAD (tdata, "mov edx, %ld", rc);
+    OUTPUT_MAIN_THREAD (tdata, "mov ecx, %d", is_ckpt_thread);
     OUTPUT_MAIN_THREAD (tdata, "mov ebx, 1");
     OUTPUT_MAIN_THREAD (tdata, "mov eax, 350");
     OUTPUT_MAIN_THREAD (tdata, "int 0x80");

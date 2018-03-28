@@ -1753,93 +1753,15 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	return 0;
 }
 
-asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long retval) 
+asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 { 
-	int stack_size = 4096;
-	SLICE_DEBUG ("sys_execute_fw_slice: %d, %p\n", finish, filename);
-
 	if (!slice_handling_initialized) {
 		init_slice_handling();
 	}
 
 	if (finish == 0) { 
-            //following codes are deprecated; they have the same logic as start_fw_slice
-		//start to execute the slice
-		long addr = 0;
-		long extra_space_addr = 0;
-		int fd = 0;
-		struct stat64 stat;
-		int rc = 0;
-		struct pt_regs* regs = get_pt_regs(current);
-		unsigned long size = 0;
-		unsigned int entry = 0;
-		struct fw_slice_info* slice_info = NULL;
-
-		printk ("sys_execute_fw_slice: XXX does anyone ever call this?\n");
-
-		fd = sys_open (filename, O_RDONLY, 0);
-		if (fd < 0) { 
-			printk ("sys_execute_fw_slice cannot open slice file %s\n", filename);
-			return -ENOENT;
-		} 
-		rc = sys_fstat64 (fd, &stat);
-		if (rc != 0) {
-			printk ("sys_execute_fw_slice: cannot stat file %s\n", filename);
-			sys_close (fd);
-			return -ENOENT;
-		}
-		size = (stat.st_size/4096+1)*4096;
-		//allocate more for checkpointing and restoring untainted addresses
-		addr = sys_mmap_pgoff (0, size, PROT_EXEC|PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_DENYWRITE, fd, 0);
-		if (IS_ERR((void *) addr)) {
-			printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %lu\n", size);
-			sys_close(fd);
-			return -EPERM;
-		}
-		if (replay_debug) printk ("sys_execute_fw_slice addr is %lx, size is %lu, end_addr is %lx\n", addr, size, addr+size);
-		//read elf to get the slice entry point
-		BUG_ON (*(char*)(addr+0x4) != 0x1 || *(char*)(addr+0x5) != 0x1); //only works 32bit little endian systems
-		entry = *(unsigned int*) (addr + 0x18);	
-
-		//let's allocate space for the restore stack and also for storing some fw slice info
-		extra_space_addr = sys_mmap_pgoff (0, stack_size + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-		if (IS_ERR((void *) extra_space_addr)) {
-			printk ("[ERROR] sys_execute_fw_slice: cannot allocate mem size %lu\n", size);
-			sys_close(fd);
-			return -ENOMEM;
-		}
-		//first page of this space: stack (grows downwards)
-		if (replay_debug) printk ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + stack_size);
-
-		//second page: extra info for the slice (grows upwards)
-		slice_info = (struct fw_slice_info*) (extra_space_addr+stack_size);
-		slice_info->text_addr = addr;
-		slice_info->text_size = size;
-		slice_info->extra_addr = extra_space_addr;
-		slice_info->extra_size = stack_size + SLICE_INFO_SIZE;
-		//checkpoint the current registers
-		memcpy (&slice_info->regs, regs, sizeof(struct pt_regs));
-		slice_info->fpu_is_allocated = fpu_allocated (&(current->thread.fpu));
-		if (slice_info->fpu_is_allocated) { 
-			struct fpu* fpu = &(current->thread.fpu);
-			slice_info->fpu_last_cpu = fpu->last_cpu;
-			slice_info->fpu_has_fpu = fpu->has_fpu;
-			memcpy (&slice_info->fpu_state, fpu->state, sizeof(union thread_xstate));
-		}
-		//change instruction pointer to the start of slice
-		regs->ip = addr+entry;
-		//change stack pointer
-		regs->sp = extra_space_addr + stack_size;
-		DPRINT ("sys_execute_fw_slice ip is %lx\n", regs->ip);
-		DPRINT ("sys_execute_fw_slice stack is %lx to %lx\n", extra_space_addr, regs->sp);
-
-		set_thread_flag (TIF_IRET);
-
-		rc = sys_close (fd);
-		if (rc != 0) { 
-			printk ("sys_execute_fw_slice: cannot close file.\n");
-			return -EIO;
-		}
+		// Depricated
+		return -EINVAL;
 
 	} else if (finish == 1) {
 		//finish executing the slice and restore register states
@@ -1849,6 +1771,12 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		struct fw_slice_info* slice_info = NULL;
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
+
+		long is_ckpt_thread = arg2;
+		long slice_retval = arg3;
+		
+		printk ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
+
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
                         printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
@@ -1905,12 +1833,14 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		printk ("Pid %d returning to user-space with the following vmas:\n", current->pid);
 		print_vmas (current);
 
-		return 0;
+		return slice_retval;
 
 	} else if (finish == 2) {
 
 		struct slice_task* pstask;
 		long retval;
+
+		char __user* filename = (char __user *) arg2;
 
 		if (PRINT_TIME) {
 		    struct timeval tv;
@@ -1960,6 +1890,8 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 		struct slice_task* pstask;
 		long retval;
 		
+		char __user* filename = (char __user *) arg2;
+
 		DPRINT ("Slice daemon thread %d registered for upcall\n", current->pid);
 
 		mutex_lock(&slice_task_mutex);
@@ -1987,6 +1919,7 @@ asmlinkage long sys_execute_fw_slice (int finish, char __user* filename, long re
 
 	} else if (finish == 4) {
 
+		long retval = arg3;
 		if (retval < 0) {
 			// Slice deamon reports success or failure here
 			// If failure, responsible for cleanup here

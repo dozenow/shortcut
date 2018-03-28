@@ -4573,6 +4573,8 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		return rc;
 	}
 
+	printk ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
+
 	if (consumed > 0) argsconsume(prect, consumed);
 
 	if (PRINT_TIME) {
@@ -7008,6 +7010,7 @@ sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, v
 asmlinkage long
 sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_long __user * replay_hook)
 {
+	printk ("pid %d dumbass link at %p\n", current->pid, status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
 		if (prt->rp_record_hook) {

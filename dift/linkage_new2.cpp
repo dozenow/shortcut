@@ -731,7 +731,7 @@ static inline void sys_execve_start(struct thread_data* tdata, char* filename, c
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
 	long retval = recheck_execve (tdata->recheck_handle, filename, argv, envp, *ppthread_log_clock);
 	if (retval == 0) { // This means exec should not return
-	    fw_slice_print_footer (tdata);
+	    fw_slice_print_footer (tdata, 0, 0);
 	    close_recheck_log (tdata->recheck_handle); 
 	}
     }
@@ -2834,7 +2834,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
     }
 }
 
-void syscall_end(int sysnum, ADDRINT ret_value)
+void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 {
     int rc = (int) ret_value;
 
@@ -3016,11 +3016,15 @@ void syscall_end(int sysnum, ADDRINT ret_value)
 		slice_synchronize (current_thread, iter->second);               // Main thread wakes and waits for ack
 		slice_thread_wait (iter->second);	                        // This waits to be woken
 		slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
-		fw_slice_print_footer (iter->second);
+		fw_slice_print_footer (iter->second, 0, 0);
 	    }
 	}
 
-	fw_slice_print_footer (current_thread);	
+	if (rc == -1) {
+	    fprintf (stderr, "I think I should change sysret %d to %d when I see rc=-1 and errno=%d - is this right???\n", rc, -ret_errno, ret_errno);
+	    rc = -ret_errno;
+	}
+	fw_slice_print_footer (current_thread, 1, rc); // Do we care about errno here
 
 	//stop tracing after this 
 	int calling_dd = dift_done ();
@@ -3120,9 +3124,12 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
 	PIN_SetContextReg (ctxt, LEVEL_BASE::REG_EAX, current_thread->record_pid);
     }
 
-    if (segment_length && *ppthread_log_clock > segment_length) {
-    } else {
-	syscall_end(current_thread->sysnum, ret_value);
+    if (!(segment_length && *ppthread_log_clock > segment_length)) {
+	ADDRINT ret_errno = 0;
+	if (ret_value == (ADDRINT) -1) {
+	    ret_errno = PIN_GetSyscallErrno(ctxt, std);
+	}
+	syscall_end(current_thread->sysnum, ret_value, ret_errno);
     }
 
     if (current_thread->syscall_in_progress) {
