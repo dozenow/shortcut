@@ -4690,7 +4690,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			
                         snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
 			if (slice_addr == 0) {
-				printk ("Cannot find forward slice library %s\n", recheckname);
+				printk ("Cannot find forward slice library execute_slice_name is %s, recheck_filename is %s\n", execute_slice_name, recheckname);
 				return -EEXIST;
 			}
 
@@ -4909,7 +4909,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 char recheckname[256];
                 snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
                 if (slice_addr == 0) {
-                    printk ("Cannot find forward slice library %s\n", recheck_filename);
+		    printk ("Cannot find forward slice library execute_slice_name is %s, recheck_filename is %s\n", execute_slice_name, recheck_filename);
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space

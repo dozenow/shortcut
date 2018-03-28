@@ -89,6 +89,8 @@ ts_pin = datetime.datetime.now()
 
 # Convert asm to c file
 for asm_file in input_asm_file:
+    if args.compile_only:
+        print "compiling " + asm_file
     record_pid = asm_file[asm_file.rfind (".", 0, -3)+1:-2]
     fcnt = 1;
         # And compile it

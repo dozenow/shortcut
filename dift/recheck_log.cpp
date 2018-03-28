@@ -1469,6 +1469,7 @@ int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct s
     if (act && is_mem_arg_tainted ((u_long) act, 20)) fprintf (stderr, "[ERROR] rt_sigaction input structure is tainted\n");
 
     if (act) size += 20;
+    if (oact) size += 20;
     write_header_into_recheck_log (handle->recheckfd, SYS_rt_sigaction, res->retval, size, clock);
 
     sachk.sig = sig;
@@ -1477,6 +1478,10 @@ int recheck_rt_sigaction (struct recheck_handle* handle, int sig, const struct s
     sachk.sigsetsize = sigsetsize;
     write_data_into_recheck_log (handle->recheckfd, &sachk, sizeof(sachk));
     if (act) write_data_into_recheck_log (handle->recheckfd, act, 20);
+    if (res->retparams_size > 0) {
+	assert (oact);
+        write_data_into_recheck_log (handle->recheckfd, (char *)res->retparams, 20);
+    }
 
     return 0;
 }

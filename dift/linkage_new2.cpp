@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG  718800
-#define EXTRA_DEBUG_STOP 718900
-#define EXTRA_DEBUG_FUNCTION
+//#define EXTRA_DEBUG  718800
+//#define EXTRA_DEBUG_STOP 718900
+//#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -2331,6 +2331,7 @@ static inline void sys_rt_sigaction_stop (int rc)
 
 static inline void sys_rt_sigprocmask_start (struct thread_data* tdata, int how, sigset_t* set, sigset_t* oset, size_t sigsetsize)
 {
+    //fprintf (stderr, "pid %d rt_sigprocmask: how %d set %p oset %p size %d set value %llu\n", current_thread->record_pid, how, set, oset, sigsetsize, set?*(uint64_t*) set: 0);
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE(0, "call rt_sigprocmask_recheck");
 	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock-1);

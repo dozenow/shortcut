@@ -5431,16 +5431,13 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
 
 void fw_slice_print_footer (struct thread_data* tdata)
 {
-    fprintf (stderr, "fw_slice_print_footer called, main_output_file %p\n", tdata->main_output_file);
     OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem");
     OUTPUT_MAIN_THREAD (tdata, "slice_ends:");
     OUTPUT_MAIN_THREAD (tdata, "mov ebx, 1");
     OUTPUT_MAIN_THREAD (tdata, "mov eax, 350");
     OUTPUT_MAIN_THREAD (tdata, "int 0x80");
     
-    fprintf (stderr, "before check mem_taint.\n");
     fw_slice_check_final_mem_taint (tdata);
-    fprintf (stderr, "after check mem_taint.\n");
 
     fprintf (tdata->main_output_file, ");\n");
     fclose (tdata->main_output_file);
@@ -5464,6 +5461,5 @@ void fw_slice_print_footer (struct thread_data* tdata)
     fprintf (tdata->slice_output_file, ");\n");
     fclose (tdata->slice_output_file);
     tdata->slice_output_file = NULL;
-    fprintf (stderr, "finish fw_slice_print_footer.\n");
 }
 
