@@ -1011,15 +1011,20 @@ long recvmsg_recheck ()
     return rc;
 }
 
-static inline void fill_taintedbuf(char* data, char* buf, u_long len)
+// Copy any tainted values to the input buffer and return it
+static inline char* fill_taintedbuf(char* indata, char* slicebuf, u_long len)
 {
     u_long i;
-    char* tainted = data;
-    char* outbuf = data + len;
+    char* tainted = indata;
+    char* origbuf = indata + len;
 
     for (i = 0; i < len; i++) {
-	if (!tainted[i] && buf[i] != outbuf[i]) buf[i] = outbuf[i];
+	if (tainted[i]) {
+	    origbuf[i] = slicebuf[i];
+	}
     }
+
+    return origbuf;
 }
 
 long write_recheck (size_t count)
@@ -1029,6 +1034,7 @@ long write_recheck (size_t count)
     char* data;
     int rc;
     size_t use_count;
+    char* writedata;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -1046,7 +1052,7 @@ long write_recheck (size_t count)
 	printf ("[ERROR] Should not be writing to a cache file\n");
 	handle_mismatch();
     }
-    fill_taintedbuf (data, (char *) pwrite->buf, pwrite->count);
+    writedata = fill_taintedbuf (data, (char *) pwrite->buf, pwrite->count);
 
     if (pwrite->is_count_tainted) {
 	use_count = count;
@@ -1055,7 +1061,7 @@ long write_recheck (size_t count)
     }
 
     start_timing();
-    rc = syscall(SYS_write, pwrite->fd, pwrite->buf, use_count);
+    rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
     end_timing(SYS_write, rc);
     check_retval ("write", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_write);
@@ -1068,6 +1074,7 @@ long writev_recheck ()
     struct writev_recheck* pwritev;
     char* data;
     int rc, i;
+    struct iovec* piovec;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -1084,18 +1091,18 @@ long writev_recheck ()
 	printf ("[ERROR] Should not be writing to a cache file\n");
 	handle_mismatch();
     }
-    memcpy (pwritev->iov, data, pwritev->iovcnt * sizeof(struct iovec));
+    piovec = (struct iovec *) data;
     data += pwritev->iovcnt * sizeof(struct iovec);
     for (i = 0; i < pwritev->iovcnt; i++) {
-	fill_taintedbuf (data, pwritev->iov[i].iov_base, pwritev->iov[i].iov_len);
+	piovec[i].iov_base = fill_taintedbuf (data, piovec[i].iov_base, pwritev->iov[i].iov_len);
 	data += pwritev->iov[i].iov_len*2;
 #ifdef PRINT_VALUES
-	print_buffer (pwritev->iov[i].iov_base, pwritev->iov[i].iov_len);
+	print_buffer ((u_char *) data, pwritev->iov[i].iov_len);
 #endif
     }
 
     start_timing();
-    rc = syscall(SYS_writev, pwritev->fd, pwritev->iov, pwritev->iovcnt);
+    rc = syscall(SYS_writev, pwritev->fd, piovec, pwritev->iovcnt);
     end_timing(SYS_writev, rc);
     check_retval ("writev", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_writev);
@@ -1107,6 +1114,7 @@ long send_recheck ()
     struct recheck_entry* pentry;
     struct send_recheck* psend;
     char* data;
+    char* psendbuf;
     int rc;
 
     start_timing_func ();
@@ -1121,11 +1129,11 @@ long send_recheck ()
     LPRINT ( "send: sockfd %d buf %p len %d flags %d rc %ld clock %lu\n", psend->sockfd, psend->buf, psend->len, psend->flags, pentry->retval, pentry->clock);
 #endif
 
-    fill_taintedbuf (data, psend->buf, psend->len);
+    psendbuf = fill_taintedbuf (data, psend->buf, psend->len);
 
     u_long block[6];
     block[0] = psend->sockfd;
-    block[1] = (u_long) psend->buf;
+    block[1] = (u_long) psendbuf;
     block[2] = psend->len;
     block[3] = psend->flags;
     start_timing();
@@ -1140,6 +1148,7 @@ long sendmsg_recheck ()
 {
     struct recheck_entry* pentry;
     struct sendmsg_recheck* psendmsg;
+    struct msghdr * pmsg;
     char* data;
     u_int i;
     int rc;
@@ -1156,21 +1165,21 @@ long sendmsg_recheck ()
     LPRINT ( "sendmsg: sockfd %d msg %p flags %d rc %ld clock %lu\n", psendmsg->sockfd, psendmsg->msg, psendmsg->flags, pentry->retval, pentry->clock);
 #endif
 
-    memcpy (psendmsg->msg, data, sizeof(struct msghdr));
+    pmsg = (struct msghdr *) data;
     data += sizeof(struct msghdr);
-    memcpy (psendmsg->msg->msg_name, data, psendmsg->msg->msg_namelen);
-    data += psendmsg->msg->msg_namelen;
-    memcpy (psendmsg->msg->msg_iov, data, psendmsg->msg->msg_iovlen*sizeof(struct iovec));
-    data += psendmsg->msg->msg_iovlen*sizeof(struct iovec);
-    for (i = 0; i < psendmsg->msg->msg_iovlen; i++) {
-	fill_taintedbuf (data, psendmsg->msg->msg_iov[i].iov_base, psendmsg->msg->msg_iov[i].iov_len);
-	data += psendmsg->msg->msg_iov[i].iov_len*2;
+    pmsg->msg_name = data;
+    data += pmsg->msg_namelen;
+    pmsg->msg_iov = (struct iovec *) data;
+    data += pmsg->msg_iovlen*sizeof(struct iovec);
+    for (i = 0; i < pmsg->msg_iovlen; i++) {
+	pmsg->msg_iov[i].iov_base = fill_taintedbuf (data, pmsg->msg_iov[i].iov_base, pmsg->msg_iov[i].iov_len);
+	data += pmsg->msg_iov[i].iov_len*2;
     }
-    fill_taintedbuf (data, psendmsg->msg->msg_control, psendmsg->msg->msg_controllen);
+    pmsg->msg_control = fill_taintedbuf (data, pmsg->msg_control, pmsg->msg_controllen);
 
     u_long block[6];
     block[0] = psendmsg->sockfd;
-    block[1] = (u_long) psendmsg->msg;
+    block[1] = (u_long) pmsg;
     block[2] = psendmsg->flags;
     start_timing();
     rc = syscall(SYS_socketcall, SYS_SENDMSG, &block);
@@ -2264,20 +2273,12 @@ long setsockopt_recheck ()
     return rc;
 }
 
-inline void process_taintmask (char* mask, u_long size, char* buffer)
-{
-    u_long i;
-    char* outbuf = mask + size;
-    for (i = 0; i < size; i++) {
-	if (!mask[i]) buffer[i] = outbuf[i];
-    }
-}
-
 static inline long connect_or_bind_recheck (int call, char* call_name)
 {
     struct recheck_entry* pentry;
     struct connect_recheck* pconnect;
     u_long block[6];
+    char* inaddr;
     char* addr;
     int rc;
 
@@ -2292,20 +2293,9 @@ static inline long connect_or_bind_recheck (int call, char* call_name)
 #ifdef PRINT_VALUES
     LPRINT ( "%s: sockfd %d addlen %d rc %ld clock %lu\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval, pentry->clock);
 #endif 
-    process_taintmask(addr, pconnect->addrlen, (char *) pconnect->addr);
-    {
-      int i;
-      for (i = 0; i < pconnect->addrlen; i++) {
-	u_char ch = ((char *) pconnect->addr)[i];
-	if (ch >= 32 && ch <= 126) {
-	  LPRINT ("%c", ch);
-	} else {
-	  LPRINT ("\%u", ch);
-	}
-      }
-    }
+    inaddr = fill_taintedbuf (addr, (char *) pconnect->addr, pconnect->addrlen);
     block[0] = pconnect->sockfd;
-    block[1] = (u_long) pconnect->addr;
+    block[1] = (u_long) inaddr;
     block[2] = pconnect->addrlen;
     start_timing();
     rc = syscall(SYS_socketcall, call, &block);
@@ -2664,6 +2654,7 @@ long ioctl_recheck ()
     struct recheck_entry* pentry;
     struct ioctl_recheck* pioctl;
     char* addr;
+    char* inarg;
     int rc;
 
     start_timing_func ();
@@ -2694,10 +2685,10 @@ long ioctl_recheck ()
 #endif
     } else if (pioctl->dir == _IOC_READ) {
 	if (pioctl->size) {
-	    fill_taintedbuf (addr, pioctl->arg, pioctl->size);
+	    inarg = fill_taintedbuf (addr, pioctl->arg, pioctl->size);
 	}
         start_timing();
-	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, pioctl->arg);
+	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, inarg);
         end_timing (SYS_ioctl, rc);
 	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
     } else {
