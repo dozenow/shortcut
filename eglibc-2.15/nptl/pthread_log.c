@@ -42,6 +42,8 @@ unsigned long* ppthread_log_make_fake_clock = NULL;
 #define SET_NEW_STACKP()		__asm__ __volatile__ ("movl %0, %%esp\n\t" : : "r" (&(head->stack[DEFAULT_STACKSIZE-2048])))
 #define RESET_OLD_STACKP()	__asm__ __volatile__ ("movl %0, %%esp\n\t" : : "r" (head->old_stackp)) 
 
+#define ENOTREPLAYING 409
+
 #ifdef USE_EXTRA_DEBUG_LOG
 void pthread_extra_log_mismatch ();
 #endif
@@ -172,15 +174,15 @@ void pthread_log_do_tick (void)
 
 void pthread_log_mutex_lock_rec (__libc_lock_t* lock)
 {
-  pthread_log_record (0, LIBC_LOCK_LOCK_ENTER, (u_long) lock, 1); 
-  __libc_lock_lock(*(lock));
-  pthread_log_record (0, LIBC_LOCK_LOCK_EXIT, (u_long) lock, 0); 
+    pthread_log_record (0, LIBC_LOCK_LOCK_ENTER, (u_long) lock, 1); 
+    __libc_lock_lock(*(lock));
+    pthread_log_record (0, LIBC_LOCK_LOCK_EXIT, (u_long) lock, 0); 
 }
 
-void pthread_log_mutex_lock_rep (__libc_lock_t* lock)
+int pthread_log_mutex_lock_rep (__libc_lock_t* lock)
 {
-  pthread_log_replay (LIBC_LOCK_LOCK_ENTER, (u_long) lock); 
-  pthread_log_replay (LIBC_LOCK_LOCK_EXIT, (u_long) lock); 
+    pthread_log_replay (LIBC_LOCK_LOCK_ENTER, (u_long) lock); 
+    return pthread_log_replay (LIBC_LOCK_LOCK_EXIT, (u_long) lock); 
 }
 
 void pthread_log_mutex_lock (__libc_lock_t* lock)
@@ -195,7 +197,9 @@ void pthread_log_mutex_lock (__libc_lock_t* lock)
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	pthread_log_mutex_lock_rep (lock);
+	if (pthread_log_mutex_lock_rep (lock) == -ENOTREPLAYING) {
+	    __libc_lock_lock(*(lock));	
+	}
 	RESET_OLD_STACKP(); 
     } else {
 	__libc_lock_lock(*(lock));
@@ -584,7 +588,8 @@ pthread_log_replay (unsigned long type, unsigned long check)
 
     if (head == NULL) return 0;
     if (!is_replaying()) {
-            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay.\n");
+	pthread_log_debug ("GLIBC: pthread_log_replay called by non-replaying process, status=%d addr=%p\n", pthread_log_status, &pthread_log_status);
+	return -ENOTREPLAYING;
     }
 
     if (head->num_expected_records > 1) {
@@ -678,14 +683,12 @@ pthread_log_replay (unsigned long type, unsigned long check)
         }
 	long ret = pthread_log_block (next_clock); // Kernel will block us until we can run again
         if (ret == -EINVAL) { 
-            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block, type %d, clock %lu\n", type, next_clock);
-            pthread_log_status = PTHREAD_LOG_OFF;
-            return ret;
+	    pthread_log_debug ("GLIBC: pthread_log_block returns from non-replaying process, type %d, clock %lu, status %d addr %p\n", type, next_clock, pthread_log_status, &pthread_log_status);
+            return -ENOTREPLAYING;
         }
         if (!is_replaying()) {
-            pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block2, type %d, clock %lu\n", type, next_clock);
-            pthread_log_status = PTHREAD_LOG_OFF;
-            return retval; //If the process is blocking before checkpiont, after resuming, ppthread_log_clock no longer exists and we simply returns from this function
+            pthread_log_debug ("GLIBC: pthread_log_block returns, but not replaying, type %d, clock %lu status %d addr %p\n", type, next_clock, pthread_log_status, &pthread_log_status);
+            return -ENOTREPLAYING;
         }
     }
     head->expected_clock = next_clock + 1;
@@ -1166,32 +1169,35 @@ int
 __pthread_mutex_unlock_rep (mutex)
      pthread_mutex_t *mutex;
 {
-  pthread_log_replay (PTHREAD_MUTEX_UNLOCK_ENTER, (u_long) mutex); 
-  return pthread_log_replay (PTHREAD_MUTEX_UNLOCK_EXIT, (u_long) mutex); 
+    pthread_log_replay (PTHREAD_MUTEX_UNLOCK_ENTER, (u_long) mutex); 
+    return pthread_log_replay (PTHREAD_MUTEX_UNLOCK_EXIT, (u_long) mutex); 
 }
 
 int
 __pthread_mutex_unlock (mutex)
      pthread_mutex_t *mutex;
 {
-  int rc;
-
-  if (is_recording()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_unlock_rec (mutex);
-    RESET_OLD_STACKP(); 
-  } else if (is_replaying()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_unlock_rep (mutex);
-    RESET_OLD_STACKP(); 
-  } else {
-    rc = __pthread_mutex_unlock_usercnt (mutex, 1);
-  }
-  return rc;
+    int rc;
+    
+    if (is_recording()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	rc = __pthread_mutex_unlock_rec (mutex);
+	RESET_OLD_STACKP(); 
+    } else if (is_replaying()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	rc = __pthread_mutex_unlock_rep (mutex);
+	if (rc == -ENOTREPLAYING) {
+	    rc = __pthread_mutex_unlock_usercnt (mutex, 1);
+	}
+	RESET_OLD_STACKP(); 
+    } else {
+	rc = __pthread_mutex_unlock_usercnt (mutex, 1);
+    }
+    return rc;
 }
 strong_alias (__pthread_mutex_unlock, pthread_mutex_unlock)
 strong_alias (__pthread_mutex_unlock, __pthread_mutex_unlock_internal)

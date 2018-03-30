@@ -148,6 +148,7 @@ u_long* ppthread_log_clock = NULL;
 u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
 u_long dumbass_link_addr = 0;
+u_long pthread_log_status_addr = 0;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -183,32 +184,6 @@ inline void output_slice (struct thread_data* tdata, const char* format, ...)
     } 
 }
 #endif
-
-//Not sure about the caller-saved registers
-//Also we don't preserve flags in this function, so call pushfd/popfd if you need
-inline void print_function_call_inst (struct thread_data* tdata, const char* function_name, int arg_num ...)
-{
-    va_list list;
-    va_start (list, arg_num);
-    stack<long> stack;
-    assert (arg_num >= 0);
-    for (int i = 0; i<arg_num; ++i) {
-        stack.push (va_arg (list, long));
-    }
-    while (!stack.empty()) {
-        OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%lx", stack.top());
-        OUTPUT_SLICE_INFO_THREAD (tdata, "");
-        stack.pop ();
-    }
-    OUTPUT_SLICE_THREAD (tdata, 0, "call %s", function_name);
-    OUTPUT_SLICE_INFO_THREAD (tdata, "");
-    if (arg_num > 0) {
-        OUTPUT_SLICE_THREAD (tdata, 0, "add esp, %d", arg_num*4);
-        OUTPUT_SLICE_INFO_THREAD (tdata, "");
-    }
-
-    va_end (list);
-}
 
 //tdata: the previous thread that has to wait 
 static inline void slice_thread_wait (struct thread_data* tdata) 
@@ -287,89 +262,6 @@ static inline void slice_synchronize (struct thread_data* main_thread, struct th
     OUTPUT_MAIN_THREAD (main_thread, "popfd");
 }
 		
-static void restore_pthread_state (struct thread_data* tdata)
-{
-    // Not sure this is right - move to track_pthread.cpp anyway
-    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            switch (iter->second->state) { 
-                case MUTEX_AFTER_LOCK: 
-		    OUTPUT_SLICE_THREAD (tdata, 0, "pushfd"); 
-		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
-                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
-		    OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-		    OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-        }
-    }
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case COND_BEFORE_WAIT: 
-                    //normally, the mutex should already be held by this thread
-                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
-                    break;
-                case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-        }
-    }
-
-    slice_thread_wakeup (tdata, current_thread->record_pid);
-}
-
-// Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
-static void restore_my_pthread_state (struct thread_data* tdata)
-{
-    // Not sure this is right - move to track_pthread.cpp anyway
-    for (map<ADDRINT, struct mutex_state*>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d mutex %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            switch (iter->second->state) { 
-                case MUTEX_AFTER_LOCK: 
-		    OUTPUT_MAIN_THREAD (tdata, "pushfd"); 
-                    print_function_call_inst (tdata, "pthread_mutex_init", 2, iter->first, 0);
-                    print_function_call_inst (tdata, "pthread_mutex_lock", 1, iter->first);
-		    OUTPUT_MAIN_THREAD (tdata, "popfd");
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-        }
-    }
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_MAIN_THREAD (tdata, "pushfd");
-            switch (iter->second->state) { 
-                case COND_BEFORE_WAIT: 
-                    //normally, the mutex should already be held by this thread
-                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
-                    break;
-                case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_MAIN_THREAD (tdata, "popfd");
-        }
-    }
-}
-
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
     "pintool", "i", "",
     "filter input or not");
@@ -3001,13 +2893,16 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 		slice_synchronize (current_thread, iter->second);
 
 		// And this goes in the slice c file for the other threads
-		restore_pthread_state (iter->second);
+		sync_pthread_state (iter->second);
+		slice_thread_wakeup (iter->second, current_thread->record_pid);
 	    }
         }
 
 	// Third, restore pthread state for this thread and adjust pthread status, readjust jiggled mem protections
-	restore_my_pthread_state (current_thread);
-	OUTPUT_MAIN_THREAD (current_thread, "call pthread_go_live"); // Switch pthread_status
+	sync_my_pthread_state (current_thread);
+	if (pthread_log_status_addr) {
+	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", pthread_log_status_addr); // Reset the pthread_log_status to PTHREAD_LOG_OFF
+	}
 	if (dumbass_link_addr) {
 	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", dumbass_link_addr); // Reset the dumbass link pthread_log_status to PTHREAD_LOG_OFF
 	}
@@ -3057,10 +2952,15 @@ static void instrument_syscall(ADDRINT syscall_num,
 	tdata->ignore_flag = (u_long) syscallarg1;
     }
     if (sysnum == 56) {
-	tdata->status_addr = (u_long) syscallarg0;
+	if (pthread_log_status_addr != 0 && pthread_log_status_addr != (u_long) syscallarg0) {
+	    fprintf (stderr, "[ERROR] pthread log status address getting set multiple times - need collection(!)'\n");
+	}
+	pthread_log_status_addr = (u_long) syscallarg0;
     }
     if (sysnum == 58) {
-	if (dumbass_link_addr != 0) fprintf (stderr, "[ERROR] dumbass link address getting set multiple times - need collection(!)'\n");
+	if (dumbass_link_addr != 0 && dumbass_link_addr != (u_long) syscallarg0) {
+	    fprintf (stderr, "[ERROR] dumbass link address getting set multiple times - need collection(!)'\n");
+	}
 	dumbass_link_addr = (u_long) syscallarg0;
     }
     if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || 
@@ -7265,12 +7165,12 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
 
 void before_pthread_replay (ADDRINT type, ADDRINT check)
 {
-    fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u\n", current_thread->record_pid, type, check);
+  fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u, clock %lu\n", current_thread->record_pid, type, check, *ppthread_log_clock);
 }
 
 void after_pthread_replay (ADDRINT ret) 
 {
-    fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d\n", current_thread->record_pid, ret);
+    fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d, clock %lu\n", current_thread->record_pid, ret, *ppthread_log_clock);
     if (current_thread != previous_thread) { 
         //well, a thread switch happens and this thread now executes
         //previous thread needs to sleep and wakes up this thread
@@ -7303,11 +7203,10 @@ void after_int_malloc (ADDRINT ret)
 }
 #endif
 
-void untracked_pthread_function (ADDRINT name, ADDRINT rtn_addr) 
+void untracked_pthread_function (ADDRINT name) 
 {
-    PTHREAD_DEBUG (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
+    fprintf (stderr, "untracked pthread operation %s, record pid %d\n", (char*) name, current_thread->record_pid);
 }
-
 
 //TODO: I think this could be super slow; it may be faster to hash the string and use switch statements 
 void routine (RTN rtn, VOID* v)
@@ -7357,38 +7256,30 @@ void routine (RTN rtn, VOID* v)
         RTN_Close(rtn);
     } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
         RTN_Open(rtn);
-        if (!strcmp (name, "pthread_mutex_init")) {
-            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_2,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                IARG_END);
-            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_init, 
-                    IARG_ADDRINT, RTN_Address(rtn), 
-                    IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
-            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_lock_before,
-                    IARG_PTR, name,
-                IARG_ADDRINT, RTN_Address(rtn), 
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                IARG_END);
-            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock_after, 
-                    IARG_PTR, name,
-                    IARG_ADDRINT, RTN_Address(rtn), 
-                    IARG_END);
-        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
+        if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
+	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			   IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_lock, 
+			    IARG_END);
+        } else if (!strcmp (name, "pthread_log_mutex_trylock") || !strcmp (name, "__pthread_mutex_trylock") || !strcmp (name, "pthread_mutex_trylock")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                IARG_END);
+			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			   IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_trylock, 
+			    IARG_END);
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			   IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_unlock, 
-                    IARG_ADDRINT, RTN_Address(rtn), 
-                    IARG_END);
+			    IARG_END);
         } else if (!strcmp (name, "pthread_mutex_destroy")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
-                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                    IARG_END);
+			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			   IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
-                    IARG_ADDRINT, RTN_Address(rtn), 
-                    IARG_END);
+			    IARG_END);
         } else if (!strcmp (name, "pthread_cond_timedwait")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -7405,13 +7296,19 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-        } else if (!strcmp (name, "pthread_create") || !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || !strcmp (name, "pthread_log_mutex_lock_rep") || !strcmp (name, "__pthread_mutex_unlock_rep") || !strcmp (name, "pthread_log_mutex_unlock_rep") || !strcmp (name, "__pthread_mutex_lock_rep")) {
+        } else if (!strcmp (name, "pthread_create") || 
+		   !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || 
+		   !strcmp (name+strlen(name)-4, "_rep") ||
+		   !strcmp (name, "__pthread_initialize_minimal") || !strcmp (name, "pthread_getspecific") || !strcmp(name, "__pthread_setspecific") || 
+		   !strncmp (name, "pthread_mutexattr", 17) || !strncmp (name, "__pthread_mutexattr", 19) || !strncmp (name, "pthread_attr", 12) 
+		   || !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") ||
+		   !strcmp (name, "pthread_cond_init") || !strncmp (name, "pthread_condattr", 16) || !strcmp(name, "pthread_cond_broadcast") || !strcmp(name, "pthread_cond_signal") ||
+		   !strcmp (name, "__pthread_register_cancel") || !strcmp(name, "__pthread_unregister_cancel") || !strcmp(name, "__pthread_enable_asynccancel") || !strcmp(name, "__pthread_disable_asynccancel")) {
             printf ("ignored pthread operation %s\n", name);
         } else {
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
-                    IARG_PTR, name, 
-                    IARG_ADDRINT, RTN_Address(rtn),
-                    IARG_END);
+			    IARG_PTR, name, 
+			    IARG_END);
         }
         RTN_Close(rtn);
     }
