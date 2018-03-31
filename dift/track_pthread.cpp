@@ -3,77 +3,56 @@
 using namespace std;
 
 extern struct thread_data* current_thread;
-map<ADDRINT, struct mutex_state*> active_mutex; //I need to replace this with a thread-safe STL library
+
+// Synchronization data structures that may need to be recreated
+map<ADDRINT, struct mutex_state> active_mutex; 
+
+
 //the key is the address of conditional variable or tid
 map<ADDRINT, struct wait_state*> active_wait; //I need to replace this with a thread-safe STL library
-
-void track_pthread_mutex_params_2 (ADDRINT mutex, ADDRINT attr) 
-{
-    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-    current_thread->pthread_info.mutex_info_cache.attr = attr;
-}
 
 void track_pthread_mutex_params_1 (ADDRINT mutex) 
 {
     current_thread->pthread_info.mutex_info_cache.mutex = mutex;
 }
 
-void track_pthread_mutex_init (ADDRINT rtn_addr)
+void track_pthread_mutex_lock ()
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    ADDRINT attr = current_thread->pthread_info.mutex_info_cache.attr;
-    struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
-    state->pid = current_thread->record_pid;
-    state->state = MUTEX_INIT;
-    active_mutex[mutex] = state;
-    if (attr != 0) {
-        fprintf (stderr, " pthread_mutex_init with ATTR, not handled yet.\n");
+    PTHREAD_DEBUG ("record pid %d, mutex lock %p\n", current_thread->record_pid, (void*) mutex);
+    if (active_mutex.find(mutex) == active_mutex.end()) {
+	struct mutex_state state;
+	state.lock_count = 1; // Use this to handle recursive locks
+	state.pid = current_thread->record_pid;
+	active_mutex[mutex] = state;
+    }  else {
+	struct mutex_state& state = active_mutex[mutex];
+	if (state.lock_count > 0 && state.pid != current_thread->record_pid) {
+	    fprintf (stderr, "[ERROR] different locker so not a recursive lock: %x\n", mutex);
+	}
+	state.pid = current_thread->record_pid;
+	state.lock_count++;
     }
 }
 
-void track_pthread_mutex_lock_before (char* name, ADDRINT rtn_addr, ADDRINT mutex) 
+void track_pthread_mutex_trylock (ADDRINT retval)
 {
-    current_thread->pthread_info.mutex_info_cache.mutex = mutex;
-    PTHREAD_DEBUG ("record pid %d, before lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
-    if (active_mutex.find (mutex) != active_mutex.end()) {
-        struct mutex_state* state = active_mutex[mutex];
-        state->pid = current_thread->record_pid;
-        if (state->state != MUTEX_AFTER_LOCK)  //someone is holding the lock
-                state->state = MUTEX_BEFORE_LOCK;
-    } else { 
-        struct mutex_state* state = (struct mutex_state*) malloc (sizeof(struct mutex_state));
-        state->pid = current_thread->record_pid;
-        if (state->state != MUTEX_AFTER_LOCK) //someone is holding the lock
-            state->state = MUTEX_BEFORE_LOCK; 
-        active_mutex[mutex] = state;
-        PTHREAD_DEBUG (stderr, "unfound mutex to lock\n");
-    }
+    PTHREAD_DEBUG ("record pid %d, mutex trylock %p retval %d\n", current_thread->record_pid, (void*) mutex, retval);
+    if (retval == 0) track_pthread_mutex_lock ();
 }
 
-void track_pthread_mutex_lock_after (char* name, ADDRINT rtn_addr)
+void track_pthread_mutex_unlock ()
+{   
+    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
+    PTHREAD_DEBUG ("record pid %d, mutex unlock %p\n", current_thread->record_pid, (void*) mutex);
+    struct mutex_state& state = active_mutex[mutex];
+    state.lock_count--;
+}
+
+void track_pthread_mutex_destroy ()
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, after lock %p, function %s\n", current_thread->record_pid, (void*)mutex, name);
-    struct mutex_state* state = active_mutex[mutex];
-    state->pid = current_thread->record_pid;
-    if (state->state == MUTEX_AFTER_LOCK) {  //we have a deadlock?
-        PTHREAD_DEBUG (stderr, "[ERROR] we have a deadlock in the original program or do we have unsupported unlock pthread operation?\n");
-    }
-    state->state = MUTEX_AFTER_LOCK;
-}
-
-//well, this function doesn't change the proper state; e.g., we cannot change from MUTEX_AFTER_LOCK to MUTEX_BEFORE_LOCK
-static inline void change_mutex_state (ADDRINT mutex, int mutex_state) 
-{
-    struct mutex_state* state = NULL; 
-    if (active_mutex.find (mutex) != active_mutex.end()) {
-        state = active_mutex[mutex];
-    } else { 
-        PTHREAD_DEBUG (stderr, "unfound mutex pid %d, lock %p\n", current_thread->record_pid, (void*) mutex);
-        return;
-    }
-    state->pid = current_thread->record_pid;
-    state->state = mutex_state;
+    active_mutex.erase (mutex);
 }
 
 static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mutex, ADDRINT abstime)
@@ -97,21 +76,6 @@ static inline void destroy_wait_state (ADDRINT wait)
     assert (state != NULL);
     free (state);
     active_wait.erase (wait);
-}
-
-void track_pthread_mutex_unlock (ADDRINT rtn_addr)
-{   
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, unlock %p\n", current_thread->record_pid, (void*)mutex);
-    change_mutex_state (mutex, MUTEX_UNLOCK);
-}
-
-void track_pthread_mutex_destroy (ADDRINT rtn_addr)
-{
-    ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    struct mutex_state* state = active_mutex[mutex];
-    free (state);
-    active_mutex.erase (mutex);
 }
 
 void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime)
@@ -149,3 +113,57 @@ void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr)
     //change_wait_tid_state (tid, LLL_WAIT_TID_AFTER);
     destroy_wait_state (cache->tid);
 }
+
+void sync_pthread_state (struct thread_data* tdata)
+{
+    for (map<ADDRINT, struct mutex_state>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second.lock_count > 0 && iter->second.pid == tdata->record_pid) { 
+	    for (int i = 0; i < iter->second.lock_count; i++) {
+		OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%x", iter->first);
+		OUTPUT_SLICE_INFO_THREAD (tdata, "");
+		OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_mutex_lock");
+		OUTPUT_SLICE_INFO_THREAD (tdata, "");
+		OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 4");
+		OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    }
+        }
+    }
+
+#if 0
+    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
+        if (iter->second->pid == tdata->record_pid) { 
+            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
+            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+            switch (iter->second->state) { 
+                case COND_BEFORE_WAIT: 
+                    //normally, the mutex should already be held by this thread
+                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
+                    break;
+                case LLL_WAIT_TID_BEFORE:
+                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
+                    break;
+                default: 
+                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
+            }
+            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
+            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+        }
+    }
+#endif
+}
+
+// Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
+void sync_my_pthread_state (struct thread_data* tdata)
+{
+    for (map<ADDRINT, struct mutex_state>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
+        if (iter->second.lock_count > 0 && iter->second.pid == tdata->record_pid) { 
+	    for (int i = 0; i < iter->second.lock_count; i++) {
+		OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->first);
+		OUTPUT_MAIN_THREAD (tdata, "call pthread_mutex_lock");
+		OUTPUT_MAIN_THREAD (tdata, "add esp, 4");
+	    }
+        }
+    }
+}
+

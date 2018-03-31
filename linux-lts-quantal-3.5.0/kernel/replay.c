@@ -4687,11 +4687,10 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                 struct replay_group* replay_group = current->replay_thrd->rp_group;
 
 		current->replay_thrd = NULL;
-                SLICE_DEBUG ("replay pid %d goes live\n", current->pid);
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("ending replay_go_live %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("pid %d ending replay_go_live %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		}
 
 		if (execute_slice_name) { 
@@ -4867,6 +4866,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	// Restart the system call - assume sysenter as a hack
+	printk ("Set pid %d to restart system call on resume\n", current->pid);
 	get_pt_regs(NULL)->ip -= 2;
 	get_user (ch, (u_char *) get_pt_regs(NULL)->ip);
 	get_user (ch2, (u_char *) get_pt_regs(NULL)->ip+1);
@@ -6981,7 +6981,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 		}
 		printk("Pid %d recpid ----- PTHREAD:%ld:%ld.%06ld:%d:%s", current->pid, clock, tv.tv_sec, tv.tv_usec, ignore_flag, buf);
 	} else {
-		SLICE_DEBUG("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
+		printk ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
 		return -EINVAL;
 	}
 
@@ -6991,6 +6991,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 asmlinkage long
 sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, void __user * pthread_clock_map)
 {
+	printk ("sys_pthread_init: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
 		put_user (1, status);
@@ -7012,9 +7013,9 @@ sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, v
 asmlinkage long
 sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_long __user * replay_hook)
 {
-	DPRINT ("pid %d dumbass_link %p %p status %p %d \n", current->pid, record_hook, replay_hook, status, *status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
+		printk ("record pid %d dumbass link at %p\n", current->pid, status);
 		if (prt->rp_record_hook) {
 			put_user (1, status);
 			put_user (prt->rp_record_hook, record_hook);
@@ -7022,13 +7023,15 @@ sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_lo
 		}
 	} else if (current->replay_thrd) {
 		struct replay_thread* prt = current->replay_thrd;
+		printk ("replay pid %d dumbass link at %p\n", current->pid, status);
 		if (prt->rp_replay_hook) {
 			put_user (2, status);
 			put_user (prt->rp_replay_hook, replay_hook);
 			DPRINT ("pid %d replay hook %lx returned\n", current->pid, prt->rp_replay_hook);
 		}
 	} else {
-			put_user (3, status);		
+		printk ("normal pid %d dumbass link at %p\n", current->pid, status);
+		put_user (3, status);		
 	}
 	return 0;
 }
@@ -7134,7 +7137,6 @@ sys_pthread_block (u_long clock)
 	int is_restart = 0;
 	if (!current->replay_thrd) {
 		printk ("sys_pthread_block called by non-replay process %d\n", current->pid);
-                //msleep (3000);
 		return -EINVAL;
 	}
 	prt = current->replay_thrd;
@@ -7340,7 +7342,7 @@ asmlinkage long sys_pthread_full (void)
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
-	DPRINT ("Pid %d sys_pthread_status %p, %d\n", current->pid, status, *status);
+	printk ("sys_pthread_status: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {

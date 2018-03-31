@@ -1650,6 +1650,18 @@ void init_slice_handling (void)
 }
 
 static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
+	// We no longer expect this to be aligned since we are using the VDSO to enter the kernel
+	// Insted, adjust sp value to account for extra data on the stack
+	u_long addr = regs->sp;
+	printk ("get_fw_slice_info: sp is %lx\n", addr);
+	if (addr%4096) {
+		addr &= 0xfffff000;
+		addr += 4096;
+	}
+	printk ("get_fw_slice_info: expect slice_info at %lx\n", addr);
+	return (struct fw_slice_info *) addr;
+			
+#if 0	
 	//the start addr of the stack is also the start of fw_slice_info (one region grows upwards and the other downwards)
 	if (regs->sp %4096 != 0) {
 		//should be aligned; other wise we have unpoped variable
@@ -1657,6 +1669,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 		BUG();
 	}
 	return (struct fw_slice_info*) regs->sp;
+#endif
 }
 
 
@@ -1775,25 +1788,27 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
 
-		long is_ckpt_thread = arg2;
-		long slice_retval = arg3;
-		
+		long is_ckpt_thread = regs->cx; // See below
+		long slice_retval = 0;
+		if (is_ckpt_thread) {
+		    slice_retval = regs->dx; // This is arg3, but we are going to change this later (compiler gets confused and optimizes incorrectly?)
+		} 
 		printk ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
 
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
                         printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
                 }
-		//pop the filename from the stack
-		regs->sp += RECHECK_FILE_NAME_LEN + sizeof(long);
-		regs->bp += RECHECK_FILE_NAME_LEN + sizeof(long);
+
 		slice_info = get_fw_slice_info (regs);
 
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
-		printk ("Registers after sliece execute %d\n", current->pid);
+		printk ("Registers after slice executes %d\n", current->pid);
 		dump_reg_struct (get_pt_regs(NULL));
-
+		if (!is_ckpt_thread) {
+		    slice_retval = regs->orig_ax; // We are restarting the system call, so presumably we should reset this register to orig value
+		}
 		if (slice_info->fpu_is_allocated) { 
 			struct fpu* fpu = &(current->thread.fpu);
 			fpu->last_cpu = slice_info->fpu_last_cpu;
@@ -1835,6 +1850,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		printk ("Pid %d returning to user-space with the following vmas:\n", current->pid);
 		print_vmas (current);
 
+		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {

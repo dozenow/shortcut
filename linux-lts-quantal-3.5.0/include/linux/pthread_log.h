@@ -4,7 +4,7 @@
 /* Note: must update both user-level (in glibc) and kernel headers together*/
 
 // Debug log uses uncompressed format
-#define USE_DEBUG_LOG
+//#define USE_DEBUG_LOG
 
 // Extra log for debugging
 //#define USE_EXTRA_DEBUG_LOG

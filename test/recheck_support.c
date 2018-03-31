@@ -315,6 +315,13 @@ void print_value (u_long foo)
     fprintf (stderr, "print_value: %lu (0x%lx)\n", foo, foo);
 }
 
+void exit_slice (long is_ckpt_thread, long retval)
+{
+    syscall(350, 1, is_ckpt_thread, retval); // Call into kernel to mark complete slice
+    fprintf (stderr, "handle_exit_slice: should not get here\n");
+    abort();
+}
+
 void handle_mismatch()
 {
     //TODO: uncomment this
@@ -326,7 +333,7 @@ void handle_mismatch()
 #endif
     /*DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_jump_diverge: should not get here\n");
+    fprintf (stderr, "handle_mismatch: should not get here\n");
     abort();*/
 }
 
