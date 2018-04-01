@@ -5637,6 +5637,7 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
     OUTPUT_MAIN_THREAD (tdata, "jmp slice_begins");
 
     // And write out the restore code
+    OUTPUT_MAIN_THREAD (tdata, ".globl restore_mem");
     OUTPUT_MAIN_THREAD (tdata, "restore_mem:");
     OUTPUT_MAIN_THREAD (tdata, "add esp, %ld /*stack alignment*/", (28-(pushed%16))%16);
 

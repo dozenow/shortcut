@@ -263,6 +263,37 @@ static inline void slice_synchronize (struct thread_data* main_thread, struct th
     OUTPUT_MAIN_THREAD (main_thread, "pop eax");
     OUTPUT_MAIN_THREAD (main_thread, "popfd");
 }
+
+static inline void main_file_thread_wait (struct thread_data* tdata) 
+{
+    OUTPUT_MAIN_THREAD (tdata, "pushfd");
+    OUTPUT_MAIN_THREAD (tdata, "push eax");
+    OUTPUT_MAIN_THREAD (tdata, "push ecx");
+    OUTPUT_MAIN_THREAD (tdata, "push edx");
+    OUTPUT_MAIN_THREAD (tdata, "push %d", tdata->record_pid); 
+    OUTPUT_MAIN_THREAD (tdata, "call recheck_thread_wait");
+    OUTPUT_MAIN_THREAD (tdata, "add esp, 4");
+    OUTPUT_MAIN_THREAD (tdata, "pop edx");
+    OUTPUT_MAIN_THREAD (tdata, "pop ecx");
+    OUTPUT_MAIN_THREAD (tdata, "pop eax");
+    OUTPUT_MAIN_THREAD (tdata, "popfd");
+}
+
+static inline void main_file_thread_wakeup (struct thread_data* tdata, int wakeup_record_pid) 
+{
+    OUTPUT_MAIN_THREAD (tdata, "pushfd");
+    OUTPUT_MAIN_THREAD (tdata, "push eax");
+    OUTPUT_MAIN_THREAD (tdata, "push ecx");
+    OUTPUT_MAIN_THREAD (tdata, "push edx");
+    OUTPUT_MAIN_THREAD (tdata, "push %d", wakeup_record_pid); 
+    OUTPUT_MAIN_THREAD (tdata, "call recheck_thread_wakeup");
+    OUTPUT_MAIN_THREAD (tdata, "add esp, 4");
+    OUTPUT_MAIN_THREAD (tdata, "pop edx");
+    OUTPUT_MAIN_THREAD (tdata, "pop ecx");
+    OUTPUT_MAIN_THREAD (tdata, "pop eax");
+    OUTPUT_MAIN_THREAD (tdata, "popfd");
+}
+
 		
 KNOB<bool> KnobFilterInputs(KNOB_MODE_WRITEONCE,
     "pintool", "i", "",
@@ -2884,17 +2915,19 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= checkpoint_clock) { 
 
-	if (current_thread->record_pid != first_thread) {
-	    fprintf (stderr, "[ERROR] Current assumption is that checkpointing thread is the first thread\n");
-	}
 	fprintf(stderr, "%d: finish generating slice and calling try_to_exit\n", PIN_GetTid());
 
 	// First, restore memory addresses  //this will be done on the first thread
-        for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
-            if (iter->first == first_thread) { 
-                OUTPUT_MAIN_THREAD (iter->second, "jmp restore_mem");
-                OUTPUT_MAIN_THREAD (iter->second, "restore_mem_done:");
+	if (current_thread->record_pid != first_thread) {
+            for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
+                if (iter->first == first_thread) { 
+                    OUTPUT_MAIN_THREAD (iter->second, "jmp restore_mem");
+                    OUTPUT_MAIN_THREAD (iter->second, "restore_mem_done:");
+                }
             }
+        } else { 
+            OUTPUT_MAIN_THREAD (current_thread, "jmp restore_mem");
+            OUTPUT_MAIN_THREAD (current_thread, "restore_mem_done:");
         }
 
         // Second, wake up other threads so that they can restore their pthread state
@@ -2904,9 +2937,13 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 		// We do this in the main c file since slice c file has returned at this point
 		slice_synchronize (current_thread, iter->second);
 
+                //xxxxxxxxxxxxxxxxxxxx
 		// And this goes in the slice c file for the other threads
-		sync_pthread_state (iter->second);
-		slice_thread_wakeup (iter->second, current_thread->record_pid);
+		//sync_pthread_state (iter->second);
+		//slice_thread_wakeup (iter->second, current_thread->record_pid);
+                //
+		sync_my_pthread_state (iter->second);
+		main_file_thread_wakeup (iter->second, current_thread->record_pid);
 	    }
         }
 
@@ -2925,8 +2962,13 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             if (iter->second != current_thread) {
 		slice_synchronize (current_thread, iter->second);               // Main thread wakes and waits for ack
-		slice_thread_wait (iter->second);	                        // This waits to be woken
-		slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
+                //xxxxxxxxxxxxxxxxxxxx
+		//slice_thread_wait (iter->second);	                        // This waits to be woken
+		//slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
+                //
+                main_file_thread_wait (iter->second);	                        // This waits to be woken
+		main_file_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
+
 		fw_slice_print_footer (iter->second, 0, 0);
 	    }
 	}
