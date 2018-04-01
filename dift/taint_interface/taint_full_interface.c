@@ -51,8 +51,8 @@ struct slab_alloc leaf_table_alloc;
 #endif
 
 // Use this for extra control flow tracking debugging
-//#define CFDEBUG(x,...);
-#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
+#define CFDEBUG(x,...);
+//#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
  
 // File-descriptor tainting
 // A mapping of open fds to taint values.
@@ -5524,7 +5524,7 @@ int fw_slice_print_header (u_long recheck_group, struct thread_data* tdata, bool
 	OUTPUT_MAIN_THREAD (tdata, "call downprotect_mem");
 	OUTPUT_MAIN_THREAD (tdata, "jmp ckpt_mem");
     } else {
-	OUTPUT_MAIN_THREAD (tdata, "sub esp, 12"); // 16-byte alignment adjusting for 4-byte offset
+	OUTPUT_MAIN_THREAD (tdata, "sub esp, 12 /*stack alignment*/"); // 16-byte alignment adjusting for 4-byte offset
     }
     OUTPUT_MAIN_THREAD (tdata, "slice_begins:");
 
@@ -5627,21 +5627,21 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
     // Now write out the ckpt code
     OUTPUT_MAIN_THREAD (tdata, "ckpt_mem:");
     for (AddrToRestore addrRestore: restoreAddress) {
-	pushed += addrRestore.printPush();
+        pushed += addrRestore.printPush();
     }
     fprintf (stderr, "pid %d: pushed %ld bytes onto the stack\n", tdata->record_pid, pushed);
 
     // Stack must be aligned for use during slice
     // Adjust for 4 byte return address pushed for call of sections (needed for large slices)
-    OUTPUT_MAIN_THREAD (tdata, "sub esp, %ld", (28-(pushed%16))%16);
+    OUTPUT_MAIN_THREAD (tdata, "sub esp, %ld /*stack alignment*/", (28-(pushed%16))%16);
     OUTPUT_MAIN_THREAD (tdata, "jmp slice_begins");
 
     // And write out the restore code
     OUTPUT_MAIN_THREAD (tdata, "restore_mem:");
-    OUTPUT_MAIN_THREAD (tdata, "add esp, %ld", (28-(pushed%16))%16);
+    OUTPUT_MAIN_THREAD (tdata, "add esp, %ld /*stack alignment*/", (28-(pushed%16))%16);
 
     for (auto addrRestore = restoreAddress.rbegin(); addrRestore != restoreAddress.rend(); ++addrRestore) {
-	addrRestore->printPop();
+        addrRestore->printPop();
     }
 
     OUTPUT_MAIN_THREAD (tdata, "jmp restore_mem_done");
@@ -5656,7 +5656,7 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
 void fw_slice_print_footer (struct thread_data* tdata, int is_ckpt_thread, long rc)
 {
     if (tdata->record_pid != first_thread) {
-	OUTPUT_MAIN_THREAD (tdata, "add esp, 12");
+	OUTPUT_MAIN_THREAD (tdata, "add esp, 12 /*stack alignment*/");
     }
 
     OUTPUT_MAIN_THREAD (tdata, "slice_ends:");
@@ -5666,10 +5666,10 @@ void fw_slice_print_footer (struct thread_data* tdata, int is_ckpt_thread, long 
     OUTPUT_MAIN_THREAD (tdata, "call exit_slice");
     
     if (tdata->record_pid == first_thread) {
-	fw_slice_check_final_mem_taint (tdata);
-	handle_downprotected_pages (tdata);
-	handle_upprotected_pages (tdata);
+        handle_downprotected_pages (tdata);
+        fw_slice_check_final_mem_taint (tdata);
     }
+    if (is_ckpt_thread) handle_upprotected_pages (tdata);
 
     fprintf (tdata->main_output_file, ");\n");
     fclose (tdata->main_output_file);

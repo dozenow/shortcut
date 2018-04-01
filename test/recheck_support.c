@@ -3662,7 +3662,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
 #ifdef PRINT_VALUES
         LPRINT ("Pid %ld fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d clock %ld\n", syscall(SYS_gettid), ptid, *ptid, ctid, *ctid, record_pid, ret, pentry->clock);
 #endif
-	// JNF - XXX - really should only do this if the appropriate flags are set 
+	// JNF - XXX - really should only do this if the appropriate flags are set  //xdou: yes, in the linkage pintool, this fake_clone function is only generated when appropriate flags are set
         *ptid = ret;
         *ctid = ret;
 #ifdef PRINT_VALUES

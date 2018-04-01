@@ -2889,9 +2889,13 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 	}
 	fprintf(stderr, "%d: finish generating slice and calling try_to_exit\n", PIN_GetTid());
 
-	// First, restore memory addresses 
-	OUTPUT_MAIN_THREAD (current_thread, "jmp restore_mem");
-	OUTPUT_MAIN_THREAD (current_thread, "restore_mem_done:");
+	// First, restore memory addresses  //this will be done on the first thread
+        for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
+            if (iter->first == first_thread) { 
+                OUTPUT_MAIN_THREAD (iter->second, "jmp restore_mem");
+                OUTPUT_MAIN_THREAD (iter->second, "restore_mem_done:");
+            }
+        }
 
         // Second, wake up other threads so that they can restore their pthread state
 	// Wait for them to respond so that we know that they are done
@@ -7301,12 +7305,12 @@ void PIN_FAST_ANALYSIS_CALL print_function_name_and_params (char* name, uint32_t
 
 void before_pthread_replay (ADDRINT rtn_addr, ADDRINT type, ADDRINT check)
 {
-  fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u, clock %lu\n", current_thread->record_pid, type, check, *ppthread_log_clock);
+    //fprintf (stderr, "[DEBUG] before pthread_replay for %d, type %u, check %u, clock %lu\n", current_thread->record_pid, type, check, *ppthread_log_clock);
 }
 
 void after_pthread_replay (ADDRINT ret) 
 {
-    fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d, clock %lu\n", current_thread->record_pid, ret, *ppthread_log_clock);
+    //fprintf (stderr, "[DEBUG] after pthread_replay for %d, ret %d, clock %lu\n", current_thread->record_pid, ret, *ppthread_log_clock);
     if (current_thread != previous_thread) { 
         //well, a thread switch happens and this thread now executes
         //previous thread needs to sleep and wakes up this thread
