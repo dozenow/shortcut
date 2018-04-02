@@ -2311,7 +2311,7 @@ static inline void print_extra_move_reg_10 (ADDRINT ip, int reg, const PIN_REGIS
 	OUTPUT_SLICE_EXTRA (ip, "sub esp, 12"); // For alignment
 	OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (regvalue->byte+6)));
 	OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (regvalue->byte+2)));
-	OUTPUT_SLICE_EXTRA (ip, "pushw %lu", *((u_long *) regvalue->byte));
+	OUTPUT_SLICE_EXTRA (ip, "pushw %u", (unsigned int) (*((uint16_t *) regvalue->byte)));
 	if (reg == REG::REG_ST0) {
 	    OUTPUT_SLICE_EXTRA (ip, "fstp st(0)"); // Replace st0 with this value	    
 	    OUTPUT_SLICE_EXTRA (ip, "fld tbyte ptr [esp]");
@@ -3467,6 +3467,8 @@ TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int oreg, uint32_t size, c
         char slice[256]; //convert the output instruction format
 	if (!strncmp(ins_str, "fchs ", 5) || !strncmp(ins_str, "frndint ", 8)) {
 	    strcpy (slice, "fchs");
+        } else if (!strncmp (ins_str, "fabs ", 5)) {
+            strcpy (slice, "fabs");
 	} else {
 	    char* p = strrchr (ins_str, ',');
 	    int index;
@@ -3607,7 +3609,7 @@ static void translate_fpu_inst (char* ins_str, char* slice)
     while (*ch != '\0') {
 	*outch++ = *ch++; // Copies space
 	if (!strncmp(ch, "st0", 3) && strncmp(ins_str, "fmul ", 5) && strncmp(ins_str, "fmulp ", 6) 
-	    && strncmp(ins_str, "faddp ", 6) && strncmp(ins_str, "fcmov", 5)) {
+	    && strncmp(ins_str, "faddp ", 6) && strncmp(ins_str, "fcmov", 5) && strncmp (ins_str, "fdiv", 4)) {
 	    ch += 3; // Skip over st0
 	    if (*ch == ',') ch ++; // Skip following comma
 	} else if (!strncmp(ch, "st", 2)) {
@@ -5637,7 +5639,6 @@ static void fw_slice_check_final_mem_taint (struct thread_data* tdata)
     OUTPUT_MAIN_THREAD (tdata, "jmp slice_begins");
 
     // And write out the restore code
-    OUTPUT_MAIN_THREAD (tdata, ".globl restore_mem");
     OUTPUT_MAIN_THREAD (tdata, "restore_mem:");
     OUTPUT_MAIN_THREAD (tdata, "add esp, %ld /*stack alignment*/", (28-(pushed%16))%16);
 

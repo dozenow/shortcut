@@ -177,7 +177,7 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
 	    sprintf (dump_filename, "%s%d", taintbuf_filename, go_live_clock->process_map[i].record_pid);
 	    fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	    if (fd < 0) {
-		fprintf (stderr, "Cannot open taint buffer dump file\n");
+		fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
 		return fd;
 	    }
 	    

@@ -2921,8 +2921,13 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 	if (current_thread->record_pid != first_thread) {
             for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
                 if (iter->first == first_thread) { 
+                    //wait for the ckpt thread to wake first thread up
+                    slice_synchronize (current_thread, iter->second);
                     OUTPUT_MAIN_THREAD (iter->second, "jmp restore_mem");
+                    //then first thread sleeps and let the ckpt thread continue
                     OUTPUT_MAIN_THREAD (iter->second, "restore_mem_done:");
+                    main_file_thread_wakeup (iter->second, current_thread->record_pid);	
+                    main_file_thread_wait (iter->second);	                       
                 }
             }
         } else { 
@@ -2937,11 +2942,6 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 		// We do this in the main c file since slice c file has returned at this point
 		slice_synchronize (current_thread, iter->second);
 
-                //xxxxxxxxxxxxxxxxxxxx
-		// And this goes in the slice c file for the other threads
-		//sync_pthread_state (iter->second);
-		//slice_thread_wakeup (iter->second, current_thread->record_pid);
-                //
 		sync_my_pthread_state (iter->second);
 		main_file_thread_wakeup (iter->second, current_thread->record_pid);
 	    }
@@ -2962,10 +2962,7 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             if (iter->second != current_thread) {
 		slice_synchronize (current_thread, iter->second);               // Main thread wakes and waits for ack
-                //xxxxxxxxxxxxxxxxxxxx
-		//slice_thread_wait (iter->second);	                        // This waits to be woken
-		//slice_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
-                //
+
                 main_file_thread_wait (iter->second);	                        // This waits to be woken
 		main_file_thread_wakeup (iter->second, current_thread->record_pid);	// And this sends the ack
 
