@@ -27,12 +27,13 @@ using namespace std;
 map<long,long> clone_map;
 
 void print_usage(FILE *out, char *progname) {
-	fprintf(out, "Usage: %s [-h]\n", progname);
+	fprintf(out, "Usage: %s [-fh]\n", progname);
 }
 
 void print_help(char *progname) {
 	print_usage(stdout, progname);
-	printf(" -h       Prints this dialog\n");
+	printf(" -f filename  Process one file then terminate\n");
+	printf(" -h           Prints this dialog\n");
 }
 
 static void handle_retval (int fd, struct taint_retval* trv, struct klog_result* res)
@@ -506,13 +507,17 @@ int patch_klog (string recheck_filename)
 int main(int argc, char **argv) 
 {
     char recheck_filename[256]; // List of names - terminated with final NULL
-    
+    char* filename = NULL;
+
     int opt;
-    while ((opt = getopt(argc, argv, "h:")) != -1) {
+    while ((opt = getopt(argc, argv, "hf:")) != -1) {
 	switch (opt) {
 	case 'h':
 	    print_help(argv[0]);
 	    exit(EXIT_SUCCESS);
+	case 'f':
+	    filename = optarg;
+	    break;
 	default:
 	    print_usage(stderr, argv[0]);
 	    exit(EXIT_FAILURE);
@@ -524,6 +529,13 @@ int main(int argc, char **argv)
 	exit(EXIT_FAILURE);
     }
     
+    if (filename) {
+	fprintf (stderr, "Patching one file: %s\n", filename);
+	long rc = patch_klog (filename);
+	fprintf (stderr, "Patch klog returns %ld\n", rc);
+	return rc;
+    }
+
     // For now, the daemon will be single-threaded - just call into the kernel and get some work
     while (1) {
 

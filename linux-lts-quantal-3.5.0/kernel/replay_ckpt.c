@@ -31,6 +31,8 @@
 #include <linux/scatterlist.h>
 #include <crypto/sha.h>
 
+#include <linux/replay_configs.h>
+
 // No clean way to handle this that I know of...
 extern int replay_debug, replay_min_debug;
 #define DPRINT if(replay_debug) printk
@@ -801,7 +803,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			struct file* mmap_file = NULL;
 			int mmap_fd = 0;
 			loff_t mmap_ppos = 0;
-			int is_zero = 1;
 
 			sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, vma->vm_start);
 			old_fs = get_fs();
@@ -880,9 +881,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 				for (i = 0; i < nr_pages; i++) {
 					char* p = kmap (ppages[i]);
 					copied = vfs_write(mmap_file, p, PAGE_SIZE, &mmap_ppos);
-					if (is_zero && !is_memory_zero (p, p+PAGE_SIZE)) { 
-						is_zero = 0;
-					}
 					kunmap (ppages[i]);
 					if (copied != PAGE_SIZE) {
 						printk ("replay_full_checkpoint_proc_to_disk: tried to write vma page, got rc %d\n", copied);
@@ -899,8 +897,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			} else {
 				set_fs(old_fs);
 				copied = vfs_write(mmap_file, (char *) pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, &mmap_ppos);
-				if (is_zero && !is_memory_zero ((void*) pvmas->vmas_start, (void*) pvmas->vmas_end))
-					is_zero = 0;
 				set_fs(KERNEL_DS);
 				if (copied != pvmas->vmas_end - pvmas->vmas_start) {
 					printk ("replay_full_checkpoint_proc_to_disk: tried to write vma data, got rc %d\n", copied);
@@ -923,9 +919,6 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 					printk ("Pid %d replay_full_checkpoint_hdr_to_disk: mprotect_fixup fails %d\n", current->pid, rc);
 				}
 				BUG_ON(prev != vma);
-			}
-			if (is_zero) { 
-				printk ("Pid %d memory region %lx %lx is all zeros, size %ld\n", current->pid, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_end - pvmas->vmas_start);
 			}
 		}
 
@@ -1682,6 +1675,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	char recheck_log_name[RECHECK_FILE_NAME_LEN] = {0};
 	u_int entry;
         int index;
+
         index = atomic_add_return (1, &go_live_clock->num_threads)-1;
         SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
@@ -1769,6 +1763,133 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	return 0;
 }
 
+#ifdef SLICE_VM_DUMP
+static void dump_vmas(void)
+{
+	mm_segment_t old_fs = get_fs();
+	struct vm_area_struct* vma;
+	char mmapinfo_filename[256];
+	struct file* mmapinfo_file = NULL;
+	int mmapinfo_fd = 0;
+	loff_t mmapinfo_ppos = 0;
+
+	strcpy (mmapinfo_filename, "/tmp/slice_vma_info");
+
+	mmapinfo_fd = sys_open (mmapinfo_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
+	if (mmapinfo_fd < 0) {
+		printk ("dump_vmas: open of %s returns %d\n", mmapinfo_filename, mmapinfo_fd);
+		set_fs(old_fs);
+		return;
+	}
+
+	mmapinfo_file = fget (mmapinfo_fd);
+
+	down_read (&current->mm->mmap_sem);
+	for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+		char mmap_filename[256];
+		char vma_filename[256];
+		char buffer[256];
+		struct file* mmap_file = NULL;
+		int mmap_fd = 0;
+		loff_t mmap_ppos = 0;
+		long copied, nr_pages;
+		u_long i;
+		char* p;
+
+		if (vma->vm_start == (u_long) current->mm->context.vdso) {
+			printk ("dump_vmas: skip vdso %lx to %lx\n", vma->vm_start, vma->vm_end);
+			continue; // Not in ckpt so do not save it
+		}
+		
+		if(vma->vm_file) {
+			char* p = d_path (&vma->vm_file->f_path, buffer, PATH_MAX);
+			strcpy (mmap_filename, p);
+		} else {
+			mmap_filename[0] = '\0';
+		}
+
+		sprintf (buffer, "%08lx-%08lx: flags %lx pgoff %lx %s\n", vma->vm_start, vma->vm_end, vma->vm_flags, vma->vm_pgoff, mmap_filename);
+
+		copied = vfs_write(mmapinfo_file, buffer, strlen(buffer), &mmapinfo_ppos);
+		if (copied != strlen(buffer)) {
+			printk ("dump_vmas: tried to write vma info, got rc %ld\n", copied);
+		}
+
+		if (!strncmp(mmap_filename, "/dev/zero", 9)) {
+		    printk ("Skip /dev/zero %lx to %lx\n", vma->vm_start, vma->vm_end);
+		    continue; /* Skip writing this one */
+		}
+
+		if (((vma->vm_flags&VM_MAYSHARE) && 
+		     (strncmp(mmap_filename, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (mmap_filename, "/replay_cache/", 14)))) { //why is this in here...? 
+			printk ("dump_vmas: skipped file %s, range %lx to %lx, flags read %ld, shared %ld\n", mmap_filename, vma->vm_start, vma->vm_end, vma->vm_flags & VM_READ, vma->vm_flags & VM_MAYSHARE);
+			continue;
+		}
+
+		sprintf (vma_filename, "/tmp/slice_vma.%lx", vma->vm_start);
+		mmap_fd = sys_open (vma_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
+		if (mmap_fd < 0) {
+			printk ("dump_vmas: open of %s returns %d\n", mmap_filename, mmap_fd);
+			up_read (&current->mm->mmap_sem);
+			fput (mmapinfo_file);	
+			sys_close (mmapinfo_fd);
+			set_fs(old_fs);
+			return;
+		}
+
+		mmap_file = fget (mmap_fd);
+
+		if (!(vma->vm_flags&VM_READ)){
+			struct vm_area_struct *prev = NULL;
+			// force it to readable temproarilly
+			//sys_mprotect won't work here
+			long rc = mprotect_fixup (vma, &prev, vma->vm_start, vma->vm_end, vma->vm_flags | VM_READ); 
+			printk ("Pid %d change region to readable file %s, range %lx to %lx, flags read %ld, shared %ld\n", current->pid, mmap_filename, vma->vm_start, vma->vm_end, 
+				vma->vm_flags & VM_READ, vma->vm_flags & VM_MAYSHARE);
+			if (rc || prev != vma) { 
+				printk ("dump_vmas: mprotect_fixup fails %ld\n", rc);
+				fput (mmap_file);
+				sys_close (mmap_fd);
+				up_read (&current->mm->mmap_sem);
+				fput (mmapinfo_file);	
+				sys_close (mmapinfo_fd);
+				set_fs(old_fs);
+				return;
+			}
+		}
+			
+		nr_pages = (vma->vm_end - vma->vm_start)/PAGE_SIZE;
+		set_fs(old_fs);
+		p = (char *) vma->vm_start;
+		for (i = 0; i < nr_pages; i++) {
+		    copied = vfs_write(mmap_file, p, PAGE_SIZE, &mmap_ppos);
+		    if (copied != PAGE_SIZE) {
+			printk ("dump_vmas: tried to write vma data, got rc %ld instead of %ld\n", copied, PAGE_SIZE);
+		    }
+		    p += PAGE_SIZE;
+		}
+		set_fs(KERNEL_DS);
+
+		fput (mmap_file);
+		sys_close (mmap_fd);
+
+		if (!(vma->vm_flags&VM_READ)) {
+			struct vm_area_struct *prev = NULL;
+			long rc = mprotect_fixup (vma, &prev, vma->vm_start, vma->vm_end, vma->vm_flags); 
+			if (rc || prev != vma) { 
+				printk ("Pid %d replay_full_checkpoint_hdr_to_disk: mprotect_fixup fails rc=%ld\n", current->pid, rc);
+			}
+		}
+
+	}
+
+	up_read (&current->mm->mmap_sem);
+	fput (mmapinfo_file);	
+	sys_close (mmapinfo_fd);
+	set_fs(old_fs);
+}
+#endif
+
 asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 { 
 	if (!slice_handling_initialized) {
@@ -1784,7 +1905,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		long rc = 0;
 		//struct mm_info* pmminfo = &mm_info;
 		struct pt_regs* regs = get_pt_regs (current);
-		struct fw_slice_info* slice_info = NULL;
+		struct fw_slice_info __user * slice_info = NULL;
 		struct pt_regs* regs_cache = NULL;
 		struct timeval tv;
 
@@ -1801,7 +1922,6 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
                 }
 
 		slice_info = get_fw_slice_info (regs);
-
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
 		printk ("Registers after slice executes %d\n", current->pid);
@@ -1816,16 +1936,31 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
 		}
 		set_thread_flag (TIF_IRET);
-                //destroy replay group if necessary
-                if (slice_info->slice_clock) {
-                    if (atomic_sub_return  (1, &slice_info->slice_clock->num_remaining_threads) == 0) {
-                        printk ("Pid %d finish executing the last slice.\n", current->pid);
-                        //TODO unmap the libc from resume
-                        destroy_replay_group (slice_info->slice_clock->replay_group);
-                    }
-                } 
 
-		//unmap the slice
+#ifdef SLICE_VM_DUMP
+		if (is_ckpt_thread) {
+			printk ("debug: pid %d about to dump vams\n", current->pid);
+			dump_vmas ();
+			printk ("debug: pid %d about dumped vams\n", current->pid);
+			if (current->go_live_thrd) {
+				wake_up_vm_dump_waiters (current->go_live_thrd);
+			} else {
+				printk ("debug: pid %d cannot find go live thrd for vm dump\n", current->pid);
+			}
+			printk ("debug: pid %d woke up all waiters after vm dump\n", current->pid);
+
+		} else {
+			printk ("debug: pid %d waiting for vm to be dumped\n", current->pid);
+			if (current->go_live_thrd) {
+				wait_for_vm_dump (current->go_live_thrd);
+				printk ("debug: pid %d done waiting\n", current->pid);
+			} else {
+				printk ("debug: pid %d cannot find go live thrd to wait for vm dump\n", current->pid);
+			}
+		}
+#endif
+
+		//unmap the slice - doing this during the dump will cause process to hang
 		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
 		if (rc != 0) { 
 			printk ("sys_execute_fw_slice: cannot munmap");
@@ -1836,6 +1971,12 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			printk ("sys_execute_fw_slice: cannot munmap");
 			return -1;
 		}
+
+		if (current->go_live_thrd) {
+			put_go_live_thread (current->go_live_thrd);
+			current->go_live_thrd = NULL;
+		}
+
                 if (PRINT_TIME) {
 			struct rusage ru;
 			mm_segment_t old_fs = get_fs();
@@ -1846,9 +1987,6 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			do_gettimeofday (&tv);
                         printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
                 }
-
-		printk ("Pid %d returning to user-space with the following vmas:\n", current->pid);
-		print_vmas (current);
 
 		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;

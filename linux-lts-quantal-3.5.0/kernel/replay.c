@@ -1093,6 +1093,9 @@ struct replay_thread {
 
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
+#ifdef SLICE_VM_DUMP
+	struct semaphore rp_vm_dump_sem; // For debugging memory differences
+#endif
 };
 
 /* Prototypes */
@@ -1962,9 +1965,7 @@ new_replay_group (struct record_group* prec_group, int follow_splits)
 	// Record group should not be destroyed before replay group
 	get_record_group (prec_group);
 
-
 	//setup the replay_events performance counters callback. 
-
 
 #ifdef REPLAY_STATS
 	atomic_inc(&rstats.started);
@@ -2289,7 +2290,9 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 	prp->rp_pin_curthread_ptr = NULL;
 
 	prp->rp_pin_switch_before_attach = 0;
-
+#ifdef SLICE_VM_DUMP
+	sema_init(&prp->rp_vm_dump_sem, 0);
+#endif
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
 		get_replay_cache_files (pfiles);
@@ -4496,7 +4499,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 atomic_set (&go_live_clock->num_remaining_threads, num_procs);
                 atomic_set (&go_live_clock->wait_for_other_threads, num_procs);
-                go_live_clock->mutex = 0;
+		go_live_clock->mutex = 0;
         }
 	if (num_procs > 1) {
 	        mutex_lock(&ckpt_mutex);
@@ -4684,7 +4687,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 struct replay_group* replay_group = current->replay_thrd->rp_group;
 
+		current->go_live_thrd = current->replay_thrd; // Save this for easier reference
 		current->replay_thrd = NULL;
+
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
@@ -4912,7 +4917,9 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
             struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
             SLICE_DEBUG ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
                 
+	    current->go_live_thrd = current->replay_thrd; // Save this for easier reference
             current->replay_thrd = NULL;
+
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
             if (execute_slice_name) { 
                 char recheckname[256];
@@ -16495,6 +16502,27 @@ int do_is_record(struct ctl_table *table, int write, void __user *buffer,
 			__LINE__, *lenp, *ppos);
 			*/
 	return 0;
+}
+
+#ifdef SLICE_VM_DUMP
+void wake_up_vm_dump_waiters (struct replay_thread* prept) 
+{
+	struct replay_thread* tmp;
+	
+	for (tmp = prept->rp_next_thread; tmp != prept; tmp = tmp->rp_next_thread) {    
+		up(&tmp->rp_vm_dump_sem);
+	}
+}
+
+void wait_for_vm_dump (struct replay_thread* prept) 
+{
+	down(&prept->rp_vm_dump_sem);
+}
+#endif
+
+void put_go_live_thread (struct replay_thread* prept)
+{
+	put_replay_group(prept->rp_group);
 }
 
 int btree_print = 0;

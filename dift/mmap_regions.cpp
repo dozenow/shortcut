@@ -217,11 +217,10 @@ void handle_downprotected_pages (struct thread_data* tdata)
 	}
 	
 	if (type != prev_type) {
-	    if (prev_type == 0) {
-		start_at = i;
-	    } else {
+	    if (prev_type != 0) {
 		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
 	    } 
+	    start_at = i;
 	}
 	prev_type = type;
     }	

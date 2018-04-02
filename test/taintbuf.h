@@ -35,6 +35,7 @@ struct taint_retval {
 #define DIVERGE_JUMP         1
 #define DIVERGE_INDEX        2
 #define DIVERGE_JUMP_DELAYED 3
+#define DIVERGE_DEBUG        7
 
 struct taintbuf_hdr {
     u_long diverge_type;

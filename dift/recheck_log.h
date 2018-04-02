@@ -24,8 +24,8 @@ struct go_live_clock {
     char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
     unsigned long slice_clock;
     int num_threads;  //the number of started threads
-    int wait_for_other_threads; //if non-zero, there are still other threads not ready for slice executing
-    int num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+    int num_remaining_threads; //if non-zero, there are still other threads not ready for slice executing
+    int wait_for_other_threads;
     int mutex; //for slice ordering
     void* replay_group;
     struct go_live_process_map process_map[0];
