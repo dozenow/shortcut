@@ -2325,7 +2325,9 @@ static inline void print_extra_move_reg_10 (ADDRINT ip, int reg, const PIN_REGIS
 		OUTPUT_SLICE_EXTRA (ip, "fstp st(0)");
 	    }
 	}
-	OUTPUT_SLICE_EXTRA (ip, "add esp, 10");
+
+	OUTPUT_SLICE_EXTRA (ip, "add esp, 22"); //for alignment and fpu push
+
 	OUTPUT_SLICE_EXTRA (ip, "popfd");
     } else {
 	fprintf (stderr, "don't handle partially tainted floating point registers\n");
@@ -3075,6 +3077,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                                 swap (cur_index->orig_path, cur_index->alt_path[i]);
                                 current_thread->ctrl_flow_info.swap_index = i;
                             }
+#if 0
                             //make sure the first alternative path is always taking the opposite direction to the original path
                             //This is necessary as we re-write the jump at the divergence point
                             if (cur_index->alt_path[0].front().branch_flag == cur_index->orig_path.front().branch_flag) { 
@@ -3092,6 +3095,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                                     }
                                 }
                             }
+#endif
                         }
                     } else {
                         assert (0);
