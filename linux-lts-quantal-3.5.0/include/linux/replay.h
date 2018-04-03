@@ -238,7 +238,6 @@ struct replay_group;
 // ****
 //NOTE: there is one user-level structure corresponding to this one in recheck_log.h
 // ***
-
 struct go_live_clock {
     char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
     atomic_t slice_clock; //ordering
@@ -247,6 +246,7 @@ struct go_live_clock {
     atomic_t wait_for_other_threads;  //if non-zero, there is some threads still not ready for slice execution we need this because we need a synchronization point for all threads to start executing slices, otherwise there would be a fd conflict problem
     int mutex; //for slice ordering
     struct replay_group* replay_group; //the address of the replay_group
+    void* cache_file_structure; //This address is the cache_files_opened in recheck_support.c; this is need to make this structure shared across threads
     struct go_live_process_map process_map[0]; //current pid  <-> record pid
 };
 
