@@ -1560,6 +1560,7 @@ static void sys_getpeername_start(thread_data* tdata, int sockfd, struct sockadd
 static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len, int flags)
 {
     // recv and read are similar so they can share the same info struct
+    // recv reads data into place - taint must be specified partially
     struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE(0, "call recv_recheck");
@@ -1572,16 +1573,19 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 		int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, regions, starts, ends, *ppthread_log_clock);
 		if (retaddrlen > 0) {
 		    clear_mem_taints ((u_long)buf, retaddrlen); 
+		    add_modified_mem_for_final_check ((u_long)buf, retaddrlen);
 		    for (int i = 0; i < regions; i++) {
 			fprintf (stderr, "partial recv taint: %u %u\n", starts[i], ends[i]);
-			add_modified_mem_for_final_check ((u_long)buf + starts[i], ends[i]-starts[i]);
 			OUTPUT_TAINT_INFO_THREAD (current_thread, "recv %lx %lx", (u_long) buf+starts[i], (u_long) ends[i]-starts[i]);  
 		    }
 		}
 	    }
 	} else {
 	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, *ppthread_log_clock);
-	    if (retaddrlen > 0) clear_mem_taints ((u_long)buf, retaddrlen); 
+	    if (retaddrlen > 0) {
+		clear_mem_taints ((u_long)buf, retaddrlen); 
+		add_modified_mem_for_final_check ((u_long)buf, retaddrlen);
+	    }
 	}
     }
     ri->fd = sockfd;
@@ -1659,9 +1663,9 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 			    if (region_cnt < regions && ends[region_cnt] <= bytes_so_far) region_cnt++;
 			    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			} else {
-			    add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			    OUTPUT_TAINT_INFO_THREAD (current_thread, "readmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
 			}
+			add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			bytes_so_far++;
 		    }
 		}
@@ -1672,6 +1676,7 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 		for (u_int i = 0; i < msg->msg_iovlen; i++) {
 		    u_int toclear = (msg->msg_iov[i].iov_len < (u_int) retlen) ? msg->msg_iov[i].iov_len : retlen;
 		    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base, toclear);
+		    add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base, toclear);
 		    retlen -= toclear;
 		    if (retlen == 0) break;
 		}
@@ -2346,7 +2351,7 @@ static inline void sys_futex_start (struct thread_data* tdata, int* uaddr, int o
 {
     if ((op&0x3f) == 0x1) { // Futex wait
 	// Only get this if single-threaded, in which case it is a no-op!
-	fprintf (stderr, "futex uaddr %p op %d val %d timespect %p uaddr2 %p, val3 %d\n", uaddr, op, val, timeout, uaddr2, val3);
+	fprintf (stderr, "futex uaddr %p op %d val %d timespec %p uaddr2 %p, val3 %d\n", uaddr, op, val, timeout, uaddr2, val3);
     }
 }
 
@@ -2639,8 +2644,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
-	    fprintf (stderr, "mprotect addr 0x%lx len 0x%x prot 0x%x clock %lu\n", (u_long)syscallarg0, 
-		     (int)syscallarg1, (int)syscallarg2, *ppthread_log_clock);
             change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
@@ -2935,7 +2938,15 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
             OUTPUT_MAIN_THREAD (current_thread, "restore_mem_done:");
         }
 
-        // Second, wake up other threads so that they can restore their pthread state
+	// Second, adjust pthread status - because we may call pthread functions in the next step
+	if (pthread_log_status_addr) {
+	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", pthread_log_status_addr); // Reset the pthread_log_status to PTHREAD_LOG_OFF
+	}
+	if (dumbass_link_addr) {
+	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", dumbass_link_addr); // Reset the dumbass link pthread_log_status to PTHREAD_LOG_OFF
+	}
+
+        // Third, wake up other threads so that they can restore their pthread state
 	// Wait for them to respond so that we know that they are done
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             if (iter->second != current_thread) {
@@ -2947,17 +2958,11 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 	    }
         }
 
-	// Third, restore pthread state for this thread and adjust pthread status, readjust jiggled mem protections
+	// Fourth, restore pthread state for this thread and readjust jiggled mem protections
 	sync_my_pthread_state (current_thread);
-	if (pthread_log_status_addr) {
-	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", pthread_log_status_addr); // Reset the pthread_log_status to PTHREAD_LOG_OFF
-	}
-	if (dumbass_link_addr) {
-	    OUTPUT_MAIN_THREAD (current_thread, "mov dword ptr [0x%lx], 3", dumbass_link_addr); // Reset the dumbass link pthread_log_status to PTHREAD_LOG_OFF
-	}
 	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
 
-	// Forth, another barrier, so that all threads resume execution only when memory state is
+	// Fifth, another barrier, so that all threads resume execution only when memory state is
 	// completely restored
         for (map<pid_t, struct thread_data*>::iterator iter = active_threads.begin(); iter != active_threads.end(); ++iter) { 
             if (iter->second != current_thread) {
@@ -5671,10 +5676,9 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = false;
 
-    print_me = true;
+    if (*ppthread_log_clock == 1164 && current_thread->ctrl_flow_info.index <= 34882) print_me = true;
 
-#if 0
-    #define ADDR_TO_CHECK 0xb7324fa4
+    #define ADDR_TO_CHECK 0xb7ffee90
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);
@@ -5688,8 +5692,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	old_taint = new_taint;
 	print_me = true;
     }
-    if (mem_loc1 >= 0xa755c000 && mem_loc1 < 0xa755c000 + 0x60000) print_me = true;
-    if (mem_loc2 >= 0xa755c000 && mem_loc2 < 0xa755c000 + 0x60000) print_me = true;
+
+#if 0
+    if (addr1 >= 0xa755c000 && addr1 < 0xa755c000 + 0x60000) print_me = true;
+    if (addr2 >= 0xa755c000 && addr2 < 0xa755c000 + 0x60000) print_me = true;
 #endif
 
     if (print_me) {
@@ -6418,8 +6424,8 @@ void instruction_instrumentation(INS ins, void *v)
                     break;
                 }
                 if (INS_IsRDTSC(ins)) {
-                    INSTRUMENT_PRINT(log_f, "%#x: not instrument an rdtsc\n",
-                            INS_Address(ins));
+		    // Seems like we should include in slice and taint eax/edx registers
+		    fprintf (stderr, "We encountered a rdtsc instruction at %x: \n", INS_Address(ins));
 		    slice_handled = 1;
                     break;
                 }
@@ -7415,10 +7421,12 @@ void routine (RTN rtn, VOID* v)
     }
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_Open(rtn);
+#if 0
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)before_pthread_replay,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
                 IARG_END);
+#endif
         RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)after_pthread_replay,
                 IARG_FUNCRET_EXITPOINT_VALUE,  
                 IARG_END);
@@ -7468,9 +7476,9 @@ void routine (RTN rtn, VOID* v)
         } else if (!strcmp (name, "pthread_create") || 
 		   !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || 
 		   !strcmp (name+strlen(name)-4, "_rep") ||
-		   !strcmp (name, "__pthread_initialize_minimal") || !strcmp (name, "pthread_getspecific") || !strcmp(name, "__pthread_setspecific") || 
-		   !strncmp (name, "pthread_mutexattr", 17) || !strncmp (name, "__pthread_mutexattr", 19) || !strncmp (name, "pthread_attr", 12) 
-		   || !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") ||
+		   !strcmp (name, "__pthread_initialize_minimal") || !strcmp (name, "pthread_getspecific") || !strcmp(name, "__pthread_getspecific") || !strcmp(name, "__pthread_setspecific") ||
+		   !strncmp (name, "pthread_mutexattr", 17) || !strncmp (name, "__pthread_mutexattr", 19) || !strncmp (name, "pthread_attr", 12)  || !strcmp(name, "__pthread_mutex_init") || 
+		   !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") ||
 		   !strcmp (name, "pthread_cond_init") || !strncmp (name, "pthread_condattr", 16) || !strcmp(name, "pthread_cond_broadcast") || !strcmp(name, "pthread_cond_signal") ||
 		   !strcmp (name, "__pthread_register_cancel") || !strcmp(name, "__pthread_unregister_cancel") || !strcmp(name, "__pthread_enable_asynccancel") || !strcmp(name, "__pthread_disable_asynccancel")) {
             printf ("ignored pthread operation %s\n", name);

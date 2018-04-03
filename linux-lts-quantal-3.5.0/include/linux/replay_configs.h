@@ -14,4 +14,6 @@
 #define TRACE_PIPE_READ_WRITE
 #define TRACE_SOCKET_READ_WRITE
 
+#define SLICE_VM_DUMP
+
 #endif

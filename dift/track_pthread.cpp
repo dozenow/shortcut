@@ -118,10 +118,11 @@ void sync_pthread_state (struct thread_data* tdata)
 {
     for (map<ADDRINT, struct mutex_state>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
         if (iter->second.lock_count > 0 && iter->second.pid == tdata->record_pid) { 
+	    fprintf (stderr, "calling pthread_mutex_lock on lock 0x%x\n", iter->first);
 	    for (int i = 0; i < iter->second.lock_count; i++) {
 		OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%x", iter->first);
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");
-		OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_mutex_lock");
+		OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_mutex_lock_shim");
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");
 		OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 4");
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");

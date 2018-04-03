@@ -239,16 +239,21 @@ struct replay_group;
 //NOTE: there is one user-level structure corresponding to this one in recheck_log.h
 // ***
 struct go_live_clock {
-    char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
-    atomic_t slice_clock; //ordering
-    atomic_t num_threads;  //the number of threads that has started (has called start_fw_slice)
-    atomic_t num_remaining_threads; //the number of threads that hasn't finished slice exeucting
-    atomic_t wait_for_other_threads;  //if non-zero, there is some threads still not ready for slice execution we need this because we need a synchronization point for all threads to start executing slices, otherwise there would be a fd conflict problem
-    int mutex; //for slice ordering
-    struct replay_group* replay_group; //the address of the replay_group
-    void* cache_file_structure; //This address is the cache_files_opened in recheck_support.c; this is need to make this structure shared across threads
-    struct go_live_process_map process_map[0]; //current pid  <-> record pid
+	char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
+	atomic_t slice_clock; //ordering
+	atomic_t num_threads;  //the number of threads that has started (has called start_fw_slice)
+	atomic_t num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+	atomic_t wait_for_other_threads; // Used by user-level slice code
+	int mutex; // Used by user-level slice code
+	struct replay_group* replay_group; //the address of the replay_group
+	void* cache_file_structure; //This address is the cache_files_opened in recheck_support.c; this is need to make this structure shared across threads
+	struct go_live_process_map process_map[0]; //current pid  <-> record pid
 };
+
+struct replay_thread;
+void wake_up_vm_dump_waiters (struct replay_thread* prept);
+void wait_for_vm_dump (struct replay_thread* prept);
+void put_go_live_thread (struct replay_thread* prept);
 
 long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr);
 void destroy_replay_group (struct replay_group *prepg);

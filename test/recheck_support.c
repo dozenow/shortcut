@@ -36,6 +36,7 @@ static struct go_live_clock* go_live_clock;
 #define PRINT_DEBUG
 #define PRINT_VALUES
 #define PRINT_TO_LOG
+#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
@@ -330,6 +331,10 @@ void print_value (u_long foo)
 
 void exit_slice (long is_ckpt_thread, long retval)
 {
+#ifdef SLICE_VM_DUMP
+    // For debugging memory differeces
+    dump_taintbuf (DIVERGE_DEBUG, 0);
+#endif
     syscall(350, 1, is_ckpt_thread, retval); // Call into kernel to mark complete slice
     fprintf (stderr, "handle_exit_slice: should not get here\n");
     abort();
@@ -775,7 +780,7 @@ long recv_recheck ()
 #ifdef REORDERING	
 	/*** have we received a message out of order? */
 	/* XXX - Should specify which syscalls can be reordered and patter for recognizing ooo messages */
-	while (pentry->clock >= 762570 && bytes_received > 0 && recvData[0] != ((char *)precv->buf)[0]) {
+	while (pentry->clock >= 762000 && bytes_received > 0 && recvData[0] != ((char *)precv->buf)[0]) {
 	    int i, msglen;
 #ifdef PRINT_DEBUG
 	    DPRINT ("buffer has spurious message\n");
@@ -1139,12 +1144,15 @@ long writev_recheck ()
 	handle_mismatch();
     }
     piovec = (struct iovec *) data;
+    for (i = 0; i < pwritev->iovcnt; i++) {
+	LPRINT ("writev: iov_len %d is %d\n", i, piovec[i].iov_len);
+    }
     data += pwritev->iovcnt * sizeof(struct iovec);
     for (i = 0; i < pwritev->iovcnt; i++) {
 	piovec[i].iov_base = fill_taintedbuf (data, piovec[i].iov_base, piovec[i].iov_len);
 	data += piovec[i].iov_len*2;
 #ifdef PRINT_VALUES
-	print_buffer ((u_char *) data, pwritev->iov[i].iov_len);
+	print_buffer ((u_char *) data, piovec[i].iov_len);
 #endif
     }
 
@@ -1256,7 +1264,7 @@ long open_recheck (int flags, int mode)
 	LPRINT ( " dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
     }
-    LPRINT ( " rc %ld clock %lu, tid %ld, bufptr %p, buf %p\n", pentry->retval, pentry->clock, syscall (SYS_gettid), bufptr, buf);
+    LPRINT ( " rc %ld clock %lu, bufptr %p, buf %p\n", pentry->retval, pentry->clock, bufptr, buf);
 #endif
 
     if (popen->is_flags_tainted) {
@@ -1313,7 +1321,7 @@ long waitpid_recheck ()
 {
     struct recheck_entry* pentry;
     struct waitpid_recheck* pwaitpid;
-    int rc;
+    int status, rc;
 
     start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
@@ -1327,12 +1335,12 @@ long waitpid_recheck ()
 #endif
 
     start_timing();
-    rc = syscall(SYS_waitpid, pwaitpid->pid, pwaitpid->status, pwaitpid->options);
+    rc = syscall(SYS_waitpid, pwaitpid->pid, &status, pwaitpid->options);
     end_timing (SYS_waitpid, rc);
     check_retval ("waitpid", pentry->clock, pentry->retval, rc);
     if (rc <= 0) {
-	if (*pwaitpid->status != pwaitpid->statusval) {
-	    fprintf (stderr, "waitpid: expected status %d, got %d\n", pwaitpid->statusval, *pwaitpid->status);
+	if (status != pwaitpid->statusval) {
+	    fprintf (stderr, "waitpid: expected status %d, got %d\n", status, *pwaitpid->status);
 	    handle_mismatch();
 	}
     }
@@ -2365,6 +2373,7 @@ long getsockname_recheck (int call)
     struct recheck_entry* pentry;
     struct getsockname_recheck* pgetsockname;
     u_long block[6];
+    socklen_t retlen;
     char* addr;
     int rc;
 
@@ -2381,20 +2390,20 @@ long getsockname_recheck (int call)
 	     pgetsockname->sockfd, pgetsockname->addr, pgetsockname->addrlen, pentry->retval, pentry->clock);
 #endif 
     block[0] = pgetsockname->sockfd;
-    block[1] = (u_long) pgetsockname->addr;
-    *pgetsockname->addrlen = pgetsockname->addrlenval;
-    block[2] = (u_long) pgetsockname->addrlen;
+    block[1] = (u_long) tmpbuf;
+    retlen = pgetsockname->addrlenval;
+    block[2] = (u_long) &retlen;
     start_timing();
     rc = syscall(SYS_socketcall, SYS_GETSOCKNAME, &block);
     end_timing (SYS_socketcall, rc);
     check_retval ("getsockname", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
-	if (*pgetsockname->addrlen != pgetsockname->arglen) {
-	    LPRINT ("getsockname: address length return mismatch: %d vs %ld\n", *pgetsockname->addrlen, pgetsockname->arglen);
+	if (retlen != pgetsockname->arglen) {
+	    LPRINT ("getsockname: address length return mismatch: %d vs %ld\n", retlen, pgetsockname->arglen);
 	    handle_mismatch();
 	}
-	if (!memcmp(addr, pgetsockname->addrlen, pgetsockname->arglen)) {
-	    LPRINT ("getsockname: address is different %s vs %s\n", addr, (char *) pgetsockname->addr);
+	if (memcmp(addr, tmpbuf, pgetsockname->arglen)) {
+	    LPRINT ("getsockname: address is different %s vs %s\n", addr, tmpbuf);
 	    handle_mismatch();
 	}
     }
@@ -2407,6 +2416,7 @@ long getpeername_recheck (int call)
     struct recheck_entry* pentry;
     struct getpeername_recheck* pgetpeername;
     u_long block[6];
+    socklen_t retlen;
     char* addr;
     int rc;
 
@@ -2423,20 +2433,20 @@ long getpeername_recheck (int call)
 	     pgetpeername->sockfd, pgetpeername->addr, pgetpeername->addrlen, pentry->retval, pentry->clock);
 #endif 
     block[0] = pgetpeername->sockfd;
-    block[1] = (u_long) pgetpeername->addr;
-    *pgetpeername->addrlen = pgetpeername->addrlenval;
-    block[2] = (u_long) pgetpeername->addrlen;
+    block[1] = (u_long) tmpbuf;
+    retlen = pgetpeername->addrlenval;
+    block[2] = (u_long) &retlen;
     start_timing();
     rc = syscall(SYS_socketcall, SYS_GETPEERNAME, &block);
     end_timing (SYS_socketcall, rc);
     check_retval ("getpeername", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
-	if (*pgetpeername->addrlen != pgetpeername->arglen) {
-	    LPRINT ("getpeername: address length return mismatch: %d vs %ld\n", *pgetpeername->addrlen, pgetpeername->arglen);
+	if (retlen != pgetpeername->arglen) {
+	    LPRINT ("getpeername: address length return mismatch: %d vs %ld\n", retlen, pgetpeername->arglen);
 	    handle_mismatch();
 	}
-	if (!memcmp(addr, pgetpeername->addrlen, pgetpeername->arglen)) {
-	    LPRINT ("getpeername: address is different %s vs %s\n", addr, (char *) pgetpeername->addr);
+	if (memcmp(addr, tmpbuf, pgetpeername->arglen)) {
+	    LPRINT ("getpeername: address is different %s vs %s\n", addr, tmpbuf);
 	    handle_mismatch();
 	}
     }
@@ -2588,6 +2598,7 @@ long getegid32_recheck ()
 long getresuid_recheck ()
 {
     struct recheck_entry* pentry;
+    uid_t ruid, euid, suid;
     int rc;
 
     start_timing_func ();
@@ -2602,19 +2613,19 @@ long getresuid_recheck ()
 	     pgetresuid->ruid, pgetresuid->ruidval, pgetresuid->euid, pgetresuid->euidval, pgetresuid->suid, pgetresuid->suidval, pentry->retval, pentry->clock);
 #endif 
     start_timing();
-    rc = syscall(SYS_getresuid32, pgetresuid->ruid, pgetresuid->euid, pgetresuid->suid);
+    rc = syscall(SYS_getresuid32, &ruid, &euid, &suid);
     check_retval ("getresuid", pentry->clock, pentry->retval, rc);
     if (rc >= 0) {
-	if (*pgetresuid->ruid != pgetresuid->ruidval) {
-	    fprintf (stderr, "getresuid: expected ruid %d, got %d\n", pgetresuid->ruidval, *pgetresuid->ruid);
+	if (ruid != pgetresuid->ruidval) {
+	    fprintf (stderr, "getresuid: expected ruid %d, got %d\n", pgetresuid->ruidval, ruid);
 	    handle_mismatch();
 	}
-	if (*pgetresuid->euid != pgetresuid->euidval) {
-	    fprintf (stderr, "getresuid: expected euid %d, got %d\n", pgetresuid->euidval, *pgetresuid->euid);
+	if (euid != pgetresuid->euidval) {
+	    fprintf (stderr, "getresuid: expected euid %d, got %d\n", pgetresuid->euidval, euid);
 	    handle_mismatch();
 	}
-	if (*pgetresuid->suid != pgetresuid->suidval) {
-	    fprintf (stderr, "getresuid: expected suid %d, got %d\n", pgetresuid->suidval, *pgetresuid->suid);
+	if (suid != pgetresuid->suidval) {
+	    fprintf (stderr, "getresuid: expected suid %d, got %d\n", pgetresuid->suidval, suid);
 	    handle_mismatch();
 	}
     }
@@ -2626,6 +2637,7 @@ long getresuid_recheck ()
 long getresgid_recheck ()
 {
     struct recheck_entry* pentry;
+    uid_t rgid, egid, sgid;
     int rc;
 
     start_timing_func ();
@@ -2640,19 +2652,19 @@ long getresgid_recheck ()
 	     pgetresgid->rgid, pgetresgid->rgidval, pgetresgid->egid, pgetresgid->egidval, pgetresgid->sgid, pgetresgid->sgidval, pentry->retval, pentry->clock);
 #endif 
     start_timing();
-    rc = syscall(SYS_getresgid32, pgetresgid->rgid, pgetresgid->egid, pgetresgid->sgid);
+    rc = syscall(SYS_getresgid32, &rgid, &egid, &sgid);
     check_retval ("getresgid", pentry->clock, pentry->retval, rc);
     if (rc >= 0) {
-	if (*pgetresgid->rgid != pgetresgid->rgidval) {
-	    fprintf (stderr, "getresgid: expected rgid %d, got %d\n", pgetresgid->rgidval, *pgetresgid->rgid);
+	if (rgid != pgetresgid->rgidval) {
+	    fprintf (stderr, "getresgid: expected rgid %d, got %d\n", pgetresgid->rgidval, rgid);
 	    handle_mismatch();
 	}
-	if (*pgetresgid->egid != pgetresgid->egidval) {
-	    fprintf (stderr, "getresgid: expected egid %d, got %d\n", pgetresgid->egidval, *pgetresgid->egid);
+	if (egid != pgetresgid->egidval) {
+	    fprintf (stderr, "getresgid: expected egid %d, got %d\n", pgetresgid->egidval, egid);
 	    handle_mismatch();
 	}
-	if (*pgetresgid->sgid != pgetresgid->sgidval) {
-	    fprintf (stderr, "getresgid: expected sgid %d, got %d\n", pgetresgid->sgidval, *pgetresgid->sgid);
+	if (sgid != pgetresgid->sgidval) {
+	    fprintf (stderr, "getresgid: expected sgid %d, got %d\n", pgetresgid->sgidval, sgid);
 	    handle_mismatch();
 	}
     }
@@ -2889,7 +2901,7 @@ long poll_recheck (int timeout)
     struct pollfd* fds;
     struct pollfd* pollbuf = (struct pollfd *) tmpbuf;
     short* revents;
-    int rc, use_timeout;
+    int rc, use_timeout, tries = 0;
     u_int i;
 #ifdef REORDERING
     int reorder_data_in_fd = -1;
@@ -2938,32 +2950,39 @@ long poll_recheck (int timeout)
 #endif
 
     memcpy (tmpbuf, fds, ppoll->nfds*sizeof(struct pollfd));
-    start_timing();
-    rc = syscall(SYS_poll, pollbuf, ppoll->nfds, use_timeout);
-    end_timing(SYS_poll, rc);
-    
+
+    do {
+	if (tries > 0) usleep (500*(2>>(tries-1)));
+
+	start_timing();
+	rc = syscall(SYS_poll, pollbuf, ppoll->nfds, use_timeout);
+	end_timing(SYS_poll, rc);
+	
 #ifdef REORDERING
-    if (reorder_data_in_fd >= 0) {
-	if (!(pollbuf[i].revents&POLLIN)) {
-	    DPRINT ("Marking reordered fd %d as having data\n", pollbuf[i].fd);
-	    if (pollbuf[i].revents == 0) rc += 1;
-	    pollbuf[i].revents |= POLLIN;
-	}
-    }
-#endif
-
-    if (rc > 0) {
-	for (i = 0; i < ppoll->nfds; i++) {
-	    DPRINT ("\tfd %d events %x returns revents %x\n", pollbuf[i].fd, pollbuf[i].events, pollbuf[i].revents);
-
-	    // OK to pretend that data is not ready to read for async channel
-	    if ((pollbuf[i].revents&POLLIN)&&!(revents[i]&POLLIN)) {
-		DPRINT ("Pretend POLLIN not ready on fd %d\n", pollbuf[i].fd);
-		pollbuf[i].revents &= 0xfffe;
-		if (pollbuf[i].revents == 0) rc--;
+	if (reorder_data_in_fd >= 0) {
+	    if (!(pollbuf[i].revents&POLLIN)) {
+		DPRINT ("Marking reordered fd %d as having data\n", pollbuf[i].fd);
+		if (pollbuf[i].revents == 0) rc += 1;
+		pollbuf[i].revents |= POLLIN;
 	    }
 	}
-    }
+#endif
+
+	if (rc > 0) {
+	    for (i = 0; i < ppoll->nfds; i++) {
+		DPRINT ("\tfd %d events %x returns revents %x\n", pollbuf[i].fd, pollbuf[i].events, pollbuf[i].revents);
+		
+		// OK to pretend that data is not ready to read for async channel
+		if ((pollbuf[i].revents&POLLIN)&&!(revents[i]&POLLIN)) {
+		    DPRINT ("Pretend POLLIN not ready on fd %d\n", pollbuf[i].fd);
+		    pollbuf[i].revents &= 0xfffe;
+		    if (pollbuf[i].revents == 0) rc--;
+		}
+	    }
+	}
+	tries++;
+    } while (rc > 0 && rc < pentry->retval && tries < 5);
+
     DPRINT ("poll now returning %d\n", rc);
     check_retval ("poll", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
@@ -2978,6 +2997,7 @@ long poll_recheck (int timeout)
     return rc;
 }
 
+// JNF: This is completely wrong - will need to re-write entirely (sigh)
 long newselect_recheck ()
 {
     struct recheck_entry* pentry;
@@ -3400,14 +3420,16 @@ long prctl_recheck ()
     start_timing();
     if (pprctl->option == PR_SET_NAME) {
 	rc = syscall(SYS_prctl, pprctl->option, params);
+    } else if (pprctl->option == PR_GET_NAME) {
+	rc = syscall(SYS_prctl, pprctl->option, tmpbuf, pprctl->arg3, pprctl->arg4, pprctl->arg5);
     } else {
 	rc = syscall(SYS_prctl, pprctl->option, pprctl->arg2, pprctl->arg3, pprctl->arg4, pprctl->arg5);
     }
     end_timing (SYS_prctl, rc);
     check_retval ("prctl", pentry->clock, pentry->retval, rc);
     if (pprctl->option == PR_GET_NAME) {
-	if (!memcmp(params, (char *)pprctl->arg2, 16)) {
-	    fprintf (stderr, "prctl getname returns name %16s instead of %16s\n", (char *) pprctl->arg2, params);
+	if (memcmp(params, tmpbuf, 16)) {
+	    fprintf (stderr, "prctl getname returns name %16s instead of %16s\n", tmpbuf, params);
 	    handle_mismatch ();
 	}
     }
@@ -3419,6 +3441,7 @@ long pipe_recheck ()
 {
     struct recheck_entry* pentry;
     struct pipe_recheck* ppipe;
+    int pipefd[2];
     long rc;
 
     start_timing_func();
@@ -3433,12 +3456,12 @@ long pipe_recheck ()
 	    ppipe->pipefd, ppipe->piperet[0], ppipe->piperet[1], pentry->retval, pentry->clock);
 #endif
     start_timing();
-    rc = syscall(SYS_pipe, ppipe->pipefd);
+    rc = syscall(SYS_pipe, &pipefd);
     end_timing (SYS_pipe, rc);
     check_retval ("pipe", pentry->clock, pentry->retval, rc);
     if (rc == 0) {
-	if (ppipe->pipefd[0] != ppipe->piperet[0] || ppipe->pipefd[1] != ppipe->piperet[1]) {
-	    fprintf (stderr, "pipe: received fds %d %d vs. exepcted %d %d\n", ppipe->pipefd[0], ppipe->pipefd[1], ppipe->piperet[0], ppipe->piperet[1]);
+	if (pipefd[0] != ppipe->piperet[0] || pipefd[1] != ppipe->piperet[1]) {
+	    fprintf (stderr, "pipe: received fds %d %d vs. exepcted %d %d\n", pipefd[0], pipefd[1], ppipe->piperet[0], ppipe->piperet[1]);
 	    handle_mismatch();
 	}
     }
@@ -3476,6 +3499,7 @@ int shmat_recheck (int shmid)
     struct recheck_entry* pentry;
     struct shmat_recheck* pshmat;
     int use_shmid;
+    u_long raddr;
     long rc;
 
     start_timing_func();
@@ -3497,11 +3521,11 @@ int shmat_recheck (int shmid)
     }
 
     start_timing();
-    rc = syscall(SYS_ipc, SHMAT, use_shmid, pshmat->shmaddr, pshmat->raddr, pshmat->shmflg);
+    rc = syscall(SYS_ipc, SHMAT, use_shmid, pshmat->shmaddr, &raddr, pshmat->shmflg);
     end_timing (SYS_ipc, rc);
     check_retval ("shmat", pentry->clock, pentry->retval, rc);
-    if (pshmat->raddr && *((u_long *)pshmat->raddr) != pshmat->raddrval) {
-	LPRINT ("shmat: raddr difference at address %lx: %lx expected %lx returned\n", (u_long) pshmat->raddr, pshmat->raddrval, *((u_long *)pshmat->raddr));
+    if (pshmat->raddr && raddr != pshmat->raddrval) {
+	LPRINT ("shmat: raddr difference at address %lx: %lx expected %lx returned\n", (u_long) pshmat->raddr, pshmat->raddrval, raddr);
     }
     end_timing_func (SYS_ipc);
     return rc;
@@ -3685,4 +3709,18 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
         return ret;
     } else 
         return 0;
+}
+
+void pthread_mutex_lock_shim (pthread_mutex_t* mutex)
+{
+    int rc, i;
+    LPRINT ("pthread_mutex_lock_shim mutex=%lx\n", (u_long) mutex);
+    for (i = 0; i < 24; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
+    }
+    rc = pthread_mutex_lock (mutex);
+    LPRINT ("pthread_mutex_lock addr %lx returns %d\n", (u_long) &pthread_mutex_lock, rc);
+    for (i = 0; i < 24; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
+    }
 }
