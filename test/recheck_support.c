@@ -134,7 +134,8 @@ struct cfopened {
 };
 
 #define MAX_FDS 4096
-static struct cfopened cache_files_opened[MAX_FDS];
+static struct cfopened *cache_files_opened; 
+static struct cfopened cache_files_opened_content[MAX_FDS]; //one of these structures will be shared by all threads; in the future we may put this into a shared map region
 
 static char taintbuf[1024*1024];
 static u_long taintndx = 0;
@@ -235,12 +236,18 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     }
     close (fd);
 
-    for (i = 0; i < MAX_FDS; i++) {
-	cache_files_opened[i].is_open_cache_file = 0;
-    }
-
     // Update shared data with taintbuf info
     if (go_live_clock) {
+        //try to figure out the cache_files_opened address
+        //if there are multi threads, there should be only one shared by all
+        if (go_live_clock->cache_file_structure == NULL) { 
+           if (__sync_bool_compare_and_swap (&go_live_clock->cache_file_structure, NULL, cache_files_opened_content)) {
+               //fprintf (stderr, "This thread sets up the cache_file_opened to address %p, %p\n", go_live_clock->cache_file_structure, cache_files_opened_content);
+           }
+        } else { 
+            //fprintf (stderr, "This thread will use the shared cache_file_opened %p\n", go_live_clock->cache_file_structure);
+        }
+        cache_files_opened = go_live_clock->cache_file_structure;
         for (i = 0; i < go_live_clock->num_threads; i++) {
             if (go_live_clock->process_map[i].record_pid == record_pid) {
                 go_live_clock->process_map[i].taintbuf = taintbuf;
@@ -248,6 +255,12 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
                 break;
             } 
         }
+    } else { 
+        cache_files_opened = cache_files_opened_content;
+    }
+
+    for (i = 0; i < MAX_FDS; i++) {
+	cache_files_opened[i].is_open_cache_file = 0;
     }
 
     strcpy(taintbuf_filename, filename);

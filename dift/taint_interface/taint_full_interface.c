@@ -3760,15 +3760,16 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size
     }
 }
 
-TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
+TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int oreg, uint32_t reg_size, const CONTEXT* ctx, uint32_t reg_u8, u_long mem_loc, uint32_t mem_size, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
 {
     VERIFY_BASE_INDEX;
 
+    int reg = map_fp_stack_reg (oreg, get_fp_stack_top (ctx));
     int reg_tainted = is_reg_tainted (reg, reg_size, reg_u8);
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
     if (still_tainted || reg_tainted || mem_tainted) {
         PIN_REGISTER regvalue;
-        PIN_GetContextRegval (ctx, REG (reg), (UINT8*)&regvalue);
+        PIN_GetContextRegval (ctx, REG (oreg), (UINT8*)&regvalue);
         char slice[256]; //convert the output instruction format
         int index = strchr (ins_str, ' ') - ins_str;
         int len = 0;

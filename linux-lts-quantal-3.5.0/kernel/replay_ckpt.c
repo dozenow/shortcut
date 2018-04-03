@@ -1683,6 +1683,8 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	u_int entry;
         int index;
         index = atomic_add_return (1, &go_live_clock->num_threads)-1;
+	if (index == 0) 
+		go_live_clock->cache_file_structure = NULL;
         SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");

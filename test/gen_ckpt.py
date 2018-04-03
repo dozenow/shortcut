@@ -26,14 +26,20 @@ parser.add_argument("-taint_byterange", help = "taint a specific byte range: REC
 parser.add_argument("-taint_byterange_file", help = "give a file specifying all ranges and all syscalls to be tainted.")
 parser.add_argument("-outputdir", help = "the output dir of all output files.")
 parser.add_argument("-compile_only", help = "needs an input file name. Skip the slice generation phase and directly compiles assemble to .so")
+parser.add_argument("-compile_all", help = "Skip the slice generation phase and directly compiles all assemble files to .so", action="store_true")
 args = parser.parse_args()
 
 rec_dir = args.rec_group_id
 ckpt_at = args.checkpoint_clock
 taint_filter = False
 input_asm_file = list()
+outputdir = "/replay_logdb/rec_" + str(rec_dir)
+if args.outputdir:
+    outputdir = args.outputdir
 if args.compile_only is not None:
     input_asm_file.append (args.compile_only)
+if args.compile_all:
+    input_asm_file = glob.glob(outputdir + '/exslice[123456789]*.*.c')
 if args.taint_syscall:
     taint_syscall = args.taint_syscall
     taint_filter = True
@@ -50,9 +56,6 @@ if args.taint_byterange_file:
     taint_filter = True
 else:
     taint_byrterange_file = ""
-outputdir = "/replay_logdb/rec_" + str(rec_dir)
-if args.outputdir:
-    outputdir = args.outputdir
 
 usage = "Usage: ./gen_ckpt.py rec_group_id checkpoint_clock [-o outputdir] [-taint_syscall SYSCALL_INDEX] [-taint_byterange RECORD_PID,SYSCALL_INDEX,START,END] [-taint_byterange_file filename] [-comiple_only input_asm_filename]" 
 
@@ -121,7 +124,7 @@ for record_pid in record_pids.keys():
 ts_compile = datetime.datetime.now()
 
 # Generate a checkpoint
-if args.compile_only is None:
+if args.compile_only is None and args.compile_all is False:
     p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])
     p.wait()
 
