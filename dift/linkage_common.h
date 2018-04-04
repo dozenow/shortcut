@@ -375,6 +375,11 @@ struct wait_info_cache {
     ADDRINT tid;
 };
 
+struct lll_lock_info_cache {
+    ADDRINT plock;
+    ADDRINT type;
+};
+
 // Per-thread data structure
 // Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
 struct thread_data {
@@ -443,6 +448,7 @@ struct thread_data {
     union {
         struct mutex_info_cache mutex_info_cache;
         struct wait_info_cache wait_info_cache;
+        struct lll_lock_info_cache lll_lock_info_cache;
     } pthread_info; //for remembering input parameters to pthread functions
 
     int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution

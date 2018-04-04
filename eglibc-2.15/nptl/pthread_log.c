@@ -249,7 +249,7 @@ void pthread_log_mutex_unlock_rec (__libc_lock_t* lock)
   pthread_log_record (0, LIBC_LOCK_UNLOCK_EXIT, (u_long) lock, 0); 
 }
 
-void pthread_log_mutex_unlock_rep (__libc_lock_t* lock)
+int pthread_log_mutex_unlock_rep (__libc_lock_t* lock)
 {
   pthread_log_replay (LIBC_LOCK_UNLOCK_ENTER, (u_long) lock); 
   pthread_log_replay (LIBC_LOCK_UNLOCK_EXIT, (u_long) lock); 
@@ -265,9 +265,13 @@ void pthread_log_mutex_unlock (__libc_lock_t* lock)
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	int rc;
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	pthread_log_mutex_unlock_rep (lock);
+	rc = pthread_log_mutex_unlock_rep (lock);
+	if (rc == -ENOTREPLAYING) {
+	    __libc_lock_unlock (*(lock));
+	}
 	RESET_OLD_STACKP(); 
     } else {
 	__libc_lock_unlock (*(lock));
@@ -590,7 +594,7 @@ pthread_log_replay (unsigned long type, unsigned long check)
     if (pthread_log_status == PTHREAD_LOG_REP_AFTER_FORK) check_recording();
     if (head == NULL) return 0;
     if (!is_replaying()) {
-	pthread_log_debug ("GLIBC: pthread_log_replay called by non-replaying process, status=%d addr=%p\n", pthread_log_status, &pthread_log_status);
+	pthread_log_debug ("GLIBC: pthread_log_replay called bynon-replaying process, type %d, clock %lu, status %d addr %p\n", type, next_clock, pthread_log_status, &pthread_log_status);
 	return -ENOTREPLAYING;
     }
 
@@ -621,7 +625,7 @@ pthread_log_replay (unsigned long type, unsigned long check)
             if (ret == -EINVAL) { 
                 pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block, type %d, clock MAX\n", type, next_clock);
                 pthread_log_status = PTHREAD_LOG_OFF;
-                return ret;
+                return -ENOTREPLAYING;
             }
             if (!is_replaying()) {
                 pthread_log_debug ("GLIBC: it's not replaying but we're in pthread_log_replay after pthread_log_block2, type %d, clock MAX\n", type, next_clock);
@@ -1002,6 +1006,9 @@ __pthread_mutex_lock (mutex)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_mutex_lock_rep (mutex);
+    if (rc == -ENOTREPLAYING) { 
+	rc = __internal_pthread_mutex_lock (mutex);
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_mutex_lock (mutex);
@@ -1453,11 +1460,6 @@ __pthread_cond_timedwait_rep (cond, mutex, abstime)
   int rc;
   pthread_log_replay (PTHREAD_COND_TIMEDWAIT_ENTER, (u_long) cond); 
   rc = pthread_log_replay (PTHREAD_COND_TIMEDWAIT_EXIT, (u_long) cond); 
-  /*if (!is_replaying()) {
-      pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
-      rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
-      pthread_log_debug ("[HACK] let's manully call pthread_cond_timedwait: done\n");
-  }*/
   return rc;
 }
 
@@ -1480,6 +1482,11 @@ __pthread_cond_timedwait (cond, mutex, abstime)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_cond_timedwait_rep (cond, mutex, abstime);
+    if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
+        rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
+        pthread_log_debug ("call pthread_cond_timedwait: done\n");
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
@@ -1529,6 +1536,11 @@ __pthread_cond_wait (cond, mutex)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_cond_wait_rep (cond, mutex);
+    if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("call pthread_cond_wait, cond %p, mutex %p\n", cond, mutex);
+        rc = __internal_pthread_cond_wait (cond, mutex);
+        pthread_log_debug ("call pthread_cond_wait: done\n");
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_cond_wait (cond, mutex);
@@ -2459,8 +2471,12 @@ void pthread_log_lll_lock (int* plock, int type)
     lll_lock(*plock, type);
     pthread_log_record (0, LLL_LOCK_EXIT, (u_long) plock, 0); 
   } else if (is_replaying()) {
+    int rc;
     pthread_log_replay (LLL_LOCK_ENTER, (u_long) plock); 
-    pthread_log_replay (LLL_LOCK_EXIT, (u_long) plock); 
+    rc = pthread_log_replay (LLL_LOCK_EXIT, (u_long) plock); 
+    if (rc == -ENOTREPLAYING) {
+        lll_lock (*plock, type);
+    }
   } else {
     lll_lock(*plock, type);
   }
@@ -2473,8 +2489,12 @@ void pthread_log_lll_unlock (int* plock, int type)
     lll_unlock(*plock, type);
     pthread_log_record (0, LLL_UNLOCK_EXIT, (u_long) plock, 0); 
   } else if (is_replaying()) {
+    int rc;
     pthread_log_replay (LLL_UNLOCK_ENTER, (u_long) plock); 
-    pthread_log_replay (LLL_UNLOCK_EXIT, (u_long) plock); 
+    rc = pthread_log_replay (LLL_UNLOCK_EXIT, (u_long) plock); 
+    if (rc == -ENOTREPLAYING) {
+        lll_unlock (*plock, type);
+    }
   } else {
     lll_unlock(*plock, type);
   }
@@ -2487,11 +2507,12 @@ void __pthread_log_lll_wait_tid (int* ptid)
     lll_wait_tid(*ptid);
     pthread_log_record (0, LLL_WAIT_TID_EXIT, (u_long) ptid, 0); 
   } else if (is_replaying()) {
-    pthread_log_debug ("before pthread_log_lll_wait_tid, ptid %p, %d\n", ptid, *ptid);
+    int rc;
     pthread_log_replay (LLL_WAIT_TID_ENTER, (u_long) ptid); 
-    pthread_log_debug ("in the middle of pthread_log_lll_wait_tid\n");
-    pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
-    pthread_log_debug ("after pthread_log_lll_wait_tid ptid %p, %d\n", ptid, *ptid);
+    rc = pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
+    if (rc == -ENOTREPLAYING) { 
+        lll_wait_tid (*ptid);
+    }
   } else {
     fprintf (stderr, "pthread_log_lll_wait_tid, ptid %p, %d\n", ptid, *ptid);
     lll_wait_tid(*ptid);
