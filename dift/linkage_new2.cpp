@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1
-//#define EXTRA_DEBUG_STOP 1274644
+//#define EXTRA_DEBUG 69040
+//#define EXTRA_DEBUG_STOP 100000
 
 //#define ERROR_PRINT(x,...);
 #ifdef LOGGING_ON
@@ -990,7 +990,6 @@ static void sys_getdents64_stop (int rc)
     struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
     if (rc > 0) {
 	clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
-
 	// Except for inodes, which will be tainted (consistent with stat syscalls)
 	char* p = gdi->buf; 
 	while ((u_long) p - (u_long) gdi->buf < (u_long) rc) {
@@ -1630,7 +1629,7 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 			    if (region_cnt < regions && ends[region_cnt] <= bytes_so_far) region_cnt++;
 			    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			} else {
-			    OUTPUT_TAINT_INFO_THREAD (current_thread, "readmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
+			    OUTPUT_TAINT_INFO_THREAD (current_thread, "recvmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
 			}
 			add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			bytes_so_far++;
@@ -1897,7 +1896,8 @@ static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t
 		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
 		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_nsec, tpout.tv_nsec);
 		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
-		clear_mem_taints((u_long) &tp, sizeof(tpout));
+		clear_mem_taints((u_long) tp, sizeof(tpout));
+		add_modified_mem_for_final_check ((u_long) tp, sizeof(tpout));
 	    }
 	} else {
 	    OUTPUT_SLICE (0, "call clock_gettime_recheck");
@@ -5592,9 +5592,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, ADDRINT add
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = false;
 
-    if (*ppthread_log_clock == 1164 && current_thread->ctrl_flow_info.index <= 34882) print_me = true;
-
-    #define ADDR_TO_CHECK 0xb7ffee90
+    #define ADDR_TO_CHECK 0x86a4dc1
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);

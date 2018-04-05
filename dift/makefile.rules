@@ -33,7 +33,7 @@ APP_CC=gcc
 # This defines tests which run tools of the same name.  This is simply for convenience to avoid
 # defining the test name twice (once in TOOL_ROOTS and again in TEST_ROOTS).
 # Tests defined here should not be defined in TOOL_ROOTS and TEST_ROOTS.
-TEST_TOOL_ROOTS := linkage_offset print_bb cmp_bb ctrl_flow_bb_trace data_flow_ndx
+TEST_TOOL_ROOTS := linkage_offset print_bb cmp_bb ctrl_flow_bb_trace data_flow_ndx debug
 
 # This defines the tests to be run that were not already defined in TEST_TOOL_ROOTS.
 TEST_ROOTS :=
@@ -164,4 +164,10 @@ $(OBJDIR)data_flow_ndx$(OBJ_SUFFIX): data_flow_ndx.cpp
 $(OBJDIR)data_flow_ndx$(PINTOOL_SUFFIX): $(OBJDIR)data_flow_ndx$(OBJ_SUFFIX) $(OBJDIR)mmap_regions$(OBJ_SUFFIX)
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
 
+
+$(OBJDIR)debug$(OBJ_SUFFIX): debug.cpp 
+	$(CXX) -DLINKAGE_DATA_OFFSET -DCTRL_FLOW $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
+
+$(OBJDIR)debug$(PINTOOL_SUFFIX): $(OBJDIR)debug$(OBJ_SUFFIX)
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) $(MY_OBJS)
 

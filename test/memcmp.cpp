@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 
 #include <map>
+#include <set>
 #include <string>
 using namespace std;
 
@@ -101,6 +102,46 @@ int main (int argc, char* argv[])
 {
     map<u_long, string> slice_regions;
     map<u_long, string> replay_regions;
+    set<u_long> slice_only_regions;
+
+    if (argc < 2) {
+	fprintf (stderr, "format: memcmp [record dir #] [ckpt syscall #]\n");
+	return -1;
+    }
+
+    char* recdir = argv[1];
+    char* syscall = argv[2];
+
+    FILE* file = fopen("/tmp/slice_vma_info", "r");
+    if (file == NULL) {
+	fprintf (stderr, "Cannot open vm_slice_info\n");
+	return -1;
+    }
+
+    int was_slice_only = 0;
+    int was_libc = 0;
+    while (!feof(file)) {
+	char line[256];
+	if (fgets (line, sizeof(line), file)) {
+	    u_long start, end, flags, pgoff;
+	    char memfilename[256];
+	    int cnt = sscanf (line, "%lx-%lx: flags %lx pgoff %lx %s\n", &start, &end, &flags, &pgoff, memfilename);	    
+	    if (cnt == 5 && strstr (memfilename, "exslice")) {
+		slice_only_regions.insert (start);
+		was_slice_only = 1;
+	    } else if (cnt == 5 && strstr (memfilename, "libc-2.15.so")) {
+		slice_only_regions.insert (start);
+		was_libc = 1;
+	    } else if (was_libc) {
+		slice_only_regions.insert (start);
+		was_libc = 0;
+	    } else if (was_slice_only) {
+		slice_only_regions.insert (start);
+		was_slice_only = 0;
+	    }
+	}
+    }
+    fclose (file);
 
     DIR* dirp = opendir("/tmp");
     if (dirp == NULL) {
@@ -113,21 +154,28 @@ int main (int argc, char* argv[])
 	if (!strncmp (dp->d_name, "slice_vma.", 10)) {
 	    string filename = "/tmp/" + string(dp->d_name);
 	    u_long addr = strtoul(dp->d_name+10, 0, 16);
-	    slice_regions[addr] = filename;
+	    if (slice_only_regions.count(addr) == 0) {
+		slice_regions[addr] = filename;
+	    }
 	}
     }
 
     closedir (dirp);
 
-    dirp = opendir("/replay_logdb/rec_147503/last_altex/");
+    char altdir[256];
+    sprintf (altdir, "/replay_logdb/rec_%s/last_altex/", recdir);
+    printf ("Scanning %s\n", altdir);
+    dirp = opendir(altdir);
     if (dirp == NULL) {
 	fprintf (stderr, "Cannot open replay ckpt directory\n");
 	return -1;
     }
+    char prefix[256];
+    sprintf (prefix, "ckpt.%s.ckpt_mmap.", syscall);
     while ((dp = readdir (dirp)) != NULL) {
-	if (!strncmp (dp->d_name, "ckpt.78193.ckpt_mmap.", 21)) {
-	    string filename = "/replay_logdb/rec_147503/last_altex/" + string(dp->d_name);
-	    u_long addr = strtoul(dp->d_name+21, 0, 16);
+	if (!strncmp (dp->d_name, prefix, strlen(prefix))) {
+	    string filename = string(altdir) + string(dp->d_name);
+	    u_long addr = strtoul(dp->d_name+strlen(prefix), 0, 16);
 	    replay_regions[addr] = filename;
 	}
     }

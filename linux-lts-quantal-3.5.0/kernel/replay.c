@@ -7398,7 +7398,6 @@ asmlinkage long sys_pthread_sysign (void)
 	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
         else { 
                 SLICE_DEBUG ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
-                //msleep (3000);
                 return -EINVAL;
         }
 }

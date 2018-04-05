@@ -3171,12 +3171,8 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
 { 
     VERIFY_BASE_INDEX_WRITE_RANGE;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
-    if (mem_tainted || still_tainted) {
-	if (!still_tainted && mem_tainted) {
-	    print_abs_address (ip, ins_str, mem_loc);	    
-	} else {
-	    OUTPUT_SLICE (ip, "%s", ins_str);
-	}
+    if (still_tainted) {
+	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
     }
 }
