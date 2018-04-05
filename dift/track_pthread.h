@@ -33,6 +33,12 @@ struct wait_state {
     ADDRINT abstime;
 };
 
+struct rwlock_state {
+    set<pid_t> readers;
+    pid_t write_lock_pid; //current write lock holder
+    int is_write_locked;
+};
+
 void track_pthread_mutex_params_1 (ADDRINT mutex);
 void track_pthread_mutex_lock (int retval, int is_libc_lock);
 void track_pthread_mutex_trylock (ADDRINT retval, int is_libc_lock);
@@ -47,6 +53,11 @@ void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr);
 void track_lll_lock_before (ADDRINT plock, ADDRINT type);
 void track_lll_lock_after ();
 void track_lll_unlock_after ();
+
+void track_rwlock_rdlock (int retval);
+void track_rwlock_wrlock (int retval);
+void track_rwlock_unlock (int retval);
+void track_rwlock_destroy (int retval);
 
 void sync_pthread_state (struct thread_data* tdata);
 void sync_my_pthread_state (struct thread_data* tdata);

@@ -4726,7 +4726,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("after start_fw_slice runs %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("Pid %dafter start_fw_slice runs %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		}
 
 		if (attach_device) {

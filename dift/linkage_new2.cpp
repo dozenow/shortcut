@@ -7491,6 +7491,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+            pthread_operation_addr["pthread_cond_timedwait"] = RTN_Address(rtn);
         } else if (!strcmp (name, "pthread_cond_wait")) { //it will shared the same tracking function with cond_timedwait
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -7500,6 +7501,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+            pthread_operation_addr["pthread_cond_wait"] = RTN_Address(rtn);
         } else if (!strcmp (name, "pthread_log_lll_wait_tid")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_lll_wait_tid_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -7507,6 +7509,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+            pthread_operation_addr["pthread_log_lll_wait_tid"] = RTN_Address(rtn);
         } else if (!strcmp (name, "pthread_log_lll_lock")) { 
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_lll_lock_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -7522,15 +7525,47 @@ void routine (RTN rtn, VOID* v)
                     IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_lll_unlock_after, 
                     IARG_END);
+        } else if (!strcmp (name, "__pthread_rwlock_wrlock") || !strcmp (name, "pthread_rwlock_wrlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_rwlock_wrlock, 
+                    IARG_FUNCRET_EXITPOINT_VALUE,
+                    IARG_END);
+            pthread_operation_addr["pthread_rwlock_wrlock"] = RTN_Address(rtn);
+        } else if (!strcmp (name, "__pthread_rwlock_rdlock") || !strcmp (name, "pthread_rwlock_rdlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_rwlock_rdlock, 
+                    IARG_FUNCRET_EXITPOINT_VALUE,
+                    IARG_END);
+            pthread_operation_addr["pthread_rwlock_rdlock"] = RTN_Address(rtn);
+        } else if (!strcmp (name, "__pthread_rwlock_unlock") || !strcmp (name, "pthread_rwlock_unlock")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_rwlock_unlock, 
+                    IARG_FUNCRET_EXITPOINT_VALUE,
+                    IARG_END);
+        } else if (!strcmp (name, "pthread_rwlock_destroy")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
+			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+			   IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_rwlock_destroy,
+                           IARG_FUNCRET_EXITPOINT_VALUE,
+			    IARG_END);
         } else if (!strcmp (name, "pthread_create") || 
 		   !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || 
 		   !strcmp (name+strlen(name)-4, "_rep") ||
 		   !strcmp (name, "__pthread_initialize_minimal") || !strcmp (name, "pthread_getspecific") || !strcmp(name, "__pthread_getspecific") || !strcmp(name, "__pthread_setspecific") ||
 		   !strncmp (name, "pthread_mutexattr", 17) || !strncmp (name, "__pthread_mutexattr", 19) || !strncmp (name, "pthread_attr", 12)  || !strcmp(name, "__pthread_mutex_init") || 
-		   !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") ||
+		   !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") || !strcmp (name, "pthread_once") || !strcmp (name, "pthread_sysign") ||
 		   !strcmp (name, "pthread_cond_init") || !strncmp (name, "pthread_condattr", 16) || !strcmp(name, "pthread_cond_broadcast") || !strcmp(name, "pthread_cond_signal") ||
 		   !strcmp (name, "__pthread_register_cancel") || !strcmp(name, "__pthread_unregister_cancel") || !strcmp(name, "__pthread_enable_asynccancel") || !strcmp(name, "__pthread_disable_asynccancel")||
-                   !strcmp (name, "pthread_self") || !strcmp (name, "pthread_getaffinity_np") || !strcmp (name, "pthread_getattr_np")) {
+                   !strcmp (name, "pthread_self") || !strcmp (name, "pthread_getaffinity_np") || !strcmp (name, "pthread_getattr_np") || !strcmp (name, "pthread_sigmask") || 
+                   !strcmp (name, "__pthread_once_internal"))
+        {
             printf ("ignored pthread operation %s\n", name);
         } else {
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 

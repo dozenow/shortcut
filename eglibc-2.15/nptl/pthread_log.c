@@ -198,6 +198,7 @@ void pthread_log_mutex_lock (__libc_lock_t* lock)
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
 	if (pthread_log_mutex_lock_rep (lock) == -ENOTREPLAYING) {
+            pthread_log_debug ("calling pthread_log_mutex_lock to fix pthread states, lock %p\n", lock);
 	    __libc_lock_lock(*(lock));	
 	}
 	RESET_OLD_STACKP(); 
@@ -270,6 +271,7 @@ void pthread_log_mutex_unlock (__libc_lock_t* lock)
 	SET_NEW_STACKP();
 	rc = pthread_log_mutex_unlock_rep (lock);
 	if (rc == -ENOTREPLAYING) {
+            pthread_log_debug ("calling pthread_log_mutex_unlock to fix pthread states, lock %p\n", lock);
 	    __libc_lock_unlock (*(lock));
 	}
 	RESET_OLD_STACKP(); 
@@ -1007,6 +1009,7 @@ __pthread_mutex_lock (mutex)
     SET_NEW_STACKP();
     rc = __pthread_mutex_lock_rep (mutex);
     if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("calling pthread_mutex_lock to fix pthread states, lock %p\n", mutex);
 	rc = __internal_pthread_mutex_lock (mutex);
     }
     RESET_OLD_STACKP(); 
@@ -1200,6 +1203,7 @@ __pthread_mutex_unlock (mutex)
 	SET_NEW_STACKP();
 	rc = __pthread_mutex_unlock_rep (mutex);
 	if (rc == -ENOTREPLAYING) {
+            pthread_log_debug ("calling pthread_mutex_unlock to fix pthread states, lock %p\n", mutex);
 	    rc = __pthread_mutex_unlock_usercnt (mutex, 1);
 	}
 	RESET_OLD_STACKP(); 
@@ -1460,6 +1464,12 @@ __pthread_cond_timedwait_rep (cond, mutex, abstime)
   int rc;
   pthread_log_replay (PTHREAD_COND_TIMEDWAIT_ENTER, (u_long) cond); 
   rc = pthread_log_replay (PTHREAD_COND_TIMEDWAIT_EXIT, (u_long) cond); 
+  if (rc == -ENOTREPLAYING) { 
+      pthread_log_debug ("call pthread_cond_timedwait, cond %p, mutex %p, time %p, tv_sec %ld tv_nsec %ld\n", cond, mutex, abstime, abstime->tv_sec, abstime->tv_nsec);
+      rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
+      pthread_log_debug ("call pthread_cond_timedwait: done\n");
+  }
+
   return rc;
 }
 
@@ -1482,11 +1492,6 @@ __pthread_cond_timedwait (cond, mutex, abstime)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_cond_timedwait_rep (cond, mutex, abstime);
-    if (rc == -ENOTREPLAYING) { 
-        pthread_log_debug ("call pthread_cond_timedwait, cond %p, mutex %p, time %p\n", cond, mutex, abstime);
-        rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
-        pthread_log_debug ("call pthread_cond_timedwait: done\n");
-    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_cond_timedwait (cond, mutex, abstime);
@@ -1514,8 +1519,15 @@ __pthread_cond_wait_rep (cond, mutex)
      pthread_cond_t *cond;
      pthread_mutex_t *mutex;
 {
+  int rc;
   pthread_log_replay (PTHREAD_COND_WAIT_ENTER, (u_long) cond); 
-  return pthread_log_replay (PTHREAD_COND_WAIT_EXIT, (u_long) cond); 
+  rc = pthread_log_replay (PTHREAD_COND_WAIT_EXIT, (u_long) cond); 
+  if (rc == -ENOTREPLAYING) { 
+      pthread_log_debug ("call pthread_cond_wait, cond %p, mutex %p\n", cond, mutex);
+      rc = __internal_pthread_cond_wait (cond, mutex);
+      pthread_log_debug ("call pthread_cond_wait: done\n");
+  }
+  return rc;
 }
 
 int
@@ -1536,11 +1548,6 @@ __pthread_cond_wait (cond, mutex)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_cond_wait_rep (cond, mutex);
-    if (rc == -ENOTREPLAYING) { 
-        pthread_log_debug ("call pthread_cond_wait, cond %p, mutex %p\n", cond, mutex);
-        rc = __internal_pthread_cond_wait (cond, mutex);
-        pthread_log_debug ("call pthread_cond_wait: done\n");
-    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_cond_wait (cond, mutex);
@@ -1587,6 +1594,10 @@ __pthread_rwlock_rdlock (rwlock)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_rwlock_rdlock_rep (rwlock);
+    if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("calling pthread_rwlock_rdlock to fix pthread states, lock %p\n", rwlock);
+        rc = __internal_pthread_rwlock_rdlock (rwlock);
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_rwlock_rdlock (rwlock);
@@ -1634,6 +1645,10 @@ __pthread_rwlock_wrlock (rwlock)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_rwlock_wrlock_rep (rwlock);
+    if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("calling pthread_rwlock_wrlock to fix pthread states, lock %p\n", rwlock);
+        rc = __internal_pthread_rwlock_wrlock (rwlock);
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_rwlock_wrlock (rwlock);
@@ -1864,6 +1879,10 @@ __pthread_rwlock_unlock (pthread_rwlock_t *rwlock)
     GET_OLD_STACKP();
     SET_NEW_STACKP();
     rc = __pthread_rwlock_unlock_rep (rwlock);
+    if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("calling pthread_rwlock_unlock to fix pthread states, lock %p\n", rwlock);
+        rc = __internal_pthread_rwlock_unlock (rwlock);
+    }
     RESET_OLD_STACKP(); 
   } else {
     rc = __internal_pthread_rwlock_unlock (rwlock);
@@ -2475,6 +2494,7 @@ void pthread_log_lll_lock (int* plock, int type)
     pthread_log_replay (LLL_LOCK_ENTER, (u_long) plock); 
     rc = pthread_log_replay (LLL_LOCK_EXIT, (u_long) plock); 
     if (rc == -ENOTREPLAYING) {
+        pthread_log_debug ("calling pthread_log_lll_lock to fix pthread states, lock %p type %d\n", plock, type);
         lll_lock (*plock, type);
     }
   } else {
@@ -2493,6 +2513,7 @@ void pthread_log_lll_unlock (int* plock, int type)
     pthread_log_replay (LLL_UNLOCK_ENTER, (u_long) plock); 
     rc = pthread_log_replay (LLL_UNLOCK_EXIT, (u_long) plock); 
     if (rc == -ENOTREPLAYING) {
+        pthread_log_debug ("calling pthread_log_lll_unlock to fix pthread states, lock %p type %d\n", plock, type);
         lll_unlock (*plock, type);
     }
   } else {
@@ -2511,6 +2532,7 @@ void __pthread_log_lll_wait_tid (int* ptid)
     pthread_log_replay (LLL_WAIT_TID_ENTER, (u_long) ptid); 
     rc = pthread_log_replay (LLL_WAIT_TID_EXIT, (u_long) ptid); 
     if (rc == -ENOTREPLAYING) { 
+        pthread_log_debug ("calling pthread_log_lll_wait_tid to fix pthread states, tid %p value %d\n", ptid, *ptid);
         lll_wait_tid (*ptid);
     }
   } else {

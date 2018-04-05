@@ -27,6 +27,7 @@ parser.add_argument("-taint_byterange_file", help = "give a file specifying all 
 parser.add_argument("-outputdir", help = "the output dir of all output files.")
 parser.add_argument("-compile_only", help = "needs an input file name. Skip the slice generation phase and directly compiles assemble to .so")
 parser.add_argument("-compile_all", help = "Skip the slice generation phase and directly compiles all assemble files to .so", action="store_true")
+parser.add_argument("-no_ckpt", help = "Skip the ckpt phase", action="store_true")
 args = parser.parse_args()
 
 rec_dir = args.rec_group_id
@@ -124,7 +125,7 @@ for record_pid in record_pids.keys():
 ts_compile = datetime.datetime.now()
 
 # Generate a checkpoint
-if args.compile_only is None and args.compile_all is False:
+if args.compile_only is None and args.compile_all is False and args.no_ckpt is False:
     p = Popen(["./resume", "/replay_logdb/rec_" + str(rec_dir), "--pthread", "../eglibc-2.15/prefix/lib/", "--ckpt_at=" + str(ckpt_at)])
     p.wait()
 
