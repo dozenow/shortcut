@@ -368,6 +368,9 @@ struct pthread
 
   struct pthread_log_head* log_head; /* REPLAY */
   struct pthread_extra_log_head* extra_log_head; /* REPLAY */
+  u_long stackswitch1;
+  u_long stackswitch2;
+  u_long stackswitch3;
 
   /* This member must be last.  */
   char end_padding[];
