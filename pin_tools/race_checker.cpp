@@ -291,12 +291,12 @@ void PIN_FAST_ANALYSIS_CALL log_replay_block(ADDRINT block_until) {
         update_interval_overwrite(thd_ints, PIN_ThreadId(), block_until);
 }
 
-void PIN_FAST_ANALYSIS_CALL print_function_name (char* name, ADDRINT value)
+void PIN_FAST_ANALYSIS_CALL print_function_name (char* name, ADDRINT value1, ADDRINT value2)
 {
 	if (inrange ()) {
 		fprintf (stderr, "[debug] %d %s\n", PIN_ThreadId(), name);
-		if (!strcmp (name, "_ZN7Monitor4lockEP6Thread")) {
-			fprintf (stderr, "  value %x\n", value);
+		if (strstr (name, "pthread") || strstr (name, "sem")) {
+			fprintf (stderr, "  params %x %x\n", value1, value2);
 		}
 	}
 }
@@ -311,6 +311,7 @@ void track_function(RTN rtn, void* v)
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name, IARG_FAST_ANALYSIS_CALL,
 		    IARG_PTR, strdup (name), 
 		    IARG_FUNCARG_ENTRYPOINT_VALUE, 0, 
+		    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
 		    IARG_END);
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) log_replay_enter, 

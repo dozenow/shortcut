@@ -4410,7 +4410,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 1
+#define PRINT_TIME 0
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4871,7 +4871,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	// Restart the system call - assume sysenter as a hack
-	printk ("Set pid %d to restart system call on resume\n", current->pid);
+	printk ("Set pid %d (record pid %d)  to restart system call on resume\n", current->pid, record_pid);
 	get_pt_regs(NULL)->ip -= 2;
 	get_user (ch, (u_char *) get_pt_regs(NULL)->ip);
 	get_user (ch2, (u_char *) get_pt_regs(NULL)->ip+1);
@@ -7401,7 +7401,6 @@ asmlinkage long sys_pthread_sysign (void)
 	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
         else { 
                 SLICE_DEBUG ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
-                //msleep (3000);
                 return -EINVAL;
         }
 }

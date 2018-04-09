@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG  718800
-//#define EXTRA_DEBUG_STOP 718900
+//#define EXTRA_DEBUG  2670
+//#define EXTRA_DEBUG_STOP 2710
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -1022,7 +1022,6 @@ static void sys_getdents64_stop (int rc)
     struct getdents64_info* gdi = &current_thread->op.getdents64_info_cache;
     if (rc > 0) {
 	clear_mem_taints ((u_long) gdi->buf, rc); // Output will be verified
-
 	// Except for inodes, which will be tainted (consistent with stat syscalls)
 	char* p = gdi->buf; 
 	while ((u_long) p - (u_long) gdi->buf < (u_long) rc) {
@@ -1662,7 +1661,7 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 			    if (region_cnt < regions && ends[region_cnt] <= bytes_so_far) region_cnt++;
 			    clear_mem_taints ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			} else {
-			    OUTPUT_TAINT_INFO_THREAD (current_thread, "readmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
+			    OUTPUT_TAINT_INFO_THREAD (current_thread, "recvmsg %lx 1", (u_long) msg->msg_iov[i].iov_base+j);
 			}
 			add_modified_mem_for_final_check ((u_long) msg->msg_iov[i].iov_base+j, 1);
 			bytes_so_far++;
@@ -1929,7 +1928,8 @@ static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t
 		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
 		OUTPUT_SLICE (0, "mov dword ptr[0x%lx], 0x%lx", (u_long) &tp->tv_nsec, tpout.tv_nsec);
 		OUTPUT_SLICE_INFO("(monotonic) clock_gettime at clock %lu", *ppthread_log_clock);
-		clear_mem_taints((u_long) &tp, sizeof(tpout));
+		clear_mem_taints((u_long) tp, sizeof(tpout));
+		add_modified_mem_for_final_check ((u_long) tp, sizeof(tpout));
 	    }
 	} else {
 	    OUTPUT_SLICE (0, "call clock_gettime_recheck");
@@ -5673,11 +5673,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
-    bool print_me = false;
+    bool print_me = true;
 
-    if (*ppthread_log_clock == 1164 && current_thread->ctrl_flow_info.index <= 34882) print_me = true;
-
-    #define ADDR_TO_CHECK 0xb7ffee90
+#if 0
+    #define ADDR_TO_CHECK 0x86a4dc1
     static u_char old_val = 0xe3; // random - just to see initial value please
     if (*((u_char *) ADDR_TO_CHECK) != old_val) {
 	printf ("New value for 0x%x: 0x%02x old value 0x%02x clock %lu\n", ADDR_TO_CHECK, *((u_char *) ADDR_TO_CHECK), old_val, *ppthread_log_clock);
@@ -5692,7 +5691,6 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	print_me = true;
     }
 
-#if 0
     if (addr1 >= 0xa755c000 && addr1 < 0xa755c000 + 0x60000) print_me = true;
     if (addr2 >= 0xa755c000 && addr2 < 0xa755c000 + 0x60000) print_me = true;
 #endif
@@ -7430,7 +7428,7 @@ void routine (RTN rtn, VOID* v)
                 IARG_FUNCRET_EXITPOINT_VALUE,  
                 IARG_END);
         RTN_Close(rtn);
-    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
+    } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4) || strstr (name, "_sem_")) {
         RTN_Open(rtn);
         if (!strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,

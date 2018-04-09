@@ -11,8 +11,8 @@ using namespace std;
 #include "linkage_common.h"
 #include "taint_interface/taint_interface.h"
 
-//#define DPRINT fprintf
-#define DPRINT(x,...)
+#define DPRINT fprintf
+//#define DPRINT(x,...)
 
 #include "mmap_regions.h"
 
@@ -59,7 +59,7 @@ void add_mmap_region (u_long addr, int len, int prot, int flags)
     bool ro_val = (prot & PROT_READ) && !(prot & PROT_WRITE); /* this only included private pages - why? */
     bool rw_val = (prot & PROT_READ) && (prot & PROT_WRITE);
     bool ex_val = (prot & PROT_EXEC);
-    DPRINT (stderr, "add mmap region from %lx to %lx read only? %d read-write? %d\n", addr, addr+len, ro_val, rw_val);
+    DPRINT (stderr, "add mmap region from %lx to %lx read only? %d read-write? %d executable? %d\n", addr, addr+len, ro_val, rw_val, ex_val);
     for (auto i = addr; i < addr+len; i += PAGE_SIZE) {
 	if (max_rw_pages.test(i/PAGE_SIZE) && !ro_pages.test(i/PAGE_SIZE) && !rw_pages.test(i/PAGE_SIZE) && ro_val) DPRINT (stderr, "remap of prev read/write page 0x%lx\n", i);
 	ro_pages.set(i/PAGE_SIZE, ro_val);
@@ -194,6 +194,7 @@ static void handle_protection (struct thread_data* tdata, u_long start, u_long s
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_munmap);
 	OUTPUT_MAIN_THREAD (tdata, "mov ebx, 0x%lx", start);
 	OUTPUT_MAIN_THREAD (tdata, "mov ecx, 0x%lx", size);
+	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
     }
 }
 
@@ -203,6 +204,7 @@ void handle_downprotected_pages (struct thread_data* tdata)
     DPRINT (stderr, "handle down protected pages\n");
     OUTPUT_MAIN_THREAD (tdata, "downprotect_mem:");
     int i, start_at = 0, type = 0, prev_type = 0;
+    int is_prev_executable = 0, is_executable = 0;
     for (i = 0; i < 0xc0000; i++) {
 	if (max_rw_pages.test(i) && !rw_pages.test(i)) {
 	    if (ro_pages.test(i)) {
@@ -215,14 +217,20 @@ void handle_downprotected_pages (struct thread_data* tdata)
 	} else {
 	    type = 0;
 	}
+        if (ex_pages.test(i)) {
+            is_executable = 1;
+        } else { 
+            is_executable = 0;
+        }
 	
-	if (type != prev_type) {
+	if (type != prev_type || is_prev_executable != is_executable) {
 	    if (prev_type != 0) {
 		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
 	    } 
 	    start_at = i;
 	}
 	prev_type = type;
+        is_prev_executable = is_executable;
     }	
     if (prev_type) {
 	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
@@ -235,6 +243,7 @@ void handle_upprotected_pages (struct thread_data* tdata)
     DPRINT (stderr, "handle up protected pages\n");
     OUTPUT_MAIN_THREAD (tdata, "upprotect_mem:"); 
     int i, start_at = 0, type = 0, prev_type = 0;
+    int is_prev_executable = 0, is_executable = 0;
     for (i = 0; i < 0xc0000; i++) {
 	if (max_rw_pages.test(i) && !rw_pages.test(i)) {
 	    if (ro_pages.test(i)) {
@@ -247,15 +256,21 @@ void handle_upprotected_pages (struct thread_data* tdata)
 	} else {
 	    type = 0;
 	}
+
+        if (ex_pages.test(i) || is_prev_executable != is_executable) {
+            is_executable = 1;
+        } else { 
+            is_executable = 0;
+        }
 	
-	if (type != prev_type) {
-	    if (prev_type == 0) {
-		start_at = i;
-	    } else {
+	if (type != prev_type || is_prev_executable != is_executable) {
+            if (prev_type != 0) {
 		handle_protection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
 	    } 
+            start_at = i;
 	}
 	prev_type = type;
+        is_prev_executable = is_executable;
     }	
     if (prev_type) {
 	handle_protection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);

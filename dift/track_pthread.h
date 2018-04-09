@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include "linkage_common.h"
 
+#define PTHREAD_DEBUG(x,...)
+//#define PTHREAD_DEBUG(x...) fprintf(stderr, x)
+
 #define COND_BEFORE_WAIT        5
 #define COND_AFTER_WAIT         6
 #define LLL_WAIT_TID_BEFORE     7
@@ -62,7 +65,5 @@ void track_rwlock_destroy (int retval);
 void sync_pthread_state (struct thread_data* tdata);
 void sync_my_pthread_state (struct thread_data* tdata);
 
-//#define PTHREAD_DEBUG(x,...)
-#define PTHREAD_DEBUG(x...) fprintf(stderr, x)
 
 #endif

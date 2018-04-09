@@ -10,7 +10,9 @@
 #include <sys/mman.h>
 
 #include <map>
+#include <set>
 #include <string>
+#include <assert.h>
 using namespace std;
 
 static char* map_file (const char* filename, u_long& size) 
@@ -41,9 +43,9 @@ static char* map_file (const char* filename, u_long& size)
     return p;
 }
 
-static int compare_files (const char* filename1, const char* filename2, long offset) 
+static int compare_files (const char* filename1, const char* filename2, long offset, char* origin_ckpt = NULL) 
 {
-    u_long size1, size2, addr = 0;
+    u_long size1, size2, size3, addr = 0;
     int bytes_diff = 0;
 
     for (int i = strlen(filename1); i > 0; i--) {
@@ -59,6 +61,11 @@ static int compare_files (const char* filename1, const char* filename2, long off
 
     char* region1 = map_file (filename1, size1);
     char* region2 = map_file (filename2, size2);
+    char* origin_region = NULL;
+    if (origin_ckpt) {
+        origin_region = map_file (origin_ckpt, size3);
+        assert (size1 == size3);
+    }
     if (region1 == NULL || region2 == NULL) return -1;
     
     if (size1+offset != size2) {
@@ -85,8 +92,17 @@ static int compare_files (const char* filename1, const char* filename2, long off
     } else {
 	for (u_long i = 0; i < size1; i++) {
 	    if (region1[i] != region2[i]) {
-		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
+		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x ", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
 		bytes_diff++;
+                if (origin_ckpt != NULL) { 
+                    if (region1[i] == origin_region[i]) { 
+                        printf (", but slice matches original checkpoint ");
+                    } else { 
+                        printf (", in origin checkpoint 0x%02x, 4-byte value %d vs %d", origin_region[i]&0xff,*(int*) (region1 + i), *(int*) (origin_region + i));
+                    }
+                } 
+                printf ("\n");
+
 	    }
 	}
     }
@@ -97,10 +113,58 @@ static int compare_files (const char* filename1, const char* filename2, long off
     return 0;
 }
 
+void get_original_ckpt_filename (const char* alt_name, char* output)
+{
+    const char* pos = strstr (alt_name, "last_altex");
+    assert (pos != NULL);
+    strncpy (output, alt_name, pos - alt_name);
+    strcpy (output + (int)(pos-alt_name), pos+11);
+}
+
 int main (int argc, char* argv[])
 {
     map<u_long, string> slice_regions;
     map<u_long, string> replay_regions;
+    set<u_long> slice_only_regions;
+
+    if (argc < 2) {
+	fprintf (stderr, "format: memcmp [record dir #] [ckpt syscall #]\n");
+	return -1;
+    }
+
+    char* recdir = argv[1];
+    char* syscall = argv[2];
+
+    FILE* file = fopen("/tmp/slice_vma_info", "r");
+    if (file == NULL) {
+	fprintf (stderr, "Cannot open vm_slice_info\n");
+	return -1;
+    }
+
+    int was_slice_only = 0;
+    int was_libc = 0;
+    while (!feof(file)) {
+	char line[256];
+	if (fgets (line, sizeof(line), file)) {
+	    u_long start, end, flags, pgoff;
+	    char memfilename[256];
+	    int cnt = sscanf (line, "%lx-%lx: flags %lx pgoff %lx %s\n", &start, &end, &flags, &pgoff, memfilename);	    
+	    if (cnt == 5 && strstr (memfilename, "exslice")) {
+		slice_only_regions.insert (start);
+		was_slice_only = 1;
+	    } else if (cnt == 5 && strstr (memfilename, "libc-2.15.so")) {
+		slice_only_regions.insert (start);
+		was_libc = 1;
+	    } else if (was_libc) {
+		slice_only_regions.insert (start);
+		was_libc = 0;
+	    } else if (was_slice_only) {
+		slice_only_regions.insert (start);
+		was_slice_only = 0;
+	    }
+	}
+    }
+    fclose (file);
 
     DIR* dirp = opendir("/tmp");
     if (dirp == NULL) {
@@ -113,21 +177,28 @@ int main (int argc, char* argv[])
 	if (!strncmp (dp->d_name, "slice_vma.", 10)) {
 	    string filename = "/tmp/" + string(dp->d_name);
 	    u_long addr = strtoul(dp->d_name+10, 0, 16);
-	    slice_regions[addr] = filename;
+	    if (slice_only_regions.count(addr) == 0) {
+		slice_regions[addr] = filename;
+	    }
 	}
     }
 
     closedir (dirp);
 
-    dirp = opendir("/replay_logdb/rec_147503/last_altex/");
+    char altdir[256];
+    sprintf (altdir, "/replay_logdb/rec_%s/last_altex/", recdir);
+    printf ("Scanning %s\n", altdir);
+    dirp = opendir(altdir);
     if (dirp == NULL) {
 	fprintf (stderr, "Cannot open replay ckpt directory\n");
 	return -1;
     }
+    char prefix[256];
+    sprintf (prefix, "ckpt.%s.ckpt_mmap.", syscall);
     while ((dp = readdir (dirp)) != NULL) {
-	if (!strncmp (dp->d_name, "ckpt.78193.ckpt_mmap.", 21)) {
-	    string filename = "/replay_logdb/rec_147503/last_altex/" + string(dp->d_name);
-	    u_long addr = strtoul(dp->d_name+21, 0, 16);
+	if (!strncmp (dp->d_name, prefix, strlen(prefix))) {
+	    string filename = string(altdir) + string(dp->d_name);
+	    u_long addr = strtoul(dp->d_name+strlen(prefix), 0, 16);
 	    replay_regions[addr] = filename;
 	}
     }
@@ -136,7 +207,9 @@ int main (int argc, char* argv[])
     for (map<u_long, string>::iterator it = slice_regions.begin(); it != slice_regions.end(); it++) {
 	map<u_long, string>::iterator it2 = replay_regions.find(it->first);
 	if (it2 != replay_regions.end()) {
-	    compare_files (it->second.c_str(), it2->second.c_str(), 0);
+            char origin_filename[256];
+            get_original_ckpt_filename (it2->second.c_str(), origin_filename);
+	    compare_files (it->second.c_str(), it2->second.c_str(), 0, origin_filename);
 	}
     }
 

@@ -46,7 +46,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 1
+#define PRINT_TIME 0
 #define SLICE_DEBUG(x,...)
 
 /* Prototypes not in header files */

@@ -261,6 +261,20 @@ static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_res
 	assert (rc == res->retval);
 	break;
     }
+    case SYS_RECVMSG: {
+	printf ("recvmsg start clock %ld retval %ld\n", res->start_clock, res->retval);
+	struct recvmsg_retvals *precvmsg = (struct recvmsg_retvals *) res->retparams;
+	char* data = (char *) res->retparams + sizeof (struct recvmsg_retvals) + precvmsg->msg_namelen + precvmsg->msg_controllen;
+	for (int i = 0; i < res->retval; i++) {
+	    printf ("byte 0x%x is 0x%x\n", i, data[i]&0xff);
+	}
+	rc = read (fd, data, res->retval);	
+	for (int i = 0; i < res->retval; i++) {
+	    printf ("byte 0x%x is 0x%x\n", i, data[i]&0xff);
+	}
+	assert (rc == res->retval);
+	break;
+    }
     default:
 	fprintf (stderr, "Socketcall %d not handled in sdaemon\n", *pcall);
 	break;
@@ -543,7 +557,7 @@ int main(int argc, char **argv)
     }
     
     if (filename) {
-	fprintf (stderr, "Patching one file: %s\n", filename);
+	fprintf (stderr, "Patching one directory: %s\n", filename);
 	long rc = patch_klog (filename);
 	fprintf (stderr, "Patch klog returns %ld\n", rc);
 	return rc;
