@@ -11,8 +11,8 @@ using namespace std;
 #include "linkage_common.h"
 #include "taint_interface/taint_interface.h"
 
-#define DPRINT fprintf
-//#define DPRINT(x,...)
+//#define DPRINT fprintf
+#define DPRINT(x,...)
 
 #include "mmap_regions.h"
 

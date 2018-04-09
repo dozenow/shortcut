@@ -105,7 +105,7 @@ struct recheck_entry {
 };
 
 void dump_reg_struct (struct pt_regs* r) {
-	printk ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
+	SLICE_DEBUG ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
 		r->ax, r->bx, r->cx, r->dx, r->si, r->di, r->bp, r->sp, r->ds, r->es, r->fs, r->gs, r->orig_ax, r->ip, r->cs, r->flags, r->ss);
 }
 
@@ -1128,7 +1128,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
-	printk ("Registers after checkpoint restore record_pid %d\n", current->pid);
+	SLICE_DEBUG ("Registers after checkpoint restore record_pid %d\n", current->pid);
 	dump_reg_struct (get_pt_regs(NULL));
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
@@ -1646,12 +1646,12 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	// We no longer expect this to be aligned since we are using the VDSO to enter the kernel
 	// Insted, adjust sp value to account for extra data on the stack
 	u_long addr = regs->sp;
-	printk ("get_fw_slice_info: sp is %lx\n", addr);
+	SLICE_DEBUG ("get_fw_slice_info: sp is %lx\n", addr);
 	if (addr%4096) {
 		addr &= 0xfffff000;
 		addr += 4096;
 	}
-	printk ("get_fw_slice_info: expect slice_info at %lx\n", addr);
+	SLICE_DEBUG ("get_fw_slice_info: expect slice_info at %lx\n", addr);
 	return (struct fw_slice_info *) addr;
 			
 #if 0	
@@ -1916,7 +1916,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		if (is_ckpt_thread) {
 		    slice_retval = regs->dx; // This is arg3, but we are going to change this later (compiler gets confused and optimizes incorrectly?)
 		} 
-		printk ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
+		SLICE_DEBUG ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
 
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
@@ -1926,7 +1926,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
-		printk ("Registers after slice executes %d\n", current->pid);
+		SLICE_DEBUG ("Registers after slice executes %d\n", current->pid);
 		dump_reg_struct (get_pt_regs(NULL));
 		if (!is_ckpt_thread) {
 		    slice_retval = regs->orig_ax; // We are restarting the system call, so presumably we should reset this register to orig value
@@ -1990,7 +1990,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
                         printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
                 }
 
-		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
+		SLICE_DEBUG ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {

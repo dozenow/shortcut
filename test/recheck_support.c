@@ -2431,6 +2431,14 @@ static inline long connect_or_bind_recheck (int call, char* call_name)
     LPRINT ( "%s: sockfd %d addlen %d rc %ld clock %lu\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval, pentry->clock);
 #endif 
     inaddr = fill_taintedbuf (addr, (char *) pconnect->addr, pconnect->addrlen);
+    LPRINT ("address is \n");
+    {
+        int i = 0;
+        for (; i<pconnect->addrlen; ++i) { 
+            LPRINT ("tmp[%d] = %d\n", i, inaddr[i]);
+        }
+    }
+
     block[0] = pconnect->sockfd;
     block[1] = (u_long) inaddr;
     block[2] = pconnect->addrlen;

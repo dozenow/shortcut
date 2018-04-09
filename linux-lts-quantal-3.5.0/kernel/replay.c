@@ -2103,6 +2103,14 @@ destroy_replay_group (struct replay_group *prepg)
 	atomic_inc(&rstats.finished);
 #endif
 	printk ("Goodbye, cruel lamp!  This replay is over\n");
+	{
+		struct rusage ru;
+		mm_segment_t old_fs = get_fs();
+		set_fs (KERNEL_DS);
+		sys_getrusage (RUSAGE_SELF, &ru);
+		printk ("user %ld, kernel %ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+		set_fs (old_fs);
+	}
 	MPRINT ("Pid %d destroy replay group %p: exit\n", current->pid, prepg);
 }
 
@@ -4578,7 +4586,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		return rc;
 	}
 
-	printk ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
+	SLICE_DEBUG ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
 
 	if (consumed > 0) argsconsume(prect, consumed);
 
@@ -4871,7 +4879,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	// Restart the system call - assume sysenter as a hack
-	printk ("Set pid %d (record pid %d)  to restart system call on resume\n", current->pid, record_pid);
+	SLICE_DEBUG ("Set pid %d (record pid %d)  to restart system call on resume\n", current->pid, record_pid);
 	get_pt_regs(NULL)->ip -= 2;
 	get_user (ch, (u_char *) get_pt_regs(NULL)->ip);
 	get_user (ch2, (u_char *) get_pt_regs(NULL)->ip+1);
@@ -4909,7 +4917,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	} else {
                 ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
         }
-	printk ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
+	SLICE_DEBUG ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
 
 	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		     current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
@@ -6988,7 +6996,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 		}
 		printk("Pid %d recpid ----- PTHREAD:%ld:%ld.%06ld:%d:%s", current->pid, clock, tv.tv_sec, tv.tv_usec, ignore_flag, buf);
 	} else {
-		printk ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
+		SLICE_DEBUG ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
 		return -EINVAL;
 	}
 
