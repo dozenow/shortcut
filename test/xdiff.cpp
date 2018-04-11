@@ -169,10 +169,9 @@ void matchpids (set<u_long>& oldpidset, set<u_long>& newpidset, map<u_long,u_lon
 {
     if (oldpidset.size() != newpidset.size()) {
 	fprintf (stderr, "Error: different numbers of pids\n");
-	exit (1);
     }
 
-    for (auto oit = oldpidset.begin(), nit = newpidset.begin(); oit != oldpidset.end(); oit++, nit++) {
+    for (auto oit = oldpidset.begin(), nit = newpidset.begin(); oit != oldpidset.end() && nit != newpidset.end(); oit++, nit++) {
 	pidmap[*oit] = *nit;
     }
 }

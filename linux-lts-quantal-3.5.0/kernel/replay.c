@@ -12987,18 +12987,27 @@ record_mremap (unsigned long addr, unsigned long old_len, unsigned long new_len,
 static asmlinkage unsigned long 
 replay_mremap (unsigned long addr, unsigned long old_len, unsigned long new_len, unsigned long flags, unsigned long new_addr)
 {
-	u_long retval, rc = get_next_syscall (163, NULL);
+	u_long retval;
+	u_long rc = get_next_syscall (163, NULL);
 	if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 
-	if (rc == addr)
+	printk ("replay_mmap: addr %lx old_len %lx new_len %lx flags %lx new_addr %lx\n", addr, old_len, new_len, flags, new_addr);
+	if (rc == addr) {
+		if (new_len > old_len) {
+			if (sys_munmap (addr+old_len, new_len-old_len)) printk ("pid %d: munmap before mremap fails\n", current->pid);
+		}
 		retval = sys_mremap (addr, old_len, new_len, flags, new_addr);
-	else
+	} else {
 		retval = sys_mremap (addr, old_len, new_len, flags | MREMAP_FIXED | MREMAP_MAYMOVE, rc);
-	DPRINT ("Pid %d replays mremap with address %lx returning %lx\n", current->pid, addr, retval);
+		printk ("Pid %d replays mremap from address %lx len %lx to address %lx len %lx flags %lx returning %lx\n", current->pid, addr, old_len, rc, new_len, flags, retval);
+	}
 
 	if (rc != retval) {
-		printk ("Replay mremap returns different value %lu than %lu\n", retval, rc);
+		printk ("Replay mremap returns different value %lx than %lx\n", retval, rc);
+		print_vmas(current);
 		return syscall_mismatch();
+	} else {
+		printk ("Replay mmap returns correct value\n");
 	}
 	
 	// Save the regions for preallocation for replay+pin

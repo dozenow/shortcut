@@ -1128,8 +1128,10 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
+#if 0
 	printk ("Registers after checkpoint restore record_pid %d\n", current->pid);
 	dump_reg_struct (get_pt_regs(NULL));
+#endif
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
 	restore_sysv_mappings (file, ppos);
@@ -1340,33 +1342,41 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 								goto freemem;
 							}
 						}
-					}
-					else if (!strncmp(pvmas->vmas_file, "/SYSV",5)) { 
-						sscanf(pvmas->vmas_file, "/SYSV%08x",&key);						
-						id = find_sysv_mapping_by_key(key); 
-						if (id < 0) { 
-							printk("whoops.. what happened, key isn't in sysvmappings\n");
-							goto freemem; 
+					} else if (!strncmp(pvmas->vmas_file, "/SYSV",5)) { 
+						if (slicelib) {
+							// For slice execution, we could preallocate memory so PIN etc. does not grab it
+							MPRINT ("slice: preallocating sysv region from %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
+							addr = sys_mmap_pgoff (pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, PROT_NONE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0);
+							if (addr != pvmas->vmas_start) {
+								printk ("slice: preallocating mmap_pgoff returns different value %lx than %lx\n", addr, pvmas->vmas_start);
+							}
+						} else {
+							// JNF: This really looks wrong!
+							sscanf(pvmas->vmas_file, "/SYSV%08x",&key);						
+							id = find_sysv_mapping_by_key(key); 
+							if (id < 0) { 
+								printk("whoops.. what happened, key isn't in sysvmappings\n");
+								goto freemem; 
+							}
+							
+							//get the correct shmflags
+							if (pvmas->vmas_flags&VM_EXEC) { 
+								shmflg |= SHM_EXEC;
+							}
+							else if (pvmas->vmas_flags&VM_READ && 
+								 !(pvmas->vmas_flags&VM_WRITE)) { 
+								shmflg |= SHM_RDONLY; 
+							}
+							
+							addr = sys_shmat(id, (char __user *)pvmas->vmas_start, shmflg); 
+							
+							rc = add_sysv_shm((u_long)pvmas->vmas_start, 
+									  (u_long)(pvmas->vmas_end - pvmas->vmas_start));
+							if (rc < 0) { 
+								printk("whoops... add_sysv_shm returns negative?\n");
+								goto freemem;
+							}
 						}
-
-						//get the correct shmflags
-						if (pvmas->vmas_flags&VM_EXEC) { 
-							shmflg |= SHM_EXEC;
-						}
-						else if (pvmas->vmas_flags&VM_READ && 
-							 !(pvmas->vmas_flags&VM_WRITE)) { 
-							shmflg |= SHM_RDONLY; 
-						}
-
-						addr = sys_shmat(id, (char __user *)pvmas->vmas_start, shmflg); 
-						
-						rc = add_sysv_shm((u_long)pvmas->vmas_start, 
-							     (u_long)(pvmas->vmas_end - pvmas->vmas_start));
-						if (rc < 0) { 
-							printk("whoops... add_sysv_shm returns negative?\n");
-							goto freemem;
-						}
-
 
 						premapped = 1;
 						map_file = NULL; //just to be sure something weird doesn't happen
@@ -1646,25 +1656,12 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	// We no longer expect this to be aligned since we are using the VDSO to enter the kernel
 	// Insted, adjust sp value to account for extra data on the stack
 	u_long addr = regs->sp;
-	printk ("get_fw_slice_info: sp is %lx\n", addr);
 	if (addr%4096) {
 		addr &= 0xfffff000;
 		addr += 4096;
 	}
-	printk ("get_fw_slice_info: expect slice_info at %lx\n", addr);
 	return (struct fw_slice_info *) addr;
-			
-#if 0	
-	//the start addr of the stack is also the start of fw_slice_info (one region grows upwards and the other downwards)
-	if (regs->sp %4096 != 0) {
-		//should be aligned; other wise we have unpoped variable
-		printk ("get_fw_slice_info: sp is %lx\n", regs->sp);
-		BUG();
-	}
-	return (struct fw_slice_info*) regs->sp;
-#endif
 }
-
 
 long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr) 
 { 
@@ -1706,7 +1703,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
-	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
+	MPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
 
 	//second page: extra info for the slice (grows upwards)
 	pinfo->text_addr = slice_addr;
@@ -1914,7 +1911,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		if (is_ckpt_thread) {
 		    slice_retval = regs->dx; // This is arg3, but we are going to change this later (compiler gets confused and optimizes incorrectly?)
 		} 
-		printk ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
+		MPRINT ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
 
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
@@ -1924,8 +1921,10 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
+#if 0
 		printk ("Registers after slice executes %d\n", current->pid);
 		dump_reg_struct (get_pt_regs(NULL));
+#endif
 		if (!is_ckpt_thread) {
 		    slice_retval = regs->orig_ax; // We are restarting the system call, so presumably we should reset this register to orig value
 		}
@@ -1939,23 +1938,13 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 #ifdef SLICE_VM_DUMP
 		if (is_ckpt_thread) {
-			printk ("debug: pid %d about to dump vams\n", current->pid);
 			dump_vmas ();
-			printk ("debug: pid %d about dumped vams\n", current->pid);
 			if (current->go_live_thrd) {
 				wake_up_vm_dump_waiters (current->go_live_thrd);
-			} else {
-				printk ("debug: pid %d cannot find go live thrd for vm dump\n", current->pid);
 			}
-			printk ("debug: pid %d woke up all waiters after vm dump\n", current->pid);
-
 		} else {
-			printk ("debug: pid %d waiting for vm to be dumped\n", current->pid);
 			if (current->go_live_thrd) {
 				wait_for_vm_dump (current->go_live_thrd);
-				printk ("debug: pid %d done waiting\n", current->pid);
-			} else {
-				printk ("debug: pid %d cannot find go live thrd to wait for vm dump\n", current->pid);
 			}
 		}
 #endif
@@ -1988,7 +1977,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
                         printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
                 }
 
-		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
+		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {

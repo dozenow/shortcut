@@ -37,7 +37,7 @@ void init_mmap_region ()
     while (!in.eof()) { 
         if (in.fail() || in.bad()) assert (0);
         getline (in, line);
-	DPRINT (stderr, "%s", line.c_str());
+	DPRINT (stderr, "%s\n", line.c_str());
         if (line.empty()) continue;
         //cerr <<line<<endl;
         u_long start = std::stoul(line.substr(0, 8), 0, 16);
@@ -70,6 +70,31 @@ void add_mmap_region (u_long addr, int len, int prot, int flags)
     }
 }
 
+void move_mmap_region (u_long new_address, u_long new_size, u_long old_address, u_long old_size)
+{
+    DPRINT (stderr, "move mmap region from %lx-%lx to %lx-%lx\n", old_address, old_address+new_size, new_address, new_address+new_size);
+    // Not sure what the new page protections - will be - can we assume homgeneous?
+    bool ro_val = ro_pages.test(old_address/PAGE_SIZE);
+    bool rw_val = rw_pages.test(old_address/PAGE_SIZE);
+    bool ex_val = ex_pages.test(old_address/PAGE_SIZE);
+    for (u_long i = PAGE_SIZE; i < old_size; i+= PAGE_SIZE) {
+	if (ro_pages.test((old_address+i)/PAGE_SIZE) != ro_val ||
+	    rw_pages.test((old_address+i)/PAGE_SIZE) != rw_val ||
+	    ex_pages.test((old_address+i)/PAGE_SIZE) != ex_val) {
+	    fprintf (stderr, "[ERROR] different page protections in old region in mremap?\n");
+	} 
+	ro_pages.reset((old_address+i)/PAGE_SIZE);
+	rw_pages.reset((old_address+i)/PAGE_SIZE);
+    }
+    for (u_long i = 0; i < new_size; i += PAGE_SIZE) {
+	ro_pages.set((new_address+i)/PAGE_SIZE, ro_val);
+	rw_pages.set((new_address+i)/PAGE_SIZE, rw_val);
+	ex_pages.set((new_address+i)/PAGE_SIZE, ex_val);
+	max_ro_pages.set((new_address+i)/PAGE_SIZE, ro_val || max_ro_pages.test(i/PAGE_SIZE));
+	max_rw_pages.set((new_address+i)/PAGE_SIZE, rw_val || max_rw_pages.test(i/PAGE_SIZE));
+    }
+}
+ 
 void delete_mmap_region (u_long addr, int len) 
 {
     DPRINT (stderr, "delete mmap region from %lx to %lx\n", addr, addr+len);

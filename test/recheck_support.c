@@ -36,7 +36,7 @@ static struct go_live_clock* go_live_clock;
 #define PRINT_DEBUG
 #define PRINT_VALUES
 #define PRINT_TO_LOG
-#define SLICE_VM_DUMP
+//#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
@@ -131,6 +131,7 @@ static char* bufptr = buf;
 struct cfopened {
     int is_open_cache_file;
     struct open_retvals orv;
+    loff_t verified_pos;
 };
 
 #define MAX_FDS 4096
@@ -370,6 +371,7 @@ static inline void check_retval (const char* name, u_long clock, int expected, i
     if (actual >= 0){
 	if (expected != actual) {
 	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, actual);
+	    LPRINT ("[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, actual);
             //if divergence happens on open, check what files are currently opened
             if (!strcmp (name, "open")) { 
                 int max = expected > actual?expected:actual;
@@ -537,11 +539,12 @@ long read_recheck (size_t count)
 		    }
 		}
 
-		rc = syscall(SYS_read, pcachefilefd, tmpbuf+use_count, use_count);
+		LPRINT ("pread64 fd %d buf %lx count %d pos %lld\n", pcachefilefd, (u_long) tmpbuf+use_count, use_count, cache_files_opened[pread->fd].verified_pos);
+		rc = syscall(SYS_pread64, pcachefilefd, tmpbuf+use_count, use_count, cache_files_opened[pread->fd].verified_pos);
 		check_retval ("read (cache file)", pentry->clock, pentry->retval, rc);
+		if (rc > 0) cache_files_opened[pread->fd].verified_pos += rc;
 
-		rc = syscall(SYS_close, pcachefilefd);
-		if (rc != 0) {
+		if (syscall(SYS_close, pcachefilefd) != 0) {
 		    LPRINT ("[MISMATCH] cannot close cache file on read time mismatch\n");
 		    handle_mismatch();
 		}
@@ -650,25 +653,24 @@ inline void print_buffer_hex (u_char* buffer, int len)
 #endif
 
 #ifdef REORDERING
-static char reorderbuf[65536];
-static int  reorderlen[1024];
-static char* reorderin = reorderbuf;
-static char* reorderout = reorderbuf;
+static u_char reorderbuf[65536];
+static u_char* reorderin = reorderbuf;
+static u_char* reorderout = reorderbuf;
 static int reorderfd = 0;
-static int reorderlenin = 0;
-static int reorderlenout = 0;
 
+#if 0
 // This is x specific - eventually, do not hard code this
 static int is_different_message (char* msg1, char* msg2, int len1, int len2)
 {
     if (msg1[0] != msg2[0]) return 1; // Different event or reply
-    if (len1 >= 32 && len2 >= 32 && msg1[0] == 0x1c && msg2[0] == 0x1c) {
+    if (len1 >= 32 && len2 >= 32 && (msg1[0] == 0x1c || msg1[0] == 0x15)) {
 	if (memcmp(msg1, msg2, 12) || memcmp (msg1+16, msg2+16, 16)) return 1;
     }
     return 0;
 }
+#endif
 
-static int get_message_length (char* buffer, int buflen) 
+static int get_message_length (u_char* buffer, int buflen) 
 {
     if (buffer[0] == 0x1) {
 	if (buflen >= 4) {
@@ -681,10 +683,11 @@ static int get_message_length (char* buffer, int buflen)
     }
 }
 
+#ifdef PRINT_DEBUG
 static void print_reorder_buffer ()
 {
     int i;
-    char* p = reorderout;
+    u_char* p = reorderout;
     LPRINT ("Reorder buffer:\n");
     while (p < reorderin) {
 	int msglen = get_message_length (p, reorderin-p);
@@ -697,7 +700,7 @@ static void print_reorder_buffer ()
     }
 }
 
-static int is_same_message (char* msg1, int len1, char* msg2, int len2)
+static int is_same_message (u_char* msg1, int len1, u_char* msg2, int len2)
 {
     int mlen1 = get_message_length(msg1, len1);
     int mlen2 = get_message_length(msg2, len2);
@@ -708,21 +711,48 @@ static int is_same_message (char* msg1, int len1, char* msg2, int len2)
     }
     if (mlen1 != mlen2) return 0;
     if (msg1[0] != msg2[0]) return 0;
-    if (msg1[0] == 0x1c) {
+    if (msg1[0] == 0x1c || msg1[0] == 0x15) {
 	if (memcmp(msg1, msg2, 2) || memcmp(msg1+4, msg2+4, 8) || memcmp (msg1+16, msg2+16, 16)) return 0;
 	return 1;
-    } else if (msg1[0] > 0) {
+    } else if (msg1[0] == 0xa1) {
+	if (memcmp(msg1, msg2, 2) || memcmp(msg1+4, msg2+4, 12) || memcmp (msg1+24, msg2+24, 8)) return 0;
+	return 1;
+    } else if (msg1[0] != 0x1) {
+	// Generic event message
 	if (memcmp(msg1, msg2, 2) || memcmp(msg1+4, msg2+4, 28)) return 0;
 	return 1;
     } else {
-	if (memcmp(msg1, msg2, mlen1)) return 0;
+	// Response should be in order
 	return 1;
     }
 }
 
-static char* have_matching_message (char* msg, int len)
+static int has_different_message (u_char* buf1, int len1, u_char* buf2, int len2, int* poffset)
 {
-    char* p = reorderout;
+    *poffset = 0;
+    do {
+	int mlen1 = get_message_length(buf1+*poffset, len1-*poffset);
+	int mlen2 = get_message_length(buf2+*poffset, len2-*poffset);
+	if (mlen1 < 0 || mlen2 < 0) {
+	    LPRINT ("different message at byte %d: mlen %d vs. %d\n", *poffset, mlen1, mlen2);
+	    return 1;
+	}
+	if (mlen1 != mlen2) {
+	    LPRINT ("different message at byte %d: nlen %d vs. %d\n", *poffset, mlen1, mlen2);
+	    return 1;
+	}
+	if (!is_same_message(buf1+*poffset, len1-*poffset, buf2+*poffset, len2-*poffset)) {
+	    LPRINT ("different message at byte %d\n", *poffset);
+	    return 1;
+	}
+	*poffset += mlen1;
+    } while (*poffset < len2);
+    return 0;
+}
+
+static u_char* have_matching_message (u_char* msg, int len)
+{
+    u_char* p = reorderout;
     while (p < reorderin) {
 	int msglen = get_message_length (p, reorderin-p);
 	if (is_same_message (p, reorderin-p, msg, len)) return p;
@@ -730,6 +760,7 @@ static char* have_matching_message (char* msg, int len)
     }
     return NULL;
 }
+#endif
 
 #endif
 
@@ -737,8 +768,11 @@ long recv_recheck ()
 {
     struct recheck_entry* pentry;
     struct recv_recheck* precv;
+#ifdef REORDERING
+    u_char* match;
+#endif
     long rc;
-    int i;
+    int offset, i;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -787,32 +821,33 @@ long recv_recheck ()
 		    DPRINT ("have so far: ");
 		    print_buffer_hex (precv->buf, bytes_received);
 		} 
-		DPRINT ("want: ");
-		print_buffer_hex ((u_char *) recvData, pentry->retval);
+		DPRINT ("want:        ");
+		print_buffer_hex ((u_char *) recvData+bytes_received, pentry->retval-bytes_received);
 		print_reorder_buffer();
-		if (have_matching_message (recvData, pentry->retval)) {
+		if (have_matching_message ((u_char *) recvData+bytes_received, pentry->retval-bytes_received)) {
 		    DPRINT ("matching message found\n");
 		}
 		DPRINT ("reorderin: %lx reorderout %lx reorderout[0] %02x recvData[] %02x\n", (u_long) reorderin, (u_long) reorderout, reorderout[0], recvData[bytes_received]);
 #endif
-		// If we are lacking data, then we might be able to supply some from the reorder buffer
-		// This assumes missing data is at end of data recieved so far, and it might not be...
-		if (reorderin > reorderout && reorderout[0] == recvData[bytes_received]) {
+		match = have_matching_message((u_char *) recvData+bytes_received, pentry->retval-bytes_received);
+		if (match != NULL) {
 		    DPRINT ("saved it from before\n");
-		    int msglen = reorderlen[reorderlenout++];
+		    int msglen = get_message_length (match, (u_long) reorderin - (u_long) match);
 		    DPRINT ("message length is %d\n", msglen);
-		    memcpy (precv->buf+bytes_received, reorderout, msglen);
+		    memcpy (precv->buf+bytes_received, match, msglen);
 		    memcpy (precv->buf+bytes_received+2, recvData+bytes_received+2, 2); // Seqeunce # from X protocol
-		    reorderout += msglen;
+		    memset (match, 0, msglen); // Mark message as used
+		    while (*reorderout == '\0' && reorderout != reorderin) reorderout++; // Garbage collect old messages
 		    rc = msglen;
 		} else {
 #endif
-		    usleep (1000);
+		    LPRINT ("recv: sleeping for %d us\n", 500*(2<<(tries-1)));
+		    usleep (500*(2<<(tries-1)));
 #ifdef REORDERING
 		}
 #endif
 	    }
-	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 5);
+	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 10);
 
 	if (rc <= 0) break;
 	bytes_received += rc;
@@ -820,27 +855,26 @@ long recv_recheck ()
 #ifdef REORDERING	
 	/*** have we received a message out of order? */
 	/* XXX - Should specify which syscalls can be reordered and patter for recognizing ooo messages */
-	while (pentry->clock >= 762000 && bytes_received > 0 && is_different_message (recvData, (char *) precv->buf, pentry->retval, bytes_received)) {
+	while (pentry->clock >= 762000 && bytes_received > 0 && has_different_message ((u_char *) recvData, pentry->retval, (u_char *) precv->buf, bytes_received, &offset)) {
 	    int i, msglen;
 #ifdef PRINT_DEBUG
 	    DPRINT ("buffer has spurious message\n");
-	    print_buffer_hex (precv->buf, pentry->retval);
+	    print_buffer_hex (precv->buf+offset, bytes_received-offset);
 #endif	    
-	    msglen = get_message_length (precv->buf, bytes_received);
+	    msglen = get_message_length (precv->buf+offset, bytes_received-offset);
 	    if (msglen > 0) {
-		reorderlen[reorderlenin++] = msglen;
 		if (reorderfd == 0) {
 		    reorderfd = precv->sockfd;
 		} else if (reorderfd != precv->sockfd) {
 		    LPRINT ("[ERROR]: cannot handle multiple reorderfds\n");
 		    handle_mismatch();
 		}
-		if (bytes_received < msglen) {
+		if (bytes_received-offset < msglen) {
 		    DPRINT ("Partial message is in the buffer\n");
-		    memcpy (reorderin, precv->buf, bytes_received);
-		    while (bytes_received < msglen) {
-			block[1] = (u_long) (reorderin + bytes_received);
-			block[2] = msglen - bytes_received;
+		    memcpy (reorderin, precv->buf+offset, bytes_received-offset);
+		    while (bytes_received-offset < msglen) {
+			block[1] = (u_long) (reorderin + bytes_received-offset);
+			block[2] = msglen - (bytes_received-offset);
 			block[3] = 0;
 			start_timing();
 			rc = syscall(SYS_socketcall, SYS_RECV, &block);
@@ -853,10 +887,9 @@ long recv_recheck ()
 			bytes_received += rc;
 		    }
 		} else {
-		    LPRINT ("Entire message is in the buffer\n");
-		    memcpy (reorderin, precv->buf, msglen);
-		    for (i = 0; i < bytes_received-msglen; i++) {
-			((u_char *)precv->buf)[i] = ((u_char *)precv->buf)[i+msglen];
+		    memcpy (reorderin, precv->buf+offset, msglen);
+		    for (i = 0; i < bytes_received-offset-msglen; i++) {
+			((u_char *)precv->buf)[i+offset] = ((u_char *)precv->buf)[i+msglen+offset];
 		    }
 		}
 	    } else {
@@ -915,7 +948,7 @@ long recv_recheck ()
 		LPRINT ("[MISMATCH] recv %lu returns different values - read/expected:\n", pentry->clock);
 		if (memcmp (precv->buf, recvData, pentry->retval)) {
 		    for (i = 0; i < pentry->retval; i++) {
-			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
+			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i]&0xff, recvData[i]&0xff);
 			if (i%16 == 15) LPRINT ("\n");
 		    }
 		    LPRINT ("\n");
@@ -979,7 +1012,7 @@ long recvmsg_recheck ()
 	DPRINT ("expect %ld bytes\n", pentry->retval);
 	for (i = 0; i < phdr->msg_iovlen; i++) {
 	    total += phdr->msg_iov[i].iov_len;
-	    DPRINT ("bytes buf %d: %d total %ld\n", i, phdr->msg_iov[i].iov_len, total);
+	    DPRINT ("bytes buf %d at %x: %ld total %ld\n", i, phdr->msg_iov[i].iov_len, (u_long) phdr->msg_iov[i].iov_base, total);
 	    if (gone_over) {
 		phdr->msg_iov[i].iov_len = 0;
 	    } else {
@@ -999,18 +1032,20 @@ long recvmsg_recheck ()
 
     if (pentry->retval > 0 && rc > 0 && rc < pentry->retval) {
 	int tries = 0;
-	DPRINT ("recvmsg received %d bytes, expected %ld\n", rc, pentry->retval);
-	while (phdr->msg_iovlen == 1 && tries <= 5) {
+	LPRINT ("recvmsg received %d bytes, expected %ld - iovlen %d base[0] %d\n", rc, pentry->retval, phdr->msg_iovlen, phdr->msg_iov[0].iov_len);
+	while (phdr->msg_iovlen == 1 && tries <= 10 && rc < pentry->retval) {
 	    long extra_rc = syscall(SYS_read, precvmsg->sockfd, phdr->msg_iov[0].iov_base+rc, pentry->retval-rc);
+	    LPRINT ("read returns %ld errno %d\n", extra_rc, errno);
 	    if (extra_rc > 0) rc += extra_rc;
 #ifdef PRINT_DEBUG
 	    DPRINT ("received %ld extra bytes\n", extra_rc);
 	    print_buffer (phdr->msg_iov[0].iov_base, rc);
 #endif
-	    if (rc == -1 && errno == 11) {
-		usleep (1000);
-	    }
 	    tries++;
+	    if (extra_rc == -1 && errno == 11) {
+		LPRINT ("recvmsg: sleeping for %d us\n", 500*(2<<(tries-1)));
+		usleep (500*(2<<(tries-1)));
+	    }
 	}
     }    
 
@@ -1021,6 +1056,17 @@ long recvmsg_recheck ()
 #ifdef PRINT_VALUES
 	LPRINT ("namelen %d controllen %ld flags %x\n", pretvals->msg_namelen, pretvals->msg_controllen,
 		pretvals->msg_flags);
+	{
+	    long to_print;
+	    long printed = 0;
+	    for (i = 0; i < phdr->msg_iovlen && printed < rc; i++) {
+		to_print = rc-printed;
+		if (phdr->msg_iov[i].iov_len < to_print) to_print = phdr->msg_iov[i].iov_len;
+		print_buffer (phdr->msg_iov[i].iov_base, to_print);
+		print_buffer_hex (phdr->msg_iov[i].iov_base, to_print);
+		printed += to_print;
+	    }
+	}
 #endif
 	if (pretvals->msg_namelen != phdr->msg_namelen) {
 	    fprintf (stderr, "recvmsg returns namelen %d instead of %d\n", phdr->msg_namelen, pretvals->msg_namelen);
@@ -1186,15 +1232,17 @@ long writev_recheck ()
 	handle_mismatch();
     }
     piovec = (struct iovec *) data;
+#ifdef PRINT_VALUES
     for (i = 0; i < pwritev->iovcnt; i++) {
 	LPRINT ("writev: iov_len %d is %d\n", i, piovec[i].iov_len);
     }
+#endif
     data += pwritev->iovcnt * sizeof(struct iovec);
     for (i = 0; i < pwritev->iovcnt; i++) {
 	piovec[i].iov_base = fill_taintedbuf (data, piovec[i].iov_base, piovec[i].iov_len);
 	data += piovec[i].iov_len*2;
 #ifdef PRINT_VALUES
-	print_buffer ((u_char *) data, piovec[i].iov_len);
+	print_buffer ((u_char *) piovec[i].iov_base, piovec[i].iov_len);
 #endif
     }
 
@@ -1269,7 +1317,21 @@ long sendmsg_recheck ()
     pmsg->msg_iov = (struct iovec *) data;
     data += pmsg->msg_iovlen*sizeof(struct iovec);
     for (i = 0; i < pmsg->msg_iovlen; i++) {
+#ifdef PRINT_VALUES
+	{
+	    int j;
+	    LPRINT ("sendmsg: iov %d\n", i);
+	    for (j = 0; j < pmsg->msg_iov[i].iov_len; j++) {
+		LPRINT ("%d", (*(data+pmsg->msg_iov[i].iov_len+j) != 0));
+	    }
+	    LPRINT ("\n");
+	}
+#endif	
 	pmsg->msg_iov[i].iov_base = fill_taintedbuf (data, pmsg->msg_iov[i].iov_base, pmsg->msg_iov[i].iov_len);
+#ifdef PRINT_VALUES
+	print_buffer((u_char *) pmsg->msg_iov[i].iov_base, pmsg->msg_iov[i].iov_len);
+	print_buffer_hex((u_char *) pmsg->msg_iov[i].iov_base, pmsg->msg_iov[i].iov_len);
+#endif
 	data += pmsg->msg_iov[i].iov_len*2;
     }
     pmsg->msg_control = fill_taintedbuf (data, pmsg->msg_control, pmsg->msg_controllen);
@@ -1328,6 +1390,7 @@ long open_recheck (int flags, int mode)
     if (rc >= 0 && popen->has_retvals) {
 	cache_files_opened[rc].is_open_cache_file = 1;
 	cache_files_opened[rc].orv = popen->retvals;
+	cache_files_opened[rc].verified_pos = 0;
     }
     end_timing_func (SYS_open);
     return rc;
@@ -3002,7 +3065,10 @@ long poll_recheck (int timeout)
     memcpy (tmpbuf, fds, ppoll->nfds*sizeof(struct pollfd));
 
     do {
-	if (tries > 0) usleep (500*(2>>(tries-1)));
+	if (tries > 0) {
+	    LPRINT ("poll: sleeping for %d us\n", 500*(2<<(tries-1)));
+	    usleep (500*(2<<(tries-1)));
+	}
 
 	start_timing();
 	rc = syscall(SYS_poll, pollbuf, ppoll->nfds, use_timeout);
@@ -3031,7 +3097,7 @@ long poll_recheck (int timeout)
 	    }
 	}
 	tries++;
-    } while (rc > 0 && rc < pentry->retval && tries < 5);
+    } while (rc > 0 && rc < pentry->retval && tries < 10);
 
     DPRINT ("poll now returning %d\n", rc);
     check_retval ("poll", pentry->clock, pentry->retval, rc);
@@ -3287,6 +3353,35 @@ long unlink_recheck ()
     return rc;
 }
 
+long chmod_recheck ()
+{
+    struct recheck_entry* pentry;
+#ifdef PRINT_VALUES
+    struct chmod_recheck* pchmod;
+#endif
+    long rc;
+
+    start_timing_func();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+#ifdef PRINT_VALUES
+    pchmod = (struct chmod_recheck *) bufptr;
+#endif
+    char* pathname = bufptr+sizeof(struct chmod_recheck);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "chmod: pathname %p %s mode %x rc %ld clock %lu\n", pchmod->pathname, pathname, pchmod->mode, pentry->retval, pentry->clock);
+#endif
+    start_timing();
+    rc = syscall(SYS_chmod, pathname, pchmod->mode);
+    end_timing (SYS_chmod, rc);
+    check_retval ("chmod", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_chmod);
+    return rc;
+}
+
 long inotify_init1_recheck ()
 {
     struct recheck_entry* pentry;
@@ -3489,7 +3584,6 @@ int shmget_recheck ()
 #endif
     start_timing();
     rc = syscall(SYS_ipc, SHMGET, pshmget->key, pshmget->size, pshmget->shmflg);
-    LPRINT ( "shmget returns 0x%lx\n", rc);
     end_timing (SYS_ipc, rc);
     add_to_taintbuf (pentry, RETVAL, &rc, sizeof(long));
     end_timing_func (SYS_ipc);
@@ -3523,7 +3617,9 @@ int shmat_recheck (int shmid)
     }
 
     start_timing();
-    rc = syscall(SYS_ipc, SHMAT, use_shmid, pshmat->shmaddr, &raddr, pshmat->shmflg);
+    rc = syscall(SYS_munmap, pshmat->raddrval, pshmat->size);
+    if (rc != 0) LPRINT ("shmat: munmap of preallocation failed\n");
+    rc = syscall(SYS_ipc, SHMAT, use_shmid, 0, &raddr, pshmat->shmflg);
     end_timing (SYS_ipc, rc);
     check_retval ("shmat", pentry->clock, pentry->retval, rc);
     if (pshmat->raddr && raddr != pshmat->raddrval) {
@@ -3598,7 +3694,6 @@ void recheck_wait_proc_init ()
 
 void recheck_thread_wait (int record_pid)
 {
-    LPRINT ("Wait thread %d begins\n", record_pid);
     if (go_live_clock) {
         struct go_live_process_map* process_map = go_live_clock->process_map;
         int i = 0;
@@ -3631,12 +3726,10 @@ void recheck_thread_wait (int record_pid)
             syscall (SYS_futex, &p->wait, FUTEX_WAIT, p->wait, NULL, NULL, 0);
         }
     }
-    LPRINT ("Wait thread %d ends\n", record_pid);
 }
 
 void recheck_thread_wakeup (int record_pid)
 {
-    LPRINT ("Wakeup thread %d begins\n", record_pid);
     if (go_live_clock) {
         struct go_live_process_map* process_map = go_live_clock->process_map;
         int i = 0;
@@ -3670,7 +3763,6 @@ void recheck_thread_wakeup (int record_pid)
                 ;
         }
     }
-    LPRINT ("Wakeup thread %d ends\n", record_pid);
 }
 
 int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid) 
@@ -3715,14 +3807,17 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
 
 void pthread_mutex_lock_shim (pthread_mutex_t* mutex)
 {
-    int rc, i;
+#ifdef PRINT_VALUES
+    int i;
     LPRINT ("pthread_mutex_lock_shim mutex=%lx\n", (u_long) mutex);
     for (i = 0; i < 24; i += 4) {
 	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
     }
-    rc = pthread_mutex_lock (mutex);
-    LPRINT ("pthread_mutex_lock addr %lx returns %d\n", (u_long) &pthread_mutex_lock, rc);
+#endif
+    pthread_mutex_lock (mutex);
+#ifdef PRINT_VALUES
     for (i = 0; i < 24; i += 4) {
 	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
     }
+#endif
 }

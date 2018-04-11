@@ -6,7 +6,7 @@ extern struct thread_data* current_thread;
 
 // Synchronization data structures that may need to be recreated
 map<ADDRINT, struct mutex_state> active_mutex; 
-
+map<ADDRINT, struct rwlock_state> active_rwlock; 
 
 //the key is the address of conditional variable or tid
 map<ADDRINT, struct wait_state*> active_wait; //I need to replace this with a thread-safe STL library
@@ -27,9 +27,6 @@ void track_pthread_mutex_lock ()
 	active_mutex[mutex] = state;
     }  else {
 	struct mutex_state& state = active_mutex[mutex];
-	if (state.lock_count > 0 && state.pid != current_thread->record_pid) {
-	    fprintf (stderr, "[ERROR] different locker so not a recursive lock: %x\n", mutex);
-	}
 	state.pid = current_thread->record_pid;
 	state.lock_count++;
     }
@@ -53,6 +50,45 @@ void track_pthread_mutex_destroy ()
 {
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
     active_mutex.erase (mutex);
+}
+
+void track_pthread_rwlock_wrlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    fprintf (stderr, "pid %d write locking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.state == RWLOCK_WRITE_LOCKED) {  
+	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
+    }
+    state.state = RWLOCK_WRITE_LOCKED;
+    state.pids.insert(current_thread->record_pid);
+}
+
+void track_pthread_rwlock_rdlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    fprintf (stderr, "pid %d read locking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.pids.find(current_thread->record_pid) != state.pids.end()) {  
+	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
+    }
+    state.state = RWLOCK_READ_LOCKED;
+    state.pids.insert(current_thread->record_pid);
+}
+
+void track_pthread_rwlock_unlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    fprintf (stderr, "pid %d unlocking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.pids.find(current_thread->record_pid) == state.pids.end()) {  
+	fprintf (stderr, "[ERROR] cannot find rwlock being unlocked\n");
+    } else {
+	state.pids.erase(current_thread->record_pid);
+	if (state.pids.empty()) {
+	    state.state = RWLOCK_UNLOCKED;
+	}
+    }
 }
 
 static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mutex, ADDRINT abstime)
@@ -130,28 +166,14 @@ void sync_pthread_state (struct thread_data* tdata)
         }
     }
 
-#if 0
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            DEBUG_INFO ("       pid %d wait on  %x state %d\n", iter->second->pid, iter->first, iter->second->state);
-            OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
-            switch (iter->second->state) { 
-                case COND_BEFORE_WAIT: 
-                    //normally, the mutex should already be held by this thread
-                    print_function_call_inst (tdata, "pthread_cond_timedwait", 3, iter->first, iter->second->mutex, iter->second->abstime);
-                    break;
-                case LLL_WAIT_TID_BEFORE:
-                    print_function_call_inst (tdata, "pthread_log_lll_wait_tid", 1, iter->first);
-                    break;
-                default: 
-                    PTHREAD_DEBUG (stderr, "unhandled pthread operation.\n");
-            }
-            OUTPUT_SLICE_THREAD (tdata, 0, "popfd");
-            OUTPUT_SLICE_INFO_THREAD (tdata, "re-create pthread state, clock %lu, pid %d", *ppthread_log_clock, tdata->record_pid);
+    for (map<ADDRINT, struct rwlock_state>::iterator iter = active_rwlock.begin(); iter != active_rwlock.end(); ++iter) { 
+	if (iter->second.state == RWLOCK_READ_LOCKED && (iter->second.pids.find(tdata->record_pid) != iter->second.pids.end())) { 
+	    fprintf (stderr, "calling pthread_rwlock_rdlock on lock 0x%x\n", iter->first);
+        }
+	if (iter->second.state == RWLOCK_WRITE_LOCKED && iter->second.pids.find(tdata->record_pid) != iter->second.pids.end()) { 
+	    fprintf (stderr, "calling pthread_rwlock_wrlock on lock 0x%x\n", iter->first);
         }
     }
-#endif
 }
 
 // Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
@@ -164,6 +186,15 @@ void sync_my_pthread_state (struct thread_data* tdata)
 		OUTPUT_MAIN_THREAD (tdata, "call pthread_mutex_lock");
 		OUTPUT_MAIN_THREAD (tdata, "add esp, 4");
 	    }
+        }
+    }
+
+    for (map<ADDRINT, struct rwlock_state>::iterator iter = active_rwlock.begin(); iter != active_rwlock.end(); ++iter) { 
+	if (iter->second.state == RWLOCK_READ_LOCKED && (iter->second.pids.find(tdata->record_pid) != iter->second.pids.end())) { 
+	    fprintf (stderr, "calling pthread_rwlock_rdlock on lock 0x%x\n", iter->first);
+        }
+	if (iter->second.state == RWLOCK_WRITE_LOCKED && iter->second.pids.find(tdata->record_pid) != iter->second.pids.end()) { 
+	    fprintf (stderr, "calling pthread_rwlock_wrlock on lock 0x%x\n", iter->first);
         }
     }
 }
