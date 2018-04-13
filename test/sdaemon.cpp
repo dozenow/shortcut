@@ -21,8 +21,8 @@ using namespace std;
 #include "taintbuf.h"
 #include "util.h"
 
-//#define DPRINT printf
-#define DPRINT(x,...)
+#define DPRINT printf
+//#define DPRINT(x,...)
 
 map<long,long> clone_map;
 
@@ -248,20 +248,15 @@ static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_res
     case SYS_RECV: {
 	struct recvfrom_retvals *precv = (struct recvfrom_retvals *) res->retparams;
 	rc = read (fd, &precv->buf, res->retval);	
+	printf ("Read %ld bytes for recv, pos=%ld\n", rc, lseek(fd, 0, SEEK_CUR));
 	assert (rc == res->retval);
 	break;
     }
     case SYS_RECVMSG: {
-	printf ("recvmsg start clock %ld retval %ld\n", res->start_clock, res->retval);
 	struct recvmsg_retvals *precvmsg = (struct recvmsg_retvals *) res->retparams;
 	char* data = (char *) res->retparams + sizeof (struct recvmsg_retvals) + precvmsg->msg_namelen + precvmsg->msg_controllen;
-	for (int i = 0; i < res->retval; i++) {
-	    printf ("byte 0x%x is 0x%x\n", i, data[i]&0xff);
-	}
 	rc = read (fd, data, res->retval);	
-	for (int i = 0; i < res->retval; i++) {
-	    printf ("byte 0x%x is 0x%x\n", i, data[i]&0xff);
-	}
+	printf ("Read %ld bytes for recvmsg, pos=%ld\n", rc, lseek(fd, 0, SEEK_CUR));
 	assert (rc == res->retval);
 	break;
     }

@@ -5,7 +5,7 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
-#define MAX_REGIONS 20
+#define MAX_REGIONS 50
 
 //****
 //note: there are kernel-level structures corresponding to these two in replay.h.  Both must be changed together.

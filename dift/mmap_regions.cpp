@@ -59,7 +59,7 @@ void add_mmap_region (u_long addr, int len, int prot, int flags)
     bool ro_val = (prot & PROT_READ) && !(prot & PROT_WRITE); /* this only included private pages - why? */
     bool rw_val = (prot & PROT_READ) && (prot & PROT_WRITE);
     bool ex_val = (prot & PROT_EXEC);
-    DPRINT (stderr, "add mmap region from %lx to %lx read only? %d read-write? %d\n", addr, addr+len, ro_val, rw_val);
+    DPRINT (stderr, "add mmap region from %lx to %lx prot %x flags %x read only? %d read-write? %d exec? %d\n", addr, addr+len, prot, flags, ro_val, rw_val, ex_val);
     for (auto i = addr; i < addr+len; i += PAGE_SIZE) {
 	if (max_rw_pages.test(i/PAGE_SIZE) && !ro_pages.test(i/PAGE_SIZE) && !rw_pages.test(i/PAGE_SIZE) && ro_val) DPRINT (stderr, "remap of prev read/write page 0x%lx\n", i);
 	ro_pages.set(i/PAGE_SIZE, ro_val);
@@ -152,7 +152,7 @@ bool is_readonly_mmap_region (u_long addr, int len, u_long& start, u_long& end)
 
 static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type)
 {
-    DPRINT (stderr, "handle protection for range from 0x%lx size %lx: type %d\n", start, size, type);
+    DPRINT (stderr, "handle unprotection for range from 0x%lx size %lx: type %d\n", start, size, type);
     if (type == 1) {
 	// mprotect read-write
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mprotect);
@@ -274,11 +274,10 @@ void handle_upprotected_pages (struct thread_data* tdata)
 	}
 	
 	if (type != prev_type) {
-	    if (prev_type == 0) {
-		start_at = i;
-	    } else {
+	    if (prev_type != 0) {
 		handle_protection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
 	    } 
+	    start_at = i;
 	}
 	prev_type = type;
     }	

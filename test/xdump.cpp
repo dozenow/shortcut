@@ -24,6 +24,9 @@ struct pcmp {
 
 int my_pid;
 
+FILE* filters_out = NULL;
+FILE* responses_out = NULL;
+
 map<u_long,map<u_long,vector<ptaint>>> ptaints;
 
 void read_filters (char* filename)
@@ -90,6 +93,9 @@ static int get_msglen(u_char* pbuf, u_long syscall, u_long start)
 	    endoff = start+24;
 	}
 	if (startoff) {
+	    if (filters_out) {
+		fprintf (filters_out, "-b %d,%ld,%ld,%ld\n", my_pid, syscall,startoff,endoff);
+	    }
 	    printf ("filter syscall %lu,%ld,%ld\n", syscall,startoff,endoff);
 	    auto sysentry = ptaints[my_pid].find(syscall);
 	    if (sysentry == ptaints[my_pid].end()) {
@@ -169,6 +175,7 @@ void print_msgs (char* klogfilename)
 		for (auto rit = responses.begin(); rit != responses.end(); rit++) {
 		    if (rit->syscall == sit->first && rit->start <= fit->start && rit->end >= fit->end) {
 			printf ("\tresponse number %ld start %ld end %ld\n", rit->number, rit->start, rit->end);
+			if (responses_out) fprintf (responses_out, "%d,%ld,%ld,%ld\n", my_pid, rit->number, fit->start, fit->end);
 		    }
 		}
 	    }
@@ -178,8 +185,15 @@ void print_msgs (char* klogfilename)
 
 int main (int argc, char* argv[])
 {
+    if (argc > 2 && !strcmp(argv[2], "-f")) {
+	filters_out = fopen ("/tmp/filters", "w");
+	responses_out = fopen ("/tmp/responses", "w");
+    }
+
     read_filters (argv[1]);
     print_msgs (argv[1]);
+
+    if (filters_out) fclose(filters_out);
 
     return 0;
 }

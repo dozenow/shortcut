@@ -149,6 +149,7 @@ u_long filter_outputs_before = 0;  // Only trace outputs starting at this value
 const char* check_filename = "/tmp/checks";
 u_long dumbass_link_addr = 0;
 u_long pthread_log_status_addr = 0;
+pthread_funcs recall_funcs;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -2139,13 +2140,10 @@ static inline void sys_stat64_stop (int rc)
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_rdev, sizeof(si->buf->st_rdev));
-	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_size, sizeof(si->buf->st_size));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
-	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_blocks, sizeof(si->buf->st_blocks));
 	}
-	LOG_PRINT ("Done with stat64.\n");
 }
 
 static inline void sys_lstat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
@@ -2164,6 +2162,8 @@ static inline void sys_lstat64_stop (int rc)
 	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
 	if (rc == 0) {
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_rdev, sizeof(si->buf->st_rdev));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
@@ -2922,13 +2922,13 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 		slice_synchronize (current_thread, iter->second);
 
 		// And this goes in the slice c file for the other threads
-		sync_pthread_state (iter->second);
+		sync_pthread_state (iter->second, &recall_funcs);
 		slice_thread_wakeup (iter->second, current_thread->record_pid);
 	    }
         }
 
 	// Fourth, restore pthread state for this thread and readjust jiggled mem protections
-	sync_my_pthread_state (current_thread);
+	sync_my_pthread_state (current_thread, &recall_funcs);
 	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
 
 	// Fifth, another barrier, so that all threads resume execution only when memory state is
@@ -3082,10 +3082,28 @@ static ADDRINT returnArg (BOOL arg)
     return arg;
 }
 
+#ifdef OPTIMIZED
+#define SLAB_SIZE (1024*1024)
+static inline char* get_copy_of_disasm (INS ins) 
+{ 
+    static char* slab = NULL;
+    static int slab_bytes = 0;
+
+    if (slab == NULL || slab_bytes > SLAB_SIZE-256) {
+	slab = (char *) malloc(SLAB_SIZE);
+	slab_bytes = 0;
+    }
+    string s = INS_Disassemble(ins);
+    char* p = strcpy (slab+slab_bytes, s.c_str());
+    slab_bytes += s.length()+1;
+    return p;
+}
+#else
 static inline char* get_copy_of_disasm (INS ins) { 
 	const char* tmp = INS_Disassemble (ins).c_str();
 	return strdup (tmp);
 }
+#endif
 
 static inline void put_copy_of_disasm (char* str) { 
 	//TODO memory leak
@@ -7441,6 +7459,7 @@ void routine (RTN rtn, VOID* v)
     } else if (!strncmp (name, "pthread_", 8) || !strncmp (name, "__pthread_", 10) || !strncmp (name, "lll_", 4)) {
         RTN_Open(rtn);
         if (!strcmp (name, "pthread_log_mutex_lock") || !strcmp (name, "__pthread_mutex_lock") || !strcmp (name, "pthread_mutex_lock")) {
+	    recall_funcs.mutex_lock = (u_long) RTN_Funptr(rtn);
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
 			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			   IARG_END);
@@ -7465,12 +7484,14 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
 			    IARG_END);
         } else if (!strcmp (name, "__pthread_rwlock_rdlock") || !strcmp(name, "pthread_rwlock_rdlock")) {
+	    recall_funcs.rwlock_rdlock = (u_long) RTN_Funptr(rtn);
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_params_1,
 			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			   IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_rwlock_rdlock, 
 			    IARG_END);
         } else if (!strcmp (name, "__pthread_rwlock_wrlock") || !strcmp(name, "pthread_rwlock_wrlock")) {
+	    recall_funcs.rwlock_wrlock = (u_long) RTN_Funptr(rtn);
 	    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) track_pthread_mutex_params_1,
 			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			   IARG_END);
@@ -7483,15 +7504,13 @@ void routine (RTN rtn, VOID* v)
 			   IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_rwlock_unlock, 
 			    IARG_END);
-        } else if (!strcmp (name, "pthread_cond_timedwait")) {
-            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
+	} else if (!strcmp (name, "pthread_cond_wait") || !strcmp (name, "pthread_cond_timedwait")) {
+            RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_wait_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
                     IARG_END);
-            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
-                    IARG_ADDRINT, RTN_Address(rtn), 
-                    IARG_END);
+            RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_wait_after, 
+			    IARG_END);
         } else if (!strcmp (name, "pthread_log_lll_wait_tid")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_lll_wait_tid_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
@@ -7499,6 +7518,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+#ifndef OPTIMIZED
         } else if (!strcmp (name, "pthread_create") || 
 		   !strcmp (name, "pthread_log_full") ||
 		   !strcmp (name, "pthread_log_stat") || 
@@ -7524,7 +7544,6 @@ void routine (RTN rtn, VOID* v)
 		   !strcmp (name, "pthread_cond_broadcast") || 
 		   !strcmp (name, "pthread_cond_signal") || 
 		   !strcmp (name, "pthread_cond_destroy") || 
-		   !strcmp (name, "pthread_cond_wait") ||
 		   !strcmp (name, "__pthread_register_cancel") || 
 		   !strcmp (name, "__pthread_unregister_cancel") || 
 		   !strcmp (name, "__pthread_enable_asynccancel") || 
@@ -7534,6 +7553,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
 			    IARG_PTR, name, 
 			    IARG_END);
+#endif
         }
         RTN_Close(rtn);
     }

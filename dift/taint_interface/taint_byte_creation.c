@@ -8,6 +8,7 @@
 #include "../xray_token.h"
 #include "../taint_nw.h"
 #include "../linkage_common.h"
+#include "../recheck_log.h"
 
 #ifdef TAINT_DEBUG
 extern FILE* debug_f;

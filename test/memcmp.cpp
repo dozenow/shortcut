@@ -14,6 +14,9 @@
 #include <string>
 using namespace std;
 
+u_long extra_region = 0;
+u_long extra_region_offset = 0;
+
 static char* map_file (const char* filename, u_long& size) 
 {
     struct stat st;
@@ -64,14 +67,21 @@ static int compare_files (const char* filename1, const char* filename2, long off
     
     if (size1+offset != size2) {
 	fprintf (stderr, "file %s has size %ld but file %s has size %ld\n", filename1, size1, filename2, size2);
-	return -1;
+	if (size1 > size2) {
+	    size1 = size2;
+	} else {
+	    size2 = size1;
+	    extra_region = addr+size2;
+	    extra_region_offset = size2;
+	    printf ("Extra region at %lx\n", extra_region);
+	}
     }
 
     if (offset > 0) {
 	printf ("skip first 0x%lx bytes of %s\n", offset, filename2);
 	for (u_long i = 0; i < size1; i++) {
 	    if (region1[i] != region2[i+offset]) {
-		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
+		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i+offset]&0xff);
 		bytes_diff++;
 	    }
 	}
@@ -79,7 +89,7 @@ static int compare_files (const char* filename1, const char* filename2, long off
 	printf ("skip first 0x%lx bytes of %s\n", -offset, filename1);
 	for (u_long i = 0; i < size1+offset; i++) {
 	    if (region1[i-offset] != region2[i]) {
-		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
+		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i-offset, i, region1[i-offset]&0xff, region2[i]&0xff);
 		bytes_diff++;
 	    }
 	}
@@ -182,9 +192,17 @@ int main (int argc, char* argv[])
     closedir (dirp);
 
     for (map<u_long, string>::iterator it = slice_regions.begin(); it != slice_regions.end(); it++) {
-	map<u_long, string>::iterator it2 = replay_regions.find(it->first);
-	if (it2 != replay_regions.end()) {
-	    compare_files (it->second.c_str(), it2->second.c_str(), 0);
+	if (it->first == extra_region) {
+	    printf ("Extra region\n");
+	    map<u_long, string>::iterator it2 = replay_regions.find(extra_region-extra_region_offset);	    
+	    if (it2 != replay_regions.end()) {
+		compare_files (it->second.c_str(), it2->second.c_str(), extra_region_offset);
+	    }
+	} else {
+	    map<u_long, string>::iterator it2 = replay_regions.find(it->first);
+	    if (it2 != replay_regions.end()) {
+		compare_files (it->second.c_str(), it2->second.c_str(), 0);
+	    }
 	}
     }
 
@@ -218,7 +236,7 @@ int main (int argc, char* argv[])
 	}
     }
     if (last1 && last2) {
-	printf ("Comparing uneven stack regions\n");
+	printf ("Comparing uneven stack regions %lx vs %lx\n", last1, last2);
 	compare_files (last_filename1.c_str(), last_filename2.c_str(), last1-last2);
     }
     

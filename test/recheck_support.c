@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -506,10 +506,11 @@ long read_recheck (size_t count)
             }
             if (st.st_mtim.tv_sec == cache_files_opened[pread->fd].orv.mtime.tv_sec &&
                     st.st_mtim.tv_nsec == cache_files_opened[pread->fd].orv.mtime.tv_nsec) {
-                if (lseek(pread->fd, pentry->retval, SEEK_CUR) < 0) {
-                    LPRINT ("[MISMATCH] lseek after read failed\n");
-                    handle_mismatch();
-                }
+		// Adjust file position for read we didn't do
+		if (lseek(pread->fd, pentry->retval, SEEK_CUR) < 0) {
+		    LPRINT ("[MISMATCH] lseek after read failed\n");
+		    handle_mismatch();
+		}
             } else {
                 DPRINT ("[WARNING] - read file times mismatch but checking actual file content to see if it still matches\n");
 		DPRINT ("[WARNING] - dev %lx ino %lx file system time %ld.%ld cache time %ld.%ld\n", st.st_mtim.tv_sec, st.st_mtim.tv_nsec, 
@@ -539,7 +540,6 @@ long read_recheck (size_t count)
 		    }
 		}
 
-		LPRINT ("pread64 fd %d buf %lx count %d pos %lld\n", pcachefilefd, (u_long) tmpbuf+use_count, use_count, cache_files_opened[pread->fd].verified_pos);
 		rc = syscall(SYS_pread64, pcachefilefd, tmpbuf+use_count, use_count, cache_files_opened[pread->fd].verified_pos);
 		check_retval ("read (cache file)", pentry->clock, pentry->retval, rc);
 		if (rc > 0) cache_files_opened[pread->fd].verified_pos += rc;
@@ -658,18 +658,6 @@ static u_char* reorderin = reorderbuf;
 static u_char* reorderout = reorderbuf;
 static int reorderfd = 0;
 
-#if 0
-// This is x specific - eventually, do not hard code this
-static int is_different_message (char* msg1, char* msg2, int len1, int len2)
-{
-    if (msg1[0] != msg2[0]) return 1; // Different event or reply
-    if (len1 >= 32 && len2 >= 32 && (msg1[0] == 0x1c || msg1[0] == 0x15)) {
-	if (memcmp(msg1, msg2, 12) || memcmp (msg1+16, msg2+16, 16)) return 1;
-    }
-    return 0;
-}
-#endif
-
 static int get_message_length (u_char* buffer, int buflen) 
 {
     if (buffer[0] == 0x1) {
@@ -699,6 +687,7 @@ static void print_reorder_buffer ()
 	p +=  msglen;
     }
 }
+#endif
 
 static int is_same_message (u_char* msg1, int len1, u_char* msg2, int len2)
 {
@@ -734,15 +723,12 @@ static int has_different_message (u_char* buf1, int len1, u_char* buf2, int len2
 	int mlen1 = get_message_length(buf1+*poffset, len1-*poffset);
 	int mlen2 = get_message_length(buf2+*poffset, len2-*poffset);
 	if (mlen1 < 0 || mlen2 < 0) {
-	    LPRINT ("different message at byte %d: mlen %d vs. %d\n", *poffset, mlen1, mlen2);
 	    return 1;
 	}
 	if (mlen1 != mlen2) {
-	    LPRINT ("different message at byte %d: nlen %d vs. %d\n", *poffset, mlen1, mlen2);
 	    return 1;
 	}
 	if (!is_same_message(buf1+*poffset, len1-*poffset, buf2+*poffset, len2-*poffset)) {
-	    LPRINT ("different message at byte %d\n", *poffset);
 	    return 1;
 	}
 	*poffset += mlen1;
@@ -760,7 +746,20 @@ static u_char* have_matching_message (u_char* msg, int len)
     }
     return NULL;
 }
-#endif
+
+static void reorder_sequence (u_char* msg, u_char* reference, int len)
+{
+    int bytes_processed = 0;
+    while (bytes_processed < len) {
+	if (msg[bytes_processed+2] != reference[bytes_processed+2]) {
+	    LPRINT ("Sequence # %d observed - changed to %d\n", msg[bytes_processed+2], reference[bytes_processed+2]);
+	    msg[bytes_processed+2] = reference[bytes_processed+2];	
+	}
+	int msglen = get_message_length (msg+bytes_processed, len-bytes_processed);
+	if (msglen <= 0) break;
+	bytes_processed += msglen;
+    } 
+}
 
 #endif
 
@@ -870,21 +869,27 @@ long recv_recheck ()
 		    handle_mismatch();
 		}
 		if (bytes_received-offset < msglen) {
+		    int tries = 0;
 		    DPRINT ("Partial message is in the buffer\n");
 		    memcpy (reorderin, precv->buf+offset, bytes_received-offset);
-		    while (bytes_received-offset < msglen) {
+		    while (bytes_received-offset < msglen && tries < 10) {
 			block[1] = (u_long) (reorderin + bytes_received-offset);
 			block[2] = msglen - (bytes_received-offset);
 			block[3] = 0;
 			start_timing();
 			rc = syscall(SYS_socketcall, SYS_RECV, &block);
 			DPRINT ("reorder recv: returns %ld errno %d\n", rc, errno);
-			end_timing (SYS_socketcall, rc);		
-			if (rc < 0) {
+			end_timing (SYS_socketcall, rc);	
+			tries++;
+			if (rc == -1 && errno == 11) {
+			    LPRINT ("recv reorder: sleeping for %d us\n", 500*(2<<(tries-1)));
+			    usleep (500*(2<<(tries-1)));
+			} else if (rc < 0) {
 			    LPRINT ("Cannot get more bytes on reorder recv, rc=%ld, errno=%d\n", rc, errno);
 			    handle_mismatch();
+			} else {
+			    bytes_received += rc;
 			}
-			bytes_received += rc;
 		    }
 		} else {
 		    memcpy (reorderin, precv->buf+offset, msglen);
@@ -910,7 +915,9 @@ long recv_recheck ()
 	print_buffer_hex (precv->buf, pentry->retval);
 	print_buffer_hex ((u_char *) recvData, pentry->retval);
 #endif
-
+#ifdef REORDERING
+	reorder_sequence (precv->buf, (u_char *) recvData, pentry->retval);
+#endif
 	DPRINT ("About to compare %p and %p partial_read_cnt %d\n", precv->buf, recvData, precv->partial_read_cnt);
 	if (precv->partial_read_cnt > 0) {
 	    u_long bytes_so_far = 0;
@@ -1032,10 +1039,10 @@ long recvmsg_recheck ()
 
     if (pentry->retval > 0 && rc > 0 && rc < pentry->retval) {
 	int tries = 0;
-	LPRINT ("recvmsg received %d bytes, expected %ld - iovlen %d base[0] %d\n", rc, pentry->retval, phdr->msg_iovlen, phdr->msg_iov[0].iov_len);
+	DPRINT ("recvmsg received %d bytes, expected %ld - iovlen %d base[0] %d\n", rc, pentry->retval, phdr->msg_iovlen, phdr->msg_iov[0].iov_len);
 	while (phdr->msg_iovlen == 1 && tries <= 10 && rc < pentry->retval) {
 	    long extra_rc = syscall(SYS_read, precvmsg->sockfd, phdr->msg_iov[0].iov_base+rc, pentry->retval-rc);
-	    LPRINT ("read returns %ld errno %d\n", extra_rc, errno);
+	    DPRINT ("read returns %ld errno %d\n", extra_rc, errno);
 	    if (extra_rc > 0) rc += extra_rc;
 #ifdef PRINT_DEBUG
 	    DPRINT ("received %ld extra bytes\n", extra_rc);
@@ -3099,16 +3106,18 @@ long poll_recheck (int timeout)
 	tries++;
     } while (rc > 0 && rc < pentry->retval && tries < 10);
 
+#ifdef PRINT_DEBUG
     DPRINT ("poll now returning %d\n", rc);
     check_retval ("poll", pentry->clock, pentry->retval, rc);
     if (rc > 0) {
 	for (i = 0; i < ppoll->nfds; i++) {
 	    if (pollbuf[i].revents != revents[i]) {
 		fprintf (stderr, "[MISMATCH] poll index %d: fd %d revents returns 0x%x expected 0x%x\n", i, fds[i].fd, pollbuf[i].revents, revents[i]);
-		//handle_mismatch();
 	    }
 	}
     }
+#endif
+
     end_timing_func (SYS_poll);
     return rc;
 }
@@ -3356,18 +3365,14 @@ long unlink_recheck ()
 long chmod_recheck ()
 {
     struct recheck_entry* pentry;
-#ifdef PRINT_VALUES
     struct chmod_recheck* pchmod;
-#endif
     long rc;
 
     start_timing_func();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
-#ifdef PRINT_VALUES
     pchmod = (struct chmod_recheck *) bufptr;
-#endif
     char* pathname = bufptr+sizeof(struct chmod_recheck);
     bufptr += pentry->len;
 
@@ -3805,7 +3810,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
         return 0;
 }
 
-void pthread_mutex_lock_shim (pthread_mutex_t* mutex)
+void pthread_mutex_lock_shim (int (*fn)(pthread_mutex_t *), pthread_mutex_t* mutex)
 {
 #ifdef PRINT_VALUES
     int i;
@@ -3814,10 +3819,43 @@ void pthread_mutex_lock_shim (pthread_mutex_t* mutex)
 	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
     }
 #endif
-    pthread_mutex_lock (mutex);
+    fn (mutex);
 #ifdef PRINT_VALUES
     for (i = 0; i < 24; i += 4) {
 	LPRINT ("address %lx: value %lx\n", (u_long) mutex+i, *((u_long *)((u_long) mutex + i)));
+    }
+#endif
+}
+void pthread_rwlock_rdlock_shim (int (*fn)(pthread_rwlock_t *), pthread_rwlock_t* rwlock)
+{
+#ifdef PRINT_VALUES
+    int i;
+    LPRINT ("pthread_rwlock_rdlock_shim rwlock=%lx\n", (u_long) rwlock);
+    for (i = 0; i < 32; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) rwlock+i, *((u_long *)((u_long) rwlock + i)));
+    }
+#endif
+    fn (rwlock);
+#ifdef PRINT_VALUES
+    for (i = 0; i < 32; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) rwlock+i, *((u_long *)((u_long) rwlock + i)));
+    }
+#endif
+}
+
+void pthread_rwlock_wrlock_shim (int (*fn)(pthread_rwlock_t *), pthread_rwlock_t* rwlock)
+{
+#ifdef PRINT_VALUES
+    int i;
+    LPRINT ("pthread_rwlock_wrlock_shim rwlock=%lx\n", (u_long) rwlock);
+    for (i = 0; i < 32; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) rwlock+i, *((u_long *)((u_long) rwlock + i)));
+    }
+#endif
+    fn (rwlock);
+#ifdef PRINT_VALUES
+    for (i = 0; i < 32; i += 4) {
+	LPRINT ("address %lx: value %lx\n", (u_long) rwlock+i, *((u_long *)((u_long) rwlock + i)));
     }
 #endif
 }

@@ -13,10 +13,14 @@
 #define RWLOCK_READ_LOCKED      1
 #define RWLOCK_WRITE_LOCKED     2
 
-#define COND_BEFORE_WAIT        5
-#define COND_AFTER_WAIT         6
 #define LLL_WAIT_TID_BEFORE     7
 #define LLL_WAIT_TID_AFTER      8
+
+struct pthread_funcs {
+    u_long mutex_lock;
+    u_long rwlock_rdlock;
+    u_long rwlock_wrlock;
+};
 
 struct mutex_state {
     pid_t pid; //current holder
@@ -45,14 +49,14 @@ void track_pthread_rwlock_wrlock ();
 void track_pthread_rwlock_rdlock ();
 void track_pthread_rwlock_unlock ();
 
-void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime);
-void track_pthread_cond_timedwait_after (ADDRINT rtn_addr);
+void track_pthread_cond_wait_before (ADDRINT cond, ADDRINT mutex);
+void track_pthread_cond_wait_after (void);
 
 void track_pthread_lll_wait_tid_before (ADDRINT tid);
 void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr);
 
-void sync_pthread_state (struct thread_data* tdata);
-void sync_my_pthread_state (struct thread_data* tdata);
+void sync_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs);
+void sync_my_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs);
 
 #define PTHREAD_DEBUG(x,...)
 

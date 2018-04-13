@@ -503,6 +503,9 @@ static inline void init_taint_index(char* group_dir)
 
 static inline taint_t merge_taints(taint_t dst, taint_t src)
 {
+#ifdef OPTIMIZED
+    return (dst | src);
+#else
     if (dst == 0) {
         return src;
     }
@@ -543,6 +546,7 @@ static inline taint_t merge_taints(taint_t dst, taint_t src)
     tsp.merges++;
 #endif
     return add_merge_number(dst, src);
+#endif
 #endif
 }
 
@@ -1066,15 +1070,17 @@ void move_mem_taints (u_long new_address, u_long new_size, u_long old_address, u
     } else {
 	u_long to_move = (new_size < old_size) ? new_size : old_size;
 	clear_mem_taints (new_address, new_size);
-	for (i = 0; i < to_move; i++) {
-	    taint_t* taints = get_mem_taints_internal (old_address + i, 1);
-	    if (taints && taints[0]) {
+	for (i = 0; i < to_move; i += 4) {
+	    // Handle 1 word at a time because we cannot push a single byte - moving more data should be OK
+	    taint_t* taints = get_mem_taints_internal (old_address + i, 4);
+	    if (taints && (taints[0] || taints[1] || taints[2] || taints[3])) {
 		fprintf (stderr, "move_mem_taints: address %lx is tainted - moved to %lx\n", old_address+i, new_address+i);
-		OUTPUT_SLICE (0, "push byte ptr [0x%lx]", old_address+i); 
+		OUTPUT_SLICE (0, "push dword ptr [0x%lx]", old_address+i); 
 		OUTPUT_SLICE_INFO ("for mremap");
-		OUTPUT_SLICE (0, "pop byte ptr [0x%lx]", new_address+i); 
+		OUTPUT_SLICE (0, "pop dword ptr [0x%lx]", new_address+i); 
 		OUTPUT_SLICE_INFO ("for mremap");
-		set_mem_taints (new_address + i, 1, taints);
+		set_mem_taints (new_address + i, 4, taints);
+		add_modified_mem_for_final_check ((u_long) new_address+i, 4);		
 	    }
 	}   
     }
@@ -2473,7 +2479,9 @@ TAINTSIGN debug_print_instr (ADDRINT ip, char* str) {
 	fprintf (stderr, "%s\n",str);
 }
 
+#ifndef OPTIMIZED
 u_long debug_counter = 0;
+#endif
 u_long jump_count = 0;
 
 static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
@@ -2484,12 +2492,16 @@ static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size)
 	if (is_mem_tainted(mem_loc+i, 1)) {
 	    OUTPUT_SLICE_VERIFICATION ("cmp byte ptr [0x%lx], 0x%x", mem_loc+i, *(u_char *) (mem_loc+i));
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip);
+#ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++);
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
 	    OUTPUT_SLICE_VERIFICATION ("jne index_diverge");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
 	}
     }
     OUTPUT_SLICE_VERIFICATION ("popfd");
@@ -2503,12 +2515,16 @@ static inline void verify_register (ADDRINT ip, int reg, uint32_t reg_size, uint
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
     OUTPUT_SLICE_VERIFICATION ("cmp %s,0x%x", regName(reg, reg_size), reg_value);
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip);
+#ifndef OPTIMIZED
     OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++);
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x clock %ld bb %lld expected address %lx", ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, mem_loc);
+#endif
     OUTPUT_SLICE_VERIFICATION ("jne index_diverge");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#ifndef OPTIMIZED
     OUTPUT_SLICE_VERIFICATION ("add esp, 4");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
     OUTPUT_SLICE_VERIFICATION ("popfd");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards)", ip); 
     memset (&current_thread->shadow_reg_table[reg*REG_SIZE+reg_u8], 0, reg_size*sizeof(taint_t)); // No longer tainted because we verified it
@@ -2530,16 +2546,20 @@ static inline void print_range_verification (ADDRINT ip, char* ins_str, u_long s
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
     OUTPUT_SLICE_VERIFICATION ("cmp eax, 0x%lx", start);
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#ifndef OPTIMIZED
     OUTPUT_SLICE_VERIFICATION ("push 0x%lx", debug_counter++); 
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x clock %ld bb %lld expected range %lx to %lx", ip, *ppthread_log_clock, current_thread->ctrl_flow_info.index, start, end-1);
+#endif
     OUTPUT_SLICE_VERIFICATION ("jb index_diverge");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
     OUTPUT_SLICE_VERIFICATION ("cmp eax, 0x%lx", end);
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
     OUTPUT_SLICE_VERIFICATION ("jae index_diverge");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#ifndef OPTIMIZED
     OUTPUT_SLICE_VERIFICATION ("add esp, 4");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
     OUTPUT_SLICE_VERIFICATION ("pop eax");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
     OUTPUT_SLICE_VERIFICATION ("popfd");
@@ -3290,10 +3310,10 @@ TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t m
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX_WRITE_RANGE;
-    int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+
     if (still_tainted) {
 	OUTPUT_SLICE (ip, "%s", ins_str);
-	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
+	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u", mem_loc, is_mem_tainted (mem_loc, mem_size), mem_size, get_mem_value32 (mem_loc, mem_size));
     } else if (is_in_shared_memory (mem_loc)) {
 	print_abs_address (ip, ins_str, mem_loc);      
 	OUTPUT_SLICE_INFO ("untainted write to shared memory");
@@ -3941,16 +3961,20 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	    for (; *p != ' '; p++, t++) *t = *p;
 	    *t++ = ' ';
 	    strcpy (t, "jump_diverge");
+#ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION ("pushfd");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE_VERIFICATION ("push %ld", jump_count++);
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
             OUTPUT_SLICE (ip, "%s", change_str);
             OUTPUT_SLICE_INFO ("#src_flag[FM%x:1:4] #branch_taken %d", mask, (int) taken);
+#ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE_VERIFICATION ("popfd");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
+#endif
 #ifdef TRACK_CTRL_FLOW_DIVERGE
         }
 #endif 
@@ -4029,25 +4053,25 @@ TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t reg
 #endif
 
     if (is_reg_tainted (reg, regsize, 0)) {
-#if 0
-        if (!current_thread->ctrl_flow_info.is_in_diverged_branch && current_thread->ctrl_flow_info.change_jump) { 
-            current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
-        } else if (current_thread->ctrl_flow_info.is_in_diverged_branch && current_thread->ctrl_flow_info.change_jump) { 
-	    current_thread->ctrl_flow_info.change_jump = false; // We've already replaced this jump with divergence 
-        } else {
-#endif
+#ifdef OPTIMIZED
+	jump_count++;
+#else
 	    OUTPUT_SLICE_VERIFICATION ("pushfd");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE_VERIFICATION ("push %ld", jump_count++);
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
-
+#endif
 	    if (!strncmp(ins_str, "jcxz ", 5)) {
 		if (taken) {
 		    /* No opposite branch */
 		    OUTPUT_SLICE (ip, "jcxz b_jcxz_%lu", jump_count);
 		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 1", reg, regsize, is_reg_tainted(reg, regsize, 0));
 		    OUTPUT_SLICE (ip, "jmp jump_diverge");
+#ifdef OPTIMIZED
+		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu: ", jump_count);
+#else
 		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu: add esp, 4", jump_count);
+#endif
 		} else {
 		    OUTPUT_SLICE (ip, "jcxz b_jcxz_%lu_1", jump_count);
 		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 0", reg, regsize, is_reg_tainted(reg, regsize, 0));
@@ -4055,7 +4079,11 @@ TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t reg
 		    OUTPUT_SLICE_INFO ("");
 		    OUTPUT_SLICE (ip, "b_jcxz_%lu_1: jmp jump_diverge", jump_count);
 		    OUTPUT_SLICE_INFO ("");
+#ifdef OPTIMIZED
+		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu_2", jump_count);
+#else
 		    OUTPUT_SLICE_VERIFICATION ("b_jcxz_%lu_2: add esp, 4", jump_count);
+#endif
 		}
 	    } else if (!strncmp(ins_str, "jecxz ", 6)) {
 		if (taken) {
@@ -4064,7 +4092,11 @@ TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t reg
 		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 1", reg, regsize, is_reg_tainted(reg, regsize, 0));
 		    OUTPUT_SLICE (ip, "jmp jump_diverge");
 		    OUTPUT_SLICE_INFO ("");
+#ifdef OPTIMIZED
+		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu:", jump_count);
+#else
 		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu: add esp, 4", jump_count);
+#endif
 		} else {
 		    OUTPUT_SLICE (ip, "jecxz b_jecxz_%lu_1", jump_count);
 		    OUTPUT_SLICE_INFO ("#src_reg[%d:%d:%d] #branch_taken 0", reg, regsize, is_reg_tainted(reg, regsize, 0));
@@ -4072,22 +4104,21 @@ TAINTSIGN fw_slice_condregjump (ADDRINT ip, char* ins_str, int reg, uint32_t reg
 		    OUTPUT_SLICE_INFO ("");
 		    OUTPUT_SLICE (ip, "b_jecxz_%lu_1: jmp jump_diverge", jump_count);
 		    OUTPUT_SLICE_INFO ("");
+#ifdef OPTIMIZED
+		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu_2:", jump_count);
+#else
 		    OUTPUT_SLICE_VERIFICATION ("b_jecxz_%lu_2: add esp, 4", jump_count);
+#endif
 		}
 	    } else {
 		fprintf (stderr, "unhandled register-based conditional jump: %s\n", ins_str);
 		assert (0);
 	    }
-
+#ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 	    OUTPUT_SLICE_VERIFICATION ("popfd");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
-#if 0
-        }
-    } else { 
-	if (current_thread->ctrl_flow_info.change_jump) fprintf (stderr, "Diverge at non-tainted jump: %x %s mask %x\n", ip, ins_str, mask);
-        assert (current_thread->ctrl_flow_info.change_jump == false); //we diverge at a non-tainted jump??
-#endif 
+#endif
     }
 }
 
