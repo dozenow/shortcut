@@ -1255,11 +1255,15 @@ static inline int
 is_pin_attached (void)
 {
 	if (current->replay_thrd == NULL) {
+#ifdef NO_TIMING
 		printk ("pid %d: is_pin_attached: NULL replay thrd\n", current->pid);
+#endif
 		return 0;
 	}
 	if (current->replay_thrd->rp_group == NULL) {
+#ifdef NO_TIMING
 		printk ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
+#endif
 		return 0;
 	}
 	return (current->replay_thrd->rp_group->rg_attach_device == ATTACH_PIN 
@@ -2102,15 +2106,19 @@ destroy_replay_group (struct replay_group *prepg)
 #ifdef REPLAY_STATS
 	atomic_inc(&rstats.finished);
 #endif
+#ifdef NO_TIMING
 	printk ("Goodbye, cruel lamp!  This replay is over\n");
 	{
 		struct rusage ru;
 		mm_segment_t old_fs = get_fs();
+		struct timeval tv;
+		do_gettimeofday (&tv);
 		set_fs (KERNEL_DS);
 		sys_getrusage (RUSAGE_SELF, &ru);
-		printk ("user %ld, kernel %ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+		printk ("user %ld, kernel %ld, time %ld.%06ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec, tv.tv_sec, tv.tv_usec);
 		set_fs (old_fs);
 	}
+#endif
 	MPRINT ("Pid %d destroy replay group %p: exit\n", current->pid, prepg);
 }
 
@@ -4547,11 +4555,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	if (PRINT_TIME) {
+	//if (PRINT_TIME) {
+#ifdef NO_TIMING
+	if (1) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
+		printk ("Pid %d replay_full_ckpt_wakeup starts %ld.%06ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
 	}
+#endif
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4718,7 +4729,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 			//run slice jumps back to the user space
 			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
-			if (PRINT_TIME) {
+			//if (PRINT_TIME) {
+#ifdef NO_TIMING
+			if (1) {
 				struct rusage ru;
 				mm_segment_t old_fs = get_fs();
 				set_fs (KERNEL_DS);
@@ -4726,8 +4739,9 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				set_fs (old_fs);
 
 				do_gettimeofday (&tv);
-				printk ("Pid %d returns from start_fw_slice, now executing slice, %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+				printk ("Pid %d returns from start_fw_slice %ld.%06ld, user %ld kernel %ld, threads %lu %d\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec, num_procs, atomic_read(&go_live_clock->num_threads));
 			}
+#endif
                         go_live_clock->replay_group = replay_group;
 		}
 
@@ -7006,7 +7020,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 asmlinkage long
 sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, void __user * pthread_clock_map)
 {
-	printk ("sys_pthread_init: pid %d log_status is %p\n", current->pid, status);
+	MPRINT ("sys_pthread_init: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
 		put_user (1, status);
@@ -7063,7 +7077,7 @@ sys_pthread_log (u_long log_addr, int __user * ignore_addr)
 		read_user_log (current->replay_thrd->rp_record_thread);
 		MPRINT ("Read user log into address %lx for thread %d\n", log_addr, current->pid);
 	} else {
-		printk ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
+		SLICE_DEBUG ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
 		return -EINVAL;
 	}
 	return 0;
@@ -7151,7 +7165,7 @@ sys_pthread_block (u_long clock)
 	int original_status = -1; 
 	int is_restart = 0;
 	if (!current->replay_thrd) {
-		printk ("sys_pthread_block called by non-replay process %d\n", current->pid);
+		SLICE_DEBUG ("sys_pthread_block called by non-replay process %d\n", current->pid);
 		return -EINVAL;
 	}
 	prt = current->replay_thrd;
@@ -7357,7 +7371,7 @@ asmlinkage long sys_pthread_full (void)
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
-	printk ("sys_pthread_status: pid %d log_status is %p\n", current->pid, status);
+	MPRINT ("sys_pthread_status: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {
@@ -8184,7 +8198,7 @@ asmlinkage long trace_exit (int error_code) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:exit\n", current->pid, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:exit\n", current->pid, tp.tv_sec, tp.tv_nsec);
 	}
 	return sys_exit (error_code);
 }
@@ -9442,24 +9456,27 @@ replay_open (const char __user * filename, int flags, int mode)
 }
 
 #ifdef TRACE_TIMINGS
+atomic_t last_pid; //only for gcc
+atomic_t last_open_fd; //only for gcc
 static asmlinkage long
 trace_open (const char __user* filename, int flags, int mode) {
 	long rc = sys_open (filename, flags, mode);
-	//printk ("trace_open called %d\n", trace_timings);
-	//if (strstr (filename, ".class")) {
-	//if (strstr (filename, "currency.data")) {
-		if (trace_timings && rc > 0) {
-			struct timespec tp;
-			struct rusage ru;
+	if (trace_timings && rc > 0) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+		if (strstr (filename, ".o")) {
 			mm_segment_t old_fs = get_fs();
-			getnstimeofday(&tp);
-			printk ("%d:%ld.%ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+			struct rusage ru;
 			set_fs (KERNEL_DS);
 			sys_getrusage (RUSAGE_SELF, &ru);
-			printk ("user %ld, kernel %ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
 			set_fs (old_fs);
+		} else if (strstr (filename, ".h")) { 
+			atomic_set (&last_pid, current->pid);
+			atomic_set (&last_open_fd, rc);
 		}
-	//}
+	}
 	return rc;
 }
 asmlinkage long shim_open (const char __user * filename, int flags, int mode) SHIM_CALL_MAIN(5, record_open(filename, flags, mode), replay_open(filename, flags, mode), trace_open(filename, flags, mode));
@@ -9523,7 +9540,32 @@ replay_close (int fd)
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long 
+trace_close (int fd) 
+{
+	long rc = sys_close (fd);
+	if (trace_timings && rc == 0) { 
+		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid) { 
+			struct timespec tp;
+			mm_segment_t old_fs = get_fs();
+			struct rusage ru;
+
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%09ld:close fd %d\n", current->pid, tp.tv_sec, tp.tv_nsec, fd);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	}
+	return rc;
+
+}
+asmlinkage long shim_close (int fd) SHIM_CALL_MAIN (6, record_close(fd), replay_close (fd), trace_close(fd));
+#else
 asmlinkage long shim_close (int fd) SHIM_CALL (close, 6, fd);
+#endif
 
 #ifdef TRACE_TIMINGS
 asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) { 
@@ -9531,13 +9573,13 @@ asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+		printk ("%d:%ld.%09ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
 	rc = sys_waitpid (pid, stat_addr, options);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+		printk ("%d:%ld.%09ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
 	return rc;
 }
@@ -9929,7 +9971,7 @@ static int trace_execve (const char *filename, const char __user *const __user *
 		int count = 0;
 
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:execve filename %s, argv ", current->pid, tp.tv_sec, tp.tv_nsec, filename);
+		printk ("%d:%ld.%09ld:execve filename %s, argv ", current->pid, tp.tv_sec, tp.tv_nsec, filename);
 		up = __argv;
 		do { 
 			if (get_user (pc, up)) {
@@ -10755,7 +10797,7 @@ record_munmap (unsigned long addr, size_t len)
 	rc = sys_munmap (addr, len);
 	new_syscall_done (91, rc);
 	new_syscall_exit (91, NULL);
-	printk ("Pid %d records munmap of addr %lx len %u returning %ld\n", current->pid, addr, len, rc);
+	MPRINT ("Pid %d records munmap of addr %lx len %u returning %ld\n", current->pid, addr, len, rc);
 	rg_unlock(current->record_thrd->rp_group);
 
 	return rc;
@@ -11740,13 +11782,13 @@ asmlinkage long trace_wait4 (pid_t upid, int __user* stat_addr, int options, str
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:wait4_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:wait4_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	rc = sys_wait4 (upid, stat_addr, options, ru);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:wait4_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:wait4_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	return rc;
 }
@@ -12404,10 +12446,15 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
 	long rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
 	if (trace_timings) {
+		mm_segment_t old_fs = get_fs();
+		struct rusage ru;
 		struct timespec tp;
+		set_fs (KERNEL_DS);
+		sys_getrusage (RUSAGE_SELF, &ru);
+		set_fs (old_fs);
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:clone rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
-		printk ("%ld:%ld.%ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_stime.tv_usec, ru.ru_stime.tv_usec);
+		printk ("%ld:%ld.%09ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
 }
@@ -14163,8 +14210,8 @@ long trace_vfork(unsigned long vfork_flags, unsigned long stack_start, struct pt
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:vfork rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
-		printk ("%ld:%ld.%ld:vfork child process\n", rc, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:vfork rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
+		printk ("%ld:%ld.%09ld:vfork child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
 }
@@ -14986,7 +15033,7 @@ asmlinkage long trace_exit_group (int error_code) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:exit_group\n", current->pid, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:exit_group\n", current->pid, tp.tv_sec, tp.tv_nsec);
 	}
 	return sys_exit_group (error_code);
 }
@@ -15238,13 +15285,13 @@ asmlinkage long trace_waitid (int which, pid_t upid, struct siginfo __user* info
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	rc = sys_waitid (which, upid, infop, options, ru);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	return rc;
 }

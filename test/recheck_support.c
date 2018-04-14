@@ -33,10 +33,10 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
-#define SLICE_VM_DUMP
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
+//#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
@@ -121,7 +121,7 @@ inline void print_timings (void)
 #define end_timing_func(x)
 #endif
 
-static char buf[2*1024*1024];
+static char buf[8*1024*1024];
 static char tmpbuf[1024*1024];
 static char taintbuf_filename[256];
 #ifdef PRINT_VALUES
@@ -973,6 +973,157 @@ long recv_recheck ()
     return pentry->retval;
 }
 
+long recvfrom_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct recvfrom_recheck* precv;
+    struct sockaddr* ret_sockaddr = NULL;
+    socklen_t ret_addrlen = 0;
+    long rc;
+    int i;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    precv = (struct recvfrom_recheck *) bufptr;
+    if (precv->addrlen_value) {
+        ret_sockaddr = (struct sockaddr*) (bufptr + sizeof (struct recvfrom_recheck));
+        ret_addrlen= precv->addrlen_value;
+    }
+    char* recvData = bufptr + sizeof(struct recvfrom_recheck) + precv->addrlen_value;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ("recvfrom: sockfd %d buf %p len %d flags %d returns %ld clock %lu buffer offset %ld, returned addrlen %d\n", 
+	    precv->sockfd, precv->buf, precv->len, precv->flags, pentry->retval, pentry->clock, (u_long) precv - (u_long) buf, precv->addrlen_value);
+#endif
+
+    if (pentry->retval == -EAGAIN) {
+	errno = EAGAIN;
+	return -1;
+    }
+
+    u_long block[6];
+    block[0] = precv->sockfd;
+
+    // Keep receiving until we get enough bytes
+    u_long bytes_received = 0;
+    do {
+	block[1] = (u_long) precv->buf + bytes_received;
+	if (pentry->retval > 0 && pentry->retval - bytes_received < precv->len) {
+	    block[2] = pentry->retval - bytes_received;
+	} else {
+	    block[2] = precv->len;
+	}
+	block[3] = precv->flags;
+        block[4] = (u_long) tmpbuf;
+        block[5] = (u_long) &ret_addrlen;
+
+	int tries = 0;
+	do {
+	    start_timing();
+	    rc = syscall(SYS_socketcall, SYS_RECV, &block);
+	    DPRINT ("recvfrom: returns %ld errno %d\n", rc, errno);
+	    end_timing (SYS_socketcall, rc);
+	    if (rc == -1 && errno == 11 && pentry->retval > 0) {
+		tries++;
+		DPRINT ("recvfrom: try again?\n");
+		    usleep (1000);
+	    }
+	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 5);
+
+	if (rc <= 0) break;
+	bytes_received += rc;
+
+    } while (bytes_received < pentry->retval || pentry->retval < 0);
+
+    if (rc < 0) check_retval ("recvfrom", pentry->clock, pentry->retval, rc);
+
+    if (rc > 0) {
+#ifdef PRINT_DEBUG
+	print_buffer_hex (precv->buf, pentry->retval);
+	print_buffer_hex ((u_char *) recvData, pentry->retval);
+#endif
+
+	DPRINT ("About to compare %p and %p partial_read_cnt %d\n", precv->buf, recvData, precv->partial_read_cnt);
+	if (precv->partial_read_cnt > 0) {
+	    u_long bytes_so_far = 0;
+	    int i;
+	    for (i = 0; i < precv->partial_read_cnt; i++) {
+		if (precv->partial_read_starts[i] > bytes_so_far) {
+		    if (memcmp (precv->buf+bytes_so_far, recvData+bytes_so_far, precv->partial_read_starts[i]-bytes_so_far)) {
+			int j;
+			LPRINT ("[MISMATCH] partial recvfrom %lu start %d returns different values - read/expected:\n", pentry->clock, i);
+			for (j = bytes_so_far; j < precv->partial_read_starts[i]; j++) {
+			    if (((char *)precv->buf)[j] != recvData[j]) {
+				LPRINT ("%d ", j);
+			    }
+			}
+			LPRINT ("\n");
+			handle_mismatch();
+		    }
+		} 
+		bytes_so_far = precv->partial_read_ends[i];
+	    }
+	    if (precv->partial_read_ends[precv->partial_read_cnt-1] < pentry->retval) {
+		if (memcmp (precv->buf+precv->partial_read_ends[precv->partial_read_cnt-1], 
+			    recvData+precv->partial_read_ends[precv->partial_read_cnt-1], 
+			    pentry->retval-precv->partial_read_ends[precv->partial_read_cnt-1])) {
+		    LPRINT ("[MISMATCH] partial recvfrom %lu end returns different values - read/expected:\n", pentry->clock);
+		    for (i = precv->partial_read_ends[precv->partial_read_cnt-1]; i < pentry->retval; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    handle_mismatch();
+		}
+	    }
+	    add_to_taintbuf (pentry, RETBUF, precv->buf, pentry->retval);
+	} else {
+	    if (memcmp (precv->buf, recvData, pentry->retval)) {
+		LPRINT ("[MISMATCH] recvfrom %lu returns different values - read/expected:\n", pentry->clock);
+		if (memcmp (precv->buf, recvData, pentry->retval)) {
+		    for (i = 0; i < pentry->retval; i++) {
+			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
+			if (i%16 == 15) LPRINT ("\n");
+		    }
+		    LPRINT ("\n");
+		    for (i = 0; i < pentry->retval; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    LPRINT ("\n");
+		    handle_mismatch();
+		}
+	    }
+	}
+#ifdef PRINT_DEBUG
+        LPRINT ("returedn addrlen size is %d\n", ret_addrlen);
+        print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
+        print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
+        {
+            int i = 0;
+            for (; i<ret_addrlen; ++i) {
+                LPRINT ("tmp[%d] = %d;\n", i, tmpbuf[i]);
+            }
+        }
+#endif
+        //Now compare the returned src_addr and addrlen
+        if (precv->addrlen_value > 0) { 
+            if (precv->addrlen_value != ret_addrlen || memcmp (tmpbuf, ret_sockaddr, precv->addrlen_value)) { 
+                LPRINT ("[MISMATCH] recvfrom has different returned sockaddr or addrlen is different, recorded addrlen %d current addrlen %d\n", precv->addrlen_value, ret_addrlen);
+#ifdef PRINT_DEBUG
+                print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
+                print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
+#endif
+                handle_mismatch();
+            }
+        }
+    }
+    end_timing_func (SYS_socketcall);
+
+    return pentry->retval;
+}
+
+
 long recvmsg_recheck ()
 {
     struct recheck_entry* pentry;
@@ -1277,6 +1428,54 @@ long send_recheck ()
     rc = syscall(SYS_socketcall, SYS_SEND, &block);
     end_timing(SYS_socketcall, rc);
     check_retval ("send", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_socketcall);
+    return rc;
+}
+
+long sendto_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct sendto_recheck* psend;
+    char* data;
+    struct sockaddr* dest_addr;
+    char* psendbuf;
+    char* sockaddrbuf = NULL;
+    int rc;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    psend = (struct sendto_recheck *) bufptr;
+    dest_addr = (struct sockaddr*) (bufptr + sizeof(struct sendto_recheck));
+    data = (char*)dest_addr + psend->addrlen * 2;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "sendto: sockfd %d buf %p len %d flags %d rc %ld sockaddr %x addrlen %d clock %lu\n", psend->sockfd, psend->buf, psend->len, psend->flags, pentry->retval, (int )psend->dest_addr, psend->addrlen, pentry->clock);
+#endif
+
+    if (psend->dest_addr)
+        sockaddrbuf = fill_taintedbuf ((char*) dest_addr, (char*) psend->dest_addr, psend->addrlen);
+    psendbuf = fill_taintedbuf (data, psend->buf, psend->len);
+
+#ifdef PRINT_DEBUG
+    LPRINT ("sendto sockaddr:\n");
+    print_buffer_hex ((u_char*) sockaddrbuf, psend->addrlen);
+    LPRINT ("sendto content:\n");
+    print_buffer_hex ((u_char*) psendbuf, psend->len);
+#endif
+    u_long block[6];
+    block[0] = psend->sockfd;
+    block[1] = (u_long) psendbuf;
+    block[2] = psend->len;
+    block[3] = psend->flags;
+    block[4] = (u_long) sockaddrbuf;
+    block[5] = psend->addrlen;
+    start_timing();
+    rc = syscall(SYS_socketcall, SYS_SENDTO, &block);
+    end_timing(SYS_socketcall, rc);
+    check_retval ("sendto", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_socketcall);
     return rc;
 }
@@ -2431,13 +2630,10 @@ static inline long connect_or_bind_recheck (int call, char* call_name)
     LPRINT ( "%s: sockfd %d addlen %d rc %ld clock %lu\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval, pentry->clock);
 #endif 
     inaddr = fill_taintedbuf (addr, (char *) pconnect->addr, pconnect->addrlen);
-    LPRINT ("address is \n");
-    {
-        int i = 0;
-        for (; i<pconnect->addrlen; ++i) { 
-            LPRINT ("tmp[%d] = %d\n", i, inaddr[i]);
-        }
-    }
+
+#ifdef PRINT_DEBUG
+    print_buffer_hex ((u_char*) inaddr, pconnect->addrlen);
+#endif
 
     block[0] = pconnect->sockfd;
     block[1] = (u_long) inaddr;
