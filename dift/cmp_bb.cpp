@@ -20,10 +20,10 @@
 #include <unordered_set>
 using namespace std;
 
-//#define DPRINT(...)
+#define DPRINT(...)
 #define MYASSERT(c)
 #define OP_CHECK(val) get_value()
-#define DPRINT(args...) fprintf(stderr,args)
+//#define DPRINT(args...) fprintf(stderr,args)
 //#define DPRINT(x) printf 
 //#define MYASSERT assert
 //#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("line %d Expected %x got %lx syscall %ld bb_cnt %ld\n", __LINE__, val, lval, *ppthread_log_clock, bb_cnt); debug_print_value (); /*fail_and_exit();*/ } }

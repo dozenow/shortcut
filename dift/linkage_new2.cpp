@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG  2670
-//#define EXTRA_DEBUG_STOP 2710
+//#define EXTRA_DEBUG /3700
+//#define EXTRA_DEBUG_STOP 3800
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -130,6 +130,8 @@ int tokens_fd = -1;
 int outfd = -1;
 int xoutput_fd = -1;
 unsigned long long inst_count = 0;
+extern unsigned long handled_jump_divergence;
+extern unsigned long handled_index_divergence;
 int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
@@ -437,6 +439,7 @@ static int dift_done ()
     terminated = 1;
     PIN_UnlockClient();
     fprintf(stderr, "%d: in dift_done\n",PIN_GetTid());
+    fprintf (stderr, "inst count %llu, handled jump divergence %lu, handled index divergence %lu\n", inst_count, handled_jump_divergence, handled_index_divergence); 
 
 #ifdef USE_FILE
     char taint_structures_file[256];
@@ -1638,6 +1641,113 @@ static void sys_recv_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
+static void sys_recvfrom_start(thread_data* tdata, int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, socklen_t* addrlen)
+{
+    // recv and read are similar so they can share the same info struct
+    // recv reads data into place - taint must be specified partially
+    // recvfrom has two more return values stored in src_addr and addrlen; I'll verify these two return values in recheck_support.c for now 
+    // recvfrom must be rechecked at the end of the syscall as there are return values stored in addrlen and src_addr
+    struct read_info* ri = (struct read_info*) &tdata->op.read_info_cache;
+    ri->fd = sockfd;
+    ri->buf = (char *)buf;
+    struct recvfrom_info* info = (struct recvfrom_info*) malloc (sizeof(struct recvfrom_info));
+    info->sockfd = sockfd;
+    info->buf = buf;
+    info->len = len;
+    info->flags = flags;
+    info->src_addr = src_addr;
+    info->addrlen = addrlen;
+    tdata->save_syscall_info = (void *) info;
+}
+
+static void sys_recvfrom_stop(int rc) 
+{
+    struct read_info* ri = (struct read_info *) &current_thread->op.read_info_cache;
+    struct recvfrom_info* info = (struct recvfrom_info*)current_thread->save_syscall_info;
+    LOG_PRINT ("Pid %d syscall recvfrom returns %d\n", PIN_GetPid(), rc);
+    int sockfd = info->sockfd;
+    void* buf = info->buf;
+    size_t len = info->len;
+    int flags = info->flags;
+    struct sockaddr* src_addr = info->src_addr;
+    socklen_t* addrlen = info->addrlen;
+
+
+    if (current_thread->recheck_handle) {
+	OUTPUT_SLICE(0, "call recvfrom_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+
+	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
+	int regions;
+	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends)) > 0) {
+	    if (regions > 0) {
+		int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, regions, starts, ends, *ppthread_log_clock);
+		if (retlen > 0) {
+		    clear_mem_taints ((u_long)buf, retlen); 
+		    add_modified_mem_for_final_check ((u_long)buf, retlen);
+		    for (int i = 0; i < regions; i++) {
+			fprintf (stderr, "partial recvfrom taint: %u %u\n", starts[i], ends[i]);
+			OUTPUT_TAINT_INFO_THREAD (current_thread, "recvfrom %lx %lx", (u_long) buf+starts[i], (u_long) ends[i]-starts[i]);  
+		    }
+		}
+	    }
+	} else {
+	    int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, 0, 0, 0, *ppthread_log_clock);
+	    if (retlen > 0) {
+		clear_mem_taints ((u_long)buf, retlen); 
+		add_modified_mem_for_final_check ((u_long)buf, retlen);
+	    }
+	}
+        if (addrlen) {
+            add_modified_mem_for_final_check ((u_long) src_addr, *addrlen);
+            add_modified_mem_for_final_check ((u_long) addrlen, sizeof(socklen_t));
+        }
+    }
+
+    // If syscall cnt = 0, then write handled in previous epoch
+    if (rc > 0) {
+        struct taint_creation_info tci;
+        char* channel_name = (char *) "--";
+        int read_fileno = -1;
+        if(ri->fd == fileno(stdin)) {
+            read_fileno = 0;
+            channel_name = (char *) "stdin";
+        } else if (monitor_has_fd(open_socks, ri->fd)) {
+            struct socket_info* si;
+            si = (struct socket_info *) monitor_get_fd_data(open_socks, ri->fd);
+            read_fileno = si->fileno;
+            // FIXME
+	    if (si->domain == AF_INET || si->domain == AF_INET6) {
+		channel_name = (char *) "inetsocket";
+	    } else {
+		channel_name = (char *) "recvsocket";
+	    }
+	    //not sure why we'd need this... but I can't get the filter inets to work out for me
+        }
+
+	else if (monitor_has_fd(open_fds, ri->fd)) {
+            struct open_info* oi;
+            oi = (struct open_info *)monitor_get_fd_data(open_fds, ri->fd);
+            read_fileno = oi->fileno;
+            channel_name = oi->name;
+        }
+
+        tci.rg_id = current_thread->rg_id;
+        tci.record_pid = current_thread->record_pid;
+        tci.syscall_cnt = current_thread->syscall_cnt;
+        tci.offset = 0;
+        tci.fileno = read_fileno;
+        tci.data = 0;
+	tci.type = TOK_RECV;
+
+        create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+    }
+    memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
+    free (current_thread->save_syscall_info);
+    current_thread->save_syscall_info = 0;
+}
+
+
 static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msghdr* msg, int flags) 
 {
     struct recvmsg_info* rmi;
@@ -1848,6 +1958,68 @@ static void sys_send_stop(int rc)
     }
     free(si);
 }
+
+static void sys_sendto_start(struct thread_data* tdata, int sockfd, char* msg, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t addrlen)
+{
+    struct write_info* si;
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE(0, "call sendto_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	recheck_sendto (tdata->recheck_handle, sockfd, msg, len, flags, dest_addr, addrlen, *ppthread_log_clock);
+    }
+    si = (struct write_info *) malloc(sizeof(struct write_info));
+    if (si == NULL) {
+	fprintf (stderr, "Unable to malloc sendmsg_info\n");
+	assert (0);
+    }
+    si->fd = sockfd;
+    si->buf = msg;
+
+    tdata->save_syscall_info = (void *) si;
+}
+
+static void sys_sendto_stop(int rc)
+{
+    struct write_info* si = (struct write_info *) current_thread->save_syscall_info;
+    int channel_fileno = -1;
+
+    if (rc > 0) {
+	if (*ppthread_log_clock >= filter_outputs_before) {
+	    struct taint_creation_info tci;
+	    
+	    if (monitor_has_fd(open_fds, si->fd)) {
+		struct open_info* oi;
+		oi = (struct open_info *) monitor_get_fd_data(open_fds, si->fd);
+		assert(oi);
+		channel_fileno = oi->fileno;
+	    } else if (si->fd == fileno(stdout)) {
+		channel_fileno = FILENO_STDOUT;
+	    } else if (si->fd == fileno(stderr)) {
+		channel_fileno = FILENO_STDERR;
+	    } else if (si->fd == fileno(stdin)) {
+		channel_fileno = FILENO_STDIN;
+	    } else {
+		channel_fileno = -1;
+	    }
+	    tci.type = 0;
+	    tci.rg_id = current_thread->rg_id;
+	    tci.record_pid = current_thread->record_pid;
+	    tci.syscall_cnt = current_thread->syscall_cnt;
+	    if (!current_thread->syscall_in_progress) {
+		tci.syscall_cnt--; // Weird restart issue
+	    }
+	    tci.offset = 0;
+	    tci.fileno = channel_fileno;
+	    
+	    LOG_PRINT ("Output buffer result syscall %u, %#lx\n", tci.syscall_cnt, (u_long) si->buf);
+	    if (produce_output) { 
+		output_buffer_result (si->buf, rc, &tci, outfd);
+	    }
+	}
+    }
+    free(si);
+}
+
 
 static void sys_setsockopt_start (struct thread_data* tdata, int sockfd, int level, int optname, const void* optval, socklen_t optlen)
 {
@@ -2607,6 +2779,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
                 case SYS_SENDMSG:
                     sys_sendmsg_start(tdata, (int)args[0], (struct msghdr *)args[1], (int)args[2]);
                     break;
+	        case SYS_SENDTO:
+                    sys_sendto_start(tdata, (int)args[0], (char *)args[1], (size_t)args[2], (int)args[3], (const struct sockaddr*)args[4], (socklen_t) args[5]);
+		    break;
+                case SYS_RECVFROM:
+                    sys_recvfrom_start(tdata, (int)args[0], (char *)args[1], (size_t)args[2], (int)args[3], (struct sockaddr*)args[4], (socklen_t*) args[5]);
+                    break;
 	        case SYS_SEND:
                     sys_send_start(tdata, (int)args[0], (char *)args[1], (size_t)args[2], (int)args[3]);
 		    break;
@@ -2893,6 +3071,12 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 		    break;
                 case SYS_SENDMSG:
                     sys_sendmsg_stop(rc);
+                    break;
+                case SYS_SENDTO:
+                    sys_sendto_stop(rc);
+                    break;
+                case SYS_RECVFROM:
+                    sys_recvfrom_stop (rc);
                     break;
     	        case SYS_SEND:
 		    sys_send_stop(rc);
@@ -4418,7 +4602,7 @@ static void instrument_mov (INS ins)
 	REG dstreg = INS_OperandReg(ins, 0);
         if(!INS_OperandIsReg(ins, 1)) {
             //mov immediate value into register
-	    instrument_taint_clear_reg (ins, dstreg, 0, 0);
+	    instrument_taint_clear_reg (ins, dstreg, -1, -1);
         } else {
             //mov one reg val into another
 	    REG reg = INS_OperandReg(ins, 1);
@@ -4709,7 +4893,7 @@ static void instrument_lea(INS ins)
         assert(REG_Size(base_reg) == REG_Size(dstreg));
 	instrument_taint_reg2reg (ins, dstreg, base_reg, 0);
     } else { 
-	instrument_taint_clear_reg (ins, dstreg, 0, 0);
+	instrument_taint_clear_reg (ins, dstreg, -1, -1);
     }
 }
 
@@ -6313,6 +6497,31 @@ void instruction_instrumentation(INS ins, void *v)
                 instrument_fpu_calc (ins, FP_POP);
                 slice_handled = 1;
                 break;
+            case XED_ICLASS_FINCSTP:
+                {
+                    //ignore this currently as we should have handled the stack top mismatch problem (mismatch between slice and original execution)
+                    /*
+                    char* str = get_copy_of_disasm (ins);
+                    INS_InsertCall (ins, IPOINT_BEFORE , 
+                            AFUNPTR (fw_slice_fpu_incstp), 
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_PTR, str, 
+                            IARG_CONST_CONTEXT, 
+                            IARG_END);
+                    put_copy_of_disasm (str);*/
+                    slice_handled = 1;
+                }
+                break;
+            case XED_ICLASS_FNSTSW:
+            case XED_ICLASS_FNSTCW:
+                if (INS_OperandIsMemory (ins, 0)) { 
+                    instrument_taint_clear_mem (ins);
+                } else { 
+                    instrument_taint_clear_reg (ins, INS_OperandReg (ins, 0), -1, -1);
+                }
+                slice_handled = 1;
+                break;
             case XED_ICLASS_FMUL:
             case XED_ICLASS_FIMUL:
             case XED_ICLASS_FADD:
@@ -6381,7 +6590,6 @@ void instruction_instrumentation(INS ins, void *v)
 		break;
 	    case XED_ICLASS_FWAIT:
             case XED_ICLASS_FLDCW:
-            case XED_ICLASS_FNSTCW:
 	    case XED_ICLASS_PREFETCHNTA:
                 //ignored
                 slice_handled = 1;
@@ -6516,6 +6724,11 @@ static void instrument_print_inst_dest (INS ins)
     }
 }
 
+void PIN_FAST_ANALYSIS_CALL count_instruction ()
+{
+    ++inst_count;
+}
+
 void trace_instrumentation(TRACE trace, void* v)
 {
     struct timeval tv_end, tv_start;
@@ -6558,6 +6771,11 @@ void trace_instrumentation(TRACE trace, void* v)
 		track_this_bb = true;
             }
 #endif
+
+            INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(count_instruction), 
+                    IARG_FAST_ANALYSIS_CALL, 
+                    IARG_END);
+
 	    instruction_instrumentation (ins, NULL);
 	}
     }
@@ -7231,6 +7449,41 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 		env += strlen(env)+1;
 	    }
 	}
+#endif
+
+#if 0
+        //xdou: test 
+        //try to taint the last argument
+        int acc = 0;
+        char** args;
+        struct taint_creation_info tci;
+
+        fprintf(stderr, "This is only for testing\n");
+        args = (char **) get_replay_args (dev_fd);
+        tci.rg_id = ptdata->rg_id;
+        tci.record_pid = ptdata->record_pid;
+        tci.syscall_cnt = ptdata->syscall_cnt;
+        tci.offset = 0;
+        tci.fileno = FILENO_ARGS;
+        tci.data = 0;
+	tci.type = 0;
+        while (1) {
+            char* arg;
+            arg = *args;
+            // args ends with a NULL
+            if (!arg) {
+                break;
+            }
+            fprintf (stderr, "input arg is %s\n", arg);
+            tci.offset = acc;
+            if (*(args + 1) == NULL) {
+                fprintf (stderr, "taint this arg %p, len %d\n", arg, strlen(arg));
+                create_taints_from_buffer_unfiltered(arg, strlen(arg) + 1, &tci, tokens_fd);
+            }
+            acc += strlen(arg) + 1;
+            args += 1;
+        }
+        //end test
 #endif
 
 #ifdef EXEC_INPUTS

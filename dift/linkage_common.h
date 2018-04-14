@@ -259,6 +259,15 @@ struct shmat_info {
     void* raddr;
 };
 
+struct recvfrom_info {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+    struct sockaddr* src_addr;
+    socklen_t* addrlen;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
@@ -420,6 +429,7 @@ struct thread_data {
         struct clone_info clone_info_cache;
         struct sched_getaffinity_info sched_getaffinity_info_cache;
 	struct shmat_info shmat_info_cache;
+        struct recvfrom_info recvfrom_info_cache;
     } op;
 
     void* save_syscall_info;

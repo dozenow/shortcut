@@ -68,6 +68,9 @@ GHashTable* taint_fds_cloexec = NULL;
 #define CHECK_TYPE_RANGE_WRITE          3
 #define CHECK_TYPE_SPECIFIC_RANGE_WRITE 4
 
+unsigned long handled_jump_divergence = 0;
+unsigned long handled_index_divergence = 0;
+
 struct taint_check {
     int type;
     u_long value;
@@ -2279,6 +2282,30 @@ static inline void print_extra_move_reg_1 (ADDRINT ip, int reg, uint32_t value, 
 	OUTPUT_SLICE_EXTRA (ip, "mov %s, %u", regName(reg,1), value);
     }
 }
+
+static inline void print_extra_move_reg_2 (ADDRINT ip, int reg, uint32_t value, int tainted) 
+{
+    if (!tainted) {
+	OUTPUT_SLICE_EXTRA (ip, "mov %s, %u", regName(reg,2), value);
+    } else {
+	u_long mask = 0, valmask = 0;
+	int j;
+	
+	for (j = 1; j >= 0; j--) {
+	    mask = mask << 8;
+	    valmask = valmask << 8;
+	    if (current_thread->shadow_reg_table[reg*REG_SIZE + j]) {
+		mask |= 0xff;
+	    } else {
+		valmask |= 0xff;
+	    }
+	}
+	OUTPUT_SLICE_EXTRA (ip, "pushfd");
+	OUTPUT_SLICE_EXTRA (ip, "and %s, 0x%lx", regName(reg,2), mask);
+	OUTPUT_SLICE_EXTRA (ip, "or %s, 0x%lx", regName(reg,2), (value&valmask));
+	OUTPUT_SLICE_EXTRA (ip, "popfd");
+    }
+}
  
 static inline void print_extra_move_reg_4 (ADDRINT ip, int reg, uint32_t value, int tainted) 
 {
@@ -2319,6 +2346,7 @@ static inline void print_extra_move_reg_10 (ADDRINT ip, int reg, const PIN_REGIS
 	    int dest = reg - LEVEL_BASE::REG_ST0;
 	    if (dest == 7) {
 		fprintf (stderr, "Looks like we want to load value into ST(7)??? - yuk!\n");
+                OUTPUT_SLICE_EXTRA (ip, "nop /*put a note here for debugging*/");
 	    } else {
 		OUTPUT_SLICE_EXTRA (ip, "fld tbyte ptr [esp]");
 		OUTPUT_SLICE_EXTRA (ip, "fxch st(%d)", dest+1);
@@ -2345,7 +2373,7 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
 		print_extra_move_reg_1 (ip, reg, *regvalue->byte, is_upper8);
             break;
         case 2:
-            OUTPUT_SLICE_EXTRA (ip, "mov %s, %u", regName(reg,reg_size), *regvalue->word);
+            print_extra_move_reg_2 (ip, reg, *regvalue->word, tainted);
             break;
         case 4:
 	    print_extra_move_reg_4 (ip, reg, *regvalue->dword, tainted);
@@ -2487,6 +2515,7 @@ static inline void print_range_verification (ADDRINT ip, char* ins_str, u_long s
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
     OUTPUT_SLICE_VERIFICATION ("popfd");
     OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x (move upwards), address %lx", ip, mem_loc); 
+    ++ handled_index_divergence;
 }
 
 // Only called if base or index register is tainted.  Returns true if register(s) are still tainted after verification due to range check */
@@ -2755,7 +2784,8 @@ static void init_ctrl_flow_the_other_branch (ADDRINT ip, std::set<uint32_t> *sto
         ctrl_flow_init_reg (ip, REG(i), &current_thread->ctrl_flow_info.ckpt.context, current_thread->ctrl_flow_info.ckpt.reg_table);
     }
     //always restore EFLAGS TODO
-    print_extra_move_flag (ip, NULL, 0);
+    //not sure about this anymore since we force each path to follow specified blocks and jumps, and therefore, a jump relies on any flag on one path will still take the same direction
+    //print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(store_set_mem)) { 
 	if (!i.second.taint) { 
 	    OUTPUT_SLICE_CTRL_FLOW (0, "mov byte ptr [0x%lx], %u", i.first, (UINT8) i.second.value);
@@ -2788,6 +2818,7 @@ static void taint_ctrl_flow_branch (ADDRINT ip, taint_t ctrl_flow_taint, std::se
         ctrl_flow_taint_reg (REG(i), ctrl_flow_taint);
     }
     //always restore EFLAGS TODO
+    //not sure about this anymore since we force each path to follow specified blocks and jumps, and therefore, a jump relies on any flag on one path will still take the same direction
     //print_extra_move_flag (ip, NULL, 0);
     for (auto i: *(store_set_mem)) { 
         ctrl_flow_taint_mem (i.first, 1, ctrl_flow_taint);
@@ -3209,6 +3240,7 @@ static void cleanup_after_merge()
     current_thread->ctrl_flow_info.is_tracking_orig_path = false;
     destroy_ctrl_flow_checkpoint (&current_thread->ctrl_flow_info.ckpt);
     current_thread->ctrl_flow_info.handled_tags->clear();
+    ++ handled_jump_divergence;
 }
 
 TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx) 
@@ -3366,6 +3398,15 @@ TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_
     OUTPUT_SLICE_CHECK_ROTATE;
 }
 
+TAINTSIGN fw_slice_fpu_incstp (ADDRINT ip, char* ins_str, const CONTEXT* ctx)
+{
+#if 0
+        fw_slice_track_fp_stack_top (ip, ins_str, ctx, FP_POP);
+        OUTPUT_SLICE (ip, "fincstp");
+        OUTPUT_SLICE_INFO ("");
+#endif
+}
+
 TAINTSIGN fw_slice_mem2fpureg (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, const CONTEXT* ctx, uint32_t fp_stack_change, BASE_INDEX_ARGS) 
 { 
     VERIFY_BASE_INDEX;
@@ -3427,6 +3468,7 @@ TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem
 { 
     VERIFY_BASE_INDEX_WRITE_RANGE;
     int mem_tainted = is_mem_tainted (mem_loc, mem_size);
+    (void) mem_tainted;  //make compiler happy
     if (still_tainted) {
 	OUTPUT_SLICE (ip, "%s", ins_str);
 	OUTPUT_SLICE_INFO ("#src_mem[%lx:%d:%u] #src_mem_value %u", mem_loc, mem_tainted, mem_size, get_mem_value32 (mem_loc, mem_size));
@@ -3777,7 +3819,7 @@ TAINTSIGN fw_slice_memfpureg (ADDRINT ip, char* ins_str, int oreg, uint32_t reg_
         strcpy (slice + len, ins_str + index);
 
         fw_slice_track_fp_stack_top (ip, ins_str, ctx, fp_stack_change);
-	if (reg_tainted != 1) print_extra_move_reg (ip, reg, reg_size, &regvalue, reg_u8, reg_tainted);
+	if (reg_tainted != 1) print_extra_move_reg (ip, oreg, reg_size, &regvalue, reg_u8, reg_tainted);
 	if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
 
         if (!still_tainted && (reg_tainted || mem_tainted)) {
@@ -5570,7 +5612,7 @@ class AddrToRestore {
 	    OUTPUT_MAIN_THREAD (tdata, "push %s [0x%lx]", memSizeToPrefix(size), loc);
         } else {
 	    //use movsb
-	    cout <<"/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
+	    DEBUG_INFO ("/*TODO: make sure we don't mess up with original ecx, edi and esi*/\n");
 	    OUTPUT_MAIN_THREAD (tdata, "sub esp, %d", size);
 	    OUTPUT_MAIN_THREAD (tdata, "mov ecx, %d", size);
 	    OUTPUT_MAIN_THREAD (tdata, "lea edi, [esp]");
@@ -5585,7 +5627,7 @@ class AddrToRestore {
 	    OUTPUT_MAIN_THREAD (tdata, "pop %s [0x%lx]", memSizeToPrefix(size), loc);
         } else {
 	    //use movsb
-	    cout << "/*TODO: make sure we don't mess up with original ecs, edi and esi*/" << endl;
+	    DEBUG_INFO ("/*TODO: make sure we don't mess up with original ecx, edi and esi*/\n");
 	    OUTPUT_MAIN_THREAD (tdata, "mov ecx, %d", size);
 	    OUTPUT_MAIN_THREAD (tdata, "lea edi, [0x%lx]", loc);
 	    OUTPUT_MAIN_THREAD (tdata, "lea esi, [esp]");

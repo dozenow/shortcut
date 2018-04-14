@@ -69,6 +69,21 @@ struct recv_recheck {
 };
 /* Followed by variable length read data */
 
+struct recvfrom_recheck {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+    struct sockaddr* src_addr;
+    socklen_t *addrlen;
+    socklen_t addrlen_value; //value stored in *addrlen
+    size_t readlen;
+    int partial_read_cnt; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_starts[MAX_REGIONS];
+    size_t partial_read_ends[MAX_REGIONS];
+};
+/* Followed by contents in src_addr and variable length read data */
+
 struct recvmsg_recheck {
     int sockfd;
     struct msghdr* msg;
@@ -168,6 +183,16 @@ struct send_recheck {
     int flags;
 };
 /* Followed by data sent */
+
+struct sendto_recheck {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+    struct sockaddr* dest_addr;
+    socklen_t addrlen;
+};
+/* Followed by dest_addr values and then data sent */
 
 struct sendmsg_recheck {
     int sockfd;
@@ -483,6 +508,7 @@ int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
 int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
+int recheck_recvfrom (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags,struct sockaddr* src_addr, socklen_t* addrlen, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 int recheck_execve (struct recheck_handle* handle, char* filename, char* argv[], char* envp[], u_long clock);
 int recheck_open (struct recheck_handle* handle, char* filename, int flags, int mode, u_long clock);
 int recheck_openat (struct recheck_handle* handle, int dirfd, char* filename, int flags, int mode, u_long clock);
@@ -496,6 +522,7 @@ int recheck_lstat64 (struct recheck_handle* handle, char* pathname, void* buf, u
 int recheck_write (struct recheck_handle* handle, int fd, void* buf, size_t count, u_long clock);
 int recheck_writev (struct recheck_handle* handle, int fd, struct iovec* iov, int iovcnt, u_long clock);
 int recheck_send (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, u_long clock);
+int recheck_sendto (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t addrlen, u_long clock);
 int recheck_sendmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, u_long clock);
 int recheck_ugetrlimit (struct recheck_handle* handle, int resource, struct rlimit* prlim, u_long clock);
 int recheck_uname (struct recheck_handle* handle, struct utsname* buf, u_long clock);

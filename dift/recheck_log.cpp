@@ -245,6 +245,46 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     return res->retval;
 }
 
+//in order ot get the ret values in src_addr and addrlen, this function must be called after the recvfrom syscall
+int recheck_recvfrom (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags,struct sockaddr* src_addr, socklen_t* addrlen, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
+{
+    struct recvfrom_recheck rrchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
+    socklen_t retaddrlen = 0;
+
+    check_reg_arguments ("recvfrom", 6); 
+    
+    if (res->retval > 0) {
+	rrchk.readlen = res->retval;
+    } else {
+	rrchk.readlen = 0;
+    }
+    if (src_addr) { 
+        retaddrlen = *addrlen;
+    }
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof (struct recvfrom_recheck) + rrchk.readlen + retaddrlen , clock);
+    rrchk.sockfd = sockfd;
+    rrchk.buf = buf;
+    rrchk.len = len;
+    rrchk.flags = flags;
+    rrchk.partial_read_cnt = partial_read_cnt;
+    rrchk.src_addr = src_addr;
+    rrchk.addrlen = addrlen;
+    rrchk.addrlen_value = retaddrlen;
+    memcpy (rrchk.partial_read_starts, partial_read_starts, partial_read_cnt*sizeof(size_t));
+    memcpy (rrchk.partial_read_ends, partial_read_ends, partial_read_cnt*sizeof(size_t));
+    write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
+    struct recvfrom_retvals* pretvals = (struct recvfrom_retvals *) res->retparams;
+    if (retaddrlen) { 
+        write_data_into_recheck_log (handle->recheckfd, src_addr, retaddrlen);
+    }
+    if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, &pretvals->buf, rrchk.readlen);
+    // Technically don't need to write data that will not be verified on partial reads - ignored
+
+    return res->retval;
+}
+
+
 int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
 {
     struct recvmsg_recheck rmchk;
@@ -328,6 +368,29 @@ int recheck_send (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     schk.len = len;
     schk.flags = flags;
     write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+    write_taintmask_into_recheck_log (handle, (u_long) buf, len);
+
+    return 0;
+}
+
+int recheck_sendto (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t addrlen, u_long clock)
+{
+    struct sendto_recheck schk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
+
+    check_reg_arguments ("sendto", 6);
+
+    if (dest_addr == NULL) assert (addrlen == 0); //otherwise the size calculation is wrong below and in recheck_support.c
+    write_header_into_recheck_log (handle->recheckfd, SYS_socketcall, res->retval, sizeof(struct sendto_recheck) + len*2 + addrlen*2, clock);
+    schk.sockfd = sockfd;
+    schk.buf = buf;
+    schk.len = len;
+    schk.flags = flags;
+    schk.dest_addr = (struct sockaddr*) dest_addr;
+    schk.addrlen = addrlen;
+    write_data_into_recheck_log (handle->recheckfd, &schk, sizeof(schk));
+    if (dest_addr != NULL) 
+        write_taintmask_into_recheck_log (handle, (ulong) dest_addr, addrlen);
     write_taintmask_into_recheck_log (handle, (u_long) buf, len);
 
     return 0;

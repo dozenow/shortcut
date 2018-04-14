@@ -264,6 +264,7 @@ TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONT
 TAINTSIGN taint_ldmxcsr_check (u_long mem_loc);
 
 int fw_slice_rotate_file (struct thread_data* tdata);
+TAINTSIGN fw_slice_fpu_incstp (ADDRINT ip, char* ins_str, const CONTEXT* ctx);
 
 #ifdef __cplusplus
 }
