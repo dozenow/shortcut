@@ -37,7 +37,7 @@ void init_mmap_region ()
     while (!in.eof()) { 
         if (in.fail() || in.bad()) assert (0);
         getline (in, line);
-	DPRINT (stderr, "%s", line.c_str());
+	DPRINT (stderr, "%s\n", line.c_str());
         if (line.empty()) continue;
         //cerr <<line<<endl;
         u_long start = std::stoul(line.substr(0, 8), 0, 16);
@@ -59,7 +59,7 @@ void add_mmap_region (u_long addr, int len, int prot, int flags)
     bool ro_val = (prot & PROT_READ) && !(prot & PROT_WRITE); /* this only included private pages - why? */
     bool rw_val = (prot & PROT_READ) && (prot & PROT_WRITE);
     bool ex_val = (prot & PROT_EXEC);
-    DPRINT (stderr, "add mmap region from %lx to %lx read only? %d read-write? %d executable? %d\n", addr, addr+len, ro_val, rw_val, ex_val);
+    DPRINT (stderr, "add mmap region from %lx to %lx prot %x flags %x read only? %d read-write? %d exec? %d\n", addr, addr+len, prot, flags, ro_val, rw_val, ex_val);
     for (auto i = addr; i < addr+len; i += PAGE_SIZE) {
 	if (max_rw_pages.test(i/PAGE_SIZE) && !ro_pages.test(i/PAGE_SIZE) && !rw_pages.test(i/PAGE_SIZE) && ro_val) DPRINT (stderr, "remap of prev read/write page 0x%lx\n", i);
 	ro_pages.set(i/PAGE_SIZE, ro_val);
@@ -70,6 +70,31 @@ void add_mmap_region (u_long addr, int len, int prot, int flags)
     }
 }
 
+void move_mmap_region (u_long new_address, u_long new_size, u_long old_address, u_long old_size)
+{
+    DPRINT (stderr, "move mmap region from %lx-%lx to %lx-%lx\n", old_address, old_address+new_size, new_address, new_address+new_size);
+    // Not sure what the new page protections - will be - can we assume homgeneous?
+    bool ro_val = ro_pages.test(old_address/PAGE_SIZE);
+    bool rw_val = rw_pages.test(old_address/PAGE_SIZE);
+    bool ex_val = ex_pages.test(old_address/PAGE_SIZE);
+    for (u_long i = PAGE_SIZE; i < old_size; i+= PAGE_SIZE) {
+	if (ro_pages.test((old_address+i)/PAGE_SIZE) != ro_val ||
+	    rw_pages.test((old_address+i)/PAGE_SIZE) != rw_val ||
+	    ex_pages.test((old_address+i)/PAGE_SIZE) != ex_val) {
+	    fprintf (stderr, "[ERROR] different page protections in old region in mremap?\n");
+	} 
+	ro_pages.reset((old_address+i)/PAGE_SIZE);
+	rw_pages.reset((old_address+i)/PAGE_SIZE);
+    }
+    for (u_long i = 0; i < new_size; i += PAGE_SIZE) {
+	ro_pages.set((new_address+i)/PAGE_SIZE, ro_val);
+	rw_pages.set((new_address+i)/PAGE_SIZE, rw_val);
+	ex_pages.set((new_address+i)/PAGE_SIZE, ex_val);
+	max_ro_pages.set((new_address+i)/PAGE_SIZE, ro_val || max_ro_pages.test(i/PAGE_SIZE));
+	max_rw_pages.set((new_address+i)/PAGE_SIZE, rw_val || max_rw_pages.test(i/PAGE_SIZE));
+    }
+}
+ 
 void delete_mmap_region (u_long addr, int len) 
 {
     DPRINT (stderr, "delete mmap region from %lx to %lx\n", addr, addr+len);
@@ -127,7 +152,7 @@ bool is_readonly_mmap_region (u_long addr, int len, u_long& start, u_long& end)
 
 static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type)
 {
-    DPRINT (stderr, "handle protection for range from 0x%lx size %lx: type %d\n", start, size, type);
+    DPRINT (stderr, "handle unprotection for range from 0x%lx size %lx: type %d\n", start, size, type);
     if (type == 1) {
 	// mprotect read-write
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mprotect);

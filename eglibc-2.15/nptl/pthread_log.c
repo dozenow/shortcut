@@ -906,24 +906,31 @@ int
 __pthread_mutex_destroy (mutex)
      pthread_mutex_t *mutex;
 {
-  int rc;
+    int rc;
 
-  if (is_recording()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_destroy_rec (mutex);
-    RESET_OLD_STACKP(); 
-  } else if (is_replaying()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_destroy_rep (mutex);
-    RESET_OLD_STACKP(); 
-  } else {
-    rc = __internal_pthread_mutex_destroy (mutex);
-  }
-  return rc;
+    if (is_recording()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_destroy_rec (mutex);
+	RESET_OLD_STACKP(); 
+    } else if (is_replaying()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_destroy_rep (mutex);
+	if (rc == -ENOTREPLAYING) {
+	    rc = __internal_pthread_mutex_destroy (mutex);
+	}
+	RESET_OLD_STACKP(); 
+    } else {
+	rc = __internal_pthread_mutex_destroy (mutex);
+    }
+    return rc;
 }
 
 strong_alias (__pthread_mutex_destroy, pthread_mutex_destroy)
@@ -1002,30 +1009,32 @@ int
 __pthread_mutex_lock (mutex)
      pthread_mutex_t *mutex;
 {
-  int rc;
-  static volatile __thread pthread_mutex_t* vmutex;
-  vmutex = mutex;
+    int rc;
 
-  if (is_recording()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_lock_rec (mutex);
-    RESET_OLD_STACKP(); 
-  } else if (is_replaying()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_lock_rep (vmutex);
-    if (rc == -ENOTREPLAYING) { 
-        GPRINT ("calling pthread_mutex_lock to fix pthread states, lock %p\n", vmutex);
-	rc = __internal_pthread_mutex_lock (vmutex);
+    if (is_recording()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_lock_rec (mutex);
+	RESET_OLD_STACKP(); 
+    } else if (is_replaying()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_lock_rep (mutex);
+	if (rc == -ENOTREPLAYING) {
+            GPRINT ("calling pthread_mutex_lock to fix pthread states, lock %p\n", vmutex);
+	    rc = __internal_pthread_mutex_lock (mutex);
+	}
+	RESET_OLD_STACKP(); 
+    } else {
+	rc = __internal_pthread_mutex_lock (mutex);
     }
-    RESET_OLD_STACKP(); 
-  } else {
-    rc = __internal_pthread_mutex_lock (mutex);
-  }
-  return rc;
+    return rc;
 }
 
 strong_alias (__pthread_mutex_lock, pthread_mutex_lock)
@@ -1111,25 +1120,28 @@ pthread_mutex_timedlock (mutex, abstime)
      const struct timespec *abstime;
 {
     int rc;
-    static volatile __thread pthread_mutex_t *vmutex;
-    vmutex = mutex;
-    static volatile __thread const struct timespec *vabstime;
-    vabstime = abstime;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_mutex_timedlock_rec (vmutex, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_mutex_timedlock_rec (mutex, abstime);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_mutex_timedlock_rep (vmutex, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_mutex_timedlock_rep (mutex, abstime);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_mutex_timedlock to fix pthread states, lock %p\n", vmutex);
-	    rc = internal_pthread_mutex_timedlock (vmutex, vabstime);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1161,30 +1173,32 @@ int
 __pthread_mutex_trylock (mutex) 
      pthread_mutex_t *mutex;
 {
-  int rc;
-  static volatile __thread pthread_mutex_t *vmutex;
-  vmutex = mutex;
-
-  if (is_recording()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_trylock_rec (vmutex);
-    RESET_OLD_STACKP(); 
-  } else if (is_replaying()) {
-    struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
-    GET_OLD_STACKP();
-    SET_NEW_STACKP();
-    rc = __pthread_mutex_trylock_rep (vmutex);
-    if (rc == -ENOTREPLAYING) {
-        GPRINT ("calling pthread_mutex_trylock to fix pthread states, lock %p\n", vmutex);
-	rc = __internal_pthread_mutex_trylock (vmutex);
+    int rc;
+    
+    if (is_recording()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_trylock_rec (mutex);
+	RESET_OLD_STACKP(); 
+    } else if (is_replaying()) {
+	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
+	GET_OLD_STACKP();
+	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_trylock_rep (mutex);
+	if (rc == -ENOTREPLAYING) {
+            GPRINT ("calling pthread_mutex_trylock to fix pthread states, lock %p\n", vmutex);
+	    rc = __internal_pthread_mutex_trylock (mutex);
+	}
+	RESET_OLD_STACKP(); 
+    } else {
+	rc = __internal_pthread_mutex_trylock (mutex);
     }
-    RESET_OLD_STACKP(); 
-  } else {
-    rc = __internal_pthread_mutex_trylock (mutex);
-  }
-  return rc;
+    return rc;
 }
 
 strong_alias (__pthread_mutex_trylock, pthread_mutex_trylock)
@@ -1213,23 +1227,25 @@ __pthread_mutex_unlock (mutex)
      pthread_mutex_t *mutex;
 {
     int rc;
-    static volatile __thread pthread_mutex_t *vmutex;
-    vmutex = mutex;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_mutex_unlock_rec (vmutex);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_unlock_rec (mutex);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) mutex);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_mutex_unlock_rep (vmutex);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_mutex_unlock_rep (mutex);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_mutex_unlock to fix pthread states, lock %p\n", vmutex);
-	    rc = __pthread_mutex_unlock_usercnt (vmutex, 1);
+	    rc = __pthread_mutex_unlock_usercnt (mutex, 1);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1353,27 +1369,28 @@ __pthread_cond_broadcast (cond)
      pthread_cond_t *cond;
 {
     int rc;
-    static volatile __thread pthread_cond_t *vcond;
-    vcond = cond;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_broadcast_rec (vcond);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_broadcast_rec (cond);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP(); 
-	rc = __pthread_cond_broadcast_rep (vcond);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_broadcast_rep (cond);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_cond_broadcast to fix pthread states, cond %p\n", vcond);
-	    rc = __internal_pthread_cond_broadcast (vcond);
+            GPRINT ("calling pthread_cond_broadcast to fix pthread states, cond %p\n", cond);
+	    rc = __internal_pthread_cond_broadcast (cond);
 	}
 	RESET_OLD_STACKP(); 
     } else {
-        GPRINT ("calling pthread_cond_broadcast cond %p\n", cond);
 	rc = __internal_pthread_cond_broadcast (cond);
     }
 
@@ -1452,27 +1469,28 @@ __pthread_cond_signal (cond)
      pthread_cond_t *cond;
 {
     int rc;
-    static volatile __thread pthread_cond_t *vcond;
-    vcond = cond;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_signal_rec (vcond);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_signal_rec (cond);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_signal_rep (vcond);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_signal_rep (cond);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_cond_signal to fix pthread states, cond %p\n", vcond);
-	    rc = __internal_pthread_cond_signal (vcond);
+	    rc = __internal_pthread_cond_signal (cond);
 	}
 	RESET_OLD_STACKP(); 
     } else {
-        GPRINT ("calling pthread_cond_signal cond %p\n", cond);
 	rc = __internal_pthread_cond_signal (cond);
     }
     
@@ -1513,32 +1531,38 @@ __pthread_cond_timedwait (cond, mutex, abstime)
      const struct timespec *abstime;
 {
     int rc;
-    static volatile __thread pthread_cond_t* vcond;
-    vcond = cond;
-    static volatile __thread pthread_mutex_t* vmutex;
-    vmutex = mutex;
-    static volatile __thread struct timespec* vabstime;
-    vabstime = abstime;
     
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) mutex);
+	THREAD_SETMEM (THREAD_SELF, stackswitch3, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_timedwait_rec (vcond, vmutex, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch3);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_timedwait_rec (cond, mutex, abstime);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) mutex);
+	THREAD_SETMEM (THREAD_SELF, stackswitch3, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_timedwait_rep (vcond, vmutex, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch3);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_timedwait_rep (cond, mutex, abstime);
 	if (rc == -ENOTREPLAYING) {
+	    // Treat this as a spurious wakeup, so reacquire the lock and exit
             GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, time %p, tv_sec %ld tv_nsec %ld, try to lock mutex first\n", vcond, vmutex, vabstime, vabstime->tv_sec, vabstime->tv_nsec);
-            rc = __internal_pthread_mutex_lock (vmutex);
+	    rc = __internal_pthread_mutex_lock (mutex);
             if (rc == 0)
                 GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, mutex is locked\n", vcond, vmutex);
             else 
                 GPRINT ("[ERROR] ----- call pthread_cond_timedwait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", vcond, vmutex, rc);
-            rc = __internal_pthread_cond_timedwait (vcond, vmutex, vabstime);
             GPRINT ("call pthread_cond_timedwait: done\n");
 	}
 	RESET_OLD_STACKP(); 
@@ -1580,32 +1604,35 @@ __pthread_cond_wait (cond, mutex)
      pthread_cond_t *cond;
      pthread_mutex_t *mutex;
 {
-    static volatile __thread pthread_cond_t *vcond;
-    vcond = cond;
-    static volatile __thread pthread_mutex_t *vmutex;
-    vmutex = mutex;
-
     int rc;
     
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) mutex);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_wait_rec (vcond, vmutex);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_cond_wait_rec (cond, mutex);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) mutex);
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_cond_wait_rep (vcond, vmutex);
-        if (rc == -ENOTREPLAYING) {
+	rc = __pthread_cond_wait_rep (cond, mutex);
+	if (rc == -ENOTREPLAYING) {
+	    // Treat this as a spurious wakeup, so reacquire the lock and exit
             GPRINT ("call pthread_cond_wait, cond %p, mutex %p, try to lock mutex first\n", vcond, vmutex);
-            rc = __internal_pthread_mutex_lock (vmutex);
+	    rc = __internal_pthread_mutex_lock (mutex);
             if (rc == 0)
                 GPRINT ("call pthread_cond_wait, cond %p, mutex %p, mutex is locked\n", vcond, vmutex);
             else 
                 GPRINT ("[ERROR] ----- call pthread_cond_wait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", vcond, vmutex, rc);
-            rc = __internal_pthread_cond_wait (vcond, vmutex);
             GPRINT ("call pthread_cond_wait: done\n");
 	}
 	RESET_OLD_STACKP(); 
@@ -1642,23 +1669,25 @@ __pthread_rwlock_rdlock (rwlock)
      pthread_rwlock_t *rwlock;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_rdlock_rec (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_rdlock_rec (rwlock);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_rdlock_rep (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_rdlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_rdlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = __internal_pthread_rwlock_rdlock (vrwlock);
+            GPRINT ("calling pthread_rwlock_rdlock to fix pthread states, lock %p\n", rwlock);
+	    rc = __internal_pthread_rwlock_rdlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1695,23 +1724,25 @@ __pthread_rwlock_wrlock (rwlock)
      pthread_rwlock_t *rwlock;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_wrlock_rec (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_wrlock_rec (rwlock);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_wrlock_rep (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_wrlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_wrlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = __internal_pthread_rwlock_wrlock (vrwlock);
+	    rc = __internal_pthread_rwlock_wrlock (rwlock);
 	}	    
 	RESET_OLD_STACKP(); 
     } else {
@@ -1751,25 +1782,29 @@ pthread_rwlock_timedrdlock (rwlock, abstime)
      const struct timespec *abstime;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
-    static volatile __thread const struct timespec *vabstime;
-    vabstime = abstime;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_rwlock_timedrdlock_rec (vrwlock, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_rwlock_timedrdlock_rec (rwlock, abstime);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_rwlock_timedrdlock_rep (vrwlock, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_rwlock_timedrdlock_rep (rwlock, abstime);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = internal_pthread_rwlock_timedrdlock (vrwlock, vabstime);
+	    rc = internal_pthread_rwlock_timedrdlock (rwlock, abstime);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1806,25 +1841,29 @@ pthread_rwlock_timedwrlock (rwlock, abstime)
      const struct timespec *abstime;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
-    static volatile __thread const struct timespec *vabstime;
-    vabstime = abstime;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_rwlock_timedwrlock_rec (vrwlock, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_rwlock_timedwrlock_rec (rwlock, abstime);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
+	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) abstime);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = pthread_rwlock_timedwrlock_rep (vrwlock, vabstime);
+	abstime = (const struct timespec *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = pthread_rwlock_timedwrlock_rep (rwlock, abstime);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_timedwrlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = internal_pthread_rwlock_timedwrlock (vrwlock, vabstime);
+	    rc = internal_pthread_rwlock_timedwrlock (rwlock, abstime);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1858,23 +1897,25 @@ __pthread_rwlock_tryrdlock (rwlock)
      pthread_rwlock_t *rwlock;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
     
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_tryrdlock_rec (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_tryrdlock_rec (rwlock);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_tryrdlock_rep (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_tryrdlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = __internal_pthread_rwlock_tryrdlock (vrwlock);
+	    rc = __internal_pthread_rwlock_tryrdlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1910,23 +1951,25 @@ __pthread_rwlock_trywrlock (rwlock)
      pthread_rwlock_t *rwlock;
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
 
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_trywrlock_rec (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_trywrlock_rec (rwlock);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_trywrlock_rep (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_trywrlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_trywrlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = __internal_pthread_rwlock_trywrlock (vrwlock);
+	    rc = __internal_pthread_rwlock_trywrlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1959,23 +2002,25 @@ int
 __pthread_rwlock_unlock (pthread_rwlock_t *rwlock)
 {
     int rc;
-    static volatile __thread pthread_rwlock_t *vrwlock;
-    vrwlock = rwlock;
     
     if (is_recording()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_unlock_rec (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_unlock_rec (rwlock);
 	RESET_OLD_STACKP(); 
     } else if (is_replaying()) {
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
+	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) rwlock);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
-	rc = __pthread_rwlock_unlock_rep (vrwlock);
+	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
+	rc = __pthread_rwlock_unlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_rwlock_unlock to fix pthread states, lock %p\n", vrwlock);
-	    rc = __internal_pthread_rwlock_unlock (vrwlock);
+	    rc = __internal_pthread_rwlock_unlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
     } else {

@@ -5,7 +5,7 @@
 #include <sys/utsname.h>
 #include <poll.h>
 
-#define MAX_REGIONS 20
+#define MAX_REGIONS 50
 
 //****
 //note: there are kernel-level structures corresponding to these two in replay.h.  Both must be changed together.
@@ -443,6 +443,12 @@ struct unlink_recheck {
 };
 /* Followed by filename */
 
+struct chmod_recheck {
+    char* pathname;
+    mode_t mode;
+};
+/* Followed by filename */
+
 struct inotify_init1_recheck {
     int flags;
 };
@@ -490,6 +496,7 @@ struct shmat_recheck {
     void* raddr;
     int shmflg;
     u_long raddrval;
+    u_long size;
 };
 
 struct ipc_rmid_recheck {
@@ -569,6 +576,7 @@ int recheck_clock_gettime_monotonic (struct recheck_handle* handle, struct times
 int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struct timespec* tp, int clock_id_tainted, u_long clock);
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock);
+int recheck_chmod (struct recheck_handle* handle, char* pathname, mode_t mode, u_long clock);
 int recheck_inotify_init1 (struct recheck_handle* handle, int flags, u_long clock);
 int recheck_inotify_add_watch (struct recheck_handle* handle, int fd, char* pathname, uint32_t mask, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);

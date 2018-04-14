@@ -8,6 +8,7 @@
 #include "../xray_token.h"
 #include "../taint_nw.h"
 #include "../linkage_common.h"
+#include "../recheck_log.h"
 
 #ifdef TAINT_DEBUG
 extern FILE* debug_f;
@@ -154,8 +155,6 @@ void add_input_filter(int type, void* filter)
                     (char *) filter, rc);
             exit(-1);
         }
-        fprintf(stderr, "Filtering pid %d syscall %d [%d, %d)\n",
-                fbr->pid, fbr->syscall, fbr->start_offset, fbr->end_offset);
         list_add_tail(&fbr->list, &filter_byte_ranges);
         num_filter_byte_ranges++;
     } else if (type == FILTER_PARTFILENAME) {

@@ -6,6 +6,7 @@
 
 void init_mmap_region ();
 void add_mmap_region (u_long addr, int len, int prot, int flags);
+void move_mmap_region (u_long new_address, u_long new_size, u_long old_address, u_long old_size);
 void delete_mmap_region (u_long addr, int len);
 void change_mmap_region (u_long addr, int len, int prot);
 bool is_readonly (u_long addr, int len);

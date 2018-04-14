@@ -141,6 +141,22 @@ static void print_socketcall(FILE *out, struct klog_result *res) {
 	}
 }
 
+static void print_ipc (FILE *out, struct klog_result *res) {
+	struct syscall_result *psr = &res->psr;
+
+	parseklog_default_print(out, res);
+
+	if (psr->flags & SR_HAS_RETPARAMS) {
+		int len = *((int *)res->retparams);
+		int type = *((int *)res->retparams+1);
+		fprintf(out, "         IPC len is %d type is %d\n", len, type);
+		if (type == SHMAT) {
+			struct shmat_retvals* pshmat = (struct shmat_retvals *) res->retparams;
+			fprintf (out, "         SHMAT size %lx returns %lx\n", pshmat->size, pshmat->raddr);
+		}
+	}
+}
+
 static void print_rt_sigaction(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
 
@@ -494,6 +510,7 @@ int main(int argc, char **argv) {
 		parseklog_set_printfcn(log, print_ioctl, SYS_ioctl);
 		parseklog_set_printfcn(log, print_gettimeofday, 78);
 		parseklog_set_printfcn(log, print_socketcall, 102);
+		parseklog_set_printfcn(log, print_ipc, 117);
 		parseklog_set_printfcn(log, print_write, 146);
 		parseklog_set_printfcn(log, print_rt_sigaction, 174);
 		parseklog_set_printfcn(log, print_rt_sigprocmask, SYS_rt_sigprocmask);

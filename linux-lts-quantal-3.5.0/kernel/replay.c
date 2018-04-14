@@ -1094,9 +1094,7 @@ struct replay_thread {
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
 	int __user* rp_pthread_status_addr;  //The user-level address where we store the replay status
-#ifdef SLICE_VM_DUMP
 	struct semaphore rp_vm_dump_sem; // For debugging memory differences
-#endif
 };
 
 /* Prototypes */
@@ -1255,15 +1253,11 @@ static inline int
 is_pin_attached (void)
 {
 	if (current->replay_thrd == NULL) {
-#ifdef NO_TIMING
-		printk ("pid %d: is_pin_attached: NULL replay thrd\n", current->pid);
-#endif
+		MPRINT ("pid %d: is_pin_attached: NULL replay thrd\n", current->pid);
 		return 0;
 	}
 	if (current->replay_thrd->rp_group == NULL) {
-#ifdef NO_TIMING
-		printk ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
-#endif
+		MPRINT ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
 		return 0;
 	}
 	return (current->replay_thrd->rp_group->rg_attach_device == ATTACH_PIN 
@@ -2307,9 +2301,8 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 	prp->rp_pin_curthread_ptr = NULL;
 
 	prp->rp_pin_switch_before_attach = 0;
-#ifdef SLICE_VM_DUMP
 	sema_init(&prp->rp_vm_dump_sem, 0);
-#endif
+
 	if (pfiles) {
 		prp->rp_cache_files = pfiles;
 		get_replay_cache_files (pfiles);
@@ -4449,10 +4442,15 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	u_long slice_addr = 0;
 	u_long slice_size;
 
-	if(PRINT_TIME) {
-		struct timeval tv;
-		do_gettimeofday (&tv);
-		printk ("starting replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+	{
+	    struct timeval tv;
+	    struct rusage ru;
+	    mm_segment_t old_fs = get_fs();
+	    set_fs (KERNEL_DS);
+	    sys_getrusage (RUSAGE_SELF, &ru);
+	    set_fs (old_fs);
+	    do_gettimeofday (&tv);
+	    printk ("Pid %d starting replay_full_ckpt_wakeup %ld.%ld user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
 	}
 
 	if (current->record_thrd || current->replay_thrd) {
@@ -4583,7 +4581,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 	SLICE_DEBUG ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
 
-
 	if (record_pid < 0) {
 		if (num_procs > 1) pckpt_waiter->prepg = NULL;
 		return record_pid;
@@ -4597,7 +4594,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		return rc;
 	}
 
-	SLICE_DEBUG ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
+	MPRINT ("slice pid %d: syscall # might be %d?\n", current->pid, prect->rp_log[prept->rp_out_ptr-1].sysnum);
 
 	if (consumed > 0) argsconsume(prect, consumed);
 
@@ -4744,13 +4741,11 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 #endif
                         go_live_clock->replay_group = replay_group;
 		}
-
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
 			printk ("Pid %dafter start_fw_slice runs %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		}
-
 		if (attach_device) {
 			/* Cannot support index with go-live since we do not intercept system calls */
 			printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
@@ -4893,7 +4888,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	// Restart the system call - assume sysenter as a hack
-	SLICE_DEBUG ("Set pid %d (record pid %d)  to restart system call on resume\n", current->pid, record_pid);
+	MPRINT ("Set pid %d to restart system call on resume\n", current->pid);
 	get_pt_regs(NULL)->ip -= 2;
 	get_user (ch, (u_char *) get_pt_regs(NULL)->ip);
 	get_user (ch2, (u_char *) get_pt_regs(NULL)->ip+1);
@@ -4931,7 +4926,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 	} else {
                 ret_code = prect->rp_log[prept->rp_out_ptr].sysnum;
         }
-	SLICE_DEBUG ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
+	MPRINT ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
 
 	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		     current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
@@ -7010,7 +7005,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 		}
 		printk("Pid %d recpid ----- PTHREAD:%ld:%ld.%06ld:%d:%s", current->pid, clock, tv.tv_sec, tv.tv_usec, ignore_flag, buf);
 	} else {
-		SLICE_DEBUG ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
+		MPRINT ("sys_pthread_print: pid %d is not a record/replay proces: %s\n", current->pid, buf);
 		return -EINVAL;
 	}
 
@@ -7044,7 +7039,7 @@ sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_lo
 {
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
-		printk ("record pid %d dumbass link at %p\n", current->pid, status);
+		MPRINT ("record pid %d dumbass link at %p\n", current->pid, status);
 		if (prt->rp_record_hook) {
 			put_user (1, status);
 			put_user (prt->rp_record_hook, record_hook);
@@ -7052,14 +7047,14 @@ sys_pthread_dumbass_link (int __user * status, u_long __user * record_hook, u_lo
 		}
 	} else if (current->replay_thrd) {
 		struct replay_thread* prt = current->replay_thrd;
-		printk ("replay pid %d dumbass link at %p\n", current->pid, status);
+		MPRINT ("replay pid %d dumbass link at %p\n", current->pid, status);
 		if (prt->rp_replay_hook) {
 			put_user (2, status);
 			put_user (prt->rp_replay_hook, replay_hook);
 			DPRINT ("pid %d replay hook %lx returned\n", current->pid, prt->rp_replay_hook);
 		}
 	} else {
-		printk ("normal pid %d dumbass link at %p\n", current->pid, status);
+		MPRINT ("normal pid %d dumbass link at %p\n", current->pid, status);
 		put_user (3, status);		
 	}
 	return 0;
@@ -7165,7 +7160,7 @@ sys_pthread_block (u_long clock)
 	int original_status = -1; 
 	int is_restart = 0;
 	if (!current->replay_thrd) {
-		SLICE_DEBUG ("sys_pthread_block called by non-replay process %d\n", current->pid);
+		MPRINT ("sys_pthread_block called by non-replay process %d\n", current->pid);
 		return -EINVAL;
 	}
 	prt = current->replay_thrd;
@@ -13050,18 +13045,27 @@ record_mremap (unsigned long addr, unsigned long old_len, unsigned long new_len,
 static asmlinkage unsigned long 
 replay_mremap (unsigned long addr, unsigned long old_len, unsigned long new_len, unsigned long flags, unsigned long new_addr)
 {
-	u_long retval, rc = get_next_syscall (163, NULL);
+	u_long retval;
+	u_long rc = get_next_syscall (163, NULL);
 	if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 
-	if (rc == addr)
+	printk ("replay_mmap: addr %lx old_len %lx new_len %lx flags %lx new_addr %lx\n", addr, old_len, new_len, flags, new_addr);
+	if (rc == addr) {
+		if (new_len > old_len) {
+			if (sys_munmap (addr+old_len, new_len-old_len)) printk ("pid %d: munmap before mremap fails\n", current->pid);
+		}
 		retval = sys_mremap (addr, old_len, new_len, flags, new_addr);
-	else
+	} else {
 		retval = sys_mremap (addr, old_len, new_len, flags | MREMAP_FIXED | MREMAP_MAYMOVE, rc);
-	DPRINT ("Pid %d replays mremap with address %lx returning %lx\n", current->pid, addr, retval);
+		printk ("Pid %d replays mremap from address %lx len %lx to address %lx len %lx flags %lx returning %lx\n", current->pid, addr, old_len, rc, new_len, flags, retval);
+	}
 
 	if (rc != retval) {
-		printk ("Replay mremap returns different value %lu than %lu\n", retval, rc);
+		printk ("Replay mremap returns different value %lx than %lx\n", retval, rc);
+		print_vmas(current);
 		return syscall_mismatch();
+	} else {
+		printk ("Replay mmap returns correct value\n");
 	}
 	
 	// Save the regions for preallocation for replay+pin
@@ -16634,7 +16638,6 @@ int do_is_record(struct ctl_table *table, int write, void __user *buffer,
 	return 0;
 }
 
-#ifdef SLICE_VM_DUMP
 void wake_up_vm_dump_waiters (struct replay_thread* prept) 
 {
 	struct replay_thread* tmp;
@@ -16648,7 +16651,6 @@ void wait_for_vm_dump (struct replay_thread* prept)
 {
 	down(&prept->rp_vm_dump_sem);
 }
-#endif
 
 void put_go_live_thread (struct replay_thread* prept)
 {
@@ -16668,6 +16670,8 @@ int replayfs_diskalloc_debug_allocref = 0;
 int replayfs_diskalloc_debug_lock = 0;
 int replayfs_diskalloc_debug_alloc = 0;
 int replayfs_diskalloc_debug_alloc_min = 0;
+int slice_dump_vm = 0;
+int pause_after_slice = 0;
 
 int replayfs_debug_allocnum = -1;
 int replayfs_debug_page = -1;
@@ -17106,6 +17110,20 @@ static struct ctl_table replay_ctl[] = {
 	{
 		.procname	= "check_startup_db",
 		.data		= &check_startup_db,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "slice_dump_vm",
+		.data		= &slice_dump_vm,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "pause_after_slice",
+		.data		= &pause_after_slice,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,

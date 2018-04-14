@@ -104,6 +104,9 @@ struct recheck_entry {
 	int len;
 };
 
+extern int slice_dump_vm;
+extern int pause_after_slice;
+
 void dump_reg_struct (struct pt_regs* r) {
 	SLICE_DEBUG ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
 		r->ax, r->bx, r->cx, r->dx, r->si, r->di, r->bp, r->sp, r->ds, r->es, r->fs, r->gs, r->orig_ax, r->ip, r->cs, r->flags, r->ss);
@@ -1326,10 +1329,12 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 						}
 						else { 
 							char mmap_filename[256];
-							if (shared_file) 
+							if (shared_file) {
 								sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
-							else 
+							} else {
 								sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+								pvmas->vmas_flags &= ~VM_MAYSHARE;
+							}
 
 							flags = O_RDWR;
 							//map_file = filp_open (pvmas->vmas_file, flags, 0);
@@ -1340,45 +1345,53 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 								goto freemem;
 							}
 						}
-					}
-					else if (!strncmp(pvmas->vmas_file, "/SYSV",5)) { 
-						sscanf(pvmas->vmas_file, "/SYSV%08x",&key);						
-						id = find_sysv_mapping_by_key(key); 
-						if (id < 0) { 
-							printk("whoops.. what happened, key isn't in sysvmappings\n");
-							goto freemem; 
+					} else if (!strncmp(pvmas->vmas_file, "/SYSV",5)) { 
+						if (slicelib) {
+							// For slice execution, we could preallocate memory so PIN etc. does not grab it
+							MPRINT ("slice: preallocating sysv region from %lx to %lx\n", pvmas->vmas_start, pvmas->vmas_end);
+							addr = sys_mmap_pgoff (pvmas->vmas_start, pvmas->vmas_end-pvmas->vmas_start, PROT_NONE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0);
+							if (addr != pvmas->vmas_start) {
+								printk ("slice: preallocating mmap_pgoff returns different value %lx than %lx\n", addr, pvmas->vmas_start);
+							}
+						} else {
+							// JNF: This really looks wrong!
+							sscanf(pvmas->vmas_file, "/SYSV%08x",&key);						
+							id = find_sysv_mapping_by_key(key); 
+							if (id < 0) { 
+								printk("whoops.. what happened, key isn't in sysvmappings\n");
+								goto freemem; 
+							}
+							
+							//get the correct shmflags
+							if (pvmas->vmas_flags&VM_EXEC) { 
+								shmflg |= SHM_EXEC;
+							}
+							else if (pvmas->vmas_flags&VM_READ && 
+								 !(pvmas->vmas_flags&VM_WRITE)) { 
+								shmflg |= SHM_RDONLY; 
+							}
+							
+							addr = sys_shmat(id, (char __user *)pvmas->vmas_start, shmflg); 
+							
+							rc = add_sysv_shm((u_long)pvmas->vmas_start, 
+									  (u_long)(pvmas->vmas_end - pvmas->vmas_start));
+							if (rc < 0) { 
+								printk("whoops... add_sysv_shm returns negative?\n");
+								goto freemem;
+							}
 						}
-
-						//get the correct shmflags
-						if (pvmas->vmas_flags&VM_EXEC) { 
-							shmflg |= SHM_EXEC;
-						}
-						else if (pvmas->vmas_flags&VM_READ && 
-							 !(pvmas->vmas_flags&VM_WRITE)) { 
-							shmflg |= SHM_RDONLY; 
-						}
-
-						addr = sys_shmat(id, (char __user *)pvmas->vmas_start, shmflg); 
-						
-						rc = add_sysv_shm((u_long)pvmas->vmas_start, 
-							     (u_long)(pvmas->vmas_end - pvmas->vmas_start));
-						if (rc < 0) { 
-							printk("whoops... add_sysv_shm returns negative?\n");
-							goto freemem;
-						}
-
 
 						premapped = 1;
 						map_file = NULL; //just to be sure something weird doesn't happen
-					}
-
-					else { 
+					} else { 
 						char mmap_filename[256];
 						MPRINT ("Opening file %s\n", pvmas->vmas_file);
-						if (shared_file) 
+						if (shared_file) {
 							sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
-						else 
+						} else {
 							sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+							pvmas->vmas_flags &= ~VM_MAYSHARE;
+						}
 						flags = O_RDWR;
 						map_file = filp_open (mmap_filename, flags, 0);
 						if (IS_ERR(map_file)) {
@@ -1395,10 +1408,12 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				} else {
 					char mmap_filename[256];
 					MPRINT ("Opening file %s\n", pvmas->vmas_file);
-					if (shared_file) 
+					if (shared_file) {
 						sprintf (mmap_filename, "%s.ckpt_mmap.%lx.copy", filename, pvmas->vmas_start);
-					else 
+					} else {
 						sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
+						pvmas->vmas_flags &= ~VM_MAYSHARE;
+					}
 					flags = O_RDWR;
 					map_file = filp_open (mmap_filename, flags, 0);
 					if (IS_ERR(map_file)) {
@@ -1446,16 +1461,16 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
                         if (pvmas->vmas_flags & VM_MAYSHARE && !strncmp (pvmas->vmas_file, "/replay_cache/", 14)) { 
                             SLICE_DEBUG ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
                         }
-			if (!(pvmas->vmas_flags&VM_WRITE)){
-                                // force it to writable temproarilly
-				rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, PROT_WRITE); 
-			}
 		     
 			if (!map_file) {
 				char mmap_filename[256];
 				struct file* mmap_file = NULL;
 				loff_t mmap_ppos = 0;
 
+				if (!(pvmas->vmas_flags&VM_WRITE)) {
+					// force it to writable temproarilly
+					rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, PROT_WRITE); 
+				}
 				sprintf (mmap_filename, "%s.ckpt_mmap.%lx", filename, pvmas->vmas_start);
 
 				flags = O_RDWR;
@@ -1474,8 +1489,9 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				}
 				SLICE_DEBUG ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
 				filp_close (mmap_file, NULL);
+				if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections					
 			}
-			if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections		
+
 			if (replay_debug) {
 				do_gettimeofday(&tv_end);
 			}
@@ -1653,18 +1669,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	}
 	SLICE_DEBUG ("get_fw_slice_info: expect slice_info at %lx\n", addr);
 	return (struct fw_slice_info *) addr;
-			
-#if 0	
-	//the start addr of the stack is also the start of fw_slice_info (one region grows upwards and the other downwards)
-	if (regs->sp %4096 != 0) {
-		//should be aligned; other wise we have unpoped variable
-		printk ("get_fw_slice_info: sp is %lx\n", regs->sp);
-		BUG();
-	}
-	return (struct fw_slice_info*) regs->sp;
-#endif
 }
-
 
 long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr) 
 { 
@@ -1708,7 +1713,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 		return -ENOMEM;
 	}
 	//first page of this space: stack (grows downwards)
-	DPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
+	MPRINT ("start_fw_slice stack is %lx to %lx\n", extra_space_addr, extra_space_addr + STACK_SIZE);
 
 	//second page: extra info for the slice (grows upwards)
 	pinfo->text_addr = slice_addr;
@@ -1765,7 +1770,6 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	return 0;
 }
 
-#ifdef SLICE_VM_DUMP
 static void dump_vmas(void)
 {
 	mm_segment_t old_fs = get_fs();
@@ -1890,7 +1894,6 @@ static void dump_vmas(void)
 	sys_close (mmapinfo_fd);
 	set_fs(old_fs);
 }
-#endif
 
 asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 { 
@@ -1922,7 +1925,6 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
                         do_gettimeofday (&tv);
                         printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
                 }
-
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
@@ -1939,28 +1941,18 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		}
 		set_thread_flag (TIF_IRET);
 
-#ifdef SLICE_VM_DUMP
-		if (is_ckpt_thread) {
-			printk ("debug: pid %d about to dump vams\n", current->pid);
-			dump_vmas ();
-			printk ("debug: pid %d about dumped vams\n", current->pid);
-			if (current->go_live_thrd) {
-				wake_up_vm_dump_waiters (current->go_live_thrd);
+		if (slice_dump_vm) {
+			if (is_ckpt_thread) {
+				dump_vmas ();
+				if (current->go_live_thrd) {
+					wake_up_vm_dump_waiters (current->go_live_thrd);
+				}
 			} else {
-				printk ("debug: pid %d cannot find go live thrd for vm dump\n", current->pid);
-			}
-			printk ("debug: pid %d woke up all waiters after vm dump\n", current->pid);
-
-		} else {
-			printk ("debug: pid %d waiting for vm to be dumped\n", current->pid);
-			if (current->go_live_thrd) {
-				wait_for_vm_dump (current->go_live_thrd);
-				printk ("debug: pid %d done waiting\n", current->pid);
-			} else {
-				printk ("debug: pid %d cannot find go live thrd to wait for vm dump\n", current->pid);
+				if (current->go_live_thrd) {
+					wait_for_vm_dump (current->go_live_thrd);
+				}
 			}
 		}
-#endif
 
 		//unmap the slice - doing this during the dump will cause process to hang
 		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
@@ -1979,18 +1971,25 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			current->go_live_thrd = NULL;
 		}
 
-                if (PRINT_TIME) {
+		if (is_ckpt_thread) {
 			struct rusage ru;
 			mm_segment_t old_fs = get_fs();
 			set_fs (KERNEL_DS);
 			sys_getrusage (RUSAGE_SELF, &ru);
 			set_fs (old_fs);
-
 			do_gettimeofday (&tv);
-                        printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
-                }
+			printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+
+			if (pause_after_slice) {
+				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+				set_current_state(TASK_INTERRUPTIBLE);
+				schedule();
+				printk("Pid %d woken up.\n", current->pid);
+			}
+		}
 
 		SLICE_DEBUG ("Pid %d returning %ld\n", current->pid, slice_retval);
+		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {

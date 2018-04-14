@@ -153,6 +153,7 @@ const char* check_filename = "/tmp/checks";
 extern u_long jump_count;
 u_long dumbass_link_addr = 0;
 u_long pthread_log_status_addr = 0;
+pthread_funcs recall_funcs;
 
 //added for multi-process replay
 const char* fork_flags = NULL;
@@ -1076,6 +1077,15 @@ static inline void sys_unlink_start(struct thread_data* tdata, char* filename)
     } 
 }
 
+static inline void sys_chmod_start(struct thread_data* tdata, char* filename, mode_t mode)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call chmod_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_chmod (tdata->recheck_handle, filename, mode, *ppthread_log_clock);
+    } 
+}
+
 static inline void sys_inotify_init1_start(struct thread_data* tdata, int flags)
 {
     if (tdata->recheck_handle) {
@@ -1576,7 +1586,6 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 		    clear_mem_taints ((u_long)buf, retaddrlen); 
 		    add_modified_mem_for_final_check ((u_long)buf, retaddrlen);
 		    for (int i = 0; i < regions; i++) {
-			fprintf (stderr, "partial recv taint: %u %u\n", starts[i], ends[i]);
 			OUTPUT_TAINT_INFO_THREAD (current_thread, "recv %lx %lx", (u_long) buf+starts[i], (u_long) ends[i]-starts[i]);  
 		    }
 		}
@@ -1758,7 +1767,6 @@ static void sys_recvmsg_start(struct thread_data* tdata, int sockfd, struct msgh
 	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
 	int regions;
 	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends))) {
-	    fprintf (stderr, "recvmsg: regions is %d\n", regions);
 	    int retlen = recheck_recvmsg (tdata->recheck_handle, sockfd, msg, flags, regions, starts, ends, *ppthread_log_clock);
 	    if (retlen > 0) {
 		// One byte at a time is simple, but may be a little slow
@@ -2074,12 +2082,21 @@ static inline void sys_time_stop (int rc)
 
 static inline void sys_mremap_start (struct thread_data* tdata, void* old_address, size_t old_size, size_t new_size, int flags, void* new_address)
 {
+    struct mremap_info* mri = (struct mremap_info*) &tdata->op.mremap_info_cache;
     fprintf (stderr, "mremap: old_address 0x%lx old_size 0x%x new_size 0x%x flags 0x%x new_address 0x%lx clock %lu\n", (u_long) old_address, old_size, new_size, flags, (u_long) new_address, *ppthread_log_clock);
+    mri->old_address = old_address;
+    mri->old_size = old_size;
+    mri->new_size = new_size;
 }
 
 static inline void sys_mremap_stop (int rc) 
 {
+    struct mremap_info* mri = (struct mremap_info*) &current_thread->op.mremap_info_cache;
     fprintf (stderr, "mremap: rc 0x%x\n", rc);
+    if (rc > 0 || rc < -1024) {
+	move_mem_taints (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
+	move_mmap_region (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
+    }
 }
 
 static inline void sys_clock_gettime_start (struct thread_data* tdata, clockid_t clk_id, struct timespec* tp) { 
@@ -2327,13 +2344,10 @@ static inline void sys_stat64_stop (int rc)
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_rdev, sizeof(si->buf->st_rdev));
-	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_size, sizeof(si->buf->st_size));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("stat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
-	    //taint_syscall_memory_out ("stat64", (char *)&si->buf->st_blocks, sizeof(si->buf->st_blocks));
 	}
-	LOG_PRINT ("Done with stat64.\n");
 }
 
 static inline void sys_lstat64_start (struct thread_data* tdata, char* path, struct stat64* buf) {
@@ -2352,6 +2366,8 @@ static inline void sys_lstat64_stop (int rc)
 	clear_mem_taints ((u_long)si->buf, sizeof(struct stat64));
 	if (rc == 0) {
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ino, sizeof(si->buf->st_ino));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_nlink, sizeof(si->buf->st_nlink));
+	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_rdev, sizeof(si->buf->st_rdev));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_atime, sizeof(si->buf->st_atime));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_ctime, sizeof(si->buf->st_ctime));
 	    taint_syscall_memory_out ("lstat64", (char *)&si->buf->st_mtime, sizeof(si->buf->st_mtime));
@@ -2725,6 +2741,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_unlink:
             sys_unlink_start (tdata, (char*) syscallarg0);
             break;
+        case SYS_chmod:
+	    sys_chmod_start (tdata, (char*) syscallarg0, (mode_t) syscallarg1);
+            break;
         case SYS_inotify_init1:
 	    sys_inotify_init1_start (tdata, (int) syscallarg0);
 	    break;
@@ -2825,7 +2844,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_mremap:
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
-            fprintf (stderr, "[UNHANDLED] mremap for read-only mmap region detection.\n");
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -3142,7 +3160,7 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
         }
 
 	// Fourth, restore pthread state for this thread and readjust jiggled mem protections
-	sync_my_pthread_state (current_thread);
+	sync_my_pthread_state (current_thread, &recall_funcs);
 	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
 
 	// Fifth, another barrier, so that all threads resume execution only when memory state is
@@ -3297,10 +3315,28 @@ static ADDRINT returnArg (BOOL arg)
     return arg;
 }
 
+#ifdef OPTIMIZED
+#define SLAB_SIZE (1024*1024)
+static inline char* get_copy_of_disasm (INS ins) 
+{ 
+    static char* slab = NULL;
+    static int slab_bytes = 0;
+
+    if (slab == NULL || slab_bytes > SLAB_SIZE-256) {
+	slab = (char *) malloc(SLAB_SIZE);
+	slab_bytes = 0;
+    }
+    string s = INS_Disassemble(ins);
+    char* p = strcpy (slab+slab_bytes, s.c_str());
+    slab_bytes += s.length()+1;
+    return p;
+}
+#else
 static inline char* get_copy_of_disasm (INS ins) { 
 	const char* tmp = INS_Disassemble (ins).c_str();
 	return strdup (tmp);
 }
+#endif
 
 static inline void put_copy_of_disasm (char* str) { 
 	//TODO memory leak
@@ -3427,6 +3463,24 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
     put_copy_of_disasm (str);
 }
 
+static inline void fw_slice_src_memflag (INS ins, REG base_reg, REG index_reg, int mask)  
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_memflag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_MEMORYREAD_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   PASS_BASE_INDEX,
+		   IARG_UINT32, mask,
+		   IARG_REG_VALUE, REG_EFLAGS, 
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
 static inline void fw_slice_src_mem2fpureg (INS ins, REG base_reg, REG index_reg, int fp_stack_change) 
 {
     char* str = get_copy_of_disasm (ins);
@@ -3478,6 +3532,28 @@ static inline void fw_slice_src_regreg (INS ins, REG dstreg, REG srcreg)
 		   IARG_UINT32, REG_Size(srcreg),
 		   IARG_REG_CONST_REFERENCE, srcreg, 
 		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_regregflag (INS ins, REG dstreg, REG srcreg, int mask) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_regregflag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(dstreg),
+		   IARG_UINT32, REG_Size(dstreg),
+		   IARG_REG_CONST_REFERENCE, dstreg, 
+		   IARG_UINT32, REG_is_Upper8(dstreg),
+		   IARG_UINT32, translate_reg(srcreg),
+		   IARG_UINT32, REG_Size(srcreg),
+		   IARG_REG_CONST_REFERENCE, srcreg, 
+		   IARG_UINT32, REG_is_Upper8(srcreg),
+		   IARG_UINT32, mask,
+		   IARG_REG_VALUE, REG_EFLAGS, 
 		   IARG_END);
     put_copy_of_disasm (str);
 }
@@ -3567,7 +3643,7 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 			   IARG_INST_PTR,
 			   IARG_PTR, str,
 			   IARG_MEMORYREAD_EA,
-			       IARG_UINT32, INS_MemoryReadSize(ins),
+			   IARG_UINT32, INS_MemoryReadSize(ins),
 			   IARG_BRANCH_TARGET_ADDR,
 			   IARG_END);
 	}
@@ -3593,6 +3669,24 @@ static inline void fw_slice_src_flag (INS ins, uint32_t mask)
 			   IARG_END);
 	}
     }
+    put_copy_of_disasm (str);
+}
+
+static inline void fw_slice_src_regflag (INS ins, REG reg, uint32_t mask) 
+{ 
+    char* str = get_copy_of_disasm (ins);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_regflag),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_UINT32, translate_reg(reg),
+		   IARG_UINT32, REG_Size(reg),
+		   IARG_REG_CONST_REFERENCE, reg, 
+		   IARG_UINT32, REG_is_Upper8(reg),
+		   IARG_UINT32, mask,
+		   IARG_REG_VALUE, REG_EFLAGS, 
+		   IARG_END);
     put_copy_of_disasm (str);
 }
 
@@ -4029,6 +4123,24 @@ static inline void instrument_taint_add_reg2reg (INS ins, REG dstreg, REG srcreg
 		   IARG_END);
 }
 
+static inline void instrument_taint_add_regflag2reg (INS ins, REG dstreg, REG srcreg, int mask, int set_flags, int clear_flags)
+{
+    UINT32 dst_regsize = REG_Size(dstreg);
+    UINT32 src_regsize = REG_Size(srcreg);
+    UINT32 size = (dst_regsize < src_regsize) ? dst_regsize : src_regsize;
+
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_add_regflag2reg_offset),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_UINT32, get_reg_off(dstreg),
+		   IARG_UINT32, get_reg_off(srcreg),
+		   IARG_UINT32, size,
+		   IARG_UINT32, mask,
+		   IARG_UINT32, set_flags, 
+		   IARG_UINT32, clear_flags,
+		   IARG_END);
+}
+
 static void instrument_taint_add_reg2esp (INS ins, REG srcreg, int set_flags, int clear_flags)
 {
     UINT32 src_regsize = REG_Size(srcreg);
@@ -4141,6 +4253,22 @@ static void inline instrument_taint_mem2flag (INS ins, uint32_t set_mask, uint32
 		   IARG_FAST_ANALYSIS_CALL,
 		   IARG_MEMORYREAD_EA,
 		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   IARG_UINT32, set_mask, 
+		   IARG_UINT32, clear_mask,
+		   PASS_BASE_INDEX_TAINT,
+		   IARG_END);
+}
+
+static void inline instrument_taint_memflag2memflags (INS ins, uint32_t mask, uint32_t set_mask, uint32_t clear_mask, REG base_reg, REG index_reg)
+{
+    SETUP_BASE_INDEX_TAINT;
+
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(taint_memflag2memflags),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_MEMORYREAD_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   IARG_UINT32, mask,
 		   IARG_UINT32, set_mask, 
 		   IARG_UINT32, clear_mask,
 		   PASS_BASE_INDEX_TAINT,
@@ -5028,6 +5156,67 @@ static void instrument_addorsub(INS ins, int set_flags, int clear_flags)
     }
 }
 
+/* static */
+void instrument_sbb (INS ins)
+{
+    int op1mem = INS_OperandIsMemory(ins, 0);
+    int op2mem = INS_OperandIsMemory(ins, 1);
+    int op1reg = INS_OperandIsReg(ins, 0);
+    int op2reg = INS_OperandIsReg(ins, 1);
+    int op2imm = INS_OperandIsImmediate(ins, 1);
+
+    if((op1mem && op2reg)) {
+	fprintf (stderr, "[ERROR] should handle CF_FLAG for sbb mem/reg\n");
+        REG reg = INS_OperandReg(ins, 1);
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins), base_reg, index_reg);
+        instrument_taint_add_reg2mem(ins, reg, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG, 0);
+    } else if(op1reg && op2mem) {
+	fprintf (stderr, "[ERROR] should handle CF_FLAG for sbb reg/mem\n");
+        REG reg = INS_OperandReg(ins, 0);
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
+	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins), base_reg, index_reg);
+        instrument_taint_add_mem2reg(ins, reg, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG, 0, base_reg, index_reg);
+    } else if(op1reg && op2reg) {
+        REG dstreg = INS_OperandReg(ins, 0);
+        REG reg = INS_OperandReg(ins, 1);
+	if (dstreg == reg) {
+	    fw_slice_src_flag (ins, CF_FLAG); 
+	    INS_InsertCall(ins, IPOINT_BEFORE,
+			   AFUNPTR(taint_flag2regflags),
+			   IARG_FAST_ANALYSIS_CALL,
+			   IARG_UINT32, translate_reg(dstreg),
+			   IARG_UINT32, CF_FLAG, 
+			   IARG_UINT32, REG_Size(reg),
+			   IARG_UINT32, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG,
+			   IARG_END);
+        } else {
+	    fw_slice_src_regregflag (ins, dstreg, reg, CF_FLAG);
+	    instrument_taint_add_regflag2reg(ins, dstreg, reg, CF_FLAG, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG, 0);
+        }
+    } else if(op1mem && op2imm) {
+	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
+	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
+	fw_slice_src_memflag (ins, base_reg, index_reg, CF_FLAG);
+	instrument_taint_memflag2memflags (ins, CF_FLAG, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG, 0, base_reg, index_reg);
+    } else if(op1reg && op2imm){
+        REG reg = INS_OperandReg(ins, 0);
+	fw_slice_src_regflag (ins, reg, CF_FLAG); 
+	INS_InsertCall(ins, IPOINT_BEFORE,
+		       AFUNPTR(taint_regflag2regflags),
+		       IARG_FAST_ANALYSIS_CALL,
+		       IARG_UINT32, translate_reg(reg),
+		       IARG_UINT32, CF_FLAG, 
+		       IARG_UINT32, REG_Size(reg),
+		       IARG_UINT32, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG,
+		       IARG_END);
+    } else {
+	assert (0);
+    }
+}
+
 /* Divide has 3 operands.
  *
  *  r/m, AX, AL/H/X <- quotient, AH <- remainder
@@ -5874,10 +6063,14 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	old_taint = new_taint;
 	print_me = true;
     }
-
-    if (addr1 >= 0xa755c000 && addr1 < 0xa755c000 + 0x60000) print_me = true;
-    if (addr2 >= 0xa755c000 && addr2 < 0xa755c000 + 0x60000) print_me = true;
 #endif
+
+    if (addr1 >= 0xaa57c000 && addr1 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
+    if (addr2 >= 0xaa57c000 && addr2 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
+    if (addr1 >= 0xaa6ac000 && addr1 < 0xaa6ac000 + 0x4000 && *ppthread_log_clock > 1286393) print_me = true;
+    if (addr2 >= 0xaa6ac000 && addr2 < 0xaa6ac000 + 0x4000 && *ppthread_log_clock > 1286393) print_me = true;
+    if (addr1 >= 0xa7426000 && addr1 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
+    if (addr2 >= 0xa7426000 && addr2 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
 
     if (print_me) {
 	printf ("#%x %s, clock %ld, pid %d bb %lld, mem loc %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->record_pid, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
@@ -6162,9 +6355,12 @@ void instruction_instrumentation(INS ins, void *v)
 	    break;
 	case XED_ICLASS_ADD:
 	case XED_ICLASS_SUB:
-	case XED_ICLASS_SBB:
 	case XED_ICLASS_ADC:
 	    instrument_addorsub(ins, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0);
+	    slice_handled = 1;
+	    break;
+	case XED_ICLASS_SBB:
+	    instrument_sbb (ins);
 	    slice_handled = 1;
 	    break;
 	case XED_ICLASS_DIV:
@@ -7733,11 +7929,11 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
                            IARG_FUNCRET_EXITPOINT_VALUE,
 			    IARG_END);
-        } else if (!strcmp (name, "pthread_cond_timedwait")) {
+	} else if (!strcmp (name, "pthread_cond_timedwait")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2, 
                     IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
@@ -7760,6 +7956,7 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
+<<<<<<< HEAD
             pthread_operation_addr["pthread_log_lll_wait_tid"] = RTN_Address(rtn);
         } else if (!strcmp (name, "pthread_log_lll_lock")) { 
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_lll_lock_before,
@@ -7806,22 +8003,49 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_rwlock_destroy,
                            IARG_FUNCRET_EXITPOINT_VALUE,
 			    IARG_END);
+#ifndef OPTIMIZED
         } else if (!strcmp (name, "pthread_create") || 
-		   !strcmp (name, "pthread_log_stat") || !strcmp (name, "pthread_log_alloc") || !strcmp (name, "pthread_log_debug") || !strcmp (name, "pthread_log_block") || 
+		   !strcmp (name, "pthread_log_full") ||
+		   !strcmp (name, "pthread_log_stat") || 
+		   !strcmp (name, "pthread_log_alloc") || 
+		   !strcmp (name, "pthread_log_debug") || 
+		   !strcmp (name, "pthread_log_block") || 
+		   !strcmp (name, "pthread_sysign") ||
 		   !strcmp (name+strlen(name)-4, "_rep") ||
-		   !strcmp (name, "__pthread_initialize_minimal") || !strcmp (name, "pthread_getspecific") || !strcmp(name, "__pthread_getspecific") || !strcmp(name, "__pthread_setspecific") ||
-		   !strncmp (name, "pthread_mutexattr", 17) || !strncmp (name, "__pthread_mutexattr", 19) || !strncmp (name, "pthread_attr", 12)  || !strcmp(name, "__pthread_mutex_init") || 
-		   !strcmp (name, "__pthread_once") || !strcmp (name, "__pthread_key_create") || !strcmp (name, "pthread_once") || !strcmp (name, "pthread_sysign") ||
-		   !strcmp (name, "pthread_cond_init") || !strncmp (name, "pthread_condattr", 16) || !strcmp(name, "pthread_cond_broadcast") || !strcmp(name, "pthread_cond_signal") ||
-		   !strcmp (name, "__pthread_register_cancel") || !strcmp(name, "__pthread_unregister_cancel") || !strcmp(name, "__pthread_enable_asynccancel") || !strcmp(name, "__pthread_disable_asynccancel")||
-                   !strcmp (name, "pthread_self") || !strcmp (name, "pthread_getaffinity_np") || !strcmp (name, "pthread_getattr_np") || !strcmp (name, "pthread_sigmask") || 
-                   !strcmp (name, "__pthread_once_internal"))
-        {
+		   !strcmp (name, "__pthread_initialize_minimal") || 
+		   !strcmp (name, "pthread_getspecific") || 
+		   !strcmp (name, "__pthread_getspecific") || 
+		   !strcmp (name, "__pthread_setspecific") ||
+		   !strcmp (name, "pthread_self") ||
+		   !strncmp (name, "pthread_mutexattr", 17) || 
+		   !strncmp (name, "__pthread_mutexattr", 19) || 
+		   !strncmp (name, "pthread_attr", 12)  || 
+		   !strcmp (name, "__pthread_mutex_init") || 
+		   !strcmp (name, "pthread_rwlock_init") ||
+		   !strcmp (name, "__pthread_once") || 
+		   !strcmp (name, "pthread_once") || 
+		   !strcmp (name, "pthread_sysign") || 
+		   !strcmp (name, "pthread_sigmask") || 
+		   !strcmp (name, "pthread_self") || 
+		   !strcmp (name, "pthread_getattr_np") || 
+		   !strcmp (name, "pthread_getaffinity_np") || 
+		   !strcmp (name, "__pthread_key_create") ||
+		   !strcmp (name, "pthread_cond_init") || 
+		   !strncmp (name, "pthread_condattr", 16) || 
+		   !strcmp (name, "pthread_cond_broadcast") || 
+		   !strcmp (name, "pthread_cond_signal") || 
+		   !strcmp (name, "pthread_cond_destroy") || 
+                   !strcmp (name, "__pthread_once_internal")) ||
+		   !strcmp (name, "__pthread_register_cancel") || 
+		   !strcmp (name, "__pthread_unregister_cancel") || 
+		   !strcmp (name, "__pthread_enable_asynccancel") || 
+		   !strcmp (name, "__pthread_disable_asynccancel")) {
             printf ("ignored pthread operation %s\n", name);
         } else {
             RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) untracked_pthread_function, 
 			    IARG_PTR, name, 
 			    IARG_END);
+#endif
         }
         RTN_Close(rtn);
     }

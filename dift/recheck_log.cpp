@@ -107,12 +107,15 @@ static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int s
 	if (res->psr.sysnum != syscall) {  //debugging: print out all skipped syscall
 	    switch (res->psr.sysnum) {
 	    case SYS_kill:
-	    case 45:  
-	    case 91:  
-	    case 125: 
-            case 120: 
+	    case SYS_brk:
+	    case SYS_munmap:  
+	    case SYS_mprotect: 
+            case SYS_clone:
+	    case SYS_mremap:
             case SYS_sched_yield:
-	    case 192: break; //already handled
+	    case SYS_mmap: 
+	    case SYS_mmap2: 
+		break; //already handled
 	    default:
 		fprintf (stderr, "[POTENTIAL UNHANDLED SYSCALL] skip_to_syscall: syscall %d, index %lld is skipped, start_clock %lu - looking for %d\n", res->psr.sysnum , res->index, res->start_clock, syscall); 
 	    }
@@ -1607,11 +1610,28 @@ int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock)
     struct klog_result* res = skip_to_syscall (handle, SYS_unlink);
 
     check_reg_arguments ("unlink", 1);
-    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1)) fprintf (stderr, "[ERROR] unlink pathname is tainted\n");
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1)) fprintf (stderr, "[ERROR] unlink pathname is tainted: %s\n", pathname);
 
     write_header_into_recheck_log (handle->recheckfd, SYS_unlink, res->retval, sizeof(struct unlink_recheck) + strlen(pathname)+1, clock);
     uchk.pathname = pathname;
     write_data_into_recheck_log (handle->recheckfd, &uchk, sizeof(uchk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
+
+    return 0;
+}
+
+int recheck_chmod (struct recheck_handle* handle, char* pathname, mode_t mode, u_long clock)
+{
+    struct chmod_recheck cchk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_chmod);
+
+    check_reg_arguments ("chmod", 2);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1)) fprintf (stderr, "[ERROR] chmod pathname is tainted: %s\n", pathname);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_chmod, res->retval, sizeof(struct chmod_recheck) + strlen(pathname)+1, clock);
+    cchk.pathname = pathname;
+    cchk.mode = mode;
+    write_data_into_recheck_log (handle->recheckfd, &cchk, sizeof(cchk));
     write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
 
     return 0;
@@ -1753,10 +1773,17 @@ int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void
     sachk.shmaddr = shmaddr;
     sachk.raddr = raddr;
     sachk.shmflg = shmflg;
-
     if (res->retval != -1) {
 	sachk.raddrval = ((struct shmat_retvals *) res->retparams)->raddr;
     }
+    if (res->retparams) {
+	struct shmat_retvals* pshmat = (struct shmat_retvals *) res->retparams;
+	sachk.size = pshmat->size;
+	add_shared_memory (sachk.raddrval, sachk.size);
+    } else {
+	sachk.size = 0;
+    }
+
     write_data_into_recheck_log (handle->recheckfd, &sachk, sizeof(sachk));
 
     return 0;

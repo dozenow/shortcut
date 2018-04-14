@@ -2,6 +2,8 @@
 #include <map>
 using namespace std;
 
+#define LPRINT(x,...)
+
 extern struct thread_data* current_thread;
 
 // Synchronization data structures that may need to be recreated
@@ -25,27 +27,31 @@ void track_pthread_mutex_lock (int retval, int is_libc_lock)
         return;
     }
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, mutex lock %p\n", current_thread->record_pid, (void*) mutex);
+    LPRINT ("record pid %d, mutex lock %p\n", current_thread->record_pid, (void*) mutex);
     if (active_mutex.find(mutex) == active_mutex.end()) {
 	struct mutex_state state;
 	state.lock_count = 1; // Use this to handle recursive locks
 	state.pid = current_thread->record_pid;
         state.is_libc_lock = is_libc_lock;
 	active_mutex[mutex] = state;
+	LPRINT ("\tpid %d count %d\n", state.pid, state.lock_count);
     }  else {
 	struct mutex_state& state = active_mutex[mutex];
-	if (state.lock_count > 0 && state.pid != current_thread->record_pid) {
-	    fprintf (stderr, "[ERROR] different locker so not a recursive lock: %x, previous pid %d current pid %d\n", mutex, state.pid, current_thread->record_pid);
+	if (state.pid == current_thread->record_pid) {
+	    state.lock_count++;
+	} else {
+	    state.pid = current_thread->record_pid;
+	    state.lock_count = 1;
 	}
-	state.pid = current_thread->record_pid;
-	state.lock_count++;
+	LPRINT ("\tpid %d count %d\n", state.pid, state.lock_count);
     }
 }
 
 void track_pthread_mutex_trylock (ADDRINT retval, int is_libc_lock)
 {
-    PTHREAD_DEBUG ("record pid %d, mutex trylock %p retval %d\n", current_thread->record_pid, (void*) current_thread->pthread_info.mutex_info_cache.mutex, retval);
-    if (retval == 0) track_pthread_mutex_lock (retval, is_libc_lock);
+    LPRINT ("record pid %d: retval %d\n", current_thread->record_pid, retval);
+    LPRINT ("record pid %d, mutex trylock %p retval %d\n", current_thread->record_pid, (void*) current_thread->pthread_info.mutex_info_cache.mutex, retval);
+    if (retval == 0) track_pthread_mutex_lock ();
 }
 
 void track_pthread_mutex_unlock (int retval)
@@ -55,9 +61,13 @@ void track_pthread_mutex_unlock (int retval)
         return;
     }
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, mutex unlock %p\n", current_thread->record_pid, (void*) mutex);
+    LPRINT ("record pid %d, mutex unlock %p\n", current_thread->record_pid, (void*) mutex);
     struct mutex_state& state = active_mutex[mutex];
-    state.lock_count--;
+    if (state.pid == current_thread->record_pid) {
+	state.lock_count--;
+	if (state.lock_count == 0) state.pid = 0;
+    }
+    LPRINT ("\tpid %d count %d\n", state.pid, state.lock_count);
 }
 
 void track_pthread_mutex_destroy (int retval)
@@ -68,6 +78,45 @@ void track_pthread_mutex_destroy (int retval)
     }
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
     active_mutex.erase (mutex);
+}
+
+void track_pthread_rwlock_wrlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    LPRINT ("pid %d write locking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.state == RWLOCK_WRITE_LOCKED) {  
+	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
+    }
+    state.state = RWLOCK_WRITE_LOCKED;
+    state.pids.insert(current_thread->record_pid);
+}
+
+void track_pthread_rwlock_rdlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    LPRINT ("pid %d read locking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.pids.find(current_thread->record_pid) != state.pids.end()) {  
+	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
+    }
+    state.state = RWLOCK_READ_LOCKED;
+    state.pids.insert(current_thread->record_pid);
+}
+
+void track_pthread_rwlock_unlock ()
+{
+    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
+    LPRINT ("pid %d unlocking %x\n", current_thread->record_pid, rwlock);
+    struct rwlock_state& state = active_rwlock[rwlock];
+    if (state.pids.find(current_thread->record_pid) == state.pids.end()) {  
+	fprintf (stderr, "[ERROR] cannot find rwlock being unlocked\n");
+    } else {
+	state.pids.erase(current_thread->record_pid);
+	if (state.pids.empty()) {
+	    state.state = RWLOCK_UNLOCKED;
+	}
+    }
 }
 
 static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mutex, ADDRINT abstime)
@@ -98,38 +147,42 @@ static inline void destroy_wait_state (ADDRINT wait)
     }
 }
 
-void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime)
+void track_pthread_cond_wait_before (ADDRINT cond, ADDRINT mutex)
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     cache->mutex = mutex;
     cache->cond = cond;
     cache->abstime = abstime;
-    PTHREAD_DEBUG ("record pid %d, before cond_(timed)wait lock %p, cond %p\n", current_thread->record_pid, (void*)mutex, (void*) cond);
-    //unlock
+    LPRINT ("record pid %d, before cond_(timed)wait lock %p, cond %p\n", current_thread->record_pid, (void*)mutex, (void*) cond);
+    // We are releasing the lock
     struct mutex_state& state = active_mutex[mutex];
-    state.lock_count--;
-
+    if (state.pid == current_thread->record_pid) {
+	state.lock_count = 0;
+	state.pid = 0;
+    } else {
+	fprintf (stderr, "Pid %d calling cond_wait without mutex? %lx\n", current_thread->record_pid, (u_long) mutex);
+    }
     change_wait_state (cond, COND_BEFORE_WAIT, mutex, abstime);
 }
 
-void track_pthread_cond_timedwait_after (ADDRINT rtn_addr) 
+void track_pthread_cond_wait_after (void) 
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
-    PTHREAD_DEBUG ("record pid %d, after cond_(timed)wait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
+    LPRINT ("record pid %d, after cond_(timed)wait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
     //lock again
     struct mutex_state& state = active_mutex[cache->mutex];
-    if (state.lock_count > 0 && state.pid != current_thread->record_pid) {
-        fprintf (stderr, "[ERROR] cond_wait: different locker so not a recursive lock: %x, previous pid %d current pid %d; sometimes this is a correct behavior if there is a mutex_lock from another thread right before this cond_wait\n", cache->mutex, state.pid, current_thread->record_pid);
-    }
+    //if (state.lock_count > 0 && state.pid != current_thread->record_pid) {
+        //fprintf (stderr, "[ERROR] cond_wait: different locker so not a recursive lock: %x, previous pid %d current pid %d; sometimes this is a correct behavior if there is a mutex_lock from another thread right before this cond_wait\n", cache->mutex, state.pid, current_thread->record_pid);
+    //}
     state.pid = current_thread->record_pid;
-    state.lock_count++;
+    state.lock_count = 1;
 
     destroy_wait_state (cache->cond);
 }
 
 void track_pthread_lll_wait_tid_before (ADDRINT tid)
 {
-    PTHREAD_DEBUG ("record pid %d, before lll_wait_tid %p\n", current_thread->record_pid, (void*)tid);
+    LPRINT ("record pid %d, before lll_wait_tid %p\n", current_thread->record_pid, (void*)tid);
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     cache->tid = tid;
     change_wait_state (tid, LLL_WAIT_TID_BEFORE, 0, 0);
@@ -138,7 +191,7 @@ void track_pthread_lll_wait_tid_before (ADDRINT tid)
 void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr)
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
-    PTHREAD_DEBUG ("record pid %d, after lll_wait_tid %p\n", current_thread->record_pid, (void*)cache->tid);
+    LPRINT ("record pid %d, after lll_wait_tid %p\n", current_thread->record_pid, (void*)cache->tid);
     destroy_wait_state (cache->tid);
 }
 
@@ -152,7 +205,7 @@ void track_lll_lock_before (ADDRINT plock, ADDRINT type)
 void track_lll_lock_after ()
 {
     struct lll_lock_info_cache* cache = &current_thread->pthread_info.lll_lock_info_cache;
-    PTHREAD_DEBUG ("record pid %d, lll lock %p\n", current_thread->record_pid, (void*) cache->plock);
+    LPRINT ("record pid %d, lll lock %p\n", current_thread->record_pid, (void*) cache->plock);
     if (active_lll_lock.find(cache->plock) == active_lll_lock.end()) {
 	struct lll_lock_state state;
 	state.pid = current_thread->record_pid;
@@ -176,22 +229,49 @@ void track_lll_unlock_after ()
     state.type = 0;
 }
 
-void sync_pthread_state (struct thread_data* tdata)
+void sync_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs)
 {
     assert (0); //don't use this function; use the other one
     for (map<ADDRINT, struct mutex_state>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
         if (iter->second.lock_count > 0 && iter->second.pid == tdata->record_pid) { 
-	    fprintf (stderr, "calling pthread_mutex_lock on lock 0x%x\n", iter->first);
 	    for (int i = 0; i < iter->second.lock_count; i++) {
+		LPRINT ("calling pthread_mutex_lock on lock 0x%x\n", iter->first);
 		OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%x", iter->first);
+		OUTPUT_SLICE_INFO_THREAD (tdata, "");
+		OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%lx", recall_funcs->mutex_lock);
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");
 		OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_mutex_lock_shim");
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");
-		OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 4");
+		OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 8");
 		OUTPUT_SLICE_INFO_THREAD (tdata, "");
 	    }
         }
     }
+    for (map<ADDRINT, struct rwlock_state>::iterator iter = active_rwlock.begin(); iter != active_rwlock.end(); ++iter) { 
+	if (iter->second.state == RWLOCK_READ_LOCKED && (iter->second.pids.find(tdata->record_pid) != iter->second.pids.end())) { 
+	    LPRINT ("calling pthread_rwlock_rdlock on lock 0x%x\n", iter->first);
+	    OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%x", iter->first);
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%lx", recall_funcs->rwlock_rdlock);
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_rwlock_rdlock_shim");
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 8");
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+        }
+	if (iter->second.state == RWLOCK_WRITE_LOCKED && iter->second.pids.find(tdata->record_pid) != iter->second.pids.end()) { 
+	    LPRINT ("calling pthread_rwlock_wrlock on lock 0x%x\n", iter->first);
+	    OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%x", iter->first);
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "push 0x%lx", recall_funcs->rwlock_wrlock);
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "call pthread_rwlock_wrlock_shim");
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+	    OUTPUT_SLICE_THREAD (tdata, 0, "add esp, 8");
+	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
+        }
+    }
+
 }
 
 void track_rwlock_rdlock (int retval)
@@ -201,7 +281,7 @@ void track_rwlock_rdlock (int retval)
         return;
     }
     ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, rwlock %p rdlock\n", current_thread->record_pid, (void*) rwlock);
+    LPRINT ("record pid %d, rwlock %p rdlock\n", current_thread->record_pid, (void*) rwlock);
     if (active_rwlock.find(rwlock) == active_rwlock.end()) {
 	struct rwlock_state state;
         state.readers.insert (current_thread->record_pid);
@@ -224,7 +304,7 @@ void track_rwlock_wrlock (int retval)
         return;
     }
     ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, rwlock %p wrlock\n", current_thread->record_pid, (void*) rwlock);
+    LPRINT ("record pid %d, rwlock %p wrlock\n", current_thread->record_pid, (void*) rwlock);
     if (active_rwlock.find(rwlock) == active_rwlock.end()) {
 	struct rwlock_state state;
         state.readers.insert (current_thread->record_pid);
@@ -248,7 +328,7 @@ void track_rwlock_unlock (int retval)
         return;
     }
     ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    PTHREAD_DEBUG ("record pid %d, rwlock unlock %p\n", current_thread->record_pid, (void*) rwlock);
+    LPRINT ("record pid %d, rwlock unlock %p\n", current_thread->record_pid, (void*) rwlock);
     struct rwlock_state& state = active_rwlock[rwlock];
     if (state.is_write_locked) { 
         assert (state.write_lock_pid == current_thread->record_pid);
@@ -270,7 +350,7 @@ void track_rwlock_destroy (int retval)
 }
 
 // Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
-void sync_my_pthread_state (struct thread_data* tdata)
+void sync_my_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs)
 {
     OUTPUT_MAIN_THREAD (tdata, "pushfd /*start to re-create pthread states*/");
     OUTPUT_MAIN_THREAD (tdata, "push eax /*start to re-create pthread states*/"); //used for indirect calls
@@ -305,7 +385,6 @@ void sync_my_pthread_state (struct thread_data* tdata)
     //rwlock states
     for (map<ADDRINT, struct rwlock_state>::iterator iter = active_rwlock.begin(); iter != active_rwlock.end(); ++iter) { 
         if (iter->second.is_write_locked && iter->second.write_lock_pid == tdata->record_pid) {
-            fprintf (stderr, "re-constructing pthread_rwlock_wrlock not fully tested; please manually inspect the exslice main c file.\n");
             OUTPUT_MAIN_THREAD (tdata, "mov eax, 0x%x", pthread_operation_addr["pthread_rwlock_wrlock"]);
             OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->first);
             OUTPUT_MAIN_THREAD (tdata, "call eax /*pthread_rwlock_wrlock*/");
@@ -319,48 +398,7 @@ void sync_my_pthread_state (struct thread_data* tdata)
     }
 
 
-#if 0 
     //we probably don't need to reconstruct the wait states, as if the thread is waiting, it will eventually call the pthread function in the eglibc and we fixed the state there
-    //wait state
-    for (map<ADDRINT, struct wait_state*>::iterator iter = active_wait.begin(); iter != active_wait.end(); ++iter) { 
-        if (iter->second->pid == tdata->record_pid) { 
-            bool timedwait = (iter->second->abstime == UINT_MAX);
-            if (iter->second->state == COND_BEFORE_WAIT) { 
-                //check if the mutex is held by another thread
-                map<ADDRINT, struct mutex_state>::iterator mutex_state = active_mutex.find(iter->second->mutex);
-                if (mutex_state != active_mutex.end()) { 
-                    if (mutex_state->second.pid != tdata->record_pid) { 
-                        fprintf (stderr, "[ERROR] thread pid %d the mutex %x  in cond_wait is held by another thread. cannot init.\n", tdata->record_pid, iter->second->mutex);
-                    } else { 
-                        fprintf (stderr, "[ERROR] thread pid %d is still holding the mutex %x (for cond_wait)??\n", tdata->record_pid, iter->second->mutex);
-                    }
-                    fprintf (stderr, "   --- mutex pid %d lock_count %d\n", mutex_state->secod.pid, mutex_state->secondsecond..lock_count);
-                    continue;
-                }
-                fprintf (stderr, "re-constructing pthread_cond_XXXwait; not fully tested; please manually inspect the exslice main c file.\n");
-                if (timedwait) { 
-                    OUTPUT_MAIN_THREAD (tdata, "mov eax, 0x%x", pthread_operation_addr["pthread_cond_timedwait"]);
-                    OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->second->abstime);
-                    OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->second->mutex);
-                    OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->first);
-                    OUTPUT_MAIN_THREAD (tdata, "call eax /*pthread_cond_timedwait*/");
-                    OUTPUT_MAIN_THREAD (tdata, "add esp, 12");
-                } else { 
-                    OUTPUT_MAIN_THREAD (tdata, "mov eax, 0x%x", pthread_operation_addr["pthread_cond_wait"]);
-                    OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->second->mutex);
-                    OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->first);
-                    OUTPUT_MAIN_THREAD (tdata, "call eax /*pthread_cond_wait*/");
-                    OUTPUT_MAIN_THREAD (tdata, "add esp, 8");
-                }
-            } else if (iter->second->state == LLL_WAIT_TID_BEFORE) { 
-                OUTPUT_MAIN_THREAD (tdata, "mov eax, 0x%x", pthread_operation_addr["pthread_log_lll_wait_tid"]);
-                OUTPUT_MAIN_THREAD (tdata, "push 0x%x", iter->first);
-                OUTPUT_MAIN_THREAD (tdata, "call eax /*pthread_log_lll_wait_tid/");
-                OUTPUT_MAIN_THREAD (tdata, "add esp, 12");
-            }
-        }
-    }
-#endif
 
     OUTPUT_MAIN_THREAD (tdata, "pop eax /*start to re-create pthread states*/"); //used for indirect calls
     OUTPUT_MAIN_THREAD (tdata, "popfd /*start to re-create pthread states*/");
