@@ -2377,7 +2377,6 @@ static inline void print_extra_move_reg_10 (ADDRINT ip, int reg, const PIN_REGIS
 {
     if (!tainted) {
 	OUTPUT_SLICE_EXTRA (ip, "pushfd");
-	OUTPUT_SLICE_EXTRA (ip, "sub esp, 12"); // For alignment
 	OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (regvalue->byte+6)));
 	OUTPUT_SLICE_EXTRA (ip, "push %lu", *((u_long *) (regvalue->byte+2)));
 	OUTPUT_SLICE_EXTRA (ip, "pushw %lu", *((u_long *) regvalue->byte));
