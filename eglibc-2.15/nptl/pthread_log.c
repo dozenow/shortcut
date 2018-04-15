@@ -190,7 +190,7 @@ int pthread_log_mutex_lock_rep (__libc_lock_t* lock)
 
 void pthread_log_mutex_lock (__libc_lock_t* lock)
 {
-    static volatile __thread __libc_lock_t* vlock;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
+    static volatile __thread __libc_lock_t* vlock;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from git  merge)
     vlock = lock;
    
     if (is_recording()) { 
@@ -264,7 +264,7 @@ int pthread_log_mutex_unlock_rep (__libc_lock_t* lock)
 
 void pthread_log_mutex_unlock (__libc_lock_t* lock)
 {
-    static volatile __thread __libc_lock_t* vlock; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
+    static volatile __thread __libc_lock_t* vlock; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from git  merge)
     vlock = lock;
 
     if (is_recording()) { 
@@ -2265,7 +2265,7 @@ int __new_sem_wait_rep (sem_t *__sem)
 int __new_sem_wait (sem_t *__sem)
 {
   int rc;
-  static volatile __thread sem_t* vsem;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
+  static volatile __thread sem_t* vsem;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from git  merge)
   vsem = __sem;
 
   if (is_recording()) {
@@ -2319,7 +2319,7 @@ attribute_compat_text_section
 __old_sem_wait (sem_t *__sem)
 {
   int rc;
-  static volatile __thread sem_t* vsem; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
+  static volatile __thread sem_t* vsem; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from git  merge)
   vsem = __sem;
 
   if (is_recording()) {

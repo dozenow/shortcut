@@ -2099,7 +2099,7 @@ destroy_replay_group (struct replay_group *prepg)
 #ifdef REPLAY_STATS
 	atomic_inc(&rstats.finished);
 #endif
-#ifdef NO_TIMING
+#ifndef NO_TIMING
 	printk ("Goodbye, cruel lamp!  This replay is over\n");
 	{
 		struct rusage ru;
@@ -4548,7 +4548,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		MPRINT("%d is a thread!\n",current->pid);
 	}
 	//if (PRINT_TIME) {
-#ifdef NO_TIMING
+#ifndef NO_TIMING
 	if (1) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
@@ -4722,7 +4722,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			//run slice jumps back to the user space
 			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
 			//if (PRINT_TIME) {
-#ifdef NO_TIMING
+#ifndef NO_TIMING
 			if (1) {
 				struct rusage ru;
 				mm_segment_t old_fs = get_fs();
