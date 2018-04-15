@@ -1563,8 +1563,7 @@ __pthread_cond_timedwait (cond, mutex, abstime)
                 GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, mutex is locked\n", cond, mutex);
             else 
                 GPRINT ("[ERROR] ----- call pthread_cond_timedwait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", cond, mutex, rc);
-            //we have to call timedwait here as the abstime in the slice is already modified
-            rc = __internal_pthread_cond_timedwait (cond, mutex, abstime)
+            //rc = __internal_pthread_cond_timedwait (cond, mutex, abstime)
             GPRINT ("call pthread_cond_timedwait: done\n");
 	}
 	RESET_OLD_STACKP(); 
@@ -1635,7 +1634,7 @@ __pthread_cond_wait (cond, mutex)
                 GPRINT ("call pthread_cond_wait, cond %p, mutex %p, mutex is locked\n", cond, mutex);
             else 
                 GPRINT ("[ERROR] ----- call pthread_cond_wait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", cond, mutex, rc);
-            rc = __internal_pthread_cond_wait (cond, mutex);
+            //rc = __internal_pthread_cond_wait (cond, mutex);
             GPRINT ("call pthread_cond_wait: done\n");
 	}
 	RESET_OLD_STACKP(); 
