@@ -190,7 +190,7 @@ int pthread_log_mutex_lock_rep (__libc_lock_t* lock)
 
 void pthread_log_mutex_lock (__libc_lock_t* lock)
 {
-    static volatile __thread __libc_lock_t* vlock;
+    static volatile __thread __libc_lock_t* vlock;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
     vlock = lock;
    
     if (is_recording()) { 
@@ -264,7 +264,7 @@ int pthread_log_mutex_unlock_rep (__libc_lock_t* lock)
 
 void pthread_log_mutex_unlock (__libc_lock_t* lock)
 {
-    static volatile __thread __libc_lock_t* vlock;
+    static volatile __thread __libc_lock_t* vlock; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
     vlock = lock;
 
     if (is_recording()) { 
@@ -1142,6 +1142,7 @@ pthread_mutex_timedlock (mutex, abstime)
 	rc = pthread_mutex_timedlock_rep (mutex, abstime);
 	if (rc == -ENOTREPLAYING) {
             GPRINT ("calling pthread_mutex_timedlock to fix pthread states, lock %p\n", vmutex);
+	    rc = internal_pthread_mutex_timedlock (mutex, abstime);
 	}
 	RESET_OLD_STACKP(); 
     } else {
@@ -1191,7 +1192,7 @@ __pthread_mutex_trylock (mutex)
 	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_mutex_trylock_rep (mutex);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_mutex_trylock to fix pthread states, lock %p\n", vmutex);
+            GPRINT ("calling pthread_mutex_trylock to fix pthread states, lock %p\n", mutex);
 	    rc = __internal_pthread_mutex_trylock (mutex);
 	}
 	RESET_OLD_STACKP(); 
@@ -1244,7 +1245,7 @@ __pthread_mutex_unlock (mutex)
 	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_mutex_unlock_rep (mutex);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_mutex_unlock to fix pthread states, lock %p\n", vmutex);
+            GPRINT ("calling pthread_mutex_unlock to fix pthread states, lock %p\n", mutex);
 	    rc = __pthread_mutex_unlock_usercnt (mutex, 1);
 	}
 	RESET_OLD_STACKP(); 
@@ -1486,7 +1487,7 @@ __pthread_cond_signal (cond)
 	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_cond_signal_rep (cond);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_cond_signal to fix pthread states, cond %p\n", vcond);
+            GPRINT ("calling pthread_cond_signal to fix pthread states, cond %p\n", cond);
 	    rc = __internal_pthread_cond_signal (cond);
 	}
 	RESET_OLD_STACKP(); 
@@ -1556,13 +1557,14 @@ __pthread_cond_timedwait (cond, mutex, abstime)
 	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_cond_timedwait_rep (cond, mutex, abstime);
 	if (rc == -ENOTREPLAYING) {
-	    // Treat this as a spurious wakeup, so reacquire the lock and exit
-            GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, time %p, tv_sec %ld tv_nsec %ld, try to lock mutex first\n", vcond, vmutex, vabstime, vabstime->tv_sec, vabstime->tv_nsec);
+            GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, time %p, tv_sec %ld tv_nsec %ld, try to lock mutex first\n", cond, mutex, abstime, abstime->tv_sec, abstime->tv_nsec);
 	    rc = __internal_pthread_mutex_lock (mutex);
             if (rc == 0)
-                GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, mutex is locked\n", vcond, vmutex);
+                GPRINT ("call pthread_cond_timedwait, cond %p, mutex %p, mutex is locked\n", cond, mutex);
             else 
-                GPRINT ("[ERROR] ----- call pthread_cond_timedwait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", vcond, vmutex, rc);
+                GPRINT ("[ERROR] ----- call pthread_cond_timedwait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", cond, mutex, rc);
+            //we have to call timedwait here as the abstime in the slice is already modified
+            rc = __internal_pthread_cond_timedwait (cond, mutex, abstime)
             GPRINT ("call pthread_cond_timedwait: done\n");
 	}
 	RESET_OLD_STACKP(); 
@@ -1620,19 +1622,20 @@ __pthread_cond_wait (cond, mutex)
 	struct pthread_log_head* head = THREAD_GETMEM (THREAD_SELF, log_head);
 	THREAD_SETMEM (THREAD_SELF, stackswitch1, (u_long) cond);
 	THREAD_SETMEM (THREAD_SELF, stackswitch2, (u_long) mutex);
-	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
-	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	GET_OLD_STACKP();
 	SET_NEW_STACKP();
+	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch2);
+	cond = (pthread_cond_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_cond_wait_rep (cond, mutex);
 	if (rc == -ENOTREPLAYING) {
 	    // Treat this as a spurious wakeup, so reacquire the lock and exit
-            GPRINT ("call pthread_cond_wait, cond %p, mutex %p, try to lock mutex first\n", vcond, vmutex);
+            GPRINT ("call pthread_cond_wait, cond %p, mutex %p, try to lock mutex first\n", cond, mutex);
 	    rc = __internal_pthread_mutex_lock (mutex);
             if (rc == 0)
-                GPRINT ("call pthread_cond_wait, cond %p, mutex %p, mutex is locked\n", vcond, vmutex);
+                GPRINT ("call pthread_cond_wait, cond %p, mutex %p, mutex is locked\n", cond, mutex);
             else 
-                GPRINT ("[ERROR] ----- call pthread_cond_wait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", vcond, vmutex, rc);
+                GPRINT ("[ERROR] ----- call pthread_cond_wait, cond %p, mutex %p, mutex cannot be locked, ret %d\n", cond, mutex, rc);
+            rc = __internal_pthread_cond_wait (cond, mutex);
             GPRINT ("call pthread_cond_wait: done\n");
 	}
 	RESET_OLD_STACKP(); 
@@ -1741,7 +1744,7 @@ __pthread_rwlock_wrlock (rwlock)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_rwlock_wrlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_wrlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_wrlock to fix pthread states, lock %p\n", rwlock);
 	    rc = __internal_pthread_rwlock_wrlock (rwlock);
 	}	    
 	RESET_OLD_STACKP(); 
@@ -1803,7 +1806,7 @@ pthread_rwlock_timedrdlock (rwlock, abstime)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = pthread_rwlock_timedrdlock_rep (rwlock, abstime);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", rwlock);
 	    rc = internal_pthread_rwlock_timedrdlock (rwlock, abstime);
 	}
 	RESET_OLD_STACKP(); 
@@ -1862,7 +1865,7 @@ pthread_rwlock_timedwrlock (rwlock, abstime)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = pthread_rwlock_timedwrlock_rep (rwlock, abstime);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_timedwrlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_timedwrlock to fix pthread states, lock %p\n", rwlock);
 	    rc = internal_pthread_rwlock_timedwrlock (rwlock, abstime);
 	}
 	RESET_OLD_STACKP(); 
@@ -1914,7 +1917,7 @@ __pthread_rwlock_tryrdlock (rwlock)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_rwlock_tryrdlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_timedrdlock to fix pthread states, lock %p\n", rwlock);
 	    rc = __internal_pthread_rwlock_tryrdlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
@@ -1968,7 +1971,7 @@ __pthread_rwlock_trywrlock (rwlock)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_rwlock_trywrlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_trywrlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_trywrlock to fix pthread states, lock %p\n", rwlock);
 	    rc = __internal_pthread_rwlock_trywrlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
@@ -2019,7 +2022,7 @@ __pthread_rwlock_unlock (pthread_rwlock_t *rwlock)
 	rwlock = (pthread_rwlock_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_rwlock_unlock_rep (rwlock);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_rwlock_unlock to fix pthread states, lock %p\n", vrwlock);
+            GPRINT ("calling pthread_rwlock_unlock to fix pthread states, lock %p\n", rwlock);
 	    rc = __internal_pthread_rwlock_unlock (rwlock);
 	}
 	RESET_OLD_STACKP(); 
@@ -2262,7 +2265,7 @@ int __new_sem_wait_rep (sem_t *__sem)
 int __new_sem_wait (sem_t *__sem)
 {
   int rc;
-  static volatile __thread sem_t* vsem;
+  static volatile __thread sem_t* vsem;  //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
   vsem = __sem;
 
   if (is_recording()) {
@@ -2316,7 +2319,7 @@ attribute_compat_text_section
 __old_sem_wait (sem_t *__sem)
 {
   int rc;
-  static volatile __thread sem_t* vsem;
+  static volatile __thread sem_t* vsem; //FIXME: this is correct but we could have another implementation as pthread_mutex_lock (leftover from merge)
   vsem = __sem;
 
   if (is_recording()) {

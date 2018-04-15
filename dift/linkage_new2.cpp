@@ -3160,7 +3160,7 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
         }
 
 	// Fourth, restore pthread state for this thread and readjust jiggled mem protections
-	sync_my_pthread_state (current_thread, &recall_funcs);
+	sync_my_pthread_state (current_thread);
 	OUTPUT_MAIN_THREAD (current_thread, "call upprotect_mem");
 
 	// Fifth, another barrier, so that all threads resume execution only when memory state is
@@ -6063,7 +6063,6 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	old_taint = new_taint;
 	print_me = true;
     }
-#endif
 
     if (addr1 >= 0xaa57c000 && addr1 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
     if (addr2 >= 0xaa57c000 && addr2 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
@@ -6071,7 +6070,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     if (addr2 >= 0xaa6ac000 && addr2 < 0xaa6ac000 + 0x4000 && *ppthread_log_clock > 1286393) print_me = true;
     if (addr1 >= 0xa7426000 && addr1 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
     if (addr2 >= 0xa7426000 && addr2 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
-
+#endif
     if (print_me) {
 	printf ("#%x %s, clock %ld, pid %d bb %lld, mem loc %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->record_pid, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
 	PIN_LockClient();
@@ -7929,11 +7928,11 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_mutex_destroy, 
                            IARG_FUNCRET_EXITPOINT_VALUE,
 			    IARG_END);
-	} else if (!strcmp (name, "pthread_cond_timedwait")) {
+        } else if (!strcmp (name, "pthread_cond_timedwait")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_cond_timedwait_before,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                     IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2, 
+                    IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
                     IARG_END);
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_cond_timedwait_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
@@ -7956,7 +7955,6 @@ void routine (RTN rtn, VOID* v)
             RTN_InsertCall (rtn, IPOINT_AFTER, (AFUNPTR) track_pthread_lll_wait_tid_after, 
                     IARG_ADDRINT, RTN_Address(rtn), 
                     IARG_END);
-<<<<<<< HEAD
             pthread_operation_addr["pthread_log_lll_wait_tid"] = RTN_Address(rtn);
         } else if (!strcmp (name, "pthread_log_lll_lock")) { 
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_lll_lock_before,
@@ -8024,7 +8022,6 @@ void routine (RTN rtn, VOID* v)
 		   !strcmp (name, "pthread_rwlock_init") ||
 		   !strcmp (name, "__pthread_once") || 
 		   !strcmp (name, "pthread_once") || 
-		   !strcmp (name, "pthread_sysign") || 
 		   !strcmp (name, "pthread_sigmask") || 
 		   !strcmp (name, "pthread_self") || 
 		   !strcmp (name, "pthread_getattr_np") || 
@@ -8035,7 +8032,7 @@ void routine (RTN rtn, VOID* v)
 		   !strcmp (name, "pthread_cond_broadcast") || 
 		   !strcmp (name, "pthread_cond_signal") || 
 		   !strcmp (name, "pthread_cond_destroy") || 
-                   !strcmp (name, "__pthread_once_internal")) ||
+                   !strcmp (name, "__pthread_once_internal") ||
 		   !strcmp (name, "__pthread_register_cancel") || 
 		   !strcmp (name, "__pthread_unregister_cancel") || 
 		   !strcmp (name, "__pthread_enable_asynccancel") || 

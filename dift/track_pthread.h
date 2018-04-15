@@ -14,10 +14,6 @@
 
 #define COND_BEFORE_WAIT        5
 #define COND_AFTER_WAIT         6
-#define RWLOCK_UNLOCKED         0
-#define RWLOCK_READ_LOCKED      1
-#define RWLOCK_WRITE_LOCKED     2
-
 #define LLL_WAIT_TID_BEFORE     7
 #define LLL_WAIT_TID_AFTER      8
 
@@ -36,11 +32,6 @@ struct mutex_state {
 struct lll_lock_state {
     pid_t pid; //current holder
     ADDRINT type; //private or not
-};
-
-struct rwlock_state {
-    int state;     //state
-    set<int> pids; // current holder(s)
 };
 
 struct wait_state {
@@ -63,12 +54,8 @@ void track_pthread_mutex_trylock (ADDRINT retval, int is_libc_lock);
 void track_pthread_mutex_unlock (int retval);
 void track_pthread_mutex_destroy (int retval);
 
-void track_pthread_rwlock_wrlock ();
-void track_pthread_rwlock_rdlock ();
-void track_pthread_rwlock_unlock ();
-
-void track_pthread_cond_wait_before (ADDRINT cond, ADDRINT mutex);
-void track_pthread_cond_wait_after (void);
+void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime);
+void track_pthread_cond_timedwait_after (ADDRINT rtn_addr);
 
 void track_pthread_lll_wait_tid_before (ADDRINT tid);
 void track_pthread_lll_wait_tid_after (ADDRINT rtn_addr);
@@ -82,7 +69,7 @@ void track_rwlock_unlock (int retval);
 void track_rwlock_destroy (int retval);
 
 void sync_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs);
-void sync_my_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs);
+void sync_my_pthread_state (struct thread_data* tdata);
 
 
 #endif

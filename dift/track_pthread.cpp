@@ -49,9 +49,8 @@ void track_pthread_mutex_lock (int retval, int is_libc_lock)
 
 void track_pthread_mutex_trylock (ADDRINT retval, int is_libc_lock)
 {
-    LPRINT ("record pid %d: retval %d\n", current_thread->record_pid, retval);
     LPRINT ("record pid %d, mutex trylock %p retval %d\n", current_thread->record_pid, (void*) current_thread->pthread_info.mutex_info_cache.mutex, retval);
-    if (retval == 0) track_pthread_mutex_lock ();
+    if (retval == 0) track_pthread_mutex_lock (retval, is_libc_lock);
 }
 
 void track_pthread_mutex_unlock (int retval)
@@ -78,45 +77,6 @@ void track_pthread_mutex_destroy (int retval)
     }
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
     active_mutex.erase (mutex);
-}
-
-void track_pthread_rwlock_wrlock ()
-{
-    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    LPRINT ("pid %d write locking %x\n", current_thread->record_pid, rwlock);
-    struct rwlock_state& state = active_rwlock[rwlock];
-    if (state.state == RWLOCK_WRITE_LOCKED) {  
-	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
-    }
-    state.state = RWLOCK_WRITE_LOCKED;
-    state.pids.insert(current_thread->record_pid);
-}
-
-void track_pthread_rwlock_rdlock ()
-{
-    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    LPRINT ("pid %d read locking %x\n", current_thread->record_pid, rwlock);
-    struct rwlock_state& state = active_rwlock[rwlock];
-    if (state.pids.find(current_thread->record_pid) != state.pids.end()) {  
-	fprintf (stderr, "[ERROR] we are not handling recursive rwlocks\n");
-    }
-    state.state = RWLOCK_READ_LOCKED;
-    state.pids.insert(current_thread->record_pid);
-}
-
-void track_pthread_rwlock_unlock ()
-{
-    ADDRINT rwlock = current_thread->pthread_info.mutex_info_cache.mutex;
-    LPRINT ("pid %d unlocking %x\n", current_thread->record_pid, rwlock);
-    struct rwlock_state& state = active_rwlock[rwlock];
-    if (state.pids.find(current_thread->record_pid) == state.pids.end()) {  
-	fprintf (stderr, "[ERROR] cannot find rwlock being unlocked\n");
-    } else {
-	state.pids.erase(current_thread->record_pid);
-	if (state.pids.empty()) {
-	    state.state = RWLOCK_UNLOCKED;
-	}
-    }
 }
 
 static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mutex, ADDRINT abstime)
@@ -147,7 +107,7 @@ static inline void destroy_wait_state (ADDRINT wait)
     }
 }
 
-void track_pthread_cond_wait_before (ADDRINT cond, ADDRINT mutex)
+void track_pthread_cond_timedwait_before (ADDRINT cond, ADDRINT mutex, ADDRINT abstime)
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     cache->mutex = mutex;
@@ -165,7 +125,7 @@ void track_pthread_cond_wait_before (ADDRINT cond, ADDRINT mutex)
     change_wait_state (cond, COND_BEFORE_WAIT, mutex, abstime);
 }
 
-void track_pthread_cond_wait_after (void) 
+void track_pthread_cond_timedwait_after (ADDRINT rtn_addr) 
 {
     struct wait_info_cache *cache = &current_thread->pthread_info.wait_info_cache;
     LPRINT ("record pid %d, after cond_(timed)wait lock %p, cond %p\n", current_thread->record_pid, (void*)cache->mutex, (void*) cache->cond);
@@ -232,6 +192,7 @@ void track_lll_unlock_after ()
 void sync_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs)
 {
     assert (0); //don't use this function; use the other one
+#if 0
     for (map<ADDRINT, struct mutex_state>::iterator iter = active_mutex.begin(); iter != active_mutex.end(); ++iter) { 
         if (iter->second.lock_count > 0 && iter->second.pid == tdata->record_pid) { 
 	    for (int i = 0; i < iter->second.lock_count; i++) {
@@ -271,7 +232,7 @@ void sync_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall
 	    OUTPUT_SLICE_INFO_THREAD (tdata, "");
         }
     }
-
+#endif
 }
 
 void track_rwlock_rdlock (int retval)
@@ -350,7 +311,7 @@ void track_rwlock_destroy (int retval)
 }
 
 // Mostly the same, but writes to main c file instead of slice file - doesn't wakup when done
-void sync_my_pthread_state (struct thread_data* tdata, struct pthread_funcs* recall_funcs)
+void sync_my_pthread_state (struct thread_data* tdata)
 {
     OUTPUT_MAIN_THREAD (tdata, "pushfd /*start to re-create pthread states*/");
     OUTPUT_MAIN_THREAD (tdata, "push eax /*start to re-create pthread states*/"); //used for indirect calls

@@ -4104,6 +4104,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
         return 0;
 }
 
+#if 0  //xdou: have an another redundant implementation, so this one is commented out for now
 void pthread_mutex_lock_shim (int (*fn)(pthread_mutex_t *), pthread_mutex_t* mutex)
 {
 #ifdef PRINT_VALUES
@@ -4153,3 +4154,4 @@ void pthread_rwlock_wrlock_shim (int (*fn)(pthread_rwlock_t *), pthread_rwlock_t
     }
 #endif
 }
+#endif
