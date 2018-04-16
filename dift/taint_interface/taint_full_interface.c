@@ -2606,7 +2606,7 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted);
 	    if (index_tainted != 1 && index_reg_size > 0) print_extra_move_reg (ip, index_reg, index_reg_size, &index_value, index_reg_u8, index_tainted);
 	    if (!is_ro_region) {
-		for (u_long i = start; i < end; i++) {
+		for (u_long i = start; i < end+mem_size-1; i++) {
 		    if (!is_mem_tainted(i, 1)) {
 			// Untainted - load in valid value to memory address
 			OUTPUT_SLICE (0, "mov byte ptr [0x%lx], %d", i, *(u_char *) i);

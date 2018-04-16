@@ -33,20 +33,20 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
 
-#ifdef PRINT_VALUES
+#ifdef PRINT_TO_LOG
 static char logbuf[4096];
 #endif
 
 // This pauses for a while to let us see what went wrong
 #define DELAY
-//#define DELAY sleep(2);
+//#define DELAY sleep(10);
 #ifdef PRINT_TIMING
 unsigned long long success_syscalls[512];
 unsigned long long failed_syscalls[512];
@@ -123,7 +123,7 @@ inline void print_timings (void)
 static char buf[2*1024*1024];
 static char tmpbuf[1024*1024];
 static char taintbuf_filename[256];
-#ifdef PRINT_VALUES
+#ifdef PRINT_TO_LOG
 static char slicelog_filename[256];
 #endif
 static char* bufptr = buf;
@@ -333,6 +333,7 @@ void handle_jump_diverge()
     int i;
     dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
 #ifdef PRINT_VALUES
     fflush (stderr);
 #endif
@@ -347,6 +348,7 @@ void handle_delayed_jump_diverge()
     int i;
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
+    LPRINT ("[MISMATCH] control flow delayed divergence");
 #ifdef PRINT_VALUES
     fflush (stderr);
 #endif
@@ -356,11 +358,12 @@ void handle_delayed_jump_diverge()
     abort();
 }
 
-void handle_index_diverge(u_long foo, u_long bar, u_long baz, u_long quux)
+void handle_index_diverge()
 {
     int i;
-    dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+    dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 36)));
+    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
+    LPRINT ("[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_index_diverge: should not get here\n");
@@ -556,8 +559,12 @@ long read_recheck (size_t count)
 			LPRINT ("[MISMATCH] read returns different values - read/expected:\n");
 			for (i = 0; i < rc; i++) {
 			    if (tmpbuf[i] != tmpbuf[use_count+i]) LPRINT ("*");
-			    LPRINT ("%02x/%02x ", tmpbuf[i]&0xff, readData[i]&0xff);
+			    LPRINT ("%02x/%02x ", tmpbuf[i]&0xff, tmpbuf[use_count+i]&0xff);
 			    if (i%16 == 15) LPRINT ("\n");
+			}
+			LPRINT ("\n");
+			for (i = 0; i < rc; i++) {
+			    if (tmpbuf[i] != tmpbuf[use_count+i]) LPRINT ("%d ", i);
 			}
 			LPRINT ("\n");
 			handle_mismatch();
@@ -640,8 +647,7 @@ inline void print_buffer (u_char* buffer, int len)
     LPRINT ("}\n");
 }
 
-#ifdef PRINT_DEBUG
-inline void print_buffer_hex (u_char* buffer, int len)
+static inline void print_buffer_hex (u_char* buffer, int len)
 {
     int i;
     LPRINT ("{");
@@ -650,7 +656,6 @@ inline void print_buffer_hex (u_char* buffer, int len)
     }
     LPRINT ("}\n");
 }
-#endif
 
 #ifdef REORDERING
 static u_char reorderbuf[65536];
@@ -1209,6 +1214,10 @@ long write_recheck (size_t count)
 
     start_timing();
     rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
+    if (rc == -1 && errno == EINTR) {
+	LPRINT ("Write interrupted try again\n");
+	rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
+    }
     end_timing(SYS_write, rc);
     check_retval ("write", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_write);
@@ -3129,17 +3138,21 @@ long newselect_recheck ()
 {
     struct recheck_entry* pentry;
     struct newselect_recheck* pnewselect;
-    fd_set* readfds = NULL;
-    fd_set* writefds = NULL;
-    fd_set* exceptfds = NULL;
-    struct timeval* use_timeout;
-    int rc;
+    fd_set readfds, writefds, exceptfds;
+    fd_set* preadfds;
+    fd_set* pwritefds; 
+    fd_set* pexceptfds;
+    struct timeval use_timeout;
+    struct timeval* puse_timeout;
+    char* data;
+    int rc, tries = 0;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
     pnewselect = (struct newselect_recheck *) bufptr;
+    data = bufptr + sizeof(struct newselect_recheck);
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
@@ -3147,35 +3160,74 @@ long newselect_recheck ()
 	    (u_long) pnewselect->pwritefds, (u_long) pnewselect->pexceptfds, (u_long) pnewselect->ptimeout, pnewselect->is_timeout_tainted, pentry->retval, pentry->clock);
 #endif 
 
-    if (pnewselect->preadfds) readfds = &pnewselect->readfds;
-    if (pnewselect->pwritefds) readfds = &pnewselect->writefds;
-    if (pnewselect->pexceptfds) readfds = &pnewselect->exceptfds;
-    if (pnewselect->is_timeout_tainted) {
-	use_timeout = pnewselect->ptimeout;
-	LPRINT ("use_timeout is %lx %lx\n", pnewselect->ptimeout->tv_sec, pnewselect->ptimeout->tv_usec);
+    if (pnewselect->preadfds) {
+	memcpy (&readfds, &pnewselect->readfds, pnewselect->setsize);
+	preadfds = &readfds;
     } else {
-	use_timeout = &pnewselect->timeout;
-	LPRINT ("use_timeout is %lx %lx\n", pnewselect->timeout.tv_sec, pnewselect->timeout.tv_usec);
+	preadfds = NULL;
+    }
+    if (pnewselect->pwritefds) {
+	memcpy (&writefds, &pnewselect->writefds, pnewselect->setsize);
+	pwritefds = &writefds;
+    } else {
+	pwritefds = NULL;
+    }
+    if (pnewselect->pexceptfds) {
+	memcpy (&exceptfds, &pnewselect->exceptfds, pnewselect->setsize);
+	pexceptfds = &exceptfds;
+    } else {
+	pexceptfds = NULL;
+    }
+    if (pnewselect->ptimeout) {
+	if (pnewselect->is_timeout_tainted) {
+	    memcpy (&use_timeout, pnewselect->ptimeout, sizeof(use_timeout));
+	} else {
+	    memcpy (&use_timeout, &pnewselect->timeout, sizeof(use_timeout));
+	}
+	puse_timeout = &use_timeout;
+#ifdef PRINT_VALUES
+	LPRINT ("use_timeout is %lx %lx\n", use_timeout.tv_sec, use_timeout.tv_usec);
+#endif
+    } else {
+	puse_timeout = NULL;
     }
 
     start_timing();
-    rc = syscall(SYS__newselect, pnewselect->nfds, readfds, writefds, exceptfds, use_timeout);
+    rc = syscall(SYS__newselect, pnewselect->nfds, preadfds, pwritefds, pexceptfds, puse_timeout);
+    while (rc == -1 && errno == EINTR && tries < 10) {
+	tries++;
+	usleep (500*(2<<(tries-1)));
+	rc = syscall(SYS__newselect, pnewselect->nfds, preadfds, pwritefds, pexceptfds, puse_timeout);
+    }
     end_timing(SYS__newselect, rc);
     check_retval ("select", pentry->clock, pentry->retval, rc);
-    if (readfds && memcmp (&pnewselect->readfds, readfds, pnewselect->setsize)) {
-	printf ("[MISMATCH] select returns different readfds\n");
-	handle_mismatch();
+
+    if (preadfds) {
+	if (memcmp (data, &readfds, pnewselect->setsize)) {
+	    LPRINT ("[MISMATCH] select returns different readfds: nfds %d setisze %ld\n", pnewselect->nfds, pnewselect->setsize);
+	    print_buffer_hex ((u_char *) data, pnewselect->setsize);
+	    print_buffer_hex ((u_char *) &readfds, pnewselect->setsize);
+	    handle_mismatch();
+	}
+	data += pnewselect->setsize;
     }
-    if (writefds && memcmp (&pnewselect->writefds, writefds, pnewselect->setsize)) {
-	printf ("[MISMATCH] select returns different writefds\n");
-	handle_mismatch();
+    if (pwritefds) {
+	if (memcmp (data, &writefds, pnewselect->setsize)) {
+	    printf ("[MISMATCH] select returns different writefds\n");
+	    handle_mismatch();
+	}
+	data += pnewselect->setsize;
     }
-    if (exceptfds && memcmp (&pnewselect->exceptfds, exceptfds, pnewselect->setsize)) {
-	printf ("[MISMATCH] select returns different exceptfds\n");
-	handle_mismatch();
+    if (pexceptfds) {
+	if (memcmp (data, &exceptfds, pnewselect->setsize)) {
+	    printf ("[MISMATCH] select returns different exceptfds\n");
+	    handle_mismatch();
+	}
+	data += pnewselect->setsize;
     }
-    if (pnewselect->is_timeout_tainted) {
-	add_to_taintbuf (pentry, NEWSELECT_TIMEOUT, use_timeout, sizeof(struct timeval));
+    if (rc > 0 && puse_timeout) {
+	memcpy (pnewselect->ptimeout, puse_timeout, sizeof(struct timeval));
+	add_to_taintbuf (pentry, NEWSELECT_TIMEOUT, puse_timeout, sizeof(struct timeval));
     }
     end_timing_func (SYS__newselect);
     return rc;

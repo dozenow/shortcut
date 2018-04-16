@@ -7513,6 +7513,7 @@ void routine (RTN rtn, VOID* v)
                     IARG_END);
 #ifndef OPTIMIZED
         } else if (!strcmp (name, "pthread_create") || 
+		   !strcmp (name, "pthread_equal") ||
 		   !strcmp (name, "pthread_log_full") ||
 		   !strcmp (name, "pthread_log_stat") || 
 		   !strcmp (name, "pthread_log_alloc") || 

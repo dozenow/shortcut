@@ -702,6 +702,11 @@ static void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
     OP_CHECK (OP_RELREAD);
 
     u_long logaddr = get_value();
+
+    if (ip == 0x81acb4d || ip == 0x81acb64) {
+	fprintf (stderr, "rel read of %x memloc %x logaddr %lx clock %lu bb_cnt %lu\n", ip, memloc, logaddr, *ppthread_log_clock, bb_cnt);
+    }
+
     if (logaddr != memloc) {
 	handle_index_diverge(ip, memloc, logaddr, false);
     }
