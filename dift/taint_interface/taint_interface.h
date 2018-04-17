@@ -116,6 +116,7 @@ TAINTSIGN fw_slice_regflag (ADDRINT ip, char* ins_str, int reg, uint32_t regsize
 TAINTSIGN fw_slice_regregflag (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize, const PIN_REGISTER* dst_regvalue, uint32_t dst_reg_u8, int src_reg, uint32_t src_regsize, const PIN_REGISTER* src_regvalue, uint32_t src_reg_u8, uint32_t mask, uint32_t eflags);
 TAINTSIGN fw_slice_push_reg (ADDRINT ip, int reg, const PIN_REGISTER* regvalue, uint32_t reg_u8, u_long mem_loc, uint32_t size);
 TAINTSIGN fw_slice_push_mem (ADDRINT ip, u_long src_mem_loc, u_long dst_mem_loc, uint32_t size, BASE_INDEX_ARGS);
+TAINTSIGN fw_slice_pop_mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, u_long dst_mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t mem_size); 
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_memflag (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS, uint32_t mask, uint32_t eflags);
@@ -269,8 +270,10 @@ TAINTSIGN taint_mix_fpureg2fpureg (int dst_reg, uint32_t dst_size, int src_reg, 
 TAINTSIGN taint_xchg_fpureg2fpureg (int dst_reg, int src_reg, uint32_t size, const CONTEXT* ctx);
 TAINTSIGN taint_load_mem2fpureg_offset(u_long mem_loc, uint32_t reg_off, uint32_t size, uint32_t base_reg_off, uint32_t base_reg_size, uint32_t index_reg_off, uint32_t index_reg_size, const CONTEXT* ctx);
 TAINTSIGN taint_fpuregfpureg2flag (int reg1, int reg2, uint32_t size, const CONTEXT* ctx, uint32_t set_flags, uint32_t clear_flags);
+TAINTSIGN taint_ldmxcsr_check (u_long mem_loc);
 
 int fw_slice_rotate_file (struct thread_data* tdata);
+TAINTSIGN fw_slice_fpu_incstp (ADDRINT ip, char* ins_str, const CONTEXT* ctx);
 
 // For managing reads/writes to shared memory
 void add_shared_memory (u_long start, u_long size);

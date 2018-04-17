@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <assert.h>
 using namespace std;
 
 u_long extra_region = 0;
@@ -45,9 +46,9 @@ static char* map_file (const char* filename, u_long& size)
     return p;
 }
 
-static int compare_files (const char* filename1, const char* filename2, long offset) 
+static int compare_files (const char* filename1, const char* filename2, long offset, char* origin_ckpt = NULL) 
 {
-    u_long size1, size2, addr = 0;
+    u_long size1, size2, size3, addr = 0;
     int bytes_diff = 0;
 
     for (int i = strlen(filename1); i > 0; i--) {
@@ -63,6 +64,11 @@ static int compare_files (const char* filename1, const char* filename2, long off
 
     char* region1 = map_file (filename1, size1);
     char* region2 = map_file (filename2, size2);
+    char* origin_region = NULL;
+    if (origin_ckpt) {
+        origin_region = map_file (origin_ckpt, size3);
+        assert (size1 == size3);
+    }
     if (region1 == NULL || region2 == NULL) return -1;
     
     if (size1+offset != size2) {
@@ -96,8 +102,17 @@ static int compare_files (const char* filename1, const char* filename2, long off
     } else {
 	for (u_long i = 0; i < size1; i++) {
 	    if (region1[i] != region2[i]) {
-		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x\n", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
+		printf ("%s vs. %s: byte 0x%08lx (%08lx) different: 0x%02x vs. 0x%02x ", filename1, filename2, addr+i, i, region1[i]&0xff, region2[i]&0xff);
 		bytes_diff++;
+                if (origin_ckpt != NULL) { 
+                    if (region1[i] == origin_region[i]) { 
+                        printf (", but slice matches original checkpoint ");
+                    } else { 
+                        printf (", in origin checkpoint 0x%02x, 4-byte value %d vs %d", origin_region[i]&0xff,*(int*) (region1 + i), *(int*) (origin_region + i));
+                    }
+                } 
+                printf ("\n");
+
 	    }
 	}
     }
@@ -106,6 +121,14 @@ static int compare_files (const char* filename1, const char* filename2, long off
     munmap (region2, size2);
 
     return 0;
+}
+
+void get_original_ckpt_filename (const char* alt_name, char* output)
+{
+    const char* pos = strstr (alt_name, "last_altex");
+    assert (pos != NULL);
+    strncpy (output, alt_name, pos - alt_name);
+    strcpy (output + (int)(pos-alt_name), pos+11);
 }
 
 int main (int argc, char* argv[])
@@ -196,12 +219,14 @@ int main (int argc, char* argv[])
 	    printf ("Extra region\n");
 	    map<u_long, string>::iterator it2 = replay_regions.find(extra_region-extra_region_offset);	    
 	    if (it2 != replay_regions.end()) {
-		compare_files (it->second.c_str(), it2->second.c_str(), extra_region_offset);
+		compare_files (it->second.c_str(), it2->second.c_str(), extra_region_offset, NULL);
 	    }
 	} else {
 	    map<u_long, string>::iterator it2 = replay_regions.find(it->first);
+            char origin_filename[256];
+            get_original_ckpt_filename (it2->second.c_str(), origin_filename);
 	    if (it2 != replay_regions.end()) {
-		compare_files (it->second.c_str(), it2->second.c_str(), 0);
+                compare_files (it->second.c_str(), it2->second.c_str(), 0, origin_filename);
 	    }
 	}
     }

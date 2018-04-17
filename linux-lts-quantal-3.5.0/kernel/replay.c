@@ -119,7 +119,6 @@ int verify_debug = 0;
 		  replay_min_debug_high >= *(current->replay_thrd->rp_preplay_clock))) printk
 //#define MPRINT(x,...)
 #define MCPRINT
-#define SLICE_DEBUG(x,...)
 
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
@@ -1093,6 +1092,7 @@ struct replay_thread {
 
         struct replay_cache_files* rp_cache_files; // Info about open cache files
         struct replay_cache_files* rp_mmap_files; // Info about open cache files
+	int __user* rp_pthread_status_addr;  //The user-level address where we store the replay status
 	struct semaphore rp_vm_dump_sem; // For debugging memory differences
 };
 
@@ -1256,7 +1256,7 @@ is_pin_attached (void)
 		return 0;
 	}
 	if (current->replay_thrd->rp_group == NULL) {
-		printk ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
+		MPRINT ("pid %d: is_pin_attached: NULL replay group\n", current->pid);
 		return 0;
 	}
 	return (current->replay_thrd->rp_group->rg_attach_device == ATTACH_PIN 
@@ -2099,7 +2099,19 @@ destroy_replay_group (struct replay_group *prepg)
 #ifdef REPLAY_STATS
 	atomic_inc(&rstats.finished);
 #endif
+#ifndef NO_TIMING
 	printk ("Goodbye, cruel lamp!  This replay is over\n");
+	{
+		struct rusage ru;
+		mm_segment_t old_fs = get_fs();
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		set_fs (KERNEL_DS);
+		sys_getrusage (RUSAGE_SELF, &ru);
+		printk ("user %ld, kernel %ld, time %ld.%06ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec, tv.tv_sec, tv.tv_usec);
+		set_fs (old_fs);
+	}
+#endif
 	MPRINT ("Pid %d destroy replay group %p: exit\n", current->pid, prepg);
 }
 
@@ -2310,6 +2322,7 @@ new_replay_thread (struct replay_group* prg, struct record_thread* prec_thrd, u_
 			return NULL;
 		}
 	}
+	prp->rp_pthread_status_addr = 0;
 
 	get_replay_group(prg);
 
@@ -2431,7 +2444,7 @@ dump_user_stack (void)
 	int i = 0;
 
 	struct pt_regs* regs = get_pt_regs (NULL);
-	printk ("sp is %lx\n", regs->sp);
+	printk ("sp is %lx, bp is %lx\n", regs->sp, regs->bp);
 	p = (u_long __user *) regs->sp;
 	do {
 		get_user (v, p);
@@ -2446,7 +2459,7 @@ dump_user_stack (void)
 		}
 	} while (p);
 	p = (u_long __user *) regs->sp;
-	for (i = 0; i < 250; i++) {
+	for (i = 0; i < 150; i++) {
 		get_user (v, p);
 		printk ("value at address %p is 0x%08lx\n", p, v);
 		p++;
@@ -2669,7 +2682,7 @@ reserve_memory (u_long addr, u_long len)
 	BUG_ON(!reserved_mem_list);
 
 	len = (len % PAGE_SIZE == 0) ? len : len - (len % PAGE_SIZE) + PAGE_SIZE; // pad to nearest page size
-	MPRINT ("Inserting reserved memory from %lx to %lx\n", addr, addr+len);
+	MPRINT ("Pid %d Inserting reserved memory from %lx to %lx, clock is %lu\n", current->pid, addr, addr+len, get_clock_value ());
 
 	iter = ds_list_iter_create (reserved_mem_list);
 	while ((pmapping = ds_list_iter_next (iter)) != NULL) {
@@ -4066,21 +4079,21 @@ static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int i
 	int copyed;
 	int is_main_thread = 0; 
 
-	SLICE_DEBUG ("%d ",parent_pid);
+	MPRINT ("%d ",parent_pid);
 	copyed = vfs_write(cfile, (char *) &parent_pid, sizeof(parent_pid), ppos);
 	if (copyed != sizeof(parent_pid)) {
 		printk ("checkpoint_replay_cache_files: tried to write parent_pid, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	SLICE_DEBUG ("%d ",ct->record_pid);
+	MPRINT ("%d ",ct->record_pid);
 	copyed = vfs_write(cfile, (char *) &ct->record_pid, sizeof(ct->record_pid), ppos);
 	if (copyed != sizeof(ct->record_pid)) {
 		printk ("checkpoint_replay_cache_files: tried to write record_pid, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	SLICE_DEBUG ("%d ",is_thread);
+	MPRINT ("%d ",is_thread);
 	copyed = vfs_write(cfile, (char *) &is_thread, sizeof(is_thread), ppos);
 	if (copyed != sizeof(is_thread)) {
 		printk ("checkpoint_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
@@ -4090,14 +4103,14 @@ static int checkpoint_ckpt_tsk_header(struct ckpt_tsk *ct, int parent_pid, int i
 	if (current->replay_thrd->rp_record_thread->rp_record_pid == ct->record_pid) 
 		is_main_thread = 1;
 
-	SLICE_DEBUG ("%d ",is_main_thread);
+	MPRINT ("%d ",is_main_thread);
 	copyed = vfs_write(cfile, (char *) &is_main_thread, sizeof(is_main_thread), ppos);	
 	if (copyed != sizeof(is_main_thread)) {
 		printk ("checkpoint_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
 		return -EINVAL;
 	}
 
-	SLICE_DEBUG ("%d\n", ct->ckpt_pos);
+	MPRINT ("%d\n", ct->ckpt_pos);
 	copyed = vfs_write(cfile, (char *) &ct->ckpt_pos, sizeof(ct->ckpt_pos), ppos);	
 	if (copyed != sizeof(ct->ckpt_pos)) {
 		printk ("checkpoint_replay_cache_files: tried to write ckpt_pos, got rc %d\n", copyed);
@@ -4158,31 +4171,31 @@ restore_ckpt_tsks_header(u_long num_procs, struct file *cfile, loff_t *ppos)
 			printk ("restore_replay_cache_files: tried to write parent_pid, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		SLICE_DEBUG("%d ",unused);
+		MPRINT("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write record_pid, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		SLICE_DEBUG("%d ",unused);
+		MPRINT("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write is_thread, got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		SLICE_DEBUG("%d ",unused);
+		MPRINT("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write is_main_thread got rc %d\n", copyed);
 			return -EINVAL;
 		}
-		SLICE_DEBUG("%d ",unused);
+		MPRINT("%d ",unused);
 		copyed = vfs_read(cfile, (char *) &unused, sizeof(unused), ppos);
 		if (copyed != sizeof(unused)) {
 			printk ("restore_replay_cache_files: tried to write ckpt_pos, got rc %d\n", copyed);
 			return -EINVAL;
 		}		
-		SLICE_DEBUG("%d\n",unused);
+		MPRINT("%d\n",unused);
 	}       
 	return 0; 		
 }
@@ -4224,7 +4237,7 @@ replay_full_ckpt (long rc)
 		sprintf (ckpt, "%s/ckpt.%d", precg->rg_logdir, clock-1);
 	}
 	MPRINT ("replay_full_ckpt saving rc %ld\n", rc);
-	SLICE_DEBUG ("starting checkpoint at pid %d, just after clock %d\n",prept->rp_record_thread->rp_record_pid,clock - 1);
+	MPRINT ("starting checkpoint at pid %d, just after clock %d\n",prept->rp_record_thread->rp_record_pid,clock - 1);
 
 	// Determine how many processes to checkpoint
 	iter = ds_list_iter_create(current->replay_thrd->rp_group->rg_replay_threads);
@@ -4428,15 +4441,10 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	u_long slice_addr = 0;
 	u_long slice_size;
 
-	{
-	    struct timeval tv;
-	    struct rusage ru;
-	    mm_segment_t old_fs = get_fs();
-	    set_fs (KERNEL_DS);
-	    sys_getrusage (RUSAGE_SELF, &ru);
-	    set_fs (old_fs);
-	    do_gettimeofday (&tv);
-	    printk ("Pid %d starting replay_full_ckpt_wakeup %ld.%ld user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+	if(PRINT_TIME) {
+		struct timeval tv;
+		do_gettimeofday (&tv);
+		printk ("starting replay_full_ckpt_wakeup %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
 	if (current->record_thrd || current->replay_thrd) {
@@ -4539,11 +4547,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	else {
 		MPRINT("%d is a thread!\n",current->pid);
 	}
-	if (PRINT_TIME) {
+	//if (PRINT_TIME) {
+#ifndef NO_TIMING
+	if (1) {
 		struct timeval tv;
 		do_gettimeofday (&tv);
-		printk ("Pid %d replay_full_ckpt_wakeup from_disk starts %ld.%ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
+		printk ("Pid %d replay_full_ckpt_wakeup starts %ld.%06ld, is_thread %d\n", current->pid, tv.tv_sec, tv.tv_usec, is_thread);
 	}
+#endif
 	record_pid = replay_full_resume_proc_from_disk(ckpt, current->pid, is_thread,
 						       &retval, &prect->rp_read_log_pos, 
 						       &prept->rp_out_ptr, &consumed, 
@@ -4562,7 +4573,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		printk ("replay_full_ckpt_wakeup from_disk ends %ld.%ld\n", tv.tv_sec, tv.tv_usec);
 	}
 
-	SLICE_DEBUG ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
+	MPRINT ("Pid %d gets record_pid %ld exp clock %ld\n", current->pid, record_pid, prept->rp_expected_clock);
 
 	if (record_pid < 0) {
 		if (num_procs > 1) pckpt_waiter->prepg = NULL;
@@ -4700,16 +4711,19 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		if (execute_slice_name) { 
                         char recheckname[256];
 			struct timeval tv;
+			(void) tv; //compiler
 			
                         snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
 			if (slice_addr == 0) {
-				printk ("Cannot find forward slice library %s\n", recheckname);
+				printk ("Cannot find forward slice library execute_slice_name is %s, recheck_filename is %s\n", execute_slice_name, recheckname);
 				return -EEXIST;
 			}
 
 			//run slice jumps back to the user space
 			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
-			if (PRINT_TIME) {
+			//if (PRINT_TIME) {
+#ifndef NO_TIMING
+			if (1) {
 				struct rusage ru;
 				mm_segment_t old_fs = get_fs();
 				set_fs (KERNEL_DS);
@@ -4717,14 +4731,15 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 				set_fs (old_fs);
 
 				do_gettimeofday (&tv);
-				printk ("Pid %d returns from start_fw_slice, now executing slice, %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+				printk ("Pid %d returns from start_fw_slice %ld.%06ld, user %ld kernel %ld, threads %lu %d\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec, num_procs, atomic_read(&go_live_clock->num_threads));
 			}
+#endif
                         go_live_clock->replay_group = replay_group;
 		}
 		if (PRINT_TIME) {
 			struct timeval tv;
 			do_gettimeofday (&tv);
-			printk ("after start_fw_slice runs %ld.%ld\n", tv.tv_sec, tv.tv_usec);
+			printk ("Pid %dafter start_fw_slice runs %ld.%ld\n", current->pid, tv.tv_sec, tv.tv_usec);
 		}
 		if (attach_device) {
 			/* Cannot support index with go-live since we do not intercept system calls */
@@ -4868,7 +4883,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
 
 
 	// Restart the system call - assume sysenter as a hack
-	MPRINT ("Set pid %d to restart system call on resume\n", current->pid);
+	MPRINT ("Set pid %d (record pid %ld)  to restart system call on resume\n", current->pid, record_pid);
 	get_pt_regs(NULL)->ip -= 2;
 	get_user (ch, (u_char *) get_pt_regs(NULL)->ip);
 	get_user (ch2, (u_char *) get_pt_regs(NULL)->ip+1);
@@ -4908,13 +4923,13 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
         }
 	MPRINT ("slice pid %d: syscall # might be %ld?\n", current->pid, ret_code);
 
-	SLICE_DEBUG ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
+	MPRINT ("Pid %d (%ld) replay_full_ckpt_proc_wakeup restarting syscall %ld (pos %lu)  w/ expected clock %lu, pthread_block_clock %lu\n", 
 		     current->pid, record_pid, ret_code, prept->rp_out_ptr, prept->rp_expected_clock, prept->rp_ckpt_pthread_block_clock);
 
 
 	if (go_live) {
             struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
-            SLICE_DEBUG ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
+            MPRINT ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
                 
 	    current->go_live_thrd = current->replay_thrd; // Save this for easier reference
             current->replay_thrd = NULL;
@@ -4924,7 +4939,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 char recheckname[256];
                 snprintf (recheckname, 256, "%s.%ld", recheck_filename, record_pid);
                 if (slice_addr == 0) {
-                    printk ("Cannot find forward slice library %s\n", recheck_filename);
+		    printk ("Cannot find forward slice library execute_slice_name is %s, recheck_filename is %s\n", execute_slice_name, recheck_filename);
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
@@ -4933,7 +4948,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
                 printk("Pid %d woken up\n", current->pid);*/
-                SLICE_DEBUG ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
+                MPRINT ("Pid %d returns from start_fw_slice, now executing slice.\n", current->pid);
             }
             // TODO: wait for the main thread to destroy the replay group
         }
@@ -6995,7 +7010,7 @@ sys_pthread_print (const char __user * buf, size_t count)
 asmlinkage long
 sys_pthread_init (int __user * status, u_long record_hook, u_long replay_hook, void __user * pthread_clock_map)
 {
-	printk ("sys_pthread_init: pid %d log_status is %p\n", current->pid, status);
+	MPRINT ("sys_pthread_init: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		struct record_thread* prt = current->record_thrd;
 		put_user (1, status);
@@ -7052,7 +7067,7 @@ sys_pthread_log (u_long log_addr, int __user * ignore_addr)
 		read_user_log (current->replay_thrd->rp_record_thread);
 		MPRINT ("Read user log into address %lx for thread %d\n", log_addr, current->pid);
 	} else {
-		printk ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
+		MPRINT ("sys_prthread_log called by pid %d which is neither recording nor replaying\n", current->pid);
 		return -EINVAL;
 	}
 	return 0;
@@ -7160,7 +7175,7 @@ sys_pthread_block (u_long clock)
         //moved this to above the check below. Some weird pin attach issue that I was having before where I think this was getting update while we're in this syscall?
 	// not sure how or why, but we were failing on a can't find thread to run w/ the clock value of preplay_clock == clock
 	rg_lock (prg->rg_rec_group); 
-	MPRINT("Replay Pid %d called sys_pthread_block w/ user clock val %ld when replay clock val is %ld\n",current->pid, clock, *(prt->rp_preplay_clock));
+	MPRINT("Replay Pid %d called sys_pthread_block w/ user clock val %ld when replay clock val is %ld, user status %d\n",current->pid, clock, *(prt->rp_preplay_clock), prt->rp_pthread_status_addr?*(prt->rp_pthread_status_addr):-1);
 
 
 	while (*(prt->rp_preplay_clock) < clock || prt->rp_status == REPLAY_STATUS_RESTART_CKPT){ 
@@ -7195,8 +7210,8 @@ sys_pthread_block (u_long clock)
 					if (tmp->rp_pin_thread_data) {
 						put_user (tmp->rp_pin_thread_data, tmp->rp_pin_curthread_ptr);
 					} else if (prt->rp_pin_thread_data) {
-						printk ("Pid %d: I have pin thread data but switching thread %d (recpid %d) does not\n", 
-							current->pid, tmp->rp_replay_pid, tmp->rp_record_thread->rp_record_pid);
+						printk ("Pid %d: I have pin thread data but switching thread %d (recpid %d) does not, clock %ld\n", 
+							current->pid, tmp->rp_replay_pid, tmp->rp_record_thread->rp_record_pid, *(prt->rp_preplay_clock));
 						tmp->rp_pin_switch_before_attach = 1;
 					}
 
@@ -7261,7 +7276,7 @@ sys_pthread_block (u_long clock)
 		}
 	}
 	//moved this to outside the while loop, see the comment before the lock above (which was also moved to outside the while loop)
-	MPRINT ("Pid %d sys_pthread_block, preplay_clock %ld, attaching %d, rp_status %d\n", current->pid, *(prt->rp_preplay_clock), prt->rp_pin_attaching, prt->rp_status);
+	MPRINT ("Pid %d sys_pthread_block, preplay_clock %ld, attaching %d, rp_status %d, user status %d\n", current->pid, *(prt->rp_preplay_clock), prt->rp_pin_attaching, prt->rp_status, prt->rp_pthread_status_addr?*(prt->rp_pthread_status_addr):-1);
 	rg_unlock (prg->rg_rec_group);
 	/* 
 	 * there's one case where we hit this function and we don't make it into the block above. Basically, pin will restart this function call 
@@ -7339,17 +7354,18 @@ asmlinkage long sys_pthread_full (void)
 		read_user_log (current->replay_thrd->rp_record_thread);	
 		return 0;
 	} else {
-		SLICE_DEBUG ("Pid %d: pthread_log_full only valid for replay processes\n", current->pid);
+		MPRINT ("Pid %d: pthread_log_full only valid for replay processes\n", current->pid);
 		return -EINVAL;
 	}
 }
 
 asmlinkage long sys_pthread_status (int __user * status)
 {
-	printk ("sys_pthread_status: pid %d log_status is %p\n", current->pid, status);
+	MPRINT ("sys_pthread_status: pid %d log_status is %p\n", current->pid, status);
 	if (current->record_thrd) {
 		put_user (1, status);
 	} else if (current->replay_thrd) {
+		current->replay_thrd->rp_pthread_status_addr = status;
 		put_user (2, status);
 	} else {
 		put_user (3, status);
@@ -7396,7 +7412,7 @@ asmlinkage long sys_pthread_sysign (void)
         if (current->replay_thrd)
 	        return get_next_syscall (SIGNAL_WHILE_SYSCALL_IGNORED, NULL); 
         else { 
-                SLICE_DEBUG ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
+                MPRINT ("[HACK] Pid %d Going live while in sys_pthread_sysign\n", current->pid);
                 return -EINVAL;
         }
 }
@@ -8172,7 +8188,7 @@ asmlinkage long trace_exit (int error_code) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:exit\n", current->pid, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:exit\n", current->pid, tp.tv_sec, tp.tv_nsec);
 	}
 	return sys_exit (error_code);
 }
@@ -8882,7 +8898,7 @@ record_read (unsigned int fd, char __user * buf, size_t count)
 			}
 			*((u_int *) pretval) = 0;
 			if (copy_from_user (pretval+sizeof(u_int), buf, rc)) { 
-				printk ("record_read: can't copy to buffer\n"); 
+				printk ("[BUG] record_read: can't copy to buffer\n"); 
 				ARGSKFREE(pretval, rc+sizeof(u_int));	
 				return -EFAULT;
 			}							
@@ -9430,24 +9446,27 @@ replay_open (const char __user * filename, int flags, int mode)
 }
 
 #ifdef TRACE_TIMINGS
+atomic_t last_pid; //only for gcc
+atomic_t last_open_fd; //only for gcc
 static asmlinkage long
 trace_open (const char __user* filename, int flags, int mode) {
 	long rc = sys_open (filename, flags, mode);
-	//printk ("trace_open called %d\n", trace_timings);
-	//if (strstr (filename, ".class")) {
-	//if (strstr (filename, "currency.data")) {
-		if (trace_timings && rc > 0) {
-			struct timespec tp;
-			struct rusage ru;
+	if (trace_timings && rc > 0) {
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+		if (strstr (filename, ".o")) {
 			mm_segment_t old_fs = get_fs();
-			getnstimeofday(&tp);
-			printk ("%d:%ld.%ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+			struct rusage ru;
 			set_fs (KERNEL_DS);
 			sys_getrusage (RUSAGE_SELF, &ru);
-			printk ("user %ld, kernel %ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
 			set_fs (old_fs);
+		} else if (strstr (filename, ".h")) { 
+			atomic_set (&last_pid, current->pid);
+			atomic_set (&last_open_fd, rc);
 		}
-	//}
+	}
 	return rc;
 }
 asmlinkage long shim_open (const char __user * filename, int flags, int mode) SHIM_CALL_MAIN(5, record_open(filename, flags, mode), replay_open(filename, flags, mode), trace_open(filename, flags, mode));
@@ -9511,7 +9530,32 @@ replay_close (int fd)
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long 
+trace_close (int fd) 
+{
+	long rc = sys_close (fd);
+	if (trace_timings && rc == 0) { 
+		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid) { 
+			struct timespec tp;
+			mm_segment_t old_fs = get_fs();
+			struct rusage ru;
+
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%09ld:close fd %d\n", current->pid, tp.tv_sec, tp.tv_nsec, fd);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	}
+	return rc;
+
+}
+asmlinkage long shim_close (int fd) SHIM_CALL_MAIN (6, record_close(fd), replay_close (fd), trace_close(fd));
+#else
 asmlinkage long shim_close (int fd) SHIM_CALL (close, 6, fd);
+#endif
 
 #ifdef TRACE_TIMINGS
 asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) { 
@@ -9519,13 +9563,13 @@ asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+		printk ("%d:%ld.%09ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
 	rc = sys_waitpid (pid, stat_addr, options);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
+		printk ("%d:%ld.%09ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
 	return rc;
 }
@@ -9917,7 +9961,7 @@ static int trace_execve (const char *filename, const char __user *const __user *
 		int count = 0;
 
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:execve filename %s, argv ", current->pid, tp.tv_sec, tp.tv_nsec, filename);
+		printk ("%d:%ld.%09ld:execve filename %s, argv ", current->pid, tp.tv_sec, tp.tv_nsec, filename);
 		up = __argv;
 		do { 
 			if (get_user (pc, up)) {
@@ -10743,7 +10787,7 @@ record_munmap (unsigned long addr, size_t len)
 	rc = sys_munmap (addr, len);
 	new_syscall_done (91, rc);
 	new_syscall_exit (91, NULL);
-	DPRINT ("Pid %d records munmap of addr %lx returning %ld\n", current->pid, addr, rc);
+	MPRINT ("Pid %d records munmap of addr %lx len %u returning %ld\n", current->pid, addr, len, rc);
 	rg_unlock(current->record_thrd->rp_group);
 
 	return rc;
@@ -11728,13 +11772,13 @@ asmlinkage long trace_wait4 (pid_t upid, int __user* stat_addr, int options, str
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:wait4_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:wait4_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	rc = sys_wait4 (upid, stat_addr, options, ru);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:wait4_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:wait4_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	return rc;
 }
@@ -12324,7 +12368,7 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 		}
 
 		if (!(clone_flags&CLONE_VM)) {
-			printk ("This is a fork-style clone - reset the user log appropriately\n");
+			printk ("This is a fork-style clone - reset the user log appropriately: (should we set pthread_status to PTHREAD_LOG_REP_AFTER_FORK?)\n");
 			tsk->replay_thrd->rp_record_thread->rp_user_log_addr = current->replay_thrd->rp_record_thread->rp_user_log_addr;
 #ifdef USE_EXTRA_DEBUG_LOG
 			tsk->replay_thrd->rp_record_thread->rp_user_extra_log_addr = current->replay_thrd->rp_record_thread->rp_user_extra_log_addr;
@@ -12334,6 +12378,7 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 			tsk->replay_thrd->rp_pin_thread_data   = current->replay_thrd->rp_pin_thread_data;  
 			tsk->replay_thrd->rp_pin_curthread_ptr = current->replay_thrd->rp_pin_curthread_ptr;  
 		}
+		tsk->replay_thrd->rp_pthread_status_addr = current->replay_thrd->rp_pthread_status_addr;
 		
 		// read the rest of the log
 		read_log_data (tsk->replay_thrd->rp_record_thread);
@@ -12391,14 +12436,22 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
 	long rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
 	if (trace_timings) {
+		mm_segment_t old_fs = get_fs();
+		struct rusage ru;
 		struct timespec tp;
+		set_fs (KERNEL_DS);
+		sys_getrusage (RUSAGE_SELF, &ru);
+		set_fs (old_fs);
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:clone rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
-		printk ("%ld:%ld.%ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_stime.tv_usec, ru.ru_stime.tv_usec);
+		printk ("%ld:%ld.%09ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
 }
 #endif
+
+static long
+replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr);
 
 long 
 shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
@@ -12417,7 +12470,8 @@ shim_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs 
 		// Allow Pin to do so, by calling replay_clone
 		if (is_pin_attached() && current->replay_thrd->is_pin_vfork) {
 			int child_pid;
-			child_pid = replay_clone(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+			//child_pid = replay_clone(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
+			child_pid = replay_vfork(clone_flags | CLONE_VFORK, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
 			current->replay_thrd->is_pin_vfork = 0;
 			printk("[Pin Clone?]: child_pid = %d\n", child_pid);
 			return child_pid;
@@ -13887,11 +13941,18 @@ record_vfork_handler (struct task_struct* tsk)
 	tsk->record_thrd->rp_next_thread = current->record_thrd->rp_next_thread;
 	current->record_thrd->rp_next_thread = tsk->record_thrd;
 	
-	tsk->record_thrd->rp_user_log_addr = 0; // Should not write to user log before exec - otherwise violates vfork principles
+	//xdou: convert vfork to clone; so these are not used
+	/*tsk->record_thrd->rp_user_log_addr = 0; // Should not write to user log before exec - otherwise violates vfork principles
 #ifdef USE_EXTRA_DEBUG_LOG
 	tsk->record_thrd->rp_user_extra_log_addr = 0;
 #endif
+	*/
 	tsk->record_thrd->rp_ignore_flag_addr = current->record_thrd->rp_ignore_flag_addr;
+	tsk->record_thrd->rp_user_log_addr = current->record_thrd->rp_user_log_addr;
+#ifdef USE_EXTRA_DEBUG_LOG
+	tsk->record_thrd->rp_user_extra_log_addr = current->record_thrd->rp_user_extra_log_addr;
+#endif
+	tsk->record_thrd->rp_record_hook = current->record_thrd->rp_record_hook;
 	
 	// allocate a slab for retparams
 	slab = VMALLOC (argsalloc_size);
@@ -13914,13 +13975,58 @@ static long
 record_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {
 	long rc;
+	struct pthread_log_head __user * phead = NULL;
+#ifdef USE_DEBUG_LOG
+	struct pthread_log_data __user * start, *old_start = NULL;
+#else
+	char __user * start, *old_start = NULL;
+	u_long old_expected_clock, old_num_expected_records;
+#endif
+#ifdef USE_EXTRA_DEBUG_LOG
+	struct pthread_extra_log_head __user * pehead = NULL;
+	char __user * estart, *old_estart = NULL;
+#endif
 
 	new_syscall_enter (190);
 
 	/* On clone, we reset the user log.  On, vfork we do not do this because the parent and child share one
            address space.  This sharing will get fixed on exec. */
+	//xdou: the above statement is true if pin is not attached; if pin is attached, vfork is converted to clone without CLONE_VM being set, and mess up our user log if the child process has some user operations after vfork and before execve
+	//So the quick solution is convert the vfork to clone on both recording and replay, by forcing the parent and child not to share the memory address at all, since it'll be overwritten by execve later anyway
+	//The other solution is that we have to deal with the mismatch where we have the vfork on recording and clone used by pin on replay, by allocating some memory for the user log of the child process
+	phead = (struct pthread_log_head __user *) current->record_thrd->rp_user_log_addr;
+#ifdef USE_DEBUG_LOG
+	start = (struct pthread_log_data __user *) ((char __user *) phead + sizeof (struct pthread_log_head));
+#else
+	start = (char __user *) phead + sizeof (struct pthread_log_head);
+#endif
+	get_user (old_start, &phead->next);
+	put_user (start, &phead->next);
+#ifdef USE_EXTRA_DEBUG_LOG
+	pehead = (struct pthread_extra_log_head __user *) current->record_thrd->rp_user_extra_log_addr;
+	estart = (char __user *) pehead + sizeof (struct pthread_extra_log_head);
+	get_user (old_estart, &pehead->next);
+	put_user (estart, &pehead->next);
+#endif
 
-	rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+#ifndef USE_DEBUG_LOG
+	get_user (old_expected_clock, &phead->expected_clock);
+	put_user (0, &phead->expected_clock);
+	get_user (old_num_expected_records, &phead->num_expected_records);
+	put_user (0, &phead->num_expected_records);
+#endif
+
+	rc = do_fork (clone_flags & (~CLONE_VM)/*force child to run on a seperate memory address*/, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+
+	put_user (old_start, &phead->next);
+#ifdef USE_EXTRA_DEBUG_LOG
+	put_user (old_estart, &pehead->next);
+#endif
+#ifndef USE_DEBUG_LOG
+	put_user (old_expected_clock, &phead->expected_clock);
+	put_user (old_num_expected_records, &phead->num_expected_records);
+#endif			
+
 	MPRINT ("Pid %d records vfork returning %ld\n", current->pid, rc);
 	new_syscall_done (190, rc);
 	new_syscall_exit (190, NULL);
@@ -13997,26 +14103,35 @@ replay_vfork_handler (struct task_struct* tsk)
 	// Fix up the circular thread list
 	tsk->replay_thrd->rp_next_thread = current->replay_thrd->rp_next_thread;
 	current->replay_thrd->rp_next_thread = tsk->replay_thrd;
-	
+	printk ("This is a fork-style clone - reset the user log appropriately\n");
+	tsk->replay_thrd->rp_record_thread->rp_user_log_addr = current->replay_thrd->rp_record_thread->rp_user_log_addr;
+#ifdef USE_EXTRA_DEBUG_LOG
+	tsk->replay_thrd->rp_record_thread->rp_user_extra_log_addr = current->replay_thrd->rp_record_thread->rp_user_extra_log_addr;
+#endif
+	tsk->replay_thrd->rp_record_thread->rp_ignore_flag_addr = current->replay_thrd->rp_record_thread->rp_ignore_flag_addr;
+	tsk->replay_thrd->rp_replay_hook = current->replay_thrd->rp_replay_hook;
+	tsk->replay_thrd->gdb_state = current->replay_thrd->gdb_state;
+	tsk->replay_thrd->rp_pthread_status_addr = current->replay_thrd->rp_pthread_status_addr;
 	// read the rest of the log
 	read_log_data (tsk->replay_thrd->rp_record_thread);
 	
 	prept = current->replay_thrd;
 	tsk->replay_thrd->rp_status = REPLAY_STATUS_RUNNING; // Child needs to run first to complete vfork
 	tsk->thread.ip = (u_long) ret_from_fork_2;
-	current->replay_thrd->rp_status = REPLAY_STATUS_ELIGIBLE; // So we need to wait
+	//current->replay_thrd->rp_status = REPLAY_STATUS_ELIGIBLE; // So we need to wait
+	put_user (2, current->replay_thrd->rp_pthread_status_addr); //corresponding to PTHREAD_LOG_REPLAY; change this before waiting for the child (in fork.c)
 	rg_unlock(prg->rg_rec_group);
 }
 
 static long
 replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr)
 {
-	struct task_struct* tsk = NULL;
 	struct replay_thread* prt = current->replay_thrd;
 	struct replay_group* prg = prt->rp_group;
 	struct syscall_result* psr = NULL;
 	pid_t pid;
-	long ret, rc;
+	//long ret, rc;
+	long rc;
 
 	// See above comment about user log
 
@@ -14030,8 +14145,14 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		if (rc == -EINTR && current->replay_thrd->rp_pin_attaching) return rc;
 		prt->rp_saved_rc = rc;
 	}
+	pid = rc;
 
 	DPRINT ("Pid %d replay_vfork syscall exit:rc=%ld\n", current->pid, rc);
+
+	if (clone_flags & CLONE_PARENT_SETTID) { 
+		printk ("Pid %d vfork set parent tid : FIXME\n", current->pid);
+	}
+
 	if (rc > 0) {
 		// We need to keep track of whether or not a signal was attached
 		// to this system call; sys_clone_internal will clear the flag
@@ -14039,7 +14160,12 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		int rp_sigpending = test_thread_flag (TIF_SIGPENDING);
 
 		// We also need to create a child here 
-		pid = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+		// xdou: the parent is blocked here, so its wait clock and wait status should be updated; otherwise, other threads may try to wake this thread up before vfork returns, creating a deadlock
+		prt->rp_wait_clock = prt->rp_stop_clock_save;
+		prt->rp_status = REPLAY_STATUS_WAIT_CLOCK;
+		put_user (4, current->replay_thrd->rp_pthread_status_addr); //corresponding to PTHREAD_LOG_REP_AFTER_FORK
+		pid = do_fork (clone_flags & (~CLONE_VM)/*as in record_vfork*/, stack_start, regs, stack_size, parent_tidptr, child_tidptr);		
+
 		MPRINT ("Pid %d in replay_vfork spawns child %d\n", current->pid, pid);
 		if (pid < 0) {
 			printk ("[DIFF]replay_vfork: second vfork failed, rc=%d\n", pid);
@@ -14053,7 +14179,7 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 		}
 
 		// Next, we have to wait while child runs 
-		DPRINT ("replay_vfork: pid %d going to sleep\n", current->pid);
+		/*DPRINT ("replay_vfork: pid %d going to sleep\n", current->pid);
 		ret = wait_event_interruptible_timeout (prt->rp_waitq, prt->rp_status == REPLAY_STATUS_RUNNING, SCHED_TO);
 
 		rg_lock(prg->rg_rec_group);
@@ -14063,15 +14189,15 @@ replay_vfork (unsigned long clone_flags, unsigned long stack_start, struct pt_re
 			rg_unlock(prg->rg_rec_group);
 			sys_exit (0);
 		}
-		rg_unlock(prg->rg_rec_group);
+		rg_unlock(prg->rg_rec_group);*/
 	}
 		
 	if (prt->app_syscall_addr == 0) {
 		get_next_syscall_exit (prt, prg, psr);
 	}
 	if (rc > 0 && prt->app_syscall_addr) {
-		MPRINT ("Return real child pid %d to Pin instead of recorded child pid %ld\n", tsk->pid, rc);
-		return tsk->pid;
+		MPRINT ("Return real child pid %d to Pin instead of recorded child pid %ld\n", pid, rc);
+		return pid;
 	}
 
 	return rc;
@@ -14083,8 +14209,8 @@ long trace_vfork(unsigned long vfork_flags, unsigned long stack_start, struct pt
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:vfork rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
-		printk ("%ld:%ld.%ld:vfork child process\n", rc, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:vfork rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc);
+		printk ("%ld:%ld.%09ld:vfork child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
 }
@@ -14166,10 +14292,6 @@ record_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 
 	return rc;
 }
-
-
-
-
 
 static asmlinkage long 
 replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned long fd, unsigned long pgoff)
@@ -14910,7 +15032,7 @@ asmlinkage long trace_exit_group (int error_code) {
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:exit_group\n", current->pid, tp.tv_sec, tp.tv_nsec);
+		printk ("%d:%ld.%09ld:exit_group\n", current->pid, tp.tv_sec, tp.tv_nsec);
 	}
 	return sys_exit_group (error_code);
 }
@@ -15162,13 +15284,13 @@ asmlinkage long trace_waitid (int which, pid_t upid, struct siginfo __user* info
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	rc = sys_waitid (which, upid, infop, options, ru);
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
+		printk ("%d:%ld.%09ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
 	return rc;
 }

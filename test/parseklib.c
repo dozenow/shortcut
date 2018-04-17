@@ -497,7 +497,7 @@ static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t*
 		if (res->retparams_size) {
 			rc = write(destfd, res->retparams, res->retparams_size);
 			if (rc != res->retparams_size) {
-				fprintf(stderr, "Couldn't record retparams_size\n");
+				fprintf(stderr, "Couldn't record retparams_size ret %d, params %p size %d, err %d\n", rc, res->retparams, res->retparams_size, errno);
 				return -1;
 			}
 		}

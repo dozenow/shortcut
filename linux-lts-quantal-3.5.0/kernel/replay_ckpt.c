@@ -47,7 +47,6 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
 #define PRINT_TIME 0
-#define SLICE_DEBUG(x,...)
 
 /* Prototypes not in header files */
 void set_tls_desc(struct task_struct *p, int idx, const struct user_desc *info, int n); /* In tls.c */
@@ -108,7 +107,7 @@ extern int slice_dump_vm;
 extern int pause_after_slice;
 
 void dump_reg_struct (struct pt_regs* r) {
-	printk ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
+	MPRINT ("eax %lx, ebx %lx, ecx %lx, edx %lx, esi %lx, edi %lx, ebp %lx, esp %lx, ds %lx, es %lx, fs %lx, gs %lx, orig_eax %lx, ip %lx, cs %lx, flags %lx, ss %lx\n",
 		r->ax, r->bx, r->cx, r->dx, r->si, r->di, r->bp, r->sp, r->ds, r->es, r->fs, r->gs, r->orig_ax, r->ip, r->cs, r->flags, r->ss);
 }
 
@@ -1131,10 +1130,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		goto exit;
 	}
 
-#if 0
-	printk ("Registers after checkpoint restore record_pid %d\n", current->pid);
+	MPRINT ("Registers after checkpoint restore record_pid %d\n", current->pid);
 	dump_reg_struct (get_pt_regs(NULL));
-#endif
 
 	//this is a part of the replay_thrd, so we do it regardless of thread / process
 	restore_sysv_mappings (file, ppos);
@@ -1280,11 +1277,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 				if (pvmas->vmas_file[0] && 
 				    !strncmp(pvmas->vmas_file, "/run/shm/uclock", 15)) {
                                     *pthread_clock_addr = pvmas->vmas_start;
-                                    SLICE_DEBUG ("Pid %d pthread_clock_addr %lx\n", current->pid, *pthread_clock_addr);
+                                    MPRINT ("Pid %d pthread_clock_addr %lx\n", current->pid, *pthread_clock_addr);
 				} else {
-                                    SLICE_DEBUG ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
-                                    SLICE_DEBUG ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
-                                    SLICE_DEBUG ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
+                                    MPRINT ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+                                    MPRINT ("[CHECK] memory regions is shared and writable! %lx to %lx, file %s\n", pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_file);
+                                    MPRINT ("In this case, we need the copy of that file to avoid any modification to our underlying checkpoint-mmap files, and revert the copy back after we use it.\n");
 
                                     shared_file = 1;
                                     //BUG();
@@ -1457,11 +1454,11 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			if (/*!(pvmas->vmas_flags&VM_READ) || */
 			    ((pvmas->vmas_flags&VM_MAYSHARE) && 
 			     (strncmp(pvmas->vmas_file,WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (pvmas->vmas_file, "/replay_cache/", 14)))) {
-                                SLICE_DEBUG ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
+                                MPRINT ("[SKIPPED] file %s, range %lx to %lx, flags read %d, shared %d\n", pvmas->vmas_file, pvmas->vmas_start, pvmas->vmas_end, pvmas->vmas_flags & VM_READ, pvmas->vmas_flags & VM_MAYSHARE);
 				continue;  // Not in checkpoint - so skip writing this one
 			}				
                         if (pvmas->vmas_flags & VM_MAYSHARE && !strncmp (pvmas->vmas_file, "/replay_cache/", 14)) { 
-                            SLICE_DEBUG ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
+                            MPRINT ("[CHECK] A shared file from replay cache. Maybe wrong if it's writable by another thread.\n");
                         }
 		     
 			if (!map_file) {
@@ -1489,7 +1486,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 					rc = copied;
 					goto freemem;
 				}
-				SLICE_DEBUG ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
+				MPRINT ("replay_full_resume_proc_from_disk copy data from ckpt (could be time-consuming), map_file %p, filename %s, len %ld, vmas_flags %x\n", map_file, mmap_filename, pvmas->vmas_end-pvmas->vmas_start, pvmas->vmas_flags);
 				filp_close (mmap_file, NULL);
 				if (!(pvmas->vmas_flags&VM_WRITE)) rc = sys_mprotect (pvmas->vmas_start, pvmas->vmas_end - pvmas->vmas_start, pvmas->vmas_flags&(VM_READ|VM_WRITE|VM_EXEC)); // restore old protections					
 			}
@@ -1588,25 +1585,25 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 		MPRINT ("Pid %d resume ckpt set GDT entry %d base_addr %x limit %x\n", current->pid, GDT_ENTRY_TLS_MIN+i, desc.base_addr, desc.limit);
 	}
 
-	// Next, read the rlimit info
-	copied = vfs_read(file, (char *) &current->signal->rlim, sizeof(struct rlimit)*RLIM_NLIMITS, ppos);
-	if (copied != sizeof(struct rlimit)*RLIM_NLIMITS) {
-		printk ("replay_full_resume_proc_from_disk: tried to read rlimits, got rc %d\n", copied);
-		rc = copied;
-		goto exit;
-	}
-
-	if (slicelib == NULL) {
-	    // Signal handlers will be restored from slice execution
+	if (slicelib != NULL) {
+	    // rlim and signal handlers will be restored from slice execution
             //advance the file pos
-            *ppos += sizeof (struct k_sigaction)*_NSIG;
+            *ppos += sizeof (struct k_sigaction)*_NSIG + sizeof(struct rlimit)*RLIM_NLIMITS;
         } else {
-	    copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
-	    if (copied != sizeof(struct k_sigaction)*_NSIG) {
-		printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
-		rc = copied;
-		goto exit;
-	    }
+		// Next, read the rlimit info
+		copied = vfs_read(file, (char *) &current->signal->rlim, sizeof(struct rlimit)*RLIM_NLIMITS, ppos);
+		if (copied != sizeof(struct rlimit)*RLIM_NLIMITS) {
+			printk ("replay_full_resume_proc_from_disk: tried to read rlimits, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
+
+		copied = vfs_read(file, (char *) &current->sighand->action, sizeof(struct k_sigaction) * _NSIG, ppos);
+		if (copied != sizeof(struct k_sigaction)*_NSIG) {
+			printk ("replay_full_resume_proc_from_disk: tried to read sighands, got rc %d\n", copied);
+			rc = copied;
+			goto exit;
+		}
 	}
 	
 	MPRINT ("replay_full_resume_proc_from_disk done\n");
@@ -1664,10 +1661,12 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	// We no longer expect this to be aligned since we are using the VDSO to enter the kernel
 	// Insted, adjust sp value to account for extra data on the stack
 	u_long addr = regs->sp;
+	MPRINT ("get_fw_slice_info: sp is %lx\n", addr);
 	if (addr%4096) {
 		addr &= 0xfffff000;
 		addr += 4096;
 	}
+	MPRINT ("get_fw_slice_info: expect slice_info at %lx\n", addr);
 	return (struct fw_slice_info *) addr;
 }
 
@@ -1682,7 +1681,9 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
         int index;
 
         index = atomic_add_return (1, &go_live_clock->num_threads)-1;
-        SLICE_DEBUG ("Pid %d start_fw_slice pthread_clock_addr %p\n", current->pid, user_clock_addr);
+	if (index == 0) 
+		go_live_clock->cache_file_structure = NULL;
+        MPRINT ("Pid %d start_fw_slice pthread_clock_addr %x\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");
             BUG ();
@@ -1737,7 +1738,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	SLICE_DEBUG ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
+	MPRINT ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {
@@ -1763,7 +1764,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	regs->bp = regs->sp;
 
 	set_thread_flag (TIF_IRET);
-	SLICE_DEBUG ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
+	MPRINT ("Pid %d start_fw_slice stack pointer is %lx, bp is %lx\n", current->pid, regs->sp, regs->bp);
 
 	return 0;
 }
@@ -1918,6 +1919,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		    slice_retval = regs->dx; // This is arg3, but we are going to change this later (compiler gets confused and optimizes incorrectly?)
 		} 
 		MPRINT ("pid %d finishes slice, ckpt_thread=%ld, retval=%ld\n", current->pid, is_ckpt_thread, slice_retval);
+
                 if (PRINT_TIME) {
                         do_gettimeofday (&tv);
                         printk ("Pid %d sys_execute_fw_slice is called %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
@@ -1925,10 +1927,8 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		slice_info = get_fw_slice_info (regs);
 		regs_cache = &slice_info->regs;
 		memcpy (regs, regs_cache, sizeof(struct pt_regs));
-#if 0
-		printk ("Registers after slice executes %d\n", current->pid);
+		MPRINT ("Registers after slice executes %d\n", current->pid);
 		dump_reg_struct (get_pt_regs(NULL));
-#endif
 		if (!is_ckpt_thread) {
 		    slice_retval = regs->orig_ax; // We are restarting the system call, so presumably we should reset this register to orig value
 		}
@@ -1987,6 +1987,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			}
 		}
 
+		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 

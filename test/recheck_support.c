@@ -44,6 +44,7 @@ static struct go_live_clock* go_live_clock;
 static char logbuf[4096];
 #endif
 
+#define SIGPROCMAKS_HACK
 // This pauses for a while to let us see what went wrong
 #define DELAY
 //#define DELAY sleep(10);
@@ -120,7 +121,7 @@ inline void print_timings (void)
 #define end_timing_func(x)
 #endif
 
-static char buf[2*1024*1024];
+static char buf[8*1024*1024];
 static char tmpbuf[1024*1024];
 static char taintbuf_filename[256];
 #ifdef PRINT_TO_LOG
@@ -135,7 +136,8 @@ struct cfopened {
 };
 
 #define MAX_FDS 4096
-static struct cfopened cache_files_opened[MAX_FDS];
+static struct cfopened *cache_files_opened; 
+static struct cfopened cache_files_opened_content[MAX_FDS]; //one of these structures will be shared by all threads; in the future we may put this into a shared map region
 
 static char taintbuf[1024*1024];
 static u_long taintndx = 0;
@@ -162,6 +164,11 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
     long rc;
     int i;
 
+    if (go_live_clock == NULL) { 
+        fprintf (stderr, "cannot dump_taintbuf\n");
+        return -1;
+    }
+
     // We need to dump ALL the taintbufs for every slice here - this will only work 
     // for multithreaded apps - not for multiprocess.
     for (i = 0; i < go_live_clock->num_threads; i++) {
@@ -173,7 +180,7 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
 	    sprintf (dump_filename, "%s%d", taintbuf_filename, go_live_clock->process_map[i].record_pid);
 	    fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	    if (fd < 0) {
-		fprintf (stderr, "Cannot open taint buffer dump file\n");
+		fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
 		return fd;
 	    }
 	    
@@ -211,7 +218,14 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p record pid %d\n", 
 	     tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename), record_pid);
 #endif
-    go_live_clock = clock_addr;
+
+    if (clock_addr)
+        go_live_clock = clock_addr;
+    else {
+        fprintf (stderr, "Running a single-threaded program and has no shared clock page?\n");
+        go_live_clock = NULL;
+    }
+
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
 	fprintf (stderr, "Cannot open recheck file\n");
@@ -224,17 +238,31 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     }
     close (fd);
 
-    for (i = 0; i < MAX_FDS; i++) {
-	cache_files_opened[i].is_open_cache_file = 0;
+    // Update shared data with taintbuf info
+    if (go_live_clock) {
+        //try to figure out the cache_files_opened address
+        //if there are multi threads, there should be only one shared by all
+        if (go_live_clock->cache_file_structure == NULL) { 
+           if (__sync_bool_compare_and_swap (&go_live_clock->cache_file_structure, NULL, cache_files_opened_content)) {
+               //fprintf (stderr, "This thread sets up the cache_file_opened to address %p, %p\n", go_live_clock->cache_file_structure, cache_files_opened_content);
+           }
+        } else { 
+            //fprintf (stderr, "This thread will use the shared cache_file_opened %p\n", go_live_clock->cache_file_structure);
+        }
+        cache_files_opened = go_live_clock->cache_file_structure;
+        for (i = 0; i < go_live_clock->num_threads; i++) {
+            if (go_live_clock->process_map[i].record_pid == record_pid) {
+                go_live_clock->process_map[i].taintbuf = taintbuf;
+                go_live_clock->process_map[i].taintndx = &taintndx;
+                break;
+            } 
+        }
+    } else { 
+        cache_files_opened = cache_files_opened_content;
     }
 
-    // Update shared data with taintbuf info
-    for (i = 0; i < go_live_clock->num_threads; i++) {
-	if (go_live_clock->process_map[i].record_pid == record_pid) {
-	    go_live_clock->process_map[i].taintbuf = taintbuf;
-	    go_live_clock->process_map[i].taintndx = &taintndx;
-	    break;
-	} 
+    for (i = 0; i < MAX_FDS; i++) {
+	cache_files_opened[i].is_open_cache_file = 0;
     }
 
     strcpy(taintbuf_filename, filename);
@@ -288,7 +316,7 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 	}								\
     }
 #else
-#define LPRINT printf
+#define LPRINT(x,...)
 #endif
 
 #ifdef PRINT_DEBUG
@@ -315,7 +343,7 @@ void exit_slice (long is_ckpt_thread, long retval)
 
 void handle_mismatch()
 {
-    //TODO: uncomment this
+    //TODO: uncomment these lines
     dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
@@ -370,6 +398,28 @@ void handle_index_diverge()
     abort ();
 }
 
+static inline void print_opened_files (int max_fd)
+{
+    int i = 0;
+    printf ("----dumping opened files\n");
+    for (i = 3; i<=max_fd; ++i) {
+        char proclnk[256];
+        char filename[256];
+        int r = 0;
+
+        sprintf(proclnk, "/proc/self/fd/%d", i);
+        r = readlink(proclnk, filename, 255);
+        if (r < 0)
+        {
+            printf ("      file descript %d is not opened\n", i);
+        } else { 
+            filename[r] = '\0';
+            printf ("      file descript %d, filename %s\n", i, filename);
+        }
+    }
+
+}
+
 static inline void check_retval (const char* name, u_long clock, int expected, int actual) {
     if (actual >= 0){
 	if (expected != actual) {
@@ -378,22 +428,7 @@ static inline void check_retval (const char* name, u_long clock, int expected, i
             //if divergence happens on open, check what files are currently opened
             if (!strcmp (name, "open")) { 
                 int max = expected > actual?expected:actual;
-                int i = 0;
-                for (i = 3; i<=max; ++i) {
-                    char proclnk[256];
-                    char filename[256];
-                    int r = 0;
-
-                    sprintf(proclnk, "/proc/self/fd/%d", i);
-                    r = readlink(proclnk, filename, 255);
-                    if (r < 0)
-                    {
-                        fprintf (stderr, "[BUG] failed to readlink\n\n\n");
-                        sleep (2);
-                    }
-                    filename[r] = '\0';
-                    printf ("      file descript %d, filename %s\n", i, filename);
-                }
+                print_opened_files (max);
             }
 	    handle_mismatch();
 	}
@@ -499,7 +534,12 @@ long read_recheck (size_t count)
     if ((is_cache_file&CACHE_MASK) && pentry->retval >= 0) {
 	struct stat64 st;
 	if (!cache_files_opened[pread->fd].is_open_cache_file) {
-	    LPRINT ("[BUG] cache file should be opened but it is not\n");
+	    printf ("[BUG] cache file should be opened but it is not, fd should be %d\n", pread->fd);
+#ifdef PRINT_VALUES
+            //this could happen for mutli-threaded program as the cache_files_opened is not a shared structure between threads: FIXME  laster
+	    LPRINT ("[BUG] cache file should be opened but it is not, fd should be %d, clock %lu\n", pread->fd, pentry->clock);
+            print_opened_files (pread->fd +3);
+#endif
 	    handle_mismatch();
 	}
         if (!pread->partial_read) {
@@ -978,6 +1018,157 @@ long recv_recheck ()
     return pentry->retval;
 }
 
+long recvfrom_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct recvfrom_recheck* precv;
+    struct sockaddr* ret_sockaddr = NULL;
+    socklen_t ret_addrlen = 0;
+    long rc;
+    int i;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    precv = (struct recvfrom_recheck *) bufptr;
+    if (precv->addrlen_value) {
+        ret_sockaddr = (struct sockaddr*) (bufptr + sizeof (struct recvfrom_recheck));
+        ret_addrlen= precv->addrlen_value;
+    }
+    char* recvData = bufptr + sizeof(struct recvfrom_recheck) + precv->addrlen_value;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ("recvfrom: sockfd %d buf %p len %d flags %d returns %ld clock %lu buffer offset %ld, returned addrlen %d\n", 
+	    precv->sockfd, precv->buf, precv->len, precv->flags, pentry->retval, pentry->clock, (u_long) precv - (u_long) buf, precv->addrlen_value);
+#endif
+
+    if (pentry->retval == -EAGAIN) {
+	errno = EAGAIN;
+	return -1;
+    }
+
+    u_long block[6];
+    block[0] = precv->sockfd;
+
+    // Keep receiving until we get enough bytes
+    u_long bytes_received = 0;
+    do {
+	block[1] = (u_long) precv->buf + bytes_received;
+	if (pentry->retval > 0 && pentry->retval - bytes_received < precv->len) {
+	    block[2] = pentry->retval - bytes_received;
+	} else {
+	    block[2] = precv->len;
+	}
+	block[3] = precv->flags;
+        block[4] = (u_long) tmpbuf;
+        block[5] = (u_long) &ret_addrlen;
+
+	int tries = 0;
+	do {
+	    start_timing();
+	    rc = syscall(SYS_socketcall, SYS_RECV, &block);
+	    DPRINT ("recvfrom: returns %ld errno %d\n", rc, errno);
+	    end_timing (SYS_socketcall, rc);
+	    if (rc == -1 && errno == 11 && pentry->retval > 0) {
+		tries++;
+		DPRINT ("recvfrom: try again?\n");
+		    usleep (1000);
+	    }
+	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 5);
+
+	if (rc <= 0) break;
+	bytes_received += rc;
+
+    } while (bytes_received < pentry->retval || pentry->retval < 0);
+
+    if (rc < 0) check_retval ("recvfrom", pentry->clock, pentry->retval, rc);
+
+    if (rc > 0) {
+#ifdef PRINT_DEBUG
+	print_buffer_hex (precv->buf, pentry->retval);
+	print_buffer_hex ((u_char *) recvData, pentry->retval);
+#endif
+
+	DPRINT ("About to compare %p and %p partial_read_cnt %d\n", precv->buf, recvData, precv->partial_read_cnt);
+	if (precv->partial_read_cnt > 0) {
+	    u_long bytes_so_far = 0;
+	    int i;
+	    for (i = 0; i < precv->partial_read_cnt; i++) {
+		if (precv->partial_read_starts[i] > bytes_so_far) {
+		    if (memcmp (precv->buf+bytes_so_far, recvData+bytes_so_far, precv->partial_read_starts[i]-bytes_so_far)) {
+			int j;
+			LPRINT ("[MISMATCH] partial recvfrom %lu start %d returns different values - read/expected:\n", pentry->clock, i);
+			for (j = bytes_so_far; j < precv->partial_read_starts[i]; j++) {
+			    if (((char *)precv->buf)[j] != recvData[j]) {
+				LPRINT ("%d ", j);
+			    }
+			}
+			LPRINT ("\n");
+			handle_mismatch();
+		    }
+		} 
+		bytes_so_far = precv->partial_read_ends[i];
+	    }
+	    if (precv->partial_read_ends[precv->partial_read_cnt-1] < pentry->retval) {
+		if (memcmp (precv->buf+precv->partial_read_ends[precv->partial_read_cnt-1], 
+			    recvData+precv->partial_read_ends[precv->partial_read_cnt-1], 
+			    pentry->retval-precv->partial_read_ends[precv->partial_read_cnt-1])) {
+		    LPRINT ("[MISMATCH] partial recvfrom %lu end returns different values - read/expected:\n", pentry->clock);
+		    for (i = precv->partial_read_ends[precv->partial_read_cnt-1]; i < pentry->retval; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    handle_mismatch();
+		}
+	    }
+	    add_to_taintbuf (pentry, RETBUF, precv->buf, pentry->retval);
+	} else {
+	    if (memcmp (precv->buf, recvData, pentry->retval)) {
+		LPRINT ("[MISMATCH] recvfrom %lu returns different values - read/expected:\n", pentry->clock);
+		if (memcmp (precv->buf, recvData, pentry->retval)) {
+		    for (i = 0; i < pentry->retval; i++) {
+			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
+			if (i%16 == 15) LPRINT ("\n");
+		    }
+		    LPRINT ("\n");
+		    for (i = 0; i < pentry->retval; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+		    }
+		    LPRINT ("\n");
+		    handle_mismatch();
+		}
+	    }
+	}
+#ifdef PRINT_DEBUG
+        LPRINT ("returedn addrlen size is %d\n", ret_addrlen);
+        print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
+        print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
+        {
+            int i = 0;
+            for (; i<ret_addrlen; ++i) {
+                LPRINT ("tmp[%d] = %d;\n", i, tmpbuf[i]);
+            }
+        }
+#endif
+        //Now compare the returned src_addr and addrlen
+        if (precv->addrlen_value > 0) { 
+            if (precv->addrlen_value != ret_addrlen || memcmp (tmpbuf, ret_sockaddr, precv->addrlen_value)) { 
+                LPRINT ("[MISMATCH] recvfrom has different returned sockaddr or addrlen is different, recorded addrlen %d current addrlen %d\n", precv->addrlen_value, ret_addrlen);
+#ifdef PRINT_DEBUG
+                print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
+                print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
+#endif
+                handle_mismatch();
+            }
+        }
+    }
+    end_timing_func (SYS_socketcall);
+
+    return pentry->retval;
+}
+
+
 long recvmsg_recheck ()
 {
     struct recheck_entry* pentry;
@@ -1301,6 +1492,54 @@ long send_recheck ()
     rc = syscall(SYS_socketcall, SYS_SEND, &block);
     end_timing(SYS_socketcall, rc);
     check_retval ("send", pentry->clock, pentry->retval, rc);
+    end_timing_func (SYS_socketcall);
+    return rc;
+}
+
+long sendto_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct sendto_recheck* psend;
+    char* data;
+    struct sockaddr* dest_addr;
+    char* psendbuf;
+    char* sockaddrbuf = NULL;
+    int rc;
+
+    start_timing_func ();
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    psend = (struct sendto_recheck *) bufptr;
+    dest_addr = (struct sockaddr*) (bufptr + sizeof(struct sendto_recheck));
+    data = (char*)dest_addr + psend->addrlen * 2;
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "sendto: sockfd %d buf %p len %d flags %d rc %ld sockaddr %x addrlen %d clock %lu\n", psend->sockfd, psend->buf, psend->len, psend->flags, pentry->retval, (int )psend->dest_addr, psend->addrlen, pentry->clock);
+#endif
+
+    if (psend->dest_addr)
+        sockaddrbuf = fill_taintedbuf ((char*) dest_addr, (char*) psend->dest_addr, psend->addrlen);
+    psendbuf = fill_taintedbuf (data, psend->buf, psend->len);
+
+#ifdef PRINT_DEBUG
+    LPRINT ("sendto sockaddr:\n");
+    print_buffer_hex ((u_char*) sockaddrbuf, psend->addrlen);
+    LPRINT ("sendto content:\n");
+    print_buffer_hex ((u_char*) psendbuf, psend->len);
+#endif
+    u_long block[6];
+    block[0] = psend->sockfd;
+    block[1] = (u_long) psendbuf;
+    block[2] = psend->len;
+    block[3] = psend->flags;
+    block[4] = (u_long) sockaddrbuf;
+    block[5] = psend->addrlen;
+    start_timing();
+    rc = syscall(SYS_socketcall, SYS_SENDTO, &block);
+    end_timing(SYS_socketcall, rc);
+    check_retval ("sendto", pentry->clock, pentry->retval, rc);
     end_timing_func (SYS_socketcall);
     return rc;
 }
@@ -2150,7 +2389,7 @@ long gettimeofday_recheck () {
     bufptr += pentry->len;
     
 #ifdef PRINT_VALUES
-    LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock);
+    LPRINT ( "gettimeofday: pointer tv %lx tz %lx clock %lu bufptr %p, buf %p\n", (long) pget->tv_ptr, (long) pget->tz_ptr, pentry->clock, bufptr, buf);
 #endif
     start_timing();
     rc = syscall (SYS_gettimeofday, &tv, &tz);
@@ -2470,6 +2709,11 @@ static inline long connect_or_bind_recheck (int call, char* call_name)
     LPRINT ( "%s: sockfd %d addlen %d rc %ld clock %lu\n", call_name, pconnect->sockfd, pconnect->addrlen, pentry->retval, pentry->clock);
 #endif 
     inaddr = fill_taintedbuf (addr, (char *) pconnect->addr, pconnect->addrlen);
+
+#ifdef PRINT_DEBUG
+    print_buffer_hex ((u_char*) inaddr, pconnect->addrlen);
+#endif
+
     block[0] = pconnect->sockfd;
     block[1] = (u_long) inaddr;
     block[2] = pconnect->addrlen;
@@ -3288,6 +3532,7 @@ long rt_sigaction_recheck ()
     struct recheck_entry* pentry;
     struct rt_sigaction_recheck* prt_sigaction;
     struct sigaction* pact = NULL;
+    struct sigaction* poact = NULL;
     char* data;
     long rc;
 
@@ -3304,13 +3549,48 @@ long rt_sigaction_recheck ()
 #endif 
 
     if (prt_sigaction->act) pact = (struct sigaction *) data;
+#if 0 //this was tainted
     rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, prt_sigaction->oact, prt_sigaction->sigsetsize); 
     start_timing();
     check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
     end_timing(SYS_rt_sigaction, rc);
     if (prt_sigaction->oact && rc == 0) {
-	add_to_taintbuf (pentry, SIGACTION_ACTION, prt_sigaction->oact, 20);
+	//add_to_taintbuf (pentry, SIGACTION_ACTION, prt_sigaction->oact, 20);
     }
+#endif
+    if (prt_sigaction->oact) poact = (struct sigaction *) tmpbuf;
+    start_timing();
+    rc = syscall(SYS_rt_sigaction, prt_sigaction->sig, pact, poact, prt_sigaction->sigsetsize);
+    check_retval ("rt_sigaction", pentry->clock, pentry->retval, rc);
+    end_timing(SYS_rt_sigaction, rc);
+    if (prt_sigaction->oact) {
+        if (prt_sigaction->act) {
+            if (memcmp (tmpbuf, data+20, 20)) {
+                u_long* pn = (u_long *) tmpbuf;
+                u_long* po = (u_long *) (data+20);
+                int i;
+                printf ("[MISMATCH] sigaction returns different values\n");
+                for (i = 0; i < 5; i++) {
+                    printf ("%lx vs. %lx (addr %p)", pn[i], po[i], &po[i]);
+                }
+                printf ("\n");
+                handle_mismatch();
+            }
+        } else {
+            if (memcmp (tmpbuf, data, 20)) {
+                u_long* pn = (u_long *) tmpbuf;
+                u_long* po = (u_long *) data;
+                int i;
+                printf ("[MISMATCH] sigaction returns different values (no set)\n");
+                for (i = 0; i < 5; i++) {
+                    printf ("%lx vs. %lx ", pn[i], po[i]);
+                }
+                printf ("\n");
+                handle_mismatch();
+            }
+        }
+    }
+
     end_timing_func (SYS_rt_sigaction);
     return rc;
 }
@@ -3332,14 +3612,15 @@ long rt_sigprocmask_recheck ()
     data = bufptr+sizeof(struct rt_sigprocmask_recheck);
     bufptr += pentry->len;
     
+    if (prt_sigprocmask->set) pset = (sigset_t *) data;
+    if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
+
 #ifdef PRINT_VALUES
-    LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
-	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock);
+    LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu setvalue %llu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
+	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock, pset==NULL?0:*(__u64*)pset);
     fflush (stdout);
 #endif 
 
-    if (prt_sigprocmask->set) pset = (sigset_t *) data;
-    if (prt_sigprocmask->oset) poset = (sigset_t *) tmpbuf;
     start_timing();
     rc = syscall(SYS_rt_sigprocmask, prt_sigprocmask->how, pset, poset, prt_sigprocmask->sigsetsize); 
     end_timing(SYS_rt_sigprocmask, rc);
@@ -3353,7 +3634,18 @@ long rt_sigprocmask_recheck ()
 	} else {
 	    if (memcmp (tmpbuf, data, prt_sigprocmask->sigsetsize)) {
 		printf ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
+#ifdef PRINT_VALUES
+		LPRINT ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
+#endif
+#ifdef SIGPROCMAKS_HACK
+                //this hack was because the child inherits its parent's sigmask on clone, but we didn't do it in the slice... FIXME later
+                printf ("HACK:: manually fixing sigmask\n");
+                if (syscall (SYS_rt_sigprocmask, prt_sigprocmask->how, (sigset_t*) data, NULL, 8)) { 
+                    printf ("    sigmask fix fails....\n");
+                }
+#else 
 		handle_mismatch();
+#endif
 	    }
 	}
     }
@@ -3852,7 +4144,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
 #ifdef PRINT_VALUES
         LPRINT ("Pid %ld fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d clock %ld\n", syscall(SYS_gettid), ptid, *ptid, ctid, *ctid, record_pid, ret, pentry->clock);
 #endif
-	// JNF - XXX - really should only do this if the appropriate flags are set 
+	// JNF - XXX - really should only do this if the appropriate flags are set  //xdou: yes, in the linkage pintool, this fake_clone function is only generated when appropriate flags are set
         *ptid = ret;
         *ctid = ret;
 #ifdef PRINT_VALUES
@@ -3864,6 +4156,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
         return 0;
 }
 
+#if 0  //xdou: have an another redundant implementation, so this one is commented out for now
 void pthread_mutex_lock_shim (int (*fn)(pthread_mutex_t *), pthread_mutex_t* mutex)
 {
 #ifdef PRINT_VALUES
@@ -3913,3 +4206,4 @@ void pthread_rwlock_wrlock_shim (int (*fn)(pthread_rwlock_t *), pthread_rwlock_t
     }
 #endif
 }
+#endif

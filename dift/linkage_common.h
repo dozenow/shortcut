@@ -94,6 +94,7 @@
 
 #define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
 
+using namespace std;
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
 
@@ -267,10 +268,25 @@ struct shmat_info {
     void* raddr;
 };
 
+struct recvfrom_info {
+    int sockfd;
+    void* buf;
+    size_t len;
+    int flags;
+    struct sockaddr* src_addr;
+    socklen_t* addrlen;
+};
+
 //store the original taint and value for the mem address
 struct ctrl_flow_origin_value { 
     taint_t taint;
     char value;
+};
+
+struct ctrl_flow_branch_info {
+    u_long ip;
+    char branch_flag;
+    int tag;
 };
 
 struct ctrl_flow_block_index { 
@@ -280,11 +296,12 @@ struct ctrl_flow_block_index {
     bool orig_taken;
     uint32_t merge_ip;
     uint32_t extra_loop_iterations;
-    queue<pair<u_long,char> > orig_path; // List of branches taken and not
-    queue<pair<u_long,char> > alt_path; // List of branches taken and not
+    queue<struct ctrl_flow_branch_info> orig_path; // List of branches taken and not
+    vector<queue<struct ctrl_flow_branch_info> > alt_path; // List of branches taken and not
     bool orig_path_nonempty; // For loops 
-    bool alt_path_nonempty; // For loops
+    vector<bool> alt_path_nonempty; // For loops
     uint32_t iter_count; // For loops - maximum number of iterations to add
+    int alt_path_count;  //How many possible alternative paths between divergence and merge point
 };
 
 #define IS_BLOCK_INDEX_EQUAL(x, y) (x.clock == y.clock && x.index == y.index)
@@ -295,6 +312,8 @@ struct ctrl_flow_block_index {
 #define CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT  3
 #define CTRL_FLOW_BLOCK_TYPE_MERGE           4
 #define CTRL_FLOW_BLOCK_TYPE_DISTANCE        5
+#define CTRL_FLOW_POSSIBLE_PATH_BEGIN        6
+#define CTRL_FLOW_POSSIBLE_PATH_END          7
 
 struct ctrl_flow_param {
     int type;
@@ -304,6 +323,8 @@ struct ctrl_flow_param {
     int pid;
     int iter_count;
     char branch_flag;
+    int alt_branch_count;
+    int tag;  //used for nested divergence
 };
 
 struct check_syscall { 
@@ -318,11 +339,14 @@ struct ctrl_flow_checkpoint {
     // other stuff in thread_data don't need to be checkpointed. Otherwise, add it here
     taint_t reg_table[NUM_REGS * REG_SIZE];
     std::stack<struct flag_taints>* flag_taints;
+    int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
+    uint64_t save_index;  //The block index before exploring alternative paths
 };
 
 struct ctrl_flow_info { 
     u_long clock; // Current clock value
     uint64_t index; // Current index value
+    int alt_path_index;  //which path we are in
     //struct ctrl_flow_block_index block_index;  //current block index
     std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
     std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
@@ -330,25 +354,31 @@ struct ctrl_flow_info {
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
 
-    std::set<uint32_t> *that_branch_store_set_reg;
-    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+    /*std::set<uint32_t> *that_branch_store_set_reg;
+    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back*/
 
-    set<uint32_t> *diverge_insts; 
+    //these two vectors cover all alternative branches
+    vector<set<uint32_t> > *alt_branch_store_set_reg;
+    vector<map<u_long, struct ctrl_flow_origin_value> > *alt_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
+
     set<uint32_t> *merge_insts; 
     set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
 
-    bool change_jump;  //true if this jump is the divergence point
-
     //checkpoint and rollback
-    uint64_t save_index; // Value prior to alternate path exploration
     bool is_in_original_branch;
+    bool is_in_original_branch_first_inst;
     bool is_in_diverged_branch;
-    bool is_in_diverged_branch_first_inst;
     bool is_rolled_back;
     bool changed_jump;
-    bool change_original_branch;
+    bool is_nested_jump; //True if this is a nested divergence
+    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
+    bool is_orig_path_tracked; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
+    deque<struct ctrl_flow_branch_info>* tracked_orig_path; //Used with the above flag
+    int swap_index; //The index of the alternative path that will be swapped with the original path; used by wildcard matching
+    FILE* saved_slice_output_file; 
+    multimap<int, bool> *handled_tags; //used for nested divergence
+    
     struct ctrl_flow_checkpoint ckpt;   //this is the checkpoint before the divergence, so that we can roll back and explore the alternative path
-    struct ctrl_flow_checkpoint merge_point_ckpt; //this the checkpoint at the merge point for the original execution, so we can go back to the original execution after exploring the alternative path
  };
 
 struct mutex_info_cache {
@@ -361,6 +391,11 @@ struct wait_info_cache {
     ADDRINT cond;
     ADDRINT abstime;
     ADDRINT tid;
+};
+
+struct lll_lock_info_cache {
+    ADDRINT plock;
+    ADDRINT type;
 };
 
 // Per-thread data structure
@@ -403,6 +438,7 @@ struct thread_data {
         struct clone_info clone_info_cache;
         struct sched_getaffinity_info sched_getaffinity_info_cache;
 	struct shmat_info shmat_info_cache;
+        struct recvfrom_info recvfrom_info_cache;
 	struct mremap_info mremap_info_cache;
     } op;
 
@@ -432,6 +468,7 @@ struct thread_data {
     union {
         struct mutex_info_cache mutex_info_cache;
         struct wait_info_cache wait_info_cache;
+        struct lll_lock_info_cache lll_lock_info_cache;
     } pthread_info; //for remembering input parameters to pthread functions
 
     int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution

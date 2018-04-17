@@ -86,6 +86,16 @@ static void handle_time (int fd, struct taint_retval* trv, struct klog_result* r
     }
 }
 
+static void handle_gettid (int fd, struct taint_retval* trv, struct klog_result* res) 
+{
+    if (trv->rettype == RETVAL) {
+	u_long rc = read (fd, &res->retval, sizeof(long));
+	assert (rc == sizeof(long));
+    } else {
+        assert (0);
+    }
+}
+
 static void handle_read (int fd, struct taint_retval* trv, struct klog_result* res) 
 {
     if (trv->rettype == RETVAL) {
@@ -190,7 +200,7 @@ static void handle_gettimeofday (int fd, struct taint_retval* trv, struct klog_r
 	assert (0);
     }
 }
-    
+
 static void handle_clock_gettime (int fd, struct taint_retval* trv, struct klog_result* res)
 {
     int rc;
@@ -375,12 +385,15 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 		case SYS_clock_gettime:
 		    handle_clock_gettime (tfd, &trv, res);
 		    break;
-		case SYS_clock_getres:
-		    handle_clock_getres (tfd, &trv, res);
-		    break;
 		case SYS_socketcall:
 		    handle_socketcall (tfd, &trv, res);
 		    break;
+                case SYS_gettid:
+                    handle_gettid (tfd, &trv, res);
+                    break;
+                case SYS_clock_getres:
+                    handle_clock_getres (tfd, &trv, res);
+                    break;
 		case SYS_getdents:
 		case SYS_getdents64:
 		    handle_getdents (tfd, &trv, res);

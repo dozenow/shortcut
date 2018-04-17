@@ -40,7 +40,7 @@ int main(int argc, char* argv[])
 			perror ("read");
 			return rc;
 		}
-		printf("[%lx, %lx) len: %ld\n", rm.m_begin, rm.m_end, rm.m_end - rm.m_begin);
+		printf("[%lx, %lx) len: %lu\n", rm.m_begin, rm.m_end, rm.m_end - rm.m_begin);
 	}
 
 	return 0;

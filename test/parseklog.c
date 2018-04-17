@@ -180,7 +180,7 @@ static void print_rt_sigprocmask(FILE *out, struct klog_result *res) {
 
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		sigset_t* s = (sigset_t *)(res->retparams + sizeof(u_long));
-		fprintf(out, "         set %llx\n", *((__u64 *) s));
+		fprintf(out, "         set %llx, retpara size %d\n", *((__u64 *) s), res->retparams_size);
 		for (i = 0; i < 64; i++) {
 			if (sigismember(s,i)) fprintf(out, "         signal %d is in set\n", i);
 		}
