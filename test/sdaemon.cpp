@@ -21,8 +21,8 @@ using namespace std;
 #include "taintbuf.h"
 #include "util.h"
 
-#define DPRINT printf
-//#define DPRINT(x,...)
+//#define DPRINT printf
+#define DPRINT(x,...)
 
 map<long,long> clone_map;
 
@@ -318,7 +318,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 	fprintf (stderr, "Cannot read taintbuf header\n");
 	return -1;
     }
-    DPRINT ("Divergence type %lu index %lu clock %lu\n", hdr.diverge_type, hdr.diverge_ndx, hdr.last_clock);
+    printf ("Divergence type %lu index %lu clock %lu\n", hdr.diverge_type, hdr.diverge_ndx, hdr.last_clock);
     *plast_clock = hdr.last_clock;
 
     // Now read through the recheck output - these are syscall results that changed from recording

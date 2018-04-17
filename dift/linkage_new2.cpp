@@ -6065,14 +6065,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	old_taint = new_taint;
 	print_me = true;
     }
-
-    if (addr1 >= 0xaa57c000 && addr1 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
-    if (addr2 >= 0xaa57c000 && addr2 < 0xaa57c000 + 0x60000 && *ppthread_log_clock > 745487) print_me = true;
-    if (addr1 >= 0xaa6ac000 && addr1 < 0xaa6ac000 + 0x4000 && *ppthread_log_clock > 1286393) print_me = true;
-    if (addr2 >= 0xaa6ac000 && addr2 < 0xaa6ac000 + 0x4000 && *ppthread_log_clock > 1286393) print_me = true;
-    if (addr1 >= 0xa7426000 && addr1 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
-    if (addr2 >= 0xa7426000 && addr2 < 0xa7426000 + 0x60000 && *ppthread_log_clock > 36711284) print_me = true;
 #endif
+
     if (print_me) {
 	printf ("#%x %s, clock %ld, pid %d bb %lld, mem loc %lx %lx\n", ip, ins, *ppthread_log_clock, current_thread->record_pid, current_thread->ctrl_flow_info.index, mem_loc1, mem_loc2);
 	PIN_LockClient();
@@ -8007,6 +8001,7 @@ void routine (RTN rtn, VOID* v)
 			    IARG_END);
 #ifndef OPTIMIZED
         } else if (!strcmp (name, "pthread_create") || 
+		   !strcmp (name, "pthread_equal") ||
 		   !strcmp (name, "pthread_log_full") ||
 		   !strcmp (name, "pthread_log_stat") || 
 		   !strcmp (name, "pthread_log_alloc") || 

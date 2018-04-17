@@ -1483,8 +1483,8 @@ int recheck__newselect (struct recheck_handle* handle, int nfds, fd_set* readfds
     nschk.ptimeout = timeout;
     if (nschk.setsize) {
 	if (readfds) memcpy (&nschk.readfds, readfds, nschk.setsize);
-	if (writefds) memcpy (&nschk.readfds, readfds, nschk.setsize);
-	if (exceptfds) memcpy (&nschk.readfds, readfds, nschk.setsize);
+	if (writefds) memcpy (&nschk.writefds, writefds, nschk.setsize);
+	if (exceptfds) memcpy (&nschk.exceptfds, exceptfds, nschk.setsize);
     }
     nschk.retlen = res->retparams_size-sizeof(u_long);
 
