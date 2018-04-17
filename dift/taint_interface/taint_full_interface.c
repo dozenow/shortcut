@@ -2465,7 +2465,7 @@ static inline void print_extra_move_reg_10 (ADDRINT ip, int reg, const PIN_REGIS
 	    }
 	}
 
-	OUTPUT_SLICE_EXTRA (ip, "add esp, 22"); //for alignment and fpu push
+	OUTPUT_SLICE_EXTRA (ip, "add esp, 10"); //for alignment and fpu push
 
 	OUTPUT_SLICE_EXTRA (ip, "popfd");
     } else {
