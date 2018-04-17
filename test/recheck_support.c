@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -165,43 +165,70 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
     int i;
 
     if (go_live_clock == NULL) { 
-        fprintf (stderr, "cannot dump_taintbuf\n");
-        return -1;
-    }
+        //single-threaded program
+        char dump_filename[256];
+        struct taintbuf_hdr hdr;
+        int fd;
 
-    // We need to dump ALL the taintbufs for every slice here - this will only work 
-    // for multithreaded apps - not for multiprocess.
-    for (i = 0; i < go_live_clock->num_threads; i++) {
-	char dump_filename[256];
-	struct taintbuf_hdr hdr;
-	int fd;
+        sprintf (dump_filename, "%s", taintbuf_filename);
+        fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
+            return fd;
+        }
 
-	if (go_live_clock->process_map[i].taintbuf && *go_live_clock->process_map[i].taintndx) {
-	    sprintf (dump_filename, "%s%d", taintbuf_filename, go_live_clock->process_map[i].record_pid);
-	    fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	    if (fd < 0) {
-		fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
-		return fd;
-	    }
-	    
-	    hdr.diverge_type = diverge_type;
-	    hdr.diverge_ndx = diverge_ndx;
-	    hdr.last_clock = last_clock;
-	    rc = write (fd, &hdr, sizeof(hdr));
-	    if (rc != sizeof(hdr)) {
-		fprintf (stderr, "Tried to write %d byte header to taint buffer file, rc=%ld\n", sizeof(hdr), rc);
-		return -1;
-	    }
+        hdr.diverge_type = diverge_type;
+        hdr.diverge_ndx = diverge_ndx;
+        hdr.last_clock = last_clock;
+        rc = write (fd, &hdr, sizeof(hdr));
+        if (rc != sizeof(hdr)) {
+            fprintf (stderr, "Tried to write %d byte header to taint buffer file, rc=%ld\n", sizeof(hdr), rc);
+            return -1;
+        }
 
-	    rc = write (fd, go_live_clock->process_map[i].taintbuf, *go_live_clock->process_map[i].taintndx);
-	    if (rc != *go_live_clock->process_map[i].taintndx) {
-		fprintf (stderr, "Tried to write %ld bytes to taint buffer file, rc=%ld\n", 
-			 *go_live_clock->process_map[i].taintndx, rc);
-		return -1;
-	    }
+        rc = write (fd, taintbuf, taintndx);
+        if (rc != taintndx) {
+            fprintf (stderr, "Tried to write %ld bytes to taint buffer file, rc=%ld\n", 
+                    taintndx, rc);
+            return -1;
+        }
 
-	    close (fd);
-	}
+        close (fd);
+    } else {
+        // We need to dump ALL the taintbufs for every slice here - this will only work 
+        // for multithreaded apps - not for multiprocess.
+        for (i = 0; i < go_live_clock->num_threads; i++) {
+            char dump_filename[256];
+            struct taintbuf_hdr hdr;
+            int fd;
+
+            if (go_live_clock->process_map[i].taintbuf && *go_live_clock->process_map[i].taintndx) {
+                sprintf (dump_filename, "%s%d", taintbuf_filename, go_live_clock->process_map[i].record_pid);
+                fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (fd < 0) {
+                    fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
+                    return fd;
+                }
+
+                hdr.diverge_type = diverge_type;
+                hdr.diverge_ndx = diverge_ndx;
+                hdr.last_clock = last_clock;
+                rc = write (fd, &hdr, sizeof(hdr));
+                if (rc != sizeof(hdr)) {
+                    fprintf (stderr, "Tried to write %d byte header to taint buffer file, rc=%ld\n", sizeof(hdr), rc);
+                    return -1;
+                }
+
+                rc = write (fd, go_live_clock->process_map[i].taintbuf, *go_live_clock->process_map[i].taintndx);
+                if (rc != *go_live_clock->process_map[i].taintndx) {
+                    fprintf (stderr, "Tried to write %ld bytes to taint buffer file, rc=%ld\n", 
+                            *go_live_clock->process_map[i].taintndx, rc);
+                    return -1;
+                }
+
+                close (fd);
+            }
+        }
     }
 
     return 0;
@@ -222,7 +249,7 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     if (clock_addr)
         go_live_clock = clock_addr;
     else {
-        fprintf (stderr, "Running a single-threaded program and has no shared clock page?\n");
+        //Running a single-threaded program and has no shared clock page?
         go_live_clock = NULL;
     }
 
@@ -344,16 +371,16 @@ void exit_slice (long is_ckpt_thread, long retval)
 void handle_mismatch()
 {
     //TODO: uncomment these lines
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
-    DELAY;
-    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_mismatch: should not get here\n");
-    abort();
+    //DELAY;
+    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    //fprintf (stderr, "handle_mismatch: should not get here\n");
+    //abort();
 }
 
 void handle_jump_diverge()

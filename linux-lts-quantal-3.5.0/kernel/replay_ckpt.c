@@ -153,7 +153,7 @@ void print_fpu_state(struct fpu *f, pid_t record_pid)
 {
 	//first byte and last byte of the thread_xstate in the struct fpu
 	unsigned char *c = (unsigned char *)f->state;
-	unsigned char *last = c + sizeof(union thread_xstate);
+	unsigned char *last = c + xstate_size; 
 
 	printk("%d fpu state:\n", record_pid);
 	printk("\tlast_cpu %u\n",f->last_cpu);
@@ -762,14 +762,21 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			goto exit;
 		}
 
-		//thread_xstate's actual size is stored by this variable
-
-		copied = vfs_write(file, (char *) fpu->state, xstate_size, ppos);
-		if (copied != sizeof(union thread_xstate)) {
-			printk ("replay_full_checkpoint_proc_to_disk: tried to write thread_xstate, got rc %d\n", copied);
+		copied = 0;
+		while (copied < xstate_size) {
+			int ret = vfs_write(file, (char *) fpu->state + copied, xstate_size - copied, ppos);
+			if (ret <= 0) { 
+				printk ("[ERROR] replay_full_checkpoint_proc_to_disk cannot write xstate\n");
+				break;
+			}
+			copied += ret;
+		}
+		if (copied != xstate_size) {
+			printk ("[ERROR] replay_full_checkpoint_proc_to_disk: tried to write thread_xstate, got rc %d, expected %d\n", copied, xstate_size);
 			rc = copied;
 			goto exit;
 		}
+
 	}
 
 	
@@ -1165,8 +1172,8 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 			goto exit;
 		}
 		copied = vfs_read(file, (char *) fpu->state, xstate_size, ppos);
-		if (copied != sizeof(union thread_xstate)) {
-			printk ("replay_full_resume_proc_from_disk: tried to read thread_xstate, got rc %d\n", copied);
+		if (copied != xstate_size) {
+			printk ("replay_full_resume_proc_from_disk: tried to read thread_xstate, got rc %d, expected %d\n", copied, xstate_size);
 			rc = copied;
 			goto exit;
 		}
@@ -1683,7 +1690,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
         index = atomic_add_return (1, &go_live_clock->num_threads)-1;
 	if (index == 0) 
 		go_live_clock->cache_file_structure = NULL;
-        MPRINT ("Pid %d start_fw_slice pthread_clock_addr %x\n", current->pid, user_clock_addr);
+        MPRINT ("Pid %d start_fw_slice pthread_clock_addr %lx\n", current->pid, user_clock_addr);
         if (index > 99) { 
             printk ("start_fw_slice: too many concurrent threads?\n");
             BUG ();
@@ -1727,7 +1734,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 		struct fpu* fpu = &(current->thread.fpu);
 		pinfo->fpu_last_cpu = fpu->last_cpu;
 		pinfo->fpu_has_fpu = fpu->has_fpu;
-		memcpy (&pinfo->fpu_state, fpu->state, sizeof(union thread_xstate));
+		memcpy (&pinfo->fpu_state, fpu->state, xstate_size);
 	}
 	copy_to_user ((char __user *) extra_space_addr + STACK_SIZE, pinfo, sizeof(struct fw_slice_info));
 	KFREE (pinfo);
@@ -1936,7 +1943,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			struct fpu* fpu = &(current->thread.fpu);
 			fpu->last_cpu = slice_info->fpu_last_cpu;
 			fpu->has_fpu = slice_info->fpu_has_fpu;
-			memcpy (fpu->state, &slice_info->fpu_state, sizeof(union thread_xstate));
+			memcpy (fpu->state, &slice_info->fpu_state, xstate_size);
 		}
 		set_thread_flag (TIF_IRET);
 

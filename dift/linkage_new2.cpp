@@ -129,7 +129,8 @@ FILE* filter_f = NULL;
 int tokens_fd = -1;
 int outfd = -1;
 int xoutput_fd = -1;
-unsigned long long inst_count = 0;
+unsigned long long inst_count = 0; //this is only used for getting benchmark numbers
+unsigned long long total_syscall_cnt = 0; //this is only used for getting benchmark numbers
 extern unsigned long handled_jump_divergence;
 extern unsigned long handled_index_divergence;
 int filter_x = 0;
@@ -440,7 +441,7 @@ static int dift_done ()
     terminated = 1;
     PIN_UnlockClient();
     fprintf(stderr, "%d: in dift_done\n",PIN_GetTid());
-    fprintf (stderr, "inst count %llu, handled jump divergence %lu, handled index divergence %lu\n", inst_count, handled_jump_divergence, handled_index_divergence); 
+    fprintf (stderr, "inst count %llu, syscall cnt %llu, handled jump divergence %lu, handled index divergence %lu\n", inst_count, total_syscall_cnt, handled_jump_divergence, handled_index_divergence); 
 
 #ifdef USE_FILE
     char taint_structures_file[256];
@@ -3301,6 +3302,7 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
 	increment_syscall_cnt (current_thread->sysnum);
 	current_thread->syscall_in_progress = false;
     }
+    ++ total_syscall_cnt;
 
     // The first syscall returns twice 
     if (global_syscall_cnt > 1) { 
@@ -6967,9 +6969,11 @@ void trace_instrumentation(TRACE trace, void* v)
             }
 #endif
 
+#ifndef OPTIMIZED
             INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(count_instruction), 
                     IARG_FAST_ANALYSIS_CALL, 
                     IARG_END);
+#endif
 
 	    instruction_instrumentation (ins, NULL);
 	}

@@ -123,7 +123,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-//#define TRACE_TIMINGS //analysis for how much we can save on startup
+#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int check_startup_db = 1;
 
@@ -9454,17 +9454,12 @@ trace_open (const char __user* filename, int flags, int mode) {
 	if (trace_timings && rc > 0) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
-		if (strstr (filename, ".o")) {
-			mm_segment_t old_fs = get_fs();
-			struct rusage ru;
-			set_fs (KERNEL_DS);
-			sys_getrusage (RUSAGE_SELF, &ru);
-			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
-			set_fs (old_fs);
-		} else if (strstr (filename, ".h")) { 
+		if (strstr (filename, ".h")) { 
+			//printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
 			atomic_set (&last_pid, current->pid);
 			atomic_set (&last_open_fd, rc);
+		} else { 
+			atomic_set (&last_open_fd, 0);
 		}
 	}
 	return rc;

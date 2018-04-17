@@ -21,9 +21,9 @@
 #include "../test/parseulib.h"
 #include "track_pthread.h"
 
-//#define OPTIMIZED
+#define OPTIMIZED
 
-#define PRINT_DEBUG_INFO
+//#define PRINT_DEBUG_INFO
 #ifdef PRINT_DEBUG_INFO
 #define OUTPUT_MAIN_THREAD(thread,format,...) fprintf (thread->main_output_file, "\"" format "\\n\"\n", ## __VA_ARGS__);
 #define OUTPUT_SLICE_THREAD(thread,addr,format,...) fprintf (thread->slice_output_file, "\"" format " /*[SLICE] #%08x ", ## __VA_ARGS__, addr);

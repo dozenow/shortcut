@@ -331,6 +331,7 @@ int main (int argc, char* argv[])
 		printf ("\t fpu allocated? %d\n", (int) fpu_allocated);
 		if (fpu_allocated) { 
 			rc = read (fd, buffer, sizeof (unsigned int) + sizeof (unsigned int) + xstate_size);
+			printf ("rc is %d\n", rc);
 			assert (rc == sizeof(unsigned int) + sizeof (unsigned int) + xstate_size);
 		}
 		restore_sysv_mappings (fd);
