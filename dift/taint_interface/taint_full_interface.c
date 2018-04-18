@@ -3195,7 +3195,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                             current_thread->ctrl_flow_info.tracked_orig_path->clear();
                             //TODO hacky: redirect all output to /dev/null
                             current_thread->ctrl_flow_info.saved_slice_output_file = current_thread->slice_output_file;
-                            CFDEBUG (stderr, "Note: start to redirect slice output to /dev/null\n");
+                            CFDEBUG ("Note: start to redirect slice output to /dev/null\n");
                             current_thread->slice_output_file =fopen ("/dev/null", "w");
                             assert (current_thread->slice_output_file != NULL);
                             return; //return here as we don't need the following initialization below
@@ -3204,7 +3204,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                             //second pass after we rolled back from the previous if-condition
                             //we already figured out the original path
                             fclose (current_thread->slice_output_file); //close /dev/null
-                            CFDEBUG (stderr, "stop redirecting slice output to /dev/null\n");
+                            CFDEBUG ("stop redirecting slice output to /dev/null\n");
                             current_thread->slice_output_file = current_thread->ctrl_flow_info.saved_slice_output_file;
                             current_thread->ctrl_flow_info.is_tracking_orig_path = false;
                             current_thread->ctrl_flow_info.is_orig_path_tracked = false;

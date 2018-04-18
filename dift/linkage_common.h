@@ -275,6 +275,7 @@ struct recvfrom_info {
     int flags;
     struct sockaddr* src_addr;
     socklen_t* addrlen;
+    u_long clock;
 };
 
 //store the original taint and value for the mem address

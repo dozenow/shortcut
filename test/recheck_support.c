@@ -171,6 +171,7 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
         int fd;
 
         sprintf (dump_filename, "%s", taintbuf_filename);
+        fprintf (stderr, "this is a singlethreaded program, dumping taintbuf to %s\n", dump_filename);
         fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd < 0) {
             fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);

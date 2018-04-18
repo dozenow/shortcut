@@ -1667,6 +1667,7 @@ static void sys_recvfrom_start(thread_data* tdata, int sockfd, void* buf, size_t
     info->flags = flags;
     info->src_addr = src_addr;
     info->addrlen = addrlen;
+    info->clock = *ppthread_log_clock;
     tdata->save_syscall_info = (void *) info;
 }
 
@@ -1685,13 +1686,13 @@ static void sys_recvfrom_stop(int rc)
 
     if (current_thread->recheck_handle) {
 	OUTPUT_SLICE(0, "call recvfrom_recheck");
-	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE_INFO("clock %lu", info->clock);
 
 	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
 	int regions;
 	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends)) > 0) {
 	    if (regions > 0) {
-		int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, regions, starts, ends, *ppthread_log_clock);
+		int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, regions, starts, ends, info->clock);
 		if (retlen > 0) {
 		    clear_mem_taints ((u_long)buf, retlen); 
 		    add_modified_mem_for_final_check ((u_long)buf, retlen);
@@ -1702,7 +1703,7 @@ static void sys_recvfrom_stop(int rc)
 		}
 	    }
 	} else {
-	    int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, 0, 0, 0, *ppthread_log_clock);
+	    int retlen = recheck_recvfrom (current_thread->recheck_handle, sockfd, buf, len, flags, src_addr, addrlen, 0, 0, 0, info->clock);
 	    if (retlen > 0) {
 		clear_mem_taints ((u_long)buf, retlen); 
 		add_modified_mem_for_final_check ((u_long)buf, retlen);
