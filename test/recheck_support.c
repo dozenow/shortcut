@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -1051,6 +1051,7 @@ long recvfrom_recheck ()
     struct recvfrom_recheck* precv;
     struct sockaddr* ret_sockaddr = NULL;
     socklen_t ret_addrlen = 0;
+    char tmp_addr[32] = {0}; //ipv4 uses 16byte
     long rc;
     int i;
 
@@ -1059,16 +1060,19 @@ long recvfrom_recheck ()
     bufptr += sizeof(struct recheck_entry);
     last_clock = pentry->clock;
     precv = (struct recvfrom_recheck *) bufptr;
-    if (precv->addrlen_value) {
+    if (precv->addrlen_value > 0) {
         ret_sockaddr = (struct sockaddr*) (bufptr + sizeof (struct recvfrom_recheck));
         ret_addrlen= precv->addrlen_value;
+        if (ret_addrlen > 32) { 
+            fprintf (stderr, "recvfrom_recheck: increase the size of tmp_addr!\n");
+        }
     }
     char* recvData = bufptr + sizeof(struct recvfrom_recheck) + precv->addrlen_value;
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    LPRINT ("recvfrom: sockfd %d buf %p len %d flags %d returns %ld clock %lu buffer offset %ld, returned addrlen %d\n", 
-	    precv->sockfd, precv->buf, precv->len, precv->flags, pentry->retval, pentry->clock, (u_long) precv - (u_long) buf, precv->addrlen_value);
+    LPRINT ("recvfrom: sockfd %d buf %p len %d flags %d returns %ld clock %lu buffer offset %ld, returned addrlen %d, src_addr %p\n", 
+	    precv->sockfd, precv->buf, precv->len, precv->flags, pentry->retval, pentry->clock, (u_long) precv - (u_long) buf, precv->addrlen_value, precv->src_addr);
 #endif
 
     if (pentry->retval == -EAGAIN) {
@@ -1089,15 +1093,19 @@ long recvfrom_recheck ()
 	    block[2] = precv->len;
 	}
 	block[3] = precv->flags;
-        block[4] = (u_long) tmpbuf;
+        block[4] = (u_long) tmp_addr;
         block[5] = (u_long) &ret_addrlen;
 
-	int tries = 0;
+        int tries = 1;
+        //don't try several times here as this would overwrite the content in src_addr and addrlen (block[4] and 5)
 	do {
 	    start_timing();
-	    rc = syscall(SYS_socketcall, SYS_RECV, &block);
+	    rc = syscall(SYS_socketcall, SYS_RECVFROM, &block);
 	    DPRINT ("recvfrom: returns %ld errno %d\n", rc, errno);
 	    end_timing (SYS_socketcall, rc);
+            if (rc == pentry->retval) { 
+                break;
+            }
 	    if (rc == -1 && errno == 11 && pentry->retval > 0) {
 		tries++;
 		DPRINT ("recvfrom: try again?\n");
@@ -1116,6 +1124,9 @@ long recvfrom_recheck ()
 #ifdef PRINT_DEBUG
 	print_buffer_hex (precv->buf, pentry->retval);
 	print_buffer_hex ((u_char *) recvData, pentry->retval);
+
+	print_buffer (precv->buf, pentry->retval);
+	print_buffer ((u_char *) recvData, pentry->retval);
 #endif
 
 	DPRINT ("About to compare %p and %p partial_read_cnt %d\n", precv->buf, recvData, precv->partial_read_cnt);
@@ -1167,23 +1178,12 @@ long recvfrom_recheck ()
 		}
 	    }
 	}
-#ifdef PRINT_DEBUG
-        LPRINT ("returedn addrlen size is %d\n", ret_addrlen);
-        print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
-        print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
-        {
-            int i = 0;
-            for (; i<ret_addrlen; ++i) {
-                LPRINT ("tmp[%d] = %d;\n", i, tmpbuf[i]);
-            }
-        }
-#endif
         //Now compare the returned src_addr and addrlen
         if (precv->addrlen_value > 0) { 
-            if (precv->addrlen_value != ret_addrlen || memcmp (tmpbuf, ret_sockaddr, precv->addrlen_value)) { 
+            if (precv->addrlen_value != ret_addrlen || memcmp (tmp_addr, ret_sockaddr, precv->addrlen_value)) { 
                 LPRINT ("[MISMATCH] recvfrom has different returned sockaddr or addrlen is different, recorded addrlen %d current addrlen %d\n", precv->addrlen_value, ret_addrlen);
 #ifdef PRINT_DEBUG
-                print_buffer_hex ((u_char*) tmpbuf, precv->addrlen_value);
+                print_buffer_hex ((u_char*) tmp_addr, precv->addrlen_value);
                 print_buffer_hex ((u_char*) ret_sockaddr, precv->addrlen_value);
 #endif
                 handle_mismatch();
@@ -1509,6 +1509,9 @@ long send_recheck ()
 #endif
 
     psendbuf = fill_taintedbuf (data, psend->buf, psend->len);
+#ifdef PRINT_VALUES
+    print_buffer_hex ((u_char*) psend->buf, psend->len);
+#endif
 
     u_long block[6];
     block[0] = psend->sockfd;

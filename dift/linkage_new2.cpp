@@ -1710,7 +1710,9 @@ static void sys_recvfrom_stop(int rc)
 	}
         if (addrlen) {
             add_modified_mem_for_final_check ((u_long) src_addr, *addrlen);
+            clear_mem_taints ((u_long) src_addr, *addrlen);
             add_modified_mem_for_final_check ((u_long) addrlen, sizeof(socklen_t));
+            clear_mem_taints ((u_long) addrlen, sizeof(socklen_t));
         }
     }
 
