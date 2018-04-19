@@ -26,7 +26,7 @@ using namespace std;
 //#define DPRINT(args...) fprintf(stderr,args)
 //#define DPRINT(x) printf 
 //#define MYASSERT assert
-//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("line %d Expected %x got %lx syscall %ld bb_cnt %ld\n", __LINE__, val, lval, *ppthread_log_clock, bb_cnt); debug_print_value (); /*fail_and_exit();*/ } }
+//#define OP_CHECK(val) { u_long lval = get_value(); if (lval != val) { printf ("line %d Expected %x got %lx syscall %ld bb_cnt %ld\n", __LINE__, val, lval, *ppthread_log_clock, bb_cnt); debug_print_value (); fail_and_exit(); } }
 
 #define OP_CALL             0
 #define OP_RETURN           1
@@ -66,7 +66,6 @@ int logfd, ndx, bufsize, devndx, prev_ndx, deviation_ip, deviation_taken;
 map<u_long, struct index_div> indexes;
 u_long prev_bb, bb_cnt = 0;
 bool deviation;
-bool next_sync_point;
 bool debug_on;
 bool trace_start = false;
 u_long cur_clock = 0;
@@ -250,12 +249,6 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
 
         if (trace_start) {
             u_long op = get_value();
-            if (next_sync_point) { 
-                fprintf (stderr, "Some error happens; let' skip to the next syscall, ndx %d file pos %lu\n", ndx, lseek (logfd, 0, SEEK_CUR));
-                while (op != 2) 
-                    op = get_value ();
-                next_sync_point = false;
-            }
             if (op != 2) {
                 fprintf (stderr, "Expected syscall, got value %lx, clock %ld sysnum %d\n", op, *ppthread_log_clock, syscall_num);
                 fail_and_exit();
@@ -288,6 +281,7 @@ void syscall_after (ADDRINT ip)
 	}
 	current_thread->app_syscall = 0;  
     }
+
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= print_stop) { 
         fprintf (stderr, "exit.\n");
@@ -397,14 +391,9 @@ static void extract_basic_blocks (u_long* buf, int end, bool is_devbuf,
 static void print_bb (u_long start_bb, u_long end_bb, u_long* new_buf, int& new_ndx,
 		      map<u_long,u_long>& bb) 
 {
-   if (start_bb == bb[end_bb]) {
+    if (start_bb == bb[end_bb]) {
 	new_buf[new_ndx++] = start_bb;
     } else {
-        if (bb[end_bb] == 0) {
-            //xdou: don't know how to handle this
-            fprintf (stderr, "print_bb: cannot figure out the end_bb\n");
-            return;
-        }
 	print_bb (start_bb, bb[end_bb], new_buf, new_ndx, bb);
 	new_buf[new_ndx++] = bb[end_bb];
     }
@@ -492,12 +481,7 @@ void find_best_match ()
     DPRINT ("dev ndx is %d\n", devndx);
     extract_basic_blocks (dev_buffer, devndx, true, bb, splits);
 
-    u_long* buffer1 = (u_long*)malloc (256*1024);
-    u_long* buffer2 = (u_long*)malloc (256*1024);
-    memset (buffer1, 0, 256*1024);
-    memset (buffer2, 0, 256*1024);
-    assert (end_ndx-prev_ndx < 256*1024);
-    assert (devndx < 256*1024);
+    u_long buffer1[1024], buffer2[1024];
     int bufend1 = 0, bufend2 = 0;
     build_new_bb_list (buffer+prev_ndx, end_ndx-prev_ndx, buffer1, bufend1, false, bb);
     build_new_bb_list (dev_buffer, devndx, buffer2, bufend2, true, bb);
@@ -535,12 +519,7 @@ void find_best_match ()
 
     if (best_val == INT_MAX) {
 	fprintf (stderr, "deviation at %x bb %lx syscall %ld is too large to handle\n", deviation_ip, bb_cnt, *ppthread_log_clock);
-        next_sync_point = true;
-        deviation = false;
-        free (buffer1);
-        free (buffer2);
-        return;
-	//fail_and_exit();
+	fail_and_exit();
     }
 
     // Spit out the deviation for the checks file
@@ -646,10 +625,6 @@ void find_best_match ()
 	    prev_bb = buffer[j];
 	}
 	if (buffer[j] == target_val) {
-            /*if (buffer[j-2] == OP_JMP_INDIRECT) { 
-                fprintf (stderr, "Indirect jmp inside deviation.\n");
-                continue;
-            }*/
 	    if (loop1) {
 		loop1 = false;
 	    } else {
@@ -662,7 +637,7 @@ void find_best_match ()
 		}
 		DPRINT ("Occurs at index %d/%d\n", j, j-prev_ndx);
                 if (buffer[j-1] == OP_JMP_INDIRECT) {
-                    fprintf (stderr, "Indirect jmp inside deviation.\n");
+                    fprintf (stderr, "Indirect jmp inside deviation.\n");//handle this later
                     ++j;
                 }
 		break;
@@ -679,7 +654,7 @@ void find_best_match ()
     for (i = i+1; i < devndx; i++, ndx++) {
 	DPRINT ("Records: %d:%lx vs. %d:%lx\n", ndx, buffer[ndx], i, dev_buffer[i]);
         if (buffer[ndx-2] == OP_JMP_INDIRECT) { 
-            fprintf (stderr, "Indirect jmp inside deviation.\n");
+            fprintf (stderr, "Indirect jmp inside deviation.\n");//handle this later
             ++ ndx;
         }
 
@@ -697,26 +672,11 @@ void find_best_match ()
 		}
 		devndx = devndx-i+1;
 	    }
-            fprintf (stderr, "Ignore nested control flow for now.\n");
-            deviation = false;
-            next_sync_point = true;
-            free (buffer1);
-            free (buffer2);
-            return;
-	    //return find_best_match();
+	    return find_best_match();
 	}
-
-        if (buffer[ndx] != dev_buffer[i]) {
-	    fprintf (stderr, "Mismatch processing remaining records, clock is %lu\n", *ppthread_log_clock);
-            fprintf (stderr, "Mismatch records: %d:%lx vs. %d:%lx\n", ndx, buffer[ndx], i, dev_buffer[i]);
-            debug_print_value ();
-            debug_print_devvalue (devndx);
-            deviation = false;
-            next_sync_point = true;
-            free (buffer1);
-            free (buffer2);
-            return;
-	    //fail_and_exit();
+	if (buffer[ndx] != dev_buffer[i]) {
+	    fprintf (stderr, "Mismatch processing remaining records\n");
+	    fail_and_exit();
 	}
 	if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_BRANCH_NOT_TAKEN) {
 	    if (buffer[ndx] >= OP_RELREAD && buffer[ndx] <= OP_RELREAD2) {
@@ -737,8 +697,6 @@ void find_best_match ()
     deviation = false;
     debug_on = true;
     DPRINT ("BB cnt is now %lu\n", bb_cnt);
-    free (buffer1);
-    free (buffer2);
 }
 
 static void PIN_FAST_ANALYSIS_CALL trace_bbl (ADDRINT ip)
@@ -882,8 +840,7 @@ static void PIN_FAST_ANALYSIS_CALL trace_branch (ADDRINT ip, uint32_t taken)
 	devndx = 3;
 	deviation_ip = ip;
 	deviation_taken = logtaken;
-        if (!next_sync_point)
-            deviation = true;
+	deviation = true;
 	//dev_calls = 0;
     }
 }
@@ -892,10 +849,9 @@ void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
 {
     if (!trace_start) return;
     if (deviation) {
-	assert (devndx < BUF_SIZE - 3);
 	dev_buffer[devndx++] = OP_JMP_INDIRECT;
 	dev_buffer[devndx++] = ip;
-	//dev_buffer[devndx++] = value;
+	assert (devndx < BUF_SIZE);
 	return;
     }
 
@@ -909,9 +865,8 @@ void PIN_FAST_ANALYSIS_CALL trace_jmp_reg (ADDRINT ip, uint32_t value)
 	dev_buffer[2] = ip;
 	devndx = 3;
 	deviation_ip = ip;
-        deviation_taken = true;
-        if (!next_sync_point)
-            deviation = true;
+	deviation_taken = true;
+	deviation = true;
 	//dev_calls = 0;
     }
 }
@@ -920,10 +875,9 @@ void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
 {
     if (!trace_start) return;
     if (deviation) {
-	assert (devndx < BUF_SIZE - 3);
 	dev_buffer[devndx++] = OP_JMP_INDIRECT;
 	dev_buffer[devndx++] = ip;
-	//dev_buffer[devndx++] = *(unsigned int*)loc;
+	assert (devndx < BUF_SIZE);
 	return;
     }
 
@@ -939,8 +893,7 @@ void PIN_FAST_ANALYSIS_CALL trace_jmp_mem (ADDRINT ip, ADDRINT loc)
 	devndx = 3;
 	deviation_ip = ip;
 	deviation_taken = true;
-        if (!next_sync_point)
-            deviation = true;
+	deviation = true;
 	//dev_calls = 0;
     }
 }

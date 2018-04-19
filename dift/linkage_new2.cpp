@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 1250 
-//#define EXTRA_DEBUG_STOP 1280 
-//#define EXTRA_DEBUG_FUNCTI60
+#define EXTRA_DEBUG 800
+#define EXTRA_DEBUG_STOP 1200
+#define EXTRA_DEBUG_FUNCTI60
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);

@@ -21,7 +21,8 @@ unsigned long print_limit = 0;
 unsigned long int print_stop = UINT_MAX;
 u_long* ppthread_log_clock;
 
-KNOB<string> KnobPrintLimit(KNOB_MODE_WRITEONCE, "pintool", "p", "0", "syscall print limit");
+KNOB<string> KnobPrintLimit(KNOB_MODE_WRITEONCE, "pintool", "p", "0", "syscall print start");
+KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "100000000", "syscall print stop");
 
 // BEGIN GENERIC STUFF NEEDED TO REPLAY WITH PIN
 
@@ -291,13 +292,21 @@ void PIN_FAST_ANALYSIS_CALL log_replay_block(ADDRINT block_until) {
         update_interval_overwrite(thd_ints, PIN_ThreadId(), block_until);
 }
 
-void PIN_FAST_ANALYSIS_CALL print_function_name (char* name, ADDRINT value1, ADDRINT value2)
+void PIN_FAST_ANALYSIS_CALL print_function_name (ADDRINT ip, char* name, ADDRINT value1, ADDRINT value2)
 {
 	if (inrange ()) {
 		fprintf (stderr, "[debug] %d %s\n", PIN_ThreadId(), name);
 		if (strstr (name, "pthread") || strstr (name, "sem")) {
 			fprintf (stderr, "  params %x %x\n", value1, value2);
+		} else if (strstr (name, "getenv")) {
+			fprintf (stderr, "    getenv: %s\n", (char*) value1);
 		}
+		PIN_LockClient();
+		if (IMG_Valid(IMG_FindByAddress(ip))) {
+			fprintf(stderr, " -- img %s\n", IMG_Name(IMG_FindByAddress(ip)).c_str());
+		}
+		PIN_UnlockClient();
+
 	}
 }
 
@@ -309,6 +318,7 @@ void track_function(RTN rtn, void* v)
     RTN_Open(rtn);
     const char* name = RTN_Name(rtn).c_str();
     RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name, IARG_FAST_ANALYSIS_CALL,
+		    IARG_ADDRINT, RTN_Address (rtn),
 		    IARG_PTR, strdup (name), 
 		    IARG_FUNCARG_ENTRYPOINT_VALUE, 0, 
 		    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
@@ -478,6 +488,7 @@ int main(int argc, char** argv)
     // Obtain a key for TLS storage
     tls_key = PIN_CreateThreadDataKey(0);
     print_limit = atol(KnobPrintLimit.Value().c_str());
+    print_stop = atol(KnobPrintStop.Value().c_str());
 
     PIN_AddThreadStartFunction(thread_start, 0);
 

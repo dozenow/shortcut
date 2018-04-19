@@ -84,7 +84,7 @@ struct user_desc {
 #endif
 };
 
-#define xstate_size 512 //should be the same as the size of union thread_xstate, not verified on other machines
+#define xstate_size 512 //should be the same as the size of union thread_xstate, not verified on other machines; seems to be 832 on a VM?
 #define GDT_ENTRY_TLS_ENTRIES 3
 //end copyed from kernel
 
@@ -331,7 +331,7 @@ int main (int argc, char* argv[])
 		printf ("\t fpu allocated? %d\n", (int) fpu_allocated);
 		if (fpu_allocated) { 
 			rc = read (fd, buffer, sizeof (unsigned int) + sizeof (unsigned int) + xstate_size);
-			printf ("rc is %d\n", rc);
+			printf ("rc is %d, make sure xstate_size is the same with your machine, as I found this is machine-dependent \n", rc);
 			assert (rc == sizeof(unsigned int) + sizeof (unsigned int) + xstate_size);
 		}
 		restore_sysv_mappings (fd);
