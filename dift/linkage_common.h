@@ -296,12 +296,12 @@ struct ctrl_flow_block_index {
     u_long ip;
     bool orig_taken;
     uint32_t merge_ip;
-    uint32_t extra_loop_iterations;
+    int extra_loop_iterations;
     queue<struct ctrl_flow_branch_info> orig_path; // List of branches taken and not
     vector<queue<struct ctrl_flow_branch_info> > alt_path; // List of branches taken and not
     bool orig_path_nonempty; // For loops 
     vector<bool> alt_path_nonempty; // For loops
-    uint32_t iter_count; // For loops - maximum number of iterations to add
+    int iter_count; // For loops - maximum number of iterations to add
     int alt_path_count;  //How many possible alternative paths between divergence and merge point
 };
 

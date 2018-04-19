@@ -61,8 +61,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 2348930
-//#define EXTRA_DEBUG_STOP 2348960
+//#define EXTRA_DEBUG 1250 
+//#define EXTRA_DEBUG_STOP 1280 
 //#define EXTRA_DEBUG_FUNCTI60
 //9100-9200 //718800-718900
 
@@ -7271,7 +7271,7 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
 	       index.ip = i.ip; 
                assert (index.ip != 0);
 	       index.orig_taken = (i.branch_flag == 't');
-	       index.extra_loop_iterations = 0;
+	       index.extra_loop_iterations = -1;
 	       index.orig_path_nonempty = false;
                index.alt_path_nonempty.resize (i.alt_branch_count);
                index.alt_path_count = i.alt_branch_count;

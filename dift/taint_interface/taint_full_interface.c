@@ -3116,32 +3116,38 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 
 		CFDEBUG ("Found a potential divergence ip %x inst %s flag taint %d\n", ip, ins_str, tainted);
 		if (tainted) {
-                    bool need_swap = ((it->second.orig_taken && !taken) ||(!it->second.orig_taken && taken));
+                    //bool need_swap = ((it->second.orig_taken && !taken) ||(!it->second.orig_taken && taken));
 		    CFDEBUG ("is loop %d orig taken %d taken %d orig nonempty %d alt nonempty %d alt_path_index %d\n", it->second.ip == it->second.merge_ip, it->second.orig_taken, taken, it->second.orig_path_nonempty, (int)it->second.alt_path_nonempty[current_thread->ctrl_flow_info.alt_path_index], current_thread->ctrl_flow_info.alt_path_index);
-		    if (it->second.ip == it->second.merge_ip && it->second.alt_path_count == 1
-                            && ((!need_swap && !it->second.orig_path_nonempty) || 
-                             (need_swap && !it->second.alt_path_nonempty[0]))) {
-                        CFDEBUG ("This is an extra iteration for a loop\n");
+		    if (it->second.ip == it->second.merge_ip && it->second.alt_path_count == 1) {
+                        CFDEBUG ("This is an iteration for a loop\n");
                         it->second.extra_loop_iterations++;
 		    } else {
-			it->second.extra_loop_iterations = 0;
+			it->second.extra_loop_iterations = -1; 
 		    }
 		    
 		    if (it->second.extra_loop_iterations > it->second.iter_count) {
 			CFDEBUG ("Reached maximum extra loop iterations\n");
-			it->second.extra_loop_iterations = 0;
+			it->second.extra_loop_iterations = -1; //we cound from -1 
 		    } else {
 			// Wildcard matches and flag tainted, so handle this divergence
 			struct ctrl_flow_block_index dp;
 			dp.clock = current_thread->ctrl_flow_info.clock;
 			dp.index = current_thread->ctrl_flow_info.index+ndx_incr;
 			dp.ip = it->second.ip;
-			dp.orig_taken = it->second.orig_taken;
 			dp.merge_ip = it->second.merge_ip;
-			dp.orig_path = it->second.orig_path;
-			dp.alt_path = it->second.alt_path;
-                        dp.alt_path_nonempty = it->second.alt_path_nonempty;
-                        dp.orig_path_nonempty = it->second.orig_path_nonempty;
+                        /*if (need_swap && it->second.alt_path_count == 1) { 
+                            dp.orig_taken = !it->second.orig_taken;
+                            dp.orig_path = it->second.alt_path[0];
+                            dp.alt_path.push_back (it->second.orig_path);
+                            dp.alt_path_nonempty.push_back (it->second.orig_path_nonempty);
+                            dp.orig_path_nonempty = it->second.alt_path_nonempty;
+                        } else { */
+                            dp.orig_taken = it->second.orig_taken;
+                            dp.orig_path = it->second.orig_path;
+                            dp.alt_path = it->second.alt_path;
+                            dp.alt_path_nonempty = it->second.alt_path_nonempty;
+                            dp.orig_path_nonempty = it->second.orig_path_nonempty;
+                        //}
 			dp.extra_loop_iterations = it->second.extra_loop_iterations; // Use this to generate unique jump targets
                         dp.alt_path_count = it->second.alt_path_count;
 			current_thread->ctrl_flow_info.diverge_point->push_front(dp);
@@ -3193,7 +3199,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                             current_thread->ctrl_flow_info.changed_jump = false;
                             current_thread->ctrl_flow_info.is_in_original_branch = true;
                             current_thread->ctrl_flow_info.tracked_orig_path->clear();
-                            //TODO hacky: redirect all output to /dev/null
+                            //TODO hacky: redirect all output to /dev/null in this pass, ignoring all outputs
                             current_thread->ctrl_flow_info.saved_slice_output_file = current_thread->slice_output_file;
                             CFDEBUG ("Note: start to redirect slice output to /dev/null\n");
                             current_thread->slice_output_file =fopen ("/dev/null", "w");
@@ -3318,7 +3324,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
 
                 OUTPUT_SLICE (ip, "%s %s_orig_branch_execute_and_taint", changed_inst, prefix); 
                 OUTPUT_SLICE_INFO ("#src_flag[FM?:1:4] #branch_taken %d block_index %llu", !taken, current_thread->ctrl_flow_info.index+ndx_incr-1);
-                OUTPUT_SLICE (0, "%s_alt_branch_execute_and_taint:", prefix); //only for readability of the slice
+                OUTPUT_SLICE (0, "%s_alt_branch_execute_and_taint:", prefix); //only mainly for readability of the slice; doesn't have a meaning for any code
                 OUTPUT_SLICE_INFO ("")
 
                 return;
@@ -4245,23 +4251,28 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
         }
 
         if ((orig_branch.branch_flag == 't' && !taken) || (orig_branch.branch_flag == 'n' && taken)) {
-            //xdou: This would be a hard failure with multi-path divergence
-            assert (0);
             fprintf (stderr, "Uh-oh! Original path not going expeced direction orig branch 0x%lx, ip 0x%x orig %c taken %d\n", orig_branch.ip, ip, orig_branch.branch_flag, taken);
             fprintf (stderr, "Not sure this is handled correctly\n");
+            //xdou: This is indeed not a correct way to handle it but works well currently
+            //It seems the right way to do it is that afer exploring the exact path of the original path, we should decide if we should handle this control flow divergence or not
+            //If the original path doesn't match any path in the checks file for this divergence, we can simply skip handling it
+            //I believe this happens when you have a wildcard divergence but this path doesn't follow any path specified in the wildcard divergence
+            //But in other cases, this would mean you have a wrong checks file
+
             // We are going to "abort" this control flow divergence
             char label_prefix[256];
             make_label_prefix (label_prefix, current_thread->ctrl_flow_info.diverge_point->front());
 
             OUTPUT_SLICE (ip, "jmp %s_branch_end", label_prefix);
-            OUTPUT_SLICE_INFO ("");
-            OUTPUT_SLICE (ip, "%s_that_branch_init:", label_prefix);
-            OUTPUT_SLICE_INFO ("");
-            // This should have been a control flow divergence at the diverge point (oops) 
+            OUTPUT_SLICE_INFO ("ctrl flow ignored");
+            OUTPUT_SLICE (ip, "%s_init_from_orig_path:", label_prefix);
+            OUTPUT_SLICE_INFO ("ctrl flow ignored");
+            OUTPUT_SLICE (0, "ret");
+            OUTPUT_SLICE_INFO ("ctrl flow ignored");
             OUTPUT_SLICE (ip, "call handle_delayed_jump_diverge");
-            OUTPUT_SLICE_INFO ("");
+            OUTPUT_SLICE_INFO ("ctrl flow ignored");
             OUTPUT_SLICE (ip, "%s_branch_end:", label_prefix);
-            OUTPUT_SLICE_INFO ("");
+            OUTPUT_SLICE_INFO ("ctrl flow ignored");
             cleanup_after_merge();
             CFDEBUG ("Aborted handling of this divergence\n");
         }
@@ -4371,7 +4382,6 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
     } else { 
 	if (current_thread->ctrl_flow_info.changed_jump) fprintf (stderr, "Diverge at non-tainted jump: %x %s mask %x\n", ip, ins_str, mask);
         assert (current_thread->ctrl_flow_info.changed_jump == false); //we diverge at a non-tainted jump??
-        assert (current_thread->ctrl_flow_info.is_in_original_branch_first_inst == false);
     }
 }
 

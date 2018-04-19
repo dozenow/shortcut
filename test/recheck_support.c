@@ -387,9 +387,9 @@ void handle_mismatch()
 void handle_jump_diverge()
 {
     int i;
-    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
-    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
-    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 36)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
+    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
 #ifdef PRINT_VALUES
     fflush (stderr);
 #endif
@@ -402,7 +402,7 @@ void handle_jump_diverge()
 void handle_delayed_jump_diverge()
 {
     int i;
-    dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 32)));
+    dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 36)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     LPRINT ("[MISMATCH] control flow delayed divergence");
 #ifdef PRINT_VALUES
