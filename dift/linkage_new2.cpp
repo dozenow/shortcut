@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 800
-#define EXTRA_DEBUG_STOP 1200
-#define EXTRA_DEBUG_FUNCTI60
+//#define EXTRA_DEBUG 800
+//#define EXTRA_DEBUG_STOP 1200
+//#define EXTRA_DEBUG_FUNCTI60
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -1053,6 +1053,7 @@ static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* 
     ii->fd = fd;
     ii->buf = arg;
     ii->retval_size = 0;
+    ii->cmd = cmd;
     if (tdata->recheck_handle) {
 	OUTPUT_SLICE (0, "call ioctl_recheck");
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);

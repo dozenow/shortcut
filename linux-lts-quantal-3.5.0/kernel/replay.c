@@ -123,7 +123,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-//#define TRACE_TIMINGS //analysis for how much we can save on startup
+#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int check_startup_db = 1;
 
@@ -9540,7 +9540,7 @@ trace_close (int fd)
 			printk ("%d:%ld.%09ld:close fd %d\n", current->pid, tp.tv_sec, tp.tv_nsec, fd);
 			set_fs (KERNEL_DS);
 			sys_getrusage (RUSAGE_SELF, &ru);
-			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
 			set_fs (old_fs);
 		}
 	}
@@ -9946,6 +9946,8 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 }
 
 #ifdef TRACE_TIMINGS
+int emacs_pid = 0;
+int xword_pid = 0;
 static int trace_execve (const char *filename, const char __user *const __user *__argv, const char __user *const __user *__envp, struct pt_regs *regs) {
 	if (trace_timings) {
 		struct timespec tp;
@@ -9975,6 +9977,11 @@ static int trace_execve (const char *filename, const char __user *const __user *
 		} while (1);
 		printk ("\n");
 		KFREE (buf);
+		if (strstr (filename, "emacs")) {
+			emacs_pid = current->pid;
+		} else if (strstr (filename, "placer")) { 
+			xword_pid = current->pid;
+		}
 	}
 	
 	return do_execve (filename, __argv, __envp, regs);
@@ -10652,7 +10659,34 @@ replay_gettimeofday (struct timeval __user *tv, struct timezone __user *tz)
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long 
+trace_gettimeofday (struct timeval __user *tv, struct timezone __user *tz)
+{
+	long rc;
+	rc = sys_gettimeofday (tv, tz);
+	if (trace_timings && rc == 0) { 
+		if (current->pid == xword_pid) {
+			struct timespec tp;
+			mm_segment_t old_fs = get_fs();
+			struct rusage ru;
+
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%09ld:gettimeofday\n", current->pid, tp.tv_sec, tp.tv_nsec);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	}
+
+	return rc;
+}
+asmlinkage long shim_gettimeofday (struct timeval __user *tv, struct timezone __user *tz) SHIM_CALL_MAIN(78, record_gettimeofday(tv, tz), replay_gettimeofday(tv, tz), trace_gettimeofday(tv, tz)) 
+
+#else 
 asmlinkage long shim_gettimeofday (struct timeval __user *tv, struct timezone __user *tz) SHIM_CALL(gettimeofday, 78, tv, tz);
+#endif
 
 SIMPLE_SHIM2(settimeofday, 79, struct timeval __user *, tv, struct timezone __user *, tz);
 
@@ -12818,7 +12852,47 @@ replay_select (int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *ex
 	return rc;
 }
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long
+trace_select (int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp)
+{
+	long rc = 0;
+	if (trace_timings) { 
+		if (current->pid == emacs_pid) {
+			struct timespec tp;
+			mm_segment_t old_fs = get_fs();
+			struct rusage ru;
+
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%09ld:before_select\n", current->pid, tp.tv_sec, tp.tv_nsec);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	}
+	rc = sys_select (n, inp, outp, exp, tvp);
+	if (trace_timings) { 
+		if (current->pid == emacs_pid) {
+			struct timespec tp;
+			mm_segment_t old_fs = get_fs();
+			struct rusage ru;
+
+			getnstimeofday(&tp);
+			printk ("%d:%ld.%09ld:after_select\n", current->pid, tp.tv_sec, tp.tv_nsec);
+			set_fs (KERNEL_DS);
+			sys_getrusage (RUSAGE_SELF, &ru);
+			printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+			set_fs (old_fs);
+		}
+	}
+	return rc;
+}
+
+asmlinkage long shim_select (int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp) SHIM_CALL_MAIN(142, record_select (n, inp, outp, exp, tvp), replay_select (n, inp, outp, exp, tvp), trace_select (n, inp, outp, exp, tvp));
+#else
 asmlinkage long shim_select (int n, fd_set __user *inp, fd_set __user *outp, fd_set __user *exp, struct timeval __user *tvp) SHIM_CALL(select, 142, n, inp, outp, exp, tvp);
+#endif
 
 SIMPLE_SHIM2 (flock, 143, unsigned int, fd, unsigned int, cmd);
 SIMPLE_SHIM3 (msync, 144, unsigned long, start, size_t, len, int, flags);

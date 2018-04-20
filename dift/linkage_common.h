@@ -240,6 +240,7 @@ struct ioctl_info {
     u_int fd;
     char* buf;
     u_long retval_size;
+    u_int cmd;
 };
 
 struct getdents64_info {

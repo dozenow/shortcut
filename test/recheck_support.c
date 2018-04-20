@@ -27,15 +27,15 @@
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
-#define REORDERING
+//#define REORDERING
 
 static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -44,7 +44,7 @@ static struct go_live_clock* go_live_clock;
 static char logbuf[4096];
 #endif
 
-#define SIGPROCMAKS_HACK
+//#define SIGPROCMAKS_HACK
 // This pauses for a while to let us see what went wrong
 #define DELAY
 //#define DELAY sleep(10);
@@ -343,6 +343,7 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 	    fprintf (stderr, "cannot log to %s\n", slicelog_filename);	\
 	}								\
     }
+//#define LPRINT(args...) sprintf (logbuf, args);
 #else
 #define LPRINT(x,...)
 #endif
@@ -386,10 +387,10 @@ void handle_mismatch()
 
 void handle_jump_diverge()
 {
-    int i;
-    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 36)));
-    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
-    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
+    int i; //note: the address offset of i could be different if you turn LPRINT on or off
+    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
 #ifdef PRINT_VALUES
     fflush (stderr);
 #endif
@@ -401,7 +402,7 @@ void handle_jump_diverge()
 
 void handle_delayed_jump_diverge()
 {
-    int i;
+    int i; //note: the address offset of i could be different if you turn LPRINT on or off
     dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 36)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     LPRINT ("[MISMATCH] control flow delayed divergence");
@@ -416,7 +417,7 @@ void handle_delayed_jump_diverge()
 
 void handle_index_diverge()
 {
-    int i;
+    int i; //note: the address offset of i could be different if you turn LPRINT on or off
     dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 36)));
     fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
     LPRINT ("[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
@@ -518,6 +519,32 @@ void partial_read (struct recheck_entry* pentry, struct read_recheck* pread, cha
     }
 #endif
 }
+
+inline void print_buffer (u_char* buffer, int len)
+{
+    int i;
+    LPRINT ("{");
+    for (i = 0; i < len; i++) { 
+	u_char ch = buffer[i];
+	if (ch >= 32 && ch <= 126) {
+	    LPRINT ("%c", ch);
+	} else {
+	    LPRINT ("\\%o", ch);
+	}
+    }
+    LPRINT ("}\n");
+}
+
+static inline void print_buffer_hex (u_char* buffer, int len)
+{
+    int i;
+    LPRINT ("{");
+    for (i = 0; i < len; i++) { 
+	LPRINT ("%02x", buffer[i]);
+    }
+    LPRINT ("}\n");
+}
+
 
 long read_recheck (size_t count)
 {
@@ -698,31 +725,6 @@ long read_recheck (size_t count)
     }
     end_timing_func (SYS_read);
     return pentry->retval;
-}
-
-inline void print_buffer (u_char* buffer, int len)
-{
-    int i;
-    LPRINT ("{");
-    for (i = 0; i < len; i++) { 
-	u_char ch = buffer[i];
-	if (ch >= 32 && ch <= 126) {
-	    LPRINT ("%c", ch);
-	} else {
-	    LPRINT ("\\%o", ch);
-	}
-    }
-    LPRINT ("}\n");
-}
-
-static inline void print_buffer_hex (u_char* buffer, int len)
-{
-    int i;
-    LPRINT ("{");
-    for (i = 0; i < len; i++) { 
-	LPRINT ("%02x", buffer[i]);
-    }
-    LPRINT ("}\n");
 }
 
 #ifdef REORDERING
@@ -3124,14 +3126,30 @@ long ioctl_recheck ()
     LPRINT ( "ioctl: fd %u cmd %x dir %x size %x arg %lx arglen %ld rc %ld clock %lu\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, (u_long) pioctl->arg, pioctl->arglen, pentry->retval, pentry->clock);
 #endif 
 
+    /*if (pentry->clock == 39634 || pentry->clock == 39828) {
+        char hackbuf[1024];
+        sprintf (hackbuf, "ioctl: fd %u cmd %x dir %x size %x arg %lx arglen %ld rc %ld clock %lu\n", pioctl->fd, pioctl->cmd, pioctl->dir, pioctl->size, (u_long) pioctl->arg, pioctl->arglen, pentry->retval, pentry->clock);
+    }*/
+
     if (pioctl->dir == _IOC_WRITE) {
-        start_timing();
-	rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
-        end_timing(SYS_ioctl, rc);
-	check_retval ("ioctl", pentry->clock, pentry->retval, rc);
-	// Right now we are tainting buffer
-	memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
-	add_to_taintbuf (pentry, RETBUF, tmpbuf, pioctl->arglen);
+        if (pioctl->cmd == 0x541b) {
+            //this cmd returns how many bytes can be read immediately from the buffer
+            //so we don't execute the ioctl itself, as that would be non-dterministic 
+            //return the original number of bytes 
+            uint32_t ret_data = *(int32_t*) addr;
+            LPRINT ("CMD is 0x541b, original ret value is %u\n", ret_data);
+            //skip the syscall
+            memcpy (pioctl->arg, addr, pioctl->arglen);
+            add_to_taintbuf (pentry, RETBUF, addr, pioctl->arglen);
+        } else { 
+            start_timing();
+            rc = syscall(SYS_ioctl, pioctl->fd, pioctl->cmd, tmpbuf);
+            end_timing(SYS_ioctl, rc);
+            check_retval ("ioctl", pentry->clock, pentry->retval, rc);
+            // Right now we are tainting buffer
+            memcpy (pioctl->arg, tmpbuf, pioctl->arglen);
+            add_to_taintbuf (pentry, RETBUF, tmpbuf, pioctl->arglen);
+        }
 #ifdef PRINT_VALUES
 	if (pioctl->cmd == 0x5413) {
 	  short* ps = (short *) &tmpbuf;
@@ -3649,7 +3667,6 @@ long rt_sigprocmask_recheck ()
 #ifdef PRINT_VALUES
     LPRINT ("rt_sigprocmask: how %d set %lx oset %lx sigsetsize %d rc %ld clock %lu setvalue %llu\n", prt_sigprocmask->how, (u_long) prt_sigprocmask->set, 
 	    (u_long) prt_sigprocmask->oset, prt_sigprocmask->sigsetsize, pentry->retval, pentry->clock, pset==NULL?0:*(__u64*)pset);
-    fflush (stdout);
 #endif 
 
     start_timing();
