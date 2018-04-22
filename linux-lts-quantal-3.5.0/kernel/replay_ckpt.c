@@ -2030,10 +2030,11 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		wake_up (&daemon_waitq);
 		mutex_unlock(&slice_task_mutex);
 		
-		if (PRINT_TIME) {
-		    struct timeval tv;
-		    do_gettimeofday (&tv);
-		    printk ("Pid %d sleeping to generate correct memory state at %ld.%06ld\n", current->pid, tv.tv_sec, tv.tv_usec);
+		//if (PRINT_TIME) {
+		{
+			struct timespec tp;
+			getnstimeofday(&tp);
+			printk ("Pid %d sleeping to generate correct memory state at %ld.%09ld\n", current->pid, tp.tv_sec, tp.tv_nsec);
 		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule();
@@ -2139,6 +2140,11 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 		}
 	}
 	mutex_unlock(&slice_task_mutex);
+	{
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("Pid %d, deamon pid %d  fw_slice_recover enters %ld.%09ld\n", current->pid, daemon_pid, tp.tv_sec, tp.tv_nsec);
+	}
 
 	if (slice_pid == 0) {
 		printk ("fw_slice_recover: cannot find slice pid corresponding to deamon pid %d\n", daemon_pid);
@@ -2202,6 +2208,12 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 	}
 
 	DPRINT ("fw_slice_recover: modified registers - about to wake up pid %d\n", tsk->pid);
+
+	{
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk ("Pid %d, deamon pid %d  fw_slice_recover exits %ld.%09ld\n", current->pid, daemon_pid, tp.tv_sec, tp.tv_nsec);
+	}
 
 	// Wake up the sleeping task
 	wake_up_process (tsk);

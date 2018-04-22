@@ -20,9 +20,11 @@ using namespace std;
 #include "parseklib.h"
 #include "taintbuf.h"
 #include "util.h"
+#include <time.h>
 
 //#define DPRINT printf
 #define DPRINT(x,...)
+//#define PRINT_TIME
 
 map<long,long> clone_map;
 
@@ -509,6 +511,11 @@ int patch_klog (string recheck_filename)
     }
     
     DPRINT ("Done with directory\n");
+#ifdef PRINT_TIME
+        struct timespec tp;
+        clock_gettime (CLOCK_REALTIME, &tp);
+        fprintf (stderr, "Start to replay %ld.%09ld\n", tp.tv_sec, tp.tv_nsec);
+#endif
 
     // Patch complete - now execute up to the last syscall 
     char recover_syscall[64], recover_pid[64];
@@ -564,7 +571,11 @@ int main(int argc, char **argv)
 	fprintf (stderr, "Registering for upcall\n");
 	syscall (350, 3, recheck_filename);
 	fprintf (stderr, "Received upcall for file %s\n", recheck_filename);
-
+#ifdef PRINT_TIME
+        struct timespec tp;
+        clock_gettime (CLOCK_REALTIME, &tp);
+        fprintf (stderr, "Start to patchlog %ld.%09ld\n", tp.tv_sec, tp.tv_nsec);
+#endif
 	// Generate the patched klog file
 	long rc = patch_klog (recheck_filename);
 	fprintf (stderr, "Patch klog returns %ld\n", rc);

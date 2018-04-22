@@ -2108,7 +2108,7 @@ destroy_replay_group (struct replay_group *prepg)
 		do_gettimeofday (&tv);
 		set_fs (KERNEL_DS);
 		sys_getrusage (RUSAGE_SELF, &ru);
-		printk ("user %ld, kernel %ld, time %ld.%06ld\n", ru.ru_utime.tv_usec, ru.ru_stime.tv_usec, tv.tv_sec, tv.tv_usec);
+		printk ("user %ld, kernel %ld, time %ld.%06ld\n", ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec, tv.tv_sec, tv.tv_usec);
 		set_fs (old_fs);
 	}
 #endif
@@ -3823,7 +3823,11 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int f
 	struct mm_struct *mm = current->mm;
 	u_long old_brk;
 
-	printk("Replay Start\n");
+	{
+		struct timespec tp;
+		getnstimeofday(&tp);
+		printk("Replay Start %ld.%09ld\n", tp.tv_sec, tp.tv_nsec);
+	}
 
 	MPRINT ("In replay_ckpt_wakeup\n");
 	if (current->record_thrd || current->replay_thrd) {
@@ -4399,6 +4403,14 @@ struct ckpt_waiter {
 	struct semaphore     wproc_sem;                  // On which the main proc waits for everyone to enter the kernel
 	
 };
+
+#ifdef TRACE_TIMINGS
+static int emacs_pid = 0;  //tenative for tracing time
+static int xword_pid = 0;
+static int java_pid = 0;
+static int gcc_pid = 0;
+#endif
+
 static ds_list_t* ckpt_waiters = NULL; // List of checkpoints (in case multiple restores happening at once)
 static u_long num_ckpts = 0;           // Number of total checkpoint restores on queue
 static wait_queue_head_t ckpt_waitq;   // For threads waiting to start retstore
@@ -4505,6 +4517,12 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	MPRINT ("Pid %d set_record_group_id to %llu\n", current->pid, rg_id);
 	rg_unlock (precg); //I'm worried that the other threads might need to grab the lock later	
 	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
+#ifdef TRACE_TIMINGS
+	//hacking for getting some recovery numbers
+	if (strstr (logdir, "81944")) emacs_pid = current->pid;
+	else if (strstr (logdir, "77850")) xword_pid = current->pid;
+	else if (strstr (logdir, "90115")) java_pid = current->pid;
+#endif
         if (go_live && num_procs) { 
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 atomic_set (&go_live_clock->num_remaining_threads, num_procs);
@@ -9555,17 +9573,21 @@ asmlinkage long shim_close (int fd) SHIM_CALL (close, 6, fd);
 #ifdef TRACE_TIMINGS
 asmlinkage long trace_waitpid (pid_t pid, int __user* stat_addr, int options) { 
 	long rc = 0;
+#if 0
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
 		printk ("%d:%ld.%09ld:waitpid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
+#endif
 	rc = sys_waitpid (pid, stat_addr, options);
+#if 0
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
 		printk ("%d:%ld.%09ld:waitpid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, pid);
 	}
+#endif
 	return rc;
 }
 RET1_RECORD3(waitpid, 7, int, stat_addr, pid_t, pid, int __user*, stat_addr, int, options);
@@ -9905,8 +9927,19 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 			MPRINT("%s %d: do_execve(%s, %p, %p, %p)\n", __func__, __LINE__, name, __argv, __envp, regs);
                         //The right way: check if the current executable matches the one in the cache
                         //if so, we open the actual executable instead in order to support java to go live
+			//basically certain programs checks its own executable name which could be different on record and replay if we don't do this
                         //TODO:xdou fix this 
                         rc = do_execve(filename, __argv, __envp, regs);
+#ifdef TRACE_TIMINGS
+			if (strstr (filename, "emacs")) {
+				emacs_pid = current->pid;
+			} else if (strstr (filename, "placer")) { 
+				xword_pid = current->pid;
+			} else if (strstr (filename, "cc1"))
+				gcc_pid = current->pid;
+			else if (strstr (filename, "java"))
+				java_pid = current->pid;
+#endif
                         //rc = do_execve(name, __argv, __envp, regs);
 			set_fs(old_fs);
 
@@ -9946,8 +9979,6 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 }
 
 #ifdef TRACE_TIMINGS
-int emacs_pid = 0;
-int xword_pid = 0;
 static int trace_execve (const char *filename, const char __user *const __user *__argv, const char __user *const __user *__envp, struct pt_regs *regs) {
 	if (trace_timings) {
 		struct timespec tp;
@@ -9981,7 +10012,10 @@ static int trace_execve (const char *filename, const char __user *const __user *
 			emacs_pid = current->pid;
 		} else if (strstr (filename, "placer")) { 
 			xword_pid = current->pid;
-		}
+		} else if (strstr (filename, "cc1"))
+			gcc_pid = current->pid;
+		else if (strstr (filename, "java"))
+			java_pid = current->pid;
 	}
 	
 	return do_execve (filename, __argv, __envp, regs);
@@ -12464,7 +12498,7 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 #ifdef TRACE_TIMINGS
 long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
 	long rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
-	if (trace_timings) {
+	if (trace_timings && current->pid == java_pid) {
 		mm_segment_t old_fs = get_fs();
 		struct rusage ru;
 		struct timespec tp;
@@ -12472,7 +12506,7 @@ long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt
 		sys_getrusage (RUSAGE_SELF, &ru);
 		set_fs (old_fs);
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_stime.tv_usec, ru.ru_stime.tv_usec);
+		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_utime.tv_sec*1000000+ru.ru_stime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
 		printk ("%ld:%ld.%09ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
@@ -15350,17 +15384,21 @@ replay_waitid (int which, pid_t upid, struct siginfo __user *infop, int options,
 #ifdef TRACE_TIMINGS
 asmlinkage long trace_waitid (int which, pid_t upid, struct siginfo __user* infop, int options, struct rusage __user* ru) { 
 	long rc = 0;
+#if 0
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
 		printk ("%d:%ld.%09ld:waitid_before rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
+#endif
 	rc = sys_waitid (which, upid, infop, options, ru);
+#if 0
 	if (trace_timings) {
 		struct timespec tp;
 		getnstimeofday(&tp);
 		printk ("%d:%ld.%09ld:waitid_after rc %ld, pid %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, upid);
 	}
+#endif
 	return rc;
 }
 asmlinkage long shim_waitid (int which, pid_t upid, struct siginfo __user *infop, int options, struct rusage __user *ru) SHIM_CALL_MAIN (284, record_waitid(which, upid, infop, options, ru), replay_waitid(which, upid, infop, options, ru), trace_waitid(which, upid, infop, options, ru));

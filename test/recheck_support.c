@@ -27,15 +27,15 @@
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
-//#define REORDERING
+#define REORDERING
 
 static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -373,26 +373,26 @@ void exit_slice (long is_ckpt_thread, long retval)
 void handle_mismatch()
 {
     //TODO: uncomment these lines
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
     DELAY;
-    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_mismatch: should not get here\n");
-    abort();
+    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    //fprintf (stderr, "handle_mismatch: should not get here\n");
+    //abort();
 }
 
 void handle_jump_diverge()
 {
     int i; //note: the address offset of i could be different if you turn LPRINT on or off
-    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 32)));
+    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 36)));
     fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
     LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
 #ifdef PRINT_VALUES
-    fflush (stderr);
+    fflush (stdout);
 #endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
@@ -407,7 +407,7 @@ void handle_delayed_jump_diverge()
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     LPRINT ("[MISMATCH] control flow delayed divergence");
 #ifdef PRINT_VALUES
-    fflush (stderr);
+    fflush (stdout);
 #endif
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
@@ -929,7 +929,7 @@ long recv_recheck ()
 #ifdef REORDERING	
 	/*** have we received a message out of order? */
 	/* XXX - Should specify which syscalls can be reordered and patter for recognizing ooo messages */
-	while (pentry->clock >= 762000 && bytes_received > 0 && has_different_message ((u_char *) recvData, pentry->retval, (u_char *) precv->buf, bytes_received, &offset)) {
+	while (pentry->clock >= 88000 && bytes_received > 0 && has_different_message ((u_char *) recvData, pentry->retval, (u_char *) precv->buf, bytes_received, &offset)) {
 	    int i, msglen;
 #ifdef PRINT_DEBUG
 	    DPRINT ("buffer has spurious message\n");
