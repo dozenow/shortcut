@@ -278,14 +278,17 @@ static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_res
     }
 }
 
-int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* plast_clock)
+int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* plast_clock, bool single_threaded)
 {
     DPRINT ("Considering klog %s in directory %s\n", klogfilename, dir.c_str());
 
     // First check if there is a taintbuf
     char* pid = klogfilename + 8;
     char taintbuf_path[256];
-    sprintf (taintbuf_path, "%s/taintbuf.%s", dir.c_str(), pid);
+    if (single_threaded) 
+        sprintf (taintbuf_path, "%s/taintbuf.", dir.c_str());
+    else 
+        sprintf (taintbuf_path, "%s/taintbuf.%s", dir.c_str(), pid);
     
     int tfd = open (taintbuf_path, O_RDONLY);
     if (tfd < 0) {
@@ -471,7 +474,7 @@ int patch_klog (string recheck_filename)
     char newfile[256], oldfile[256];
     while ((dp = readdir (dirp)) != NULL) {
 	if (!strncmp (dp->d_name, "klog.id.", 8)) {
-	    handle_one_klog (dir, altdirname, dp->d_name, &last_clock);
+	    handle_one_klog (dir, altdirname, dp->d_name, &last_clock, recheck_filename.compare(recheck_filename.size()-9, 9, "taintbuf.") == 0);
 	}
 	if (!strncmp (dp->d_name, "ulog.id.", 8) ||
 	    !strcmp(dp->d_name, "mlog") || 
@@ -570,6 +573,7 @@ int main(int argc, char **argv)
 
 	fprintf (stderr, "Registering for upcall\n");
 	syscall (350, 3, recheck_filename);
+        //currently, single-threaded program may call taintbuf file as "taintbuf."
 	fprintf (stderr, "Received upcall for file %s\n", recheck_filename);
 #ifdef PRINT_TIME
         struct timespec tp;
