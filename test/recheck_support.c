@@ -373,16 +373,16 @@ void exit_slice (long is_ckpt_thread, long retval)
 void handle_mismatch()
 {
     //TODO: uncomment these lines
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
     DELAY;
-    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    fprintf (stderr, "handle_mismatch: should not get here\n");
-    abort();
+    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    //fprintf (stderr, "handle_mismatch: should not get here\n");
+    //abort();
 }
 
 void handle_jump_diverge()
