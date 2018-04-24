@@ -3542,7 +3542,7 @@ TAINTSIGN fw_slice_memflag (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t 
     if (mem_tainted || still_tainted || flag_tainted) {
         if (mem_tainted != 1) print_extra_move_mem (ip, mem_loc, mem_size, mem_tainted);
 	if (flag_tainted != 1) print_extra_move_flag (ip, mask, eflags);	
-	if (!still_tainted && mem_tainted) {
+	if (!still_tainted && (mem_tainted || flag_tainted)) {
 	    print_abs_address (ip, ins_str, mem_loc);
 	} else {
 	    OUTPUT_SLICE (ip, "%s", ins_str);
