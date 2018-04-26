@@ -278,21 +278,23 @@ static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_res
     }
 }
 
-int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* plast_clock, bool single_threaded)
+int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* plast_clock)
 {
     DPRINT ("Considering klog %s in directory %s\n", klogfilename, dir.c_str());
 
     // First check if there is a taintbuf
     char* pid = klogfilename + 8;
     char taintbuf_path[256];
-    if (single_threaded) 
+    sprintf (taintbuf_path, "%s/taintbuf.%s", dir.c_str(), pid);
+    if (access (taintbuf_path, R_OK)) {
+        //a patch for single-thread program like gcc 
         sprintf (taintbuf_path, "%s/taintbuf.", dir.c_str());
-    else 
-        sprintf (taintbuf_path, "%s/taintbuf.%s", dir.c_str(), pid);
+    }
     
     int tfd = open (taintbuf_path, O_RDONLY);
     if (tfd < 0) {
 	char newfile[256], oldfile[256];
+        fprintf (stderr, "cannot open file %s\n", taintbuf_path);
 
 	// Just symlink the klog file to the new directory - unmodified
 	if (errno != ENOENT) fprintf (stderr, "Could not open tainted valued file %s, errno=%d\n", taintbuf_path, errno);
@@ -470,11 +472,11 @@ int patch_klog (string recheck_filename)
     }
 
     struct dirent* dp;
-    u_long last_clock = 0; 
+    u_long last_clock = 2; //this should be a valid clock number in the case no valid clock is returned from handle_one_klog; 0 is not a valid stop clock for any syscall; 
     char newfile[256], oldfile[256];
     while ((dp = readdir (dirp)) != NULL) {
 	if (!strncmp (dp->d_name, "klog.id.", 8)) {
-	    handle_one_klog (dir, altdirname, dp->d_name, &last_clock, recheck_filename.compare(recheck_filename.size()-9, 9, "taintbuf.") == 0);
+	    handle_one_klog (dir, altdirname, dp->d_name, &last_clock);
 	}
 	if (!strncmp (dp->d_name, "ulog.id.", 8) ||
 	    !strcmp(dp->d_name, "mlog") || 

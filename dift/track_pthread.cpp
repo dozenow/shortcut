@@ -292,9 +292,12 @@ void track_rwlock_unlock (int retval)
     LPRINT ("record pid %d, rwlock unlock %p\n", current_thread->record_pid, (void*) rwlock);
     struct rwlock_state& state = active_rwlock[rwlock];
     if (state.is_write_locked) { 
-        assert (state.write_lock_pid == current_thread->record_pid);
-        state.is_write_locked = 0;
-        state.write_lock_pid = 0;
+        if (state.write_lock_pid != current_thread->record_pid) {
+            fprintf (stderr, "[ERROR] release a rwlock_wrlock without holding it? could just be a weird thread scheduling in replay\n");
+        } else {
+            state.is_write_locked = 0;
+            state.write_lock_pid = 0;
+        }
     } else { 
         state.readers.erase (current_thread->record_pid);
     }

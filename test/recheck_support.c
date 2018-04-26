@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -385,12 +385,18 @@ void handle_mismatch()
     //abort();
 }
 
+#ifdef PRINT_TO_LOG
+#define STACK_OFFSET 36
+#else 
+#define STACK_OFFSET 32
+#endif
+
 void handle_jump_diverge()
 {
     int i; //note: the address offset of i could be different if you turn LPRINT on or off
-    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + 36)));
-    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
-    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 32)));
+    dump_taintbuf (DIVERGE_JUMP, *((u_long *) ((u_long) &i + STACK_OFFSET)));
+    fprintf (stderr, "[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + STACK_OFFSET)));
+    LPRINT ("[MISMATCH] tid %ld control flow diverges at %ld.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + STACK_OFFSET)));
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
@@ -403,7 +409,7 @@ void handle_jump_diverge()
 void handle_delayed_jump_diverge()
 {
     int i; //note: the address offset of i could be different if you turn LPRINT on or off
-    dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + 36)));
+    dump_taintbuf (DIVERGE_JUMP_DELAYED, *((u_long *) ((u_long) &i + STACK_OFFSET)));
     fprintf (stderr, "[MISMATCH] control flow delayed divergence");
     LPRINT ("[MISMATCH] control flow delayed divergence");
 #ifdef PRINT_VALUES
@@ -418,9 +424,9 @@ void handle_delayed_jump_diverge()
 void handle_index_diverge()
 {
     int i; //note: the address offset of i could be different if you turn LPRINT on or off
-    dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + 36)));
-    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
-    LPRINT ("[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + 36)));
+    dump_taintbuf (DIVERGE_INDEX, *((u_long *) ((u_long) &i + STACK_OFFSET)));
+    fprintf (stderr, "[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + STACK_OFFSET)));
+    LPRINT ("[MISMATCH] tid %ld index diverges at 0x%lx.\n\n\n", syscall (SYS_gettid), *((u_long *) ((u_long) &i + STACK_OFFSET)));
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_index_diverge: should not get here\n");
@@ -915,13 +921,13 @@ long recv_recheck ()
 		    rc = msglen;
 		} else {
 #endif
-		    LPRINT ("recv: sleeping for %d us\n", 500*(2<<(tries-1)));
-		    usleep (500*(2<<(tries-1)));
+		    LPRINT ("recv: sleeping for %d us\n", 500);
+		    usleep (500);
 #ifdef REORDERING
 		}
 #endif
 	    }
-	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 10);
+	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 100);
 
 	if (rc <= 0) break;
 	bytes_received += rc;
@@ -929,7 +935,7 @@ long recv_recheck ()
 #ifdef REORDERING	
 	/*** have we received a message out of order? */
 	/* XXX - Should specify which syscalls can be reordered and patter for recognizing ooo messages */
-	while (pentry->clock >= 88000 && bytes_received > 0 && has_different_message ((u_char *) recvData, pentry->retval, (u_char *) precv->buf, bytes_received, &offset)) {
+	while (pentry->clock >= 82000  && bytes_received > 0 && has_different_message ((u_char *) recvData, pentry->retval, (u_char *) precv->buf, bytes_received, &offset)) {
 	    int i, msglen;
 #ifdef PRINT_DEBUG
 	    DPRINT ("buffer has spurious message\n");
@@ -1480,6 +1486,7 @@ long writev_recheck ()
 	data += piovec[i].iov_len*2;
 #ifdef PRINT_VALUES
 	print_buffer ((u_char *) piovec[i].iov_base, piovec[i].iov_len);
+	print_buffer_hex ((u_char *) piovec[i].iov_base, piovec[i].iov_len);
 #endif
     }
 
@@ -1889,6 +1896,7 @@ long stat64_alike_recheck (char* syscall_name, int syscall_num)
 #endif
 	if (st.st_size != pstat64->retvals.st_size) {
 	    printf ("[MISMATCH] %s size does not match %lld vs. recorded %lld\n", syscall_name, st.st_size, pstat64->retvals.st_size);
+	    LPRINT ("[MISMATCH] %s size does not match %lld vs. recorded %lld\n", syscall_name, st.st_size, pstat64->retvals.st_size);
 	    handle_mismatch();
 	}
 #if 0

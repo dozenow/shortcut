@@ -2036,8 +2036,11 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			getnstimeofday(&tp);
 			printk ("Pid %d sleeping to generate correct memory state at %ld.%09ld\n", current->pid, tp.tv_sec, tp.tv_nsec);
 		}
+
+		//xdou: for some reason, emacs can't sleep with schhedule() if we have a divergence in the middle; understand the reason after the deadline...
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule();
+		schedule(); 
+		printk ("Pid %d returns from schedule\n", current->pid);
 		if (PRINT_TIME) {
 		    struct timeval tv;
 		    do_gettimeofday (&tv);

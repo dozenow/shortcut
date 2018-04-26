@@ -3929,7 +3929,7 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int f
 	down_write(&mm->mmap_sem);
 	// since we actually do the brk we can just grab the old one
 	old_brk = PAGE_ALIGN(mm->brk);
-	printk("start of replay_ckpt_wakeup brk %lu\n", old_brk);
+	DPRINT ("start of replay_ckpt_wakeup brk %lu\n", old_brk);
 	up_write(&mm->mmap_sem);
 	/*
 	 * If pin, set the process to sleep, so that we can manually attach pin
@@ -3976,7 +3976,7 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int f
 	down_write(&mm->mmap_sem);
 	// since we actually do the brk we can just grab the old one
 	old_brk = PAGE_ALIGN(mm->brk);
-	printk("end of replay_ckpt_wakeup brk %lu\n", old_brk);
+	DPRINT ("end of replay_ckpt_wakeup brk %lu\n", old_brk);
 	up_write(&mm->mmap_sem);
 
 	set_fs(KERNEL_DS);
@@ -4519,9 +4519,14 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 	MPRINT ("Number of checkpoint processes %lu\n", num_procs);
 #ifdef TRACE_TIMINGS
 	//hacking for getting some recovery numbers
-	if (strstr (logdir, "81944")) emacs_pid = current->pid;
-	else if (strstr (logdir, "77850")) xword_pid = current->pid;
-	else if (strstr (logdir, "90115")) java_pid = current->pid;
+	if (go_live) {
+		if (strstr (logdir, "81944")) {
+			printk ("find the emacs_pid %d\n", current->pid);
+			emacs_pid = current->pid;
+		}
+		else if (strstr (logdir, "77850")) xword_pid = current->pid;
+		else if (strstr (logdir, "90115")) java_pid = current->pid;
+	}
 #endif
         if (go_live && num_procs) { 
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
@@ -9549,7 +9554,7 @@ trace_close (int fd)
 {
 	long rc = sys_close (fd);
 	if (trace_timings && rc == 0) { 
-		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid) { 
+		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid && gcc_pid == current->pid) { 
 			struct timespec tp;
 			mm_segment_t old_fs = get_fs();
 			struct rusage ru;
@@ -9931,6 +9936,7 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
                         //TODO:xdou fix this 
                         rc = do_execve(filename, __argv, __envp, regs);
 #ifdef TRACE_TIMINGS
+			/*
 			if (strstr (filename, "emacs")) {
 				emacs_pid = current->pid;
 			} else if (strstr (filename, "placer")) { 
@@ -9938,7 +9944,7 @@ replay_execve(const char *filename, const char __user *const __user *__argv, con
 			} else if (strstr (filename, "cc1"))
 				gcc_pid = current->pid;
 			else if (strstr (filename, "java"))
-				java_pid = current->pid;
+				java_pid = current->pid;*/
 #endif
                         //rc = do_execve(name, __argv, __envp, regs);
 			set_fs(old_fs);
@@ -12962,7 +12968,31 @@ replay_readv (unsigned long fd, const struct iovec __user *vec, unsigned long vl
 
 asmlinkage long shim_readv (unsigned long fd, const struct iovec __user *vec, unsigned long vlen) SHIM_CALL(readv, 145, fd, vec, vlen);
 
+#ifdef TRACE_TIMINGS
+static asmlinkage long
+trace_writev (unsigned long fd, const struct iovec __user * vec, unsigned long vlen) 
+{
+	long rc = sys_writev (fd, vec, vlen);
+	if (trace_timings && rc == 6880) {  //abitrary number for gimp
+		struct timespec tp;
+		mm_segment_t old_fs = get_fs();
+		struct rusage ru;
+
+		getnstimeofday(&tp);
+		printk ("%d:%ld.%09ld:writev fd %lu,rc %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, fd, rc);
+		set_fs (KERNEL_DS);
+		sys_getrusage (RUSAGE_SELF, &ru);
+		printk ("%d:USAGE:user %ld, kernel %ld\n", current->pid, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+		set_fs (old_fs);
+	}
+	return rc;
+}
+SIMPLE_RECORD3(writev, 146, unsigned long, fd, const struct iovec __user *, vec, unsigned long, vlen);
+SIMPLE_REPLAY(writev, 146, unsigned long fd, const struct iovec __user * vec, unsigned long vlen);
+asmlinkage long shim_writev (unsigned long fd, const struct iovec __user * vec, unsigned long vlen) SHIM_CALL_MAIN (146, record_writev (fd, vec, vlen), replay_writev (fd, vec, vlen), trace_writev (fd,  vec, vlen))
+#else
 SIMPLE_SHIM3(writev, 146, unsigned long, fd, const struct iovec __user *, vec, unsigned long, vlen);
+#endif
 SIMPLE_SHIM1(getsid, 147, pid_t, pid);
 SIMPLE_SHIM1(fdatasync, 148, int, fd);
 
