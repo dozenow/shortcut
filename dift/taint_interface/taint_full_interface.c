@@ -3265,6 +3265,7 @@ static void check_diverge_point (ADDRINT ip, char* ins_str, BOOL taken, const CO
                 current_thread->ctrl_flow_info.changed_jump = false;
                 current_thread->ctrl_flow_info.is_tracking_orig_path = false;
                 current_thread->ctrl_flow_info.is_in_original_branch = false;
+                current_thread->ctrl_flow_info.is_in_branch_first_inst = true;
 
                 for (int i = 0; i < cur_index->alt_path_count; ++i) {
                     set<uint32_t> new_map;
@@ -3460,7 +3461,7 @@ TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONT
                     //let's roll back to the diverge point and take the original branch
                     current_thread->ctrl_flow_info.is_in_original_branch = true;
                     current_thread->ctrl_flow_info.is_rolled_back = true;
-                    current_thread->ctrl_flow_info.is_in_original_branch_first_inst = true;
+                    current_thread->ctrl_flow_info.is_in_branch_first_inst = true;
                     OUTPUT_SLICE (ip, "%s_orig_branch_execute_and_taint:", label_prefix); 
                     OUTPUT_SLICE_INFO ("");
                 } else { 
@@ -4344,8 +4345,8 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
         if (current_thread->ctrl_flow_info.changed_jump || (current_thread->ctrl_flow_info.is_nested_jump && current_thread->ctrl_flow_info.is_in_diverged_branch)) { 
             current_thread->ctrl_flow_info.changed_jump = false; // We've already replaced this jump with divergence 
             current_thread->ctrl_flow_info.is_nested_jump = false;
-        } else if (current_thread->ctrl_flow_info.is_in_original_branch_first_inst) {
-            current_thread->ctrl_flow_info.is_in_original_branch_first_inst = false;
+        } else if (current_thread->ctrl_flow_info.is_in_branch_first_inst) {
+            current_thread->ctrl_flow_info.is_in_branch_first_inst = false;
         } else {
 #endif
 	    char change_str[64];
