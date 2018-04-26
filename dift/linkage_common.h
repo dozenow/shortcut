@@ -368,7 +368,7 @@ struct ctrl_flow_info {
 
     //checkpoint and rollback
     bool is_in_original_branch;
-    bool is_in_original_branch_first_inst;
+    bool is_in_branch_first_inst;
     bool is_in_diverged_branch;
     bool is_rolled_back;
     bool changed_jump;
