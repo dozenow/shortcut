@@ -1027,7 +1027,7 @@ __pthread_mutex_lock (mutex)
 	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = __pthread_mutex_lock_rep (mutex);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_mutex_lock to fix pthread states, lock %p\n", vmutex);
+            GPRINT ("calling pthread_mutex_lock to fix pthread states, lock %p\n", mutex);
 	    rc = __internal_pthread_mutex_lock (mutex);
 	}
 	RESET_OLD_STACKP(); 
@@ -1141,7 +1141,7 @@ pthread_mutex_timedlock (mutex, abstime)
 	mutex = (pthread_mutex_t *) THREAD_GETMEM (THREAD_SELF, stackswitch1);
 	rc = pthread_mutex_timedlock_rep (mutex, abstime);
 	if (rc == -ENOTREPLAYING) {
-            GPRINT ("calling pthread_mutex_timedlock to fix pthread states, lock %p\n", vmutex);
+            GPRINT ("calling pthread_mutex_timedlock to fix pthread states, lock %p\n", mutex);
 	    rc = internal_pthread_mutex_timedlock (mutex, abstime);
 	}
 	RESET_OLD_STACKP(); 
