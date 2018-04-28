@@ -311,13 +311,6 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     char newklogpath[256], klogpath[256];
     sprintf (klogpath, "%s/%s", dir.c_str(), klogfilename);
     sprintf (newklogpath, "%s/%s", altdirname, klogfilename);
-    int destfd = open (newklogpath, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-    if (destfd < 0) {
-	fprintf (stderr, "Could not open klog output file %s, rc=%d", newklogpath, destfd);
-	return -1;
-    }
-      
-    DPRINT ("Opened output file %s\n", newklogpath);
 
     // First things in the recheck file is the divergence info
     struct taintbuf_hdr hdr;
@@ -330,10 +323,28 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 
     // Now read through the recheck output - these are syscall results that changed from recording
     struct taint_retval trv;
-    if (read (tfd, &trv, sizeof(trv)) != sizeof(trv)) {
-	fprintf (stderr, "Cannot read tainted retval\n");
+    int ret;
+
+    if ((ret = read (tfd, &trv, sizeof(trv))) != sizeof(trv)) {
+	fprintf (stderr, "Cannot read tainted retval, ret %d expected %d\n", ret, sizeof(trv));
+        *plast_clock = 2;
+	char newfile[256], oldfile[256];
+	// Just symlink the klog file to the new directory - unmodified
+	sprintf (oldfile, "%s/%s", dir.c_str(), klogfilename);
+	sprintf (newfile, "%s/%s", altdirname, klogfilename);
+	int rc = symlink (oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot create symlink for %s\n", klogfilename);
+	return rc;
+    }
+
+    int destfd = open (newklogpath, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+    if (destfd < 0) {
+	fprintf (stderr, "Could not open klog output file %s, rc=%d", newklogpath, destfd);
 	return -1;
     }
+      
+    DPRINT ("Opened output file %s\n", newklogpath);
+
     DPRINT ("Next syscall is %d clock %ld type %d\n", trv.syscall, trv.clock, trv.rettype);
 
     struct klogfile *log = parseklog_open(klogpath);

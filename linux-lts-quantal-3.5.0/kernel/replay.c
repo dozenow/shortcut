@@ -9554,7 +9554,7 @@ trace_close (int fd)
 {
 	long rc = sys_close (fd);
 	if (trace_timings && rc == 0) { 
-		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid && gcc_pid == current->pid) { 
+		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid) { 
 			struct timespec tp;
 			mm_segment_t old_fs = get_fs();
 			struct rusage ru;
