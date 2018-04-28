@@ -7249,7 +7249,7 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.insts_instrumented = new std::set<uint32_t> ();
    ptdata->ctrl_flow_info.is_rolled_back = false;
    ptdata->ctrl_flow_info.is_in_original_branch = false;
-   ptdata->ctrl_flow_info.is_in_original_branch_first_inst = false;
+   ptdata->ctrl_flow_info.is_in_branch_first_inst = false;
    ptdata->ctrl_flow_info.is_in_diverged_branch = false;
    ptdata->ctrl_flow_info.alt_path_index  = 0;
    ptdata->ctrl_flow_info.is_nested_jump = false;

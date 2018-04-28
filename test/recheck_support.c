@@ -27,15 +27,15 @@
 #include "../dift/recheck_log.h"
 #include "taintbuf.h"
 
-#define REORDERING
+//#define REORDERING
 
 static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -44,7 +44,7 @@ static struct go_live_clock* go_live_clock;
 static char logbuf[4096];
 #endif
 
-//#define SIGPROCMAKS_HACK
+#define SIGPROCMAKS_HACK
 // This pauses for a while to let us see what went wrong
 #define DELAY
 //#define DELAY sleep(10);
@@ -3689,18 +3689,19 @@ long rt_sigprocmask_recheck ()
 	    }
 	} else {
 	    if (memcmp (tmpbuf, data, prt_sigprocmask->sigsetsize)) {
-		printf ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
-#ifdef PRINT_VALUES
-		LPRINT ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
-#endif
 #ifdef SIGPROCMAKS_HACK
+                LPRINT ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
                 //this hack was because the child inherits its parent's sigmask on clone, but we didn't do it in the slice... FIXME later
                 printf ("HACK:: manually fixing sigmask\n");
                 if (syscall (SYS_rt_sigprocmask, prt_sigprocmask->how, (sigset_t*) data, NULL, 8)) { 
                     printf ("    sigmask fix fails....\n");
                 }
 #else 
-		handle_mismatch();
+                printf ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
+#ifdef PRINT_VALUES
+                LPRINT ("[MISMATCH] sigprocmask returns different values %llx instead of expected %llx (no set)\n", *(__u64*)tmpbuf, *(__u64*)data);
+#endif
+                handle_mismatch();
 #endif
 	    }
 	}

@@ -12,6 +12,7 @@
 #include <linux/mount.h>
 #include <linux/delay.h>
 #include <linux/shm.h>
+#include <linux/ds_list.h>
 #include <linux/btree.h>
 #include <asm/uaccess.h>
 #include <asm/fcntl.h>
@@ -29,6 +30,7 @@
 #include <linux/times.h>
 #include <linux/crypto.h>
 #include <linux/scatterlist.h>
+#include <linux/futex.h>
 #include <crypto/sha.h>
 
 #include <linux/replay_configs.h>
@@ -2037,7 +2039,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			printk ("Pid %d sleeping to generate correct memory state at %ld.%09ld\n", current->pid, tp.tv_sec, tp.tv_nsec);
 		}
 
-		//xdou: for some reason, emacs can't sleep with schhedule() if we have a divergence in the middle; understand the reason after the deadline...
+		//xdou: for some reason, emacs can't sleep with schhedule() if we have a divergence in the middle; because of signal? 
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule(); 
 		printk ("Pid %d returns from schedule\n", current->pid);
@@ -2049,6 +2051,26 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 		// We should have correct address space and register values now
 		set_thread_flag (TIF_IRET); // Make sure we restore the new registers
+
+		//also wakeup all threads as they could be waiting on recheck_thread_wait in the slice (which uses futex calls)
+
+		do {
+			int num_threads = 0;
+			struct go_live_clock* go_live_clock = get_go_live_clock (current);
+
+			get_user (num_threads, (int __user*) &go_live_clock->num_threads);
+			printk ("Pid %d starts to wake up all threads, go_live_clock addr %p, num_threads %d\n", current->pid, go_live_clock, num_threads);
+			if (go_live_clock) { 
+				int i = 0;
+				for (; i < num_threads; ++i) { 
+					int ret = sys_futex ((u32 __user*) &go_live_clock->process_map[i].wait, FUTEX_WAKE, 99, NULL, NULL, 0);
+					printk ("Pid %d Waking up pid %d record pid %d, ret %d, addr %p\n", current->pid, go_live_clock->process_map[i].current_pid, go_live_clock->process_map[i].record_pid, ret, &go_live_clock->process_map[i].wait);
+				}
+			}
+		} while (0);
+
+		//TODO: free up the go_live_thrd, replay_group etc. for this thread; memory leaks
+
 	
 		return get_pt_regs(current)->orig_ax; // We stuffed actual return value in here.
 
@@ -2126,10 +2148,11 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 {
 	struct mm_struct* tmp_mm;
 	struct task_struct* tsk;
-	struct fpu* fpu, *tsk_fpu;
+	//struct fpu* fpu, *tsk_fpu;
 	struct task_rss_stat tmp_stat;
 	pid_t slice_pid = 0;
 	int i;
+	int __user* hack_addr = NULL;
 
 	// Find the task in the list
 	struct slice_task* pstask;
@@ -2175,6 +2198,77 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 		}
 	}
 
+	//java hack
+	printk ("Hacking: put the PTHREAD_LOG_OFF in the user space.\n");
+	hack_addr = (int __user*) 0xb7e211f8;
+	put_user (3, hack_addr);
+	hack_addr = (int __user*) 0xb7fc3448;
+	put_user (3, hack_addr);
+
+	//this is the shared clock region where go_live_clock struct lives
+	//This is to mantain the correct futex states used by recheck_thread_wait/wakeup in recheck_support.c; these futexes are shared across processes, so just copying the content won't work (check get_futex_key in kernel/futex.c)
+	MPRINT ("fw_slice_recover: copying the shared clock region\n");
+	down_write (&current->mm->mmap_sem);
+	do { 
+		struct vm_area_struct* vma;
+		int swapped = 0;
+		vma = current->mm->mmap;
+		while (vma) { 
+			if (vma->vm_file) { 
+				char buf[256];
+				char* s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+				if (!strncmp (s, "/run/shm/uclock", 15)) { 
+					struct vm_area_struct* swap_vma = NULL;
+					int found = 0;
+					MPRINT ("Pid %d fw_slice_recover found the shared clock region (go_live_clock region) %lx, name %s\n", current->pid, vma->vm_start, s);
+
+					//make sure the recover thread has the same info at this address
+					down_write (&tsk->mm->mmap_sem);
+					swap_vma = tsk->mm->mmap;
+					while (swap_vma) {
+						if (swap_vma->vm_start == vma->vm_start) {
+							s = d_path (&swap_vma->vm_file->f_path, buf, sizeof(buf));
+							MPRINT ("Found the matching region, name %s\n", s);
+							found = 1;
+							break;
+						}
+						swap_vma = swap_vma->vm_next;
+					}
+
+					if (found == 0) {
+						printk ("[BUG] cannot find the matching shared clock region.\n");
+					} else {
+						if (swap_vma->vm_end-swap_vma->vm_start != PAGE_SIZE) { 
+							printk ("[BUG] the shared clock region is not a single page?\n");
+						} else { 
+							//try to mmap the shared clock region, forcing the live thread and recovery thread to use the same page...stupid futex...
+							int fd = 0;
+							long rc = 0;
+							mm_segment_t old_fs = get_fs();
+							do_munmap (current->mm , vma->vm_start, PAGE_SIZE);
+							set_fs (KERNEL_DS);
+							fd = sys_open (s, O_RDWR | O_NOFOLLOW, 0644);
+							up_write (&current->mm->mmap_sem);
+							rc = sys_mmap_pgoff (vma->vm_start, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
+							down_write (&current->mm->mmap_sem);
+							sys_close (fd);
+							set_fs (old_fs);
+						}
+
+					}
+					up_write (&tsk->mm->mmap_sem);
+					swapped = 1;
+					break;
+				}
+			}
+			vma = vma->vm_next;
+		}
+		if (swapped == 0) { 
+			printk ("Pid %d fw_slice_recover not swapping the shared clock region? could be correct for single-threaded program\n", current->pid);
+		}
+	} while (0);
+	up_write (&current->mm->mmap_sem);
+
 	// Our address spaces should be identical
 	// Move memory from this task to the sleeping task
 	// Wouldn't it be neat if this worked?  But, it probably won't ... in which case we can copy (sigh)
@@ -2190,27 +2284,18 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 
 	DPRINT ("fw_slice_recover: swapped address spaces\n");
 
+	//Swap registers states for other threads
+	//this function is defined in replay.c; it uses struct replay_thread etc.
+	fw_slice_recover_swap_register (tsk);
+
 	// Change register state in sleeping task to match this one
 	DPRINT ("Current esi register %lx target esi register %lx\n", get_pt_regs(current)->si, get_pt_regs(tsk)->si);
-	memcpy (get_pt_regs(tsk), get_pt_regs(current), sizeof (struct pt_regs));
 	DPRINT ("Target esi register now %lx\n", get_pt_regs(tsk)->si);
 	DPRINT ("Changing return value in eax %ld to %ld\n", get_pt_regs(tsk)->orig_ax, retval);
 	get_pt_regs(tsk)->orig_ax = retval; // This is what we want to return from the kernel - will be returned in eax
-	unlazy_fpu(current);
-	fpu = &(current->thread.fpu);
-	if (fpu_allocated(fpu)) {
-		//allocate the new fpu if we need it and it isn't setup
-		tsk_fpu = &(current->thread.fpu);
-		if (!fpu_allocated(tsk_fpu)) {
-			DPRINT ("allocating fpu\n");
-			fpu_alloc(tsk_fpu);
-		}
-		tsk_fpu->last_cpu = fpu->last_cpu;
-		tsk_fpu->has_fpu = fpu->has_fpu;
-		tsk_fpu->state = fpu->state;
-	}
 
-	DPRINT ("fw_slice_recover: modified registers - about to wake up pid %d\n", tsk->pid);
+
+	MPRINT ("fw_slice_recover: modified registers - about to wake up pid %d\n", tsk->pid);
 
 	{
 		struct timespec tp;
@@ -2220,6 +2305,9 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 
 	// Wake up the sleeping task
 	wake_up_process (tsk);
+
+	//TODO: free up the replay_group/replay_thrd or go_live_thrd here for both this task and the recovred task
+	// I couldn't find an elegant way to destroy the them...
 
 	sys_exit_group (0);  // No longer need this task
 }

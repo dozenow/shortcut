@@ -294,7 +294,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     int tfd = open (taintbuf_path, O_RDONLY);
     if (tfd < 0) {
 	char newfile[256], oldfile[256];
-        fprintf (stderr, "cannot open file %s\n", taintbuf_path);
+        fprintf (stderr, "cannot open file %s for klog %s\n", taintbuf_path, klogfilename);
 
 	// Just symlink the klog file to the new directory - unmodified
 	if (errno != ENOENT) fprintf (stderr, "Could not open tainted valued file %s, errno=%d\n", taintbuf_path, errno);
