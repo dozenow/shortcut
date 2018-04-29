@@ -49,6 +49,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
 #define PRINT_TIME 0
+//#define JAVA_FIX_PTHREAD
 
 /* Prototypes not in header files */
 void set_tls_desc(struct task_struct *p, int idx, const struct user_desc *info, int n); /* In tls.c */
@@ -807,6 +808,9 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			goto unlock;
 		}
 		if (replay_debug) print_vmas (current);
+		printk ("=========================\n");
+		print_vmas (tsk);
+		printk ("=========================\n");
 
 		// Next - info and data for each vma
 		for (vma = tsk->mm->mmap; vma; vma = vma->vm_next) {
@@ -843,7 +847,23 @@ replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pi
 			else {
 				pvmas->vmas_file[0] = '\0';
 			}
- 
+
+			//this is only for getting how many regions are replay_caches or read_only or zero; check the potential minimal checkpoint size we can have
+			//comment it out if you're not getting numbers for jumpstart
+			//read-only and cached
+			if (vma->vm_file &&  !(vma->vm_flags & VM_WRITE) && !strncmp (pvmas->vmas_file, "/replay_cache/", 14)) {
+				printk ("possible duplicated region %lx to %lx, size %lu file %s\n", vma->vm_start, vma->vm_end, vma->vm_end-vma->vm_start, pvmas->vmas_file);
+			} else { 
+				//zero-filled region
+				//if (is_memory_zero ((void*)vma->vm_start, (void*)vma->vm_end)) { 
+				//	printk ("possible zero-filled region %lx to %lx, size %lu file %s\n", vma->vm_start, vma->vm_end, vma->vm_end-vma->vm_start, pvmas->vmas_file);
+				//} else if (vma->vm_file && vma->vm_start == 0x8048000) { 
+				if (vma->vm_file && vma->vm_start == 0x8048000) { 
+					printk ("possible executable region %lx to %lx, size %lu file %s\n", vma->vm_start, vma->vm_end, vma->vm_end-vma->vm_start, pvmas->vmas_file);
+					printk ("possible executable region %lx to %lx, size %lu file %s\n", vma->vm_next->vm_start, vma->vm_next->vm_end, vma->vm_next->vm_end - vma->vm_next->vm_start, pvmas->vmas_file);
+				}
+			}
+
 			copied = vfs_write(file, (char *) pvmas, sizeof(struct vma_stats), ppos);
 			if (copied != sizeof(struct vma_stats)) {
 				printk ("replay_full_checkpoint_proc_to_disk: tried to write vma info, got rc %d\n", copied);
@@ -2198,6 +2218,7 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 		}
 	}
 
+#if JAVA_FIX_PTHREAD
 	//java hack
 	printk ("Hacking: put the PTHREAD_LOG_OFF in the user space.\n");
 	hack_addr = (int __user*) 0xb7e211f8;
@@ -2268,6 +2289,7 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 		}
 	} while (0);
 	up_write (&current->mm->mmap_sem);
+#endif
 
 	// Our address spaces should be identical
 	// Move memory from this task to the sleeping task
