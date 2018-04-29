@@ -12509,12 +12509,19 @@ long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt
 	if (trace_timings/* && current->pid == java_pid*/) {
 		mm_segment_t old_fs = get_fs();
 		struct rusage ru;
+		struct rusage ru1;
+		struct rusage ru2;
 		struct timespec tp;
 		set_fs (KERNEL_DS);
-		sys_getrusage (RUSAGE_SELF, &ru);
+		sys_getrusage (RUSAGE_SELF, &ru1);
+		sys_getrusage (RUSAGE_CHILDREN, &ru2);
 		set_fs (old_fs);
+		ru.ru_utime.tv_sec = ru1.ru_utime.tv_sec + ru2.ru_utime.tv_sec;
+		ru.ru_utime.tv_usec = ru1.ru_utime.tv_usec + ru2.ru_utime.tv_usec;
+		ru.ru_stime.tv_sec = ru1.ru_stime.tv_sec + ru2.ru_stime.tv_sec;
+		ru.ru_stime.tv_usec = ru1.ru_stime.tv_usec + ru2.ru_stime.tv_usec;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_utime.tv_sec*1000000+ru.ru_stime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
 		printk ("%ld:%ld.%09ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
