@@ -30,6 +30,7 @@
 #define __USE_LARGEFILE64
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 
 #include <assert.h>
 
@@ -100,258 +101,204 @@ static void free_active_psrs(struct klogfile *log) {
 	log->active_psrs = NULL;
 }
 
-static u_long getretparamsize(struct klogfile *log,
-		struct klog_result *res) {
-	u_long ret = 0;
-	struct syscall_result *psr = &res->psr;
-
-	if (res->psr.flags & SR_HAS_RETPARAMS) {
-		assert(log->parse_rules[psr->sysnum]);
-		if (log->parse_rules[psr->sysnum]->get_retparamsize) {
-			ret = log->parse_rules[psr->sysnum]->get_retparamsize(log, res);
-		} else {
-			ret = log->parse_rules[psr->sysnum]->retparamsize;
-		}
-		assert(ret >= 0);
+static u_long getretparamsize(struct klogfile *log, struct klog_result *res) 
+{
+    u_long ret = 0;
+    struct syscall_result *psr = &res->psr;
+    
+    if (res->psr.flags & SR_HAS_RETPARAMS) {
+	assert(log->parse_rules[psr->sysnum]);
+	if (log->parse_rules[psr->sysnum]->get_retparamsize) {
+	    ret = log->parse_rules[psr->sysnum]->get_retparamsize(log, res);
+	} else {
+	    ret = log->parse_rules[psr->sysnum]->retparamsize;
 	}
-
-	return ret;
+	assert(ret >= 0);
+    }
+    
+    return ret;
 }
 
-static int read_psr_chunk(struct klogfile *log) {
-	int ret = -1;
-	int count;
-	u_long data_size;
-	int i;
-	long rc, bytes_read;
-	struct syscall_result *psrs;
+static int read_psr_chunk(struct klogfile *log) 
+{
+    int ret = -1;
+    int* pcount;
+    u_long* pdata_size;
+    int i;
+    long rc, bytes_read;
+    struct syscall_result *psrs;
+    
+    if (log->ptr >= log->buf + log->size) return 0;
+    
+    pcount = (int *) log->ptr;
+    log->ptr += sizeof(int);
 
-	/* Read header */
-	debugf("Reading count\n");
-	/* Now get how many records there are here */
-	rc = read(log->fd, &count, sizeof(count));
-	if (rc == 0) { // should have reached the end of the log(s) here
-		/* We're at the end, return success, we just didn't read anything */
-		return 0;
+    /* Read the records... eventually */
+    if (log->active_psrs) {
+	free_active_psrs(log);
+    }
+
+    log->active_psrs = malloc(sizeof(struct klog_result) * *pcount);
+    if (!log->active_psrs) {
+	fprintf(stderr, "Could not malloc %d bytes\n", sizeof(struct klog_result) * *pcount);
+	return 0;
+    }
+
+    psrs = (struct syscall_result *) log->ptr;
+    log->ptr += *pcount * sizeof(struct syscall_result);
+
+    pdata_size = (u_long *) log->ptr;
+    log->ptr += sizeof(u_long);
+
+    debugf("Read %d active psrs data size is %lu\n", *pcount, *pdata_size);
+
+    log->active_start_idx += log->active_num_psrs;
+    log->cur_idx = 0;
+    log->active_num_psrs = *pcount;
+
+    /* Now handle each psr */
+    for (i = 0; i < *pcount; i++) {
+	struct klog_result *apsr = &log->active_psrs[i];
+	memcpy (&apsr->psr, &psrs[i], sizeof(struct syscall_result));
+	apsr->retparams = NULL;
+	apsr->log = log;
+	apsr->index = log->active_start_idx + i;
+
+	if (log->printfcns[apsr->psr.sysnum]) {
+	    apsr->printfcn = log->printfcns[apsr->psr.sysnum];
+	} else {
+	    apsr->printfcn = log->default_printfcn;
+	}
+	debugf("Parsing psr %d syscall %d with flags 0x%x\n", i, apsr->psr.sysnum, apsr->psr.flags);
+
+	apsr->start_clock = log->expected_clock;
+	if ((apsr->psr.flags & SR_HAS_START_CLOCK_SKIP) != 0) {
+	    apsr->start_clock += *((u_long *) log->ptr);
+	    log->ptr += sizeof(u_long);
+	}
+	log->expected_clock = apsr->start_clock + 1;
+
+	if ((apsr->psr.flags & SR_HAS_NONZERO_RETVAL) == 0) {
+	    apsr->retval = 0;
+	} else {
+	    memcpy (&apsr->retval, log->ptr, sizeof(long));
+	    log->ptr += sizeof(long);
+	    debugf("Retval is %ld\n", apsr->retval);
 	}
 
-	if (rc != sizeof(count)) {
-		fprintf(stderr, "read returns %ld, expected %d, errno = %d\n", rc, sizeof(count), errno);
-		goto out;
+	apsr->stop_clock = log->expected_clock;
+	if ((apsr->psr.flags & SR_HAS_STOP_CLOCK_SKIP) != 0) {
+	    apsr->stop_clock += *((u_long *) log->ptr);
+	    log->ptr += sizeof(u_long);
+	}
+	log->expected_clock = apsr->stop_clock + 1;
+
+	apsr->retparams_size = getretparamsize(log, apsr);
+	assert(apsr->retparams_size >= 0);
+	debugf("Got retparams_size %d\n", apsr->retparams_size);
+
+	if (apsr->retparams_size > 0) {
+	    apsr->retparams = malloc(apsr->retparams_size);
+	    assert(apsr->retparams);
+	    
+	    debugf("Reading retparams (%d) from %lx\n", apsr->retparams_size, (u_long) log->ptr - (u_long) log->buf);
+	    memcpy (apsr->retparams, log->ptr, apsr->retparams_size);
+	    log->ptr += apsr->retparams_size;
 	}
 
-	/* Read the records... eventually */
-	psrs = malloc(sizeof(struct syscall_result) * count);
-	if (!psrs) {
-		fprintf(stderr, "Cound not malloc %d bytes\n", sizeof(struct syscall_result)*count);
-		goto out;
-	}
-
-	if (log->active_psrs) {
-		free_active_psrs(log);
-	}
-
-	log->active_psrs = malloc(sizeof(struct klog_result) * count);
-	if (!log->active_psrs) {
-		fprintf(stderr, "Could not malloc %d bytes\n", sizeof(struct klog_result) * count);
-		goto out_free;
-	}
-
-	rc = read(log->fd, psrs, sizeof(struct syscall_result) * count);
-	if (rc != sizeof(struct syscall_result) * count) {
-		fprintf(stderr, "Could not read psrs from log\n");
-		goto out_free;
-	}
-
-	rc = read(log->fd, &data_size, sizeof(data_size));
-	if (rc != sizeof(data_size)) {
-		fprintf(stderr, "Could not read data_size from log\n");
-		goto out_free;
-	}
-
-	debugf("Read %d active psrs\n", count);
-
-	for (i = 0; i < count; i++) {
-		/*
-		printf("Copying: sysnum %3d flags %x\n",
-				psrs[i].sysnum, psrs[i].flags);
-				*/
-		memcpy(&log->active_psrs[i].psr, &psrs[i], sizeof(struct syscall_result));
-	}
-
-	log->active_start_idx += log->active_num_psrs;
-	log->cur_idx = 0;
-	log->active_num_psrs = count;
-
-	/* Now handle each psr */
-	for (i = 0; i < count; i++) {
-		struct klog_result *apsr = &log->active_psrs[i];
-		apsr->retparams = NULL;
-	}
-
-	for (i = 0; i < count; i++) {
-		struct klog_result *apsr = &log->active_psrs[i];
-		apsr->log = log;
-		apsr->index = log->active_start_idx + i;
-
-		if (log->printfcns[apsr->psr.sysnum]) {
-			apsr->printfcn = log->printfcns[apsr->psr.sysnum];
+	if (apsr->psr.flags & SR_HAS_SIGNAL) {
+	    struct klog_signal* tail = NULL;
+	    struct klog_signal* pklogsignal;
+	    do {
+		pklogsignal = malloc(sizeof(struct klog_signal));
+		assert (pklogsignal);
+		memcpy (&pklogsignal->raw, log->ptr, 172);
+		log->ptr += 172;
+		pklogsignal->signr = *((int *) pklogsignal->raw);
+		pklogsignal->next = NULL;
+		if (tail == NULL) {
+		    apsr->signal = pklogsignal;
 		} else {
-			apsr->printfcn = log->default_printfcn;
+		    tail->next = pklogsignal;
 		}
-
-		debugf("Parsing psr %d with flags 0x%x\n", i, apsr->psr.flags);
-
-		apsr->start_clock = log->expected_clock;
-		if ((apsr->psr.flags & SR_HAS_START_CLOCK_SKIP) != 0) {
-			u_long clock;
-			rc = read (log->fd, &clock, sizeof(u_long));
-			if (rc != sizeof(u_long)) {
-				fprintf(stderr, "cannot read start clock value\n");
-				return rc;
-			}
-			debugf("Start clock skip is %ld at %ld\n", clock, lseek(log->fd, 0, SEEK_CUR)-sizeof(u_long));
-			apsr->start_clock += clock;
-		}
-		log->expected_clock = apsr->start_clock + 1;
-
-		if ((apsr->psr.flags & SR_HAS_NONZERO_RETVAL) == 0) {
-			apsr->retval = 0;
-		} else {
-			debugf("Reading retval\n");
-			rc = read(log->fd, &apsr->retval, sizeof(long));
-			if (rc != sizeof(long)) {
-				fprintf(stderr, "cannot read return value\n");
-				return -1;
-			}
-		}
-
-		apsr->stop_clock = log->expected_clock;
-		if ((apsr->psr.flags & SR_HAS_STOP_CLOCK_SKIP) != 0) {
-			u_long clock;
-			rc = read (log->fd, &clock, sizeof(u_long));
-			if (rc != sizeof(u_long)) {
-				fprintf(stderr, "cannot read start clock value\n");
-				return rc;
-			}
-
-			apsr->stop_clock += clock;
-		}
-		log->expected_clock = apsr->stop_clock + 1;
-
-		apsr->retparams_size = getretparamsize(log, apsr);
-		assert(apsr->retparams_size >= 0);
-		debugf("Got retparams_size %d\n", apsr->retparams_size);
-
-		if (apsr->retparams_size > 0) {
-			long rc;
-			apsr->retparams = malloc(apsr->retparams_size);
-			/* FIXME: should fail nicely... */
-			assert(apsr->retparams);
-
-			rc = lseek(log->fd, 0, SEEK_CUR);
-			debugf("Reading retparams (%d) from %ld\n", apsr->retparams_size, rc);
-			bytes_read = 0;
-			do {
-				rc = read(log->fd, apsr->retparams+bytes_read, apsr->retparams_size-bytes_read);
-				if (rc != apsr->retparams_size) {
-					fprintf(stderr, "could not read apsr->retparams (rc=%ld, size=%d)!\n", rc, apsr->retparams_size);
-					if (rc <= 0) {
-						apsr->retparams_size = 0;
-						klog_print(stderr, apsr);
-						
-						free_active_psrs(log);
-						goto out_free;
-					}
-				}
-				bytes_read += rc;
-			} while (bytes_read != apsr->retparams_size);
-		}
-
-		if (apsr->psr.flags & SR_HAS_SIGNAL) {
-		    struct klog_signal* tail = NULL;
-		    struct klog_signal* pklogsignal;
-		    do {
-			pklogsignal = malloc(sizeof(struct klog_signal));
-			assert (pklogsignal);
-			rc = read(log->fd, &pklogsignal->raw, 172);
-			if (rc != 172) {
-			    fprintf (stderr, "read of signal returns %ld, errno = %d\n", rc, errno);
-			    goto out_free;
-			}
-			pklogsignal->signr = *((int *) pklogsignal->raw);
-			pklogsignal->next = NULL;
-			if (tail == NULL) {
-			    apsr->signal = pklogsignal;
-			} else {
-			    tail->next = pklogsignal;
-			}
-			tail = pklogsignal;
-		    } while (*(char **)(pklogsignal->raw+168));			
-		} else {
-			apsr->signal = NULL;
-		}
+		tail = pklogsignal;
+	    } while (*(char **)(pklogsignal->raw+168));			
+	} else {
+	    apsr->signal = NULL;
 	}
+    }
 
-	ret = count;
-
-out_free:
-	free(psrs);
-
-out:
-	return ret;
+    return *pcount;
 }
 
 static void add_default_parse_rule_exceptions(struct klogfile *log);
-struct klogfile *parseklog_open(const char *filename) {
-	struct klogfile *ret = NULL;
+struct klogfile *parseklog_open(const char *filename) 
+{
+    struct klogfile *ret = NULL;
+    int fd;
+    ret = malloc(sizeof(*ret));
+    if (ret == NULL) goto out;
+    
+    /* Set up the parse rules */
+    memset(ret->parse_rules, 0, sizeof(ret->parse_rules));
+    
+    add_default_parse_rule_exceptions(ret);
+    
+    /* Set up the print functions */
+    memset(ret->printfcns, 0, sizeof(ret->printfcns));
+    ret->default_printfcn = default_printfcn;
+    ret->signal_print = default_signal_printfcn;
+    
+    /* Open the file and initialize the fd */
+    fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+	perror("open: ");
+	goto out_free;
+    }
+    
+    /* Memory map the file */
+    struct stat st;
+    int rc = fstat (fd, &st);
+    if (rc < 0) {
+	fprintf (stderr, "Cannot stat %s\n", filename);
+	goto out_free;
+    }
+    ret->size = st.st_size;
+    
+    ret->buf = (char *) mmap (0, ret->size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (ret->buf == MAP_FAILED) {
+	fprintf (stderr, "Cannot map %s size %ld\n", filename, ret->size);
+	goto out_free;
+    }
+    close (fd);
 
-	ret = malloc(sizeof(*ret));
-	if (ret == NULL) {
-		goto out;
-	}
+    ret->ptr = ret->buf;
+    
+    ret->active_psrs = NULL;
+    
+    ret->active_start_idx = 0;
+    ret->active_num_psrs = 0;
+    
+    ret->num_psrs = 0;
+    ret->cur_idx = 0;
+    
+    ret->expected_clock = 0;
+    ret->expected_write_clock = 0;
+    
+  out:
+    return ret;
 
-	/* Set up the parse rules */
-	memset(ret->parse_rules, 0, sizeof(ret->parse_rules));
-
-	add_default_parse_rule_exceptions(ret);
-
-	/* Set up the print functions */
-	memset(ret->printfcns, 0, sizeof(ret->printfcns));
-	ret->default_printfcn = default_printfcn;
-	ret->signal_print = default_signal_printfcn;
-
-	/* Open the file and initialize the fd */
-	ret->fd = open(filename, O_RDONLY);
-	if (ret->fd < 0) {
-		perror("open: ");
-		goto out_free;
-	}
-
-	ret->active_psrs = NULL;
-
-	ret->active_start_idx = 0;
-	ret->active_num_psrs = 0;
-
-	ret->num_psrs = 0;
-	ret->cur_idx = 0;
-
-	ret->expected_clock = 0;
-	ret->expected_write_clock = 0;
-
-out:
-	return ret;
-
-out_free:
-	free(ret);
-	ret = NULL;
-	goto out;
+  out_free:
+    free(ret);
+    ret = NULL;
+    goto out;
 }
 
 
-void parseklog_close(struct klogfile *log) {
-	close(log->fd);
-	free(log);
+void parseklog_close(struct klogfile *log) 
+{
+    munmap (log->buf, log->size);
+    free (log);
 }
 
 struct klog_result *parseklog_get_next_psr(struct klogfile *log) {
@@ -411,110 +358,107 @@ int parseklog_cur_chunk_size(struct klogfile *log) {
 
 static int parseklog_do_write_chunk(int count, struct klog_result *psrs, loff_t* pexpected_write_clock, int destfd) 
 {
-	int i;
-	int rc;
-	u_long data_size;
-	/* Write the count */
-	rc = write(destfd, &count, sizeof(int));
-	if (rc != sizeof(int)) {
-		fprintf(stderr, "Couldn't record count\n");
-		return -1;
+    char* bufbegin;
+    char* buf;
+    u_long byteswritten;
+    int rc, i;
+
+    /* First calculate region size */
+    u_long data_size = 0;
+    u_long size = sizeof(u_long);
+
+    for (i = 0; i < count; i++) {
+	struct syscall_result *apsr = &psrs[i].psr;
+	if (apsr->flags & SR_HAS_START_CLOCK_SKIP) data_size += sizeof(u_long);
+	if (apsr->flags & SR_HAS_NONZERO_RETVAL) data_size += sizeof(long);
+	if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) data_size += sizeof(u_long);
+	if (apsr->flags & SR_HAS_SIGNAL) {
+	    struct klog_signal* n;
+	    for (n = psrs[i].signal; n; n = n->next) {
+		data_size += 172;
+	    } 
+	}
+	data_size += psrs[i].retparams_size;
+    }
+    size += count * sizeof(struct syscall_result);
+    size += sizeof(u_long);
+    size += data_size;
+
+    /* Allocate a buffer */
+    buf = malloc(size);
+    bufbegin = buf;
+    if (buf == NULL) {
+	fprintf (stderr, "Cannot allocate write buffer of size %lu\n", size);
+	return -1;
+    }
+
+    /* Write the count */
+    *((u_long *) buf) = count;
+    buf += sizeof(u_long);
+
+    for (i = 0; i < count; i++) {
+	struct syscall_result *apsr = &psrs[i].psr;
+	memcpy (buf, &psrs[i].psr, sizeof(struct syscall_result));
+	buf += sizeof(struct syscall_result);
+    }
+
+    *((u_long *) buf) = data_size;
+    buf += sizeof(u_long);
+
+    /* For each psr */
+    for (i = 0; i < count; i++) {
+	struct syscall_result *apsr = &psrs[i].psr;
+	struct klog_result *res = &psrs[i];
+
+	if (apsr->flags & SR_HAS_START_CLOCK_SKIP) {
+	    u_long record_clock = res->start_clock - *pexpected_write_clock;
+	    *pexpected_write_clock = res->start_clock;
+	    *((u_long *) buf) = record_clock;
+	    buf += sizeof(u_long);
+	}
+	(*pexpected_write_clock)++;
+
+	if (apsr->flags & SR_HAS_NONZERO_RETVAL) {
+	    *((u_long *) buf) = res->retval;
+	    buf += sizeof(long);
 	}
 
-	data_size = 0;
-	/* Write the psrs */
-	/* Calculate the data size... */
-	for (i = 0; i < count; i++) {
-		struct syscall_result *apsr = &psrs[i].psr;
-		rc = write(destfd, apsr, sizeof(struct syscall_result));
-		if (rc != sizeof(struct syscall_result)) {
-			fprintf(stderr, "Couldn't syscall_result\n");
-			return -1;
-		}
-
-		if (apsr->flags & SR_HAS_START_CLOCK_SKIP) {
-			data_size += sizeof(u_long);
-		}
-		if (apsr->flags & SR_HAS_NONZERO_RETVAL) {
-			data_size += sizeof(long);
-		}
-		if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) {
-			data_size += sizeof(u_long);
-		}
-		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal* n;
-			for (n = psrs[i].signal; n; n = n->next) {
-				data_size += 172;
-			} 
-		}
-
-		data_size += psrs[i].retparams_size;
+	if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) {
+	    u_long record_clock = res->stop_clock - *pexpected_write_clock;
+	    *pexpected_write_clock = res->stop_clock;
+	    *((u_long *) buf) = record_clock;
+	    buf += sizeof(u_long);
 	}
+	(*pexpected_write_clock)++;
 
-	rc = write(destfd, &data_size, sizeof(data_size));
-	if (rc != sizeof(data_size)) {
-		fprintf(stderr, "Couldn't record data_size\n");
-		return -1;
+	if (res->retparams_size) {
+	    memcpy (buf, res->retparams, res->retparams_size);
+	    buf += res->retparams_size;
 	}
-
-	/* For each psr */
-	for (i = 0; i < count; i++) {
-		struct syscall_result *apsr = &psrs[i].psr;
-		struct klog_result *res = &psrs[i];
-
-		/* If (has clock) write clock */
-		if (apsr->flags & SR_HAS_START_CLOCK_SKIP) {
-			u_long record_clock = res->start_clock-*pexpected_write_clock;
-			*pexpected_write_clock = res->start_clock;
-			rc = write(destfd, &record_clock, sizeof(u_long));
-			if (rc != sizeof(u_long)) {
-				fprintf(stderr, "Couldn't record start_clock\n");
-				return -1;
-			}
-		}
-		(*pexpected_write_clock)++;
-
-		/* If (has retval) write retval */
-		if (apsr->flags & SR_HAS_NONZERO_RETVAL) {
-			rc = write(destfd, &res->retval, sizeof(long));
-			if (rc != sizeof(long)) {
-				fprintf(stderr, "Couldn't record retval\n");
-				return -1;
-			}
-		}
-		if (apsr->flags & SR_HAS_STOP_CLOCK_SKIP) {
-			u_long record_clock = res->stop_clock-*pexpected_write_clock;
-			*pexpected_write_clock = res->stop_clock;
-			rc = write(destfd, &record_clock, sizeof(u_long));
-			if (rc != sizeof(u_long)) {
-				fprintf(stderr, "Couldn't record start_clock\n");
-				return -1;
-			}
-		}
-		(*pexpected_write_clock)++;
-
-		/* If (has retparams) write retparams */
-		if (res->retparams_size) {
-			rc = write(destfd, res->retparams, res->retparams_size);
-			if (rc != res->retparams_size) {
-				fprintf(stderr, "Couldn't record retparams_size ret %d, params %p size %d, err %d\n", rc, res->retparams, res->retparams_size, errno);
-				return -1;
-			}
-		}
-
-		if (apsr->flags & SR_HAS_SIGNAL) {
-			struct klog_signal *n;
-			for (n = res->signal; n; n = n->next) {
-			    rc = write(destfd, n->raw, 172);
-			    if (rc != 172) {
-				fprintf(stderr, "Couldn't record raw signal\n");
-				return -1;
-			    }
-			} 
-		}
+	
+	if (apsr->flags & SR_HAS_SIGNAL) {
+	    struct klog_signal *n;
+	    for (n = res->signal; n; n = n->next) {
+		memcpy (buf, n->raw, 172);
+		buf += 172;
+	    } 
 	}
+    }
 
-	return 0;
+    /* Now write the buffer to the file */
+    byteswritten = 0;
+    while (byteswritten < size) {
+	rc = write(destfd, bufbegin + byteswritten, size - byteswritten);
+	if (rc <= 0) { 
+	    fprintf(stderr, "Couldn't write buffer, rc=%d, errno=%d\n", rc, errno);
+	    return -1;
+	}
+	byteswritten += rc;
+    }
+
+    free (bufbegin);
+
+    return 0;
 }
 
 int parseklog_write_chunk(struct klogfile *log, int destfd) {
@@ -549,497 +493,235 @@ int klog_print(FILE *out, struct klog_result *result) {
 	return 0;
 }
 
-static u_long varsize(struct klogfile *klog, struct klog_result *res) {
-	u_long val;
-	long orig_pos;
-
-	orig_pos = lseek(klog->fd, 0, SEEK_CUR);
-
-	if (read (klog->fd, &val, sizeof(u_long)) != sizeof(u_long)) {
-		fprintf (stderr, "cannot read variable length field\n");
-		return -1;
-	}
-	debugf("\t4 bytes of variable length field header included\n");
-	/*
-	if (stats) {
-		bytes[psr->sysnum] += sizeof(u_long);
-	}
-	*/
-	debugf("\t%lu variable bytes\n", val);
-	lseek(klog->fd, orig_pos, SEEK_SET);
-	return val + sizeof(u_long);
+static u_long varsize(struct klogfile *klog, struct klog_result *res) 
+{
+    u_long* pval = (u_long *) klog->ptr;
+    debugf("\t4 bytes of variable length field header included\n");
+    debugf("\t%lu variable bytes\n", *pval);
+    return *pval + sizeof(u_long);
 }
 
-static u_long getretparams_retval(struct klogfile *klog,
-		struct klog_result *res) {
-	return res->retval;
+static u_long getretparams_retval(struct klogfile *klog, struct klog_result *res) 
+{
+    return res->retval;
 }
 
-/* Exceptions */
-/*{{{*/
-static u_long getretparams_read(struct klogfile *log,
-		struct klog_result *res) {
-	long rc;
-	u_long size = 0;
-	int extra_bytes = 0;
-	long return_pos;
-	u_int is_cache_read;
+static u_long getretparams_read(struct klogfile *log, struct klog_result *res) 
+{
+    u_long size = 0;
+    int extra_bytes = 0;
+    u_int is_cache_read;
+    char* tptr = log->ptr;
+    
+    is_cache_read = *((u_int *) tptr);
+    tptr += sizeof(u_int);
+    size += sizeof(u_int);
 
-	return_pos = lseek(log->fd, 0, SEEK_CUR);
-
-	rc = read(log->fd, &is_cache_read, sizeof(u_int));
-	if (rc != sizeof(u_int)) {
-		fprintf (stderr, "cannot read is_cache value\n");
-		return -1;
-	}
-	size += sizeof(u_int);
-
-	debugf("\tis_cache_file: %d\n", is_cache_read);
-	if (is_cache_read & CACHE_MASK) {
-		size += sizeof(loff_t);
+    debugf("\tis_cache_file: %d\n", is_cache_read);
+    if (is_cache_read & CACHE_MASK) {
+	size += sizeof(loff_t);
 
 #ifdef TRACE_READ_WRITE
-		do {
-			off_t orig_pos;
-			struct replayfs_filemap_entry entry;
-			loff_t bleh;
-
-			orig_pos = lseek(log->fd, 0, SEEK_CUR);
-			rc = read(log->fd, &bleh, sizeof(loff_t));
-			rc = read(log->fd, &entry, sizeof(struct replayfs_filemap_entry));
-			lseek(log->fd, orig_pos, SEEK_SET);
-
-			if (rc != sizeof(struct replayfs_filemap_entry)) {
-				fprintf(stderr, "cannot read entry\n");
-				return -1;
-			}
-
-			extra_bytes += sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-			size += sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-		} while (0);
+	do {
+	    struct replayfs_filemap_entry* pentry = (struct replayfs_filemap_entry *) (tptr+sizeof(loff_t));
+	    extra_bytes += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
+	    size += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
+	} while (0);
 #endif
 #ifdef TRACE_PIPE_READ_WRITE
-	} else if (is_cache_read & IS_PIPE) {
-		if (is_cache_read & IS_PIPE_WITH_DATA) {
-			off_t orig_pos;
-			struct replayfs_filemap_entry entry;
-
-			orig_pos = lseek(log->fd, 0, SEEK_CUR);
-			rc = read(log->fd, &entry, sizeof(struct replayfs_filemap_entry));
-			lseek(log->fd, orig_pos, SEEK_SET);
-
-			if (rc != sizeof(struct replayfs_filemap_entry)) {
-				fprintf(stderr, "cannot read entry\n");
-				return -1;
-			}
-
-			size += sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-		} else {
-			size += sizeof(uint64_t) + sizeof(int);
-		}
-
-		size += res->retval;
-#endif
+    } else if (is_cache_read & IS_PIPE) {
+	if (is_cache_read & IS_PIPE_WITH_DATA) {
+	    struct replayfs_filemap_entry* pentry = (struct replayfs_filemap_entry *) tptr;
+	    size += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
 	} else {
-		size += res->retval; 
+	    size += sizeof(uint64_t) + sizeof(int);
 	}
-
-	lseek(log->fd, return_pos, SEEK_SET);
-
-	return size;
-}
-
-static u_long getretparams_write(struct klogfile *klog,
-		struct klog_result *res) {
-	long return_pos;
-	long rc;
-	u_long size = 0;
-	int is_shared;
-
-	return_pos = lseek(klog->fd, 0, SEEK_CUR);
-
-	size += sizeof(int);
-	rc = read(klog->fd, &is_shared, sizeof(int));
-	if (rc != sizeof(int)) {
-		fprintf(stderr, "cannot read \"write\" value\n");
-		return -1;
-	}
-
-	switch (is_shared) {
-		case NORMAL_FILE:
-			size += sizeof(int64_t);
-			break;
-		default:
-			size += sizeof(int);;
-	}
-
-	if (lseek(klog->fd, return_pos, SEEK_SET) == (off_t)-1) {
-		fprintf(stderr, "lseek failed to go to return_pos in write\n");
-		return -1;
-	}
-
-	return size;
-}
-
-static u_long getretparams_getgroups(struct klogfile *klog,
-		struct klog_result *res) {
-	return sizeof(u_short) * res->retval;
-}
-
-static u_long getretparams_getgroups32(struct klogfile *klog,
-		struct klog_result *res) {
-	return sizeof(gid_t) * res->retval;
-}
-
-static u_long getretparams_io_getevents(struct klogfile *klog,
-		struct klog_result *res) {
-	return res->retval * 32;
-}
-
-static u_long getretparams_epoll_wait(struct klogfile *klog,
-		struct klog_result *res) {
-	return res->retval * sizeof(struct epoll_event);
-}
-
-static u_long getretparams_socketcall(struct klogfile *log,
-		struct klog_result *res) {
-	int call;
-	long rc;
-	u_long size = 0;
-	long return_pos;
-
 	
-	return_pos = lseek(log->fd, 0, SEEK_CUR);
-
-	rc = read(log->fd, &call, sizeof(int));
-	if (rc != sizeof(int)) {
-		fprintf(stderr, "cannot read call value\n");
-		return -1;
-	}
-	size += sizeof(int);
-
-	debugf("\tsocketcall %d\n", call);
-	assert(call > 0 && call <= 20);
-
-	// socketcall retvals specific
-	switch (call) {
-#ifdef TRACE_SOCKET_READ_WRITE
-		case SYS_SEND:
-		case SYS_SENDTO:
-			{
-				if (res->retval >= 0) {
-					u_int shared;
-
-					shared = 0;
-					rc = read(log->fd, &shared, sizeof(u_int));
-					if (rc != sizeof(shared)) {
-						fprintf(stderr, "%d: read %ld\n", __LINE__, rc);
-						return -1;
-					}
-					size += sizeof(u_int);
-
-					debugf("\tRead shared variable of %d\n", shared);
-
-					if (shared & IS_PIPE_WITH_DATA) {
-					} else if (shared & IS_PIPE) {
-						int pipe_id;
-
-						rc = read(log->fd, &pipe_id, sizeof(int));
-						if (rc != sizeof(int)) {
-							fprintf(stderr, "%d: read: %ld\n", __LINE__, rc);
-							return -1;
-						}
-						size += sizeof(int);
-
-						/*
-						if (!pipe_write_only) {
-							printf("\tWrite is part of pipe: %d\n", pipe_id);
-						} else {
-							always_print("%d, %ld, %lu, %d\n", pipe_id, retval,
-									start_clock, ndx);
-						}
-						*/
-					}
-				}
-				break;
-			}
+	size += res->retval;
 #endif
-		case SYS_ACCEPT: 
-		case SYS_ACCEPT4:
-		case SYS_GETSOCKNAME:
-		case SYS_GETPEERNAME: {
-			struct accept_retvals avr;
-			rc = read(log->fd, ((char *) &avr) + sizeof(int), 
-					 sizeof(struct accept_retvals) - sizeof(int));
-			if (rc != sizeof(struct accept_retvals) - sizeof(int)) {
-				fprintf(stderr, "cannot read accept value\n");
-				return -1;
-			}
-			size += sizeof(struct accept_retvals) - sizeof(int);
+    } else {
+	size += res->retval; 
+    }
 
-			size += avr.addrlen; 
-			break;
-		}
-
-		case SYS_RECV:
-			size += sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval;
-#ifdef TRACE_SOCKET_READ_WRITE
-			if (res->retval >= 0) {
-				u_int is_cached;
-				off_t orig_pos;
-				orig_pos = lseek(log->fd, 0, SEEK_CUR);
-				rc = lseek(log->fd,
-						sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval, SEEK_CUR);
-				if (rc == (off_t)-1) {
-					fprintf(stderr, "%d: lseek: %ld\n", __LINE__, rc);
-					return -1;
-				}
-				rc = read(log->fd, &is_cached, sizeof(u_int));
-				if (rc != sizeof(is_cached)) {
-					fprintf(stderr, "%d: Couldn't read is_cached\n", __LINE__);
-					return -1;
-				}
-
-				debugf("\tSocket is_cached is %d\n", is_cached);
-
-				if (is_cached & IS_PIPE_WITH_DATA) {
-					off_t orig_pos2;
-					int entry_size;
-					struct replayfs_filemap_entry entry;
-					struct replayfs_filemap_entry *real_entry;
-
-					orig_pos2 = lseek(log->fd, 0, SEEK_CUR);
-					rc = read(log->fd, &entry, sizeof(struct replayfs_filemap_entry));
-
-					if (rc != sizeof(struct replayfs_filemap_entry)) {
-						fprintf(stderr, "cannot read entry\n");
-						return -1;
-					}
-					lseek(log->fd, orig_pos2, SEEK_SET);
-
-					entry_size = sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-					size += entry_size;
-					real_entry = malloc(entry_size);
-					if (real_entry == NULL) {
-						fprintf(stderr, "Cannot alloc real_entry\n");
-						return -1;
-					}
-
-					rc = read(log->fd, real_entry, entry_size);
-				} else if (is_cached & IS_PIPE) {
-					/* Just a simple one-to-one data entry */
-					uint64_t writer;
-					int pipe_id;
-					rc = read(log->fd, &writer, sizeof(uint64_t));
-					if (rc != sizeof(writer)) {
-						fprintf(stderr, "%d: read: %ld\n", __LINE__, rc);
-						return -1;
-					}
-					rc = read(log->fd, &pipe_id, sizeof(int));
-					if (rc != sizeof(pipe_id)) {
-						fprintf(stderr, "%d: read: %ld\n", __LINE__, rc);
-						return -1;
-					}
-
-					size += sizeof(is_cached) + sizeof(writer) + sizeof(pipe_id);
-				} else {
-					size += sizeof(is_cached);
-				}
-
-				lseek(log->fd, orig_pos, SEEK_SET);
-			}
-#endif
-			break;
-
-		case SYS_RECVFROM:
-			size += sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval-1; 
-#ifdef TRACE_SOCKET_READ_WRITE
-			if (res->retval >= 0) {
-				u_int is_cached;
-				off_t orig_pos;
-				orig_pos = lseek(log->fd, 0, SEEK_CUR);
-				rc = lseek(log->fd,
-						sizeof(struct recvfrom_retvals)-sizeof(int)+res->retval-1, SEEK_CUR);
-				if (rc == (off_t)-1) {
-					fprintf(stderr, "%d: lseek: %ld\n", __LINE__, rc);
-					return -1;
-				}
-				rc = read(log->fd, &is_cached, sizeof(u_int));
-				if (rc != sizeof(is_cached)) {
-					fprintf(stderr, "%d: Couldn't read is_cached\n", __LINE__);
-					return -1;
-				}
-
-				debugf("\tSocket is_cached is %d\n", is_cached);
-
-				if (is_cached & IS_PIPE_WITH_DATA) {
-					off_t orig_pos2;
-					int entry_size;
-					struct replayfs_filemap_entry entry;
-					struct replayfs_filemap_entry *real_entry;
-
-					orig_pos2 = lseek(log->fd, 0, SEEK_CUR);
-					rc = read(log->fd, &entry, sizeof(struct replayfs_filemap_entry));
-
-					if (rc != sizeof(struct replayfs_filemap_entry)) {
-						fprintf(stderr, "cannot read entry\n");
-						return -1;
-					}
-					lseek(log->fd, orig_pos2, SEEK_SET);
-
-					entry_size = sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-					size += entry_size;
-					real_entry = malloc(entry_size);
-					if (real_entry == NULL) {
-						fprintf(stderr, "Cannot alloc real_entry\n");
-						return -1;
-					}
-
-					rc = read(log->fd, real_entry, entry_size);
-				} else if (is_cached & IS_PIPE) {
-					/* Just a simple one-to-one data entry */
-					uint64_t writer;
-					int pipe_id;
-					rc = read(log->fd, &writer, sizeof(uint64_t));
-					if (rc != sizeof(writer)) {
-						fprintf(stderr, "%d: read: %ld\n", __LINE__, rc);
-						return -1;
-					}
-					rc = read(log->fd, &pipe_id, sizeof(int));
-					if (rc != sizeof(pipe_id)) {
-						fprintf(stderr, "%d: read: %ld\n", __LINE__, rc);
-						return -1;
-					}
-
-					size += sizeof(is_cached) + sizeof(writer) + sizeof(pipe_id);
-				} else {
-					size += sizeof(is_cached);
-				}
-
-				lseek(log->fd, orig_pos, SEEK_SET);
-			}
-#endif
-			break;
-
-		case SYS_RECVMSG: {
-			struct recvmsg_retvals msg;
-			rc = read(log->fd, ((char *)&msg) + sizeof(int), sizeof(struct recvmsg_retvals) - sizeof(int));
-			if (rc != sizeof(struct recvmsg_retvals) - sizeof(int)) {
-				fprintf(stderr, "cannot read recvfrom values\n");
-				return -1;
-			}
-			size += sizeof(struct recvmsg_retvals) - sizeof(int);
-			debugf("\trecvmsg: msgnamelen %d msg_controllen %ld msg_flags %x\n", msg.msg_namelen, msg.msg_controllen, msg.msg_flags);
-			/*
-			if (stats) {
-				bytes[psr.sysnum] += sizeof(struct recvfrom_retvals) - sizeof(int);
-			}
-			*/
-			size += msg.msg_namelen + msg.msg_controllen + res->retval; 
-			break;
-		}
-
-		case SYS_RECVMMSG: {
-			if (res->retval > 0) {
-				long len;
-				rc = read(log->fd, ((char *)&len), sizeof(long));
-				if (rc != sizeof(long)) {
-					fprintf(stderr, "cannot read recvmmsg value\n");
-					return -1;
-				}
-				size += sizeof(long);
-				size += len;
-			} else {
-				size += 0;
-			}
-			break;
-		}
-
-		case SYS_SOCKETPAIR:
-			size += sizeof(struct socketpair_retvals) - sizeof(int);
-			break;
-		case SYS_GETSOCKOPT: {
-			struct getsockopt_retvals sor;
-			rc = read (log->fd, ((char *) &sor) + sizeof(int),
-					sizeof(struct getsockopt_retvals) - sizeof(int));
-			if (rc != sizeof(struct getsockopt_retvals)-sizeof(int)) {
-				fprintf(stderr, "cannot read getsockopt value\n");
-				return -1;
-			}
-			size += sizeof(struct getsockopt_retvals) - sizeof(int);
-			/*
-			if (stats) {
-				bytes[psr.sysnum] += sizeof(struct getsockopt_retvals) - sizeof(int);
-			}
-			*/
-
-			size += sor.optlen;
-			break;
-		}
-		default:
-			size += 0; 
-	}
-
-	lseek(log->fd, return_pos, SEEK_SET);
-
-	return size;
+    return size;
 }
 
-static u_long getretparams_pread64 (struct klogfile *log, struct klog_result *res) 
+static u_long getretparams_write(struct klogfile *klog,	struct klog_result *res) 
 {
-	long rc;
-	u_long size = 0;
-	int extra_bytes = 0;
-	long return_pos;
-	u_int is_cache_read;
+    u_long size = sizeof(int);
+    int* pis_shared = (int *) klog->ptr;
+    debugf ("is_shared: %d\n", *pis_shared);
 
-	return_pos = lseek(log->fd, 0, SEEK_CUR);
-
-	rc = read(log->fd, &is_cache_read, sizeof(u_int));
-	if (rc != sizeof(u_int)) {
-		fprintf (stderr, "cannot read is_cache value\n");
-		return -1;
-	}
-	size += sizeof(u_int);
-
-	debugf("\tis_cache_file: %d\n", is_cache_read);
-	if (is_cache_read & CACHE_MASK) {
-		size += sizeof(loff_t);
-
-#ifdef TRACE_READ_WRITE
-		do {
-			off_t orig_pos;
-			struct replayfs_filemap_entry entry;
-			loff_t bleh;
-
-			orig_pos = lseek(log->fd, 0, SEEK_CUR);
-			rc = read(log->fd, &bleh, sizeof(loff_t));
-			rc = read(log->fd, &entry, sizeof(struct replayfs_filemap_entry));
-			lseek(log->fd, orig_pos, SEEK_SET);
-
-			if (rc != sizeof(struct replayfs_filemap_entry)) {
-				fprintf(stderr, "cannot read entry\n");
-				return -1;
-			}
-
-			extra_bytes += sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-			size += sizeof(struct replayfs_filemap_entry) + entry.num_elms * sizeof(struct replayfs_filemap_value);
-		} while (0);
-#endif
-	} else {
-		size += res->retval; 
-	}
-
-	lseek(log->fd, return_pos, SEEK_SET);
-
-	return size;
+    switch (*pis_shared) {
+    case NORMAL_FILE:
+	size += sizeof(int64_t);
+	break;
+    default:
+	size += sizeof(int);
+    }
+    
+    return size;
 }
 
+static u_long getretparams_getgroups(struct klogfile *klog, struct klog_result *res) 
+{
+    return sizeof(u_short) * res->retval;
+}
 
-/*}}}*/
+static u_long getretparams_getgroups32(struct klogfile *klog, struct klog_result *res) 
+{
+    return sizeof(gid_t) * res->retval;
+}
+
+static u_long getretparams_io_getevents(struct klogfile *klog, struct klog_result *res) 
+{
+    return res->retval * 32;
+}
+
+static u_long getretparams_epoll_wait(struct klogfile *klog, struct klog_result *res) 
+{
+    return res->retval * sizeof(struct epoll_event);
+}
+
+static u_long getretparams_socketcall(struct klogfile *klog, struct klog_result *res) 
+{
+    int call;
+    u_long size = 0;
+    char* tptr = klog->ptr;
+
+    call = *((int *) klog->ptr);
+    tptr += sizeof(int);
+    size += sizeof(int);
+    debugf("\tsocketcall %d\n", call);
+    assert(call > 0 && call <= 20);
+    
+    // socketcall retvals specific
+    switch (call) {
+#ifdef TRACE_SOCKET_READ_WRITE
+    case SYS_SEND:
+    case SYS_SENDTO:
+    {
+	if (res->retval >= 0) {
+	    u_int shared = *((u_int *) tptr);
+	    size += sizeof(u_int);
+	    debugf("\tRead shared variable of %d\n", shared);
+	    if (shared & IS_PIPE) {
+		size += sizeof(int);
+	    }
+	}
+	break;
+    }
+#endif
+    case SYS_ACCEPT: 
+    case SYS_ACCEPT4:
+    case SYS_GETSOCKNAME:
+    case SYS_GETPEERNAME: 
+    {
+	struct accept_retvals* pavr = (struct accept_retvals *) (tptr-sizeof(int));
+	size += sizeof(struct accept_retvals) - sizeof(int) + pavr->addrlen;
+	break;
+    }
+
+    case SYS_RECV:
+	size += sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval;
+#ifdef TRACE_SOCKET_READ_WRITE
+	if (res->retval >= 0) {
+	    tptr += sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval;
+	    u_int* pis_cached = (u_int *) tptr;
+	    tptr += sizeof(u_int);
+	    debugf("\tSocket is_cached is %d\n", *pis_cached);
+	    if (*pis_cached & IS_PIPE_WITH_DATA) {
+		struct replayfs_filemap_entry* pentry = (struct replayfs_filemap_entry *) tptr;
+		size += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
+	    } else if (*pis_cached & IS_PIPE) {
+		size += sizeof(sizeof(u_int)) + sizeof(uint64_t) + sizeof(int);
+	    } else {
+		size += sizeof(sizeof(u_int));
+	    }
+	}
+#endif
+	break;
+	
+    case SYS_RECVFROM:
+	size += sizeof(struct recvfrom_retvals) - sizeof(int) + res->retval-1; 
+#ifdef TRACE_SOCKET_READ_WRITE
+	if (res->retval >= 0) {
+	    u_int* pis_cached;
+
+	    tptr += sizeof(struct recvfrom_retvals)-sizeof(int)+res->retval-1;
+	    pis_cached = (u_int *) tptr;
+	    tptr += sizeof(u_int);
+	    debugf("\tSocket is_cached is %d\n", *pis_cached);
+	    if (*pis_cached & IS_PIPE_WITH_DATA) {
+		struct replayfs_filemap_entry* pentry = (struct replayfs_filemap_entry *) tptr;
+		size += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
+	    } else if (*pis_cached & IS_PIPE) {
+		size += sizeof(u_int) + sizeof(uint64_t) + sizeof(int);
+	    } else {
+		size += sizeof(u_int);
+	    }
+	}
+#endif
+	break;
+
+    case SYS_RECVMSG: {
+	struct recvmsg_retvals* pmsg = (struct recvmsg_retvals *) (tptr-sizeof(int));
+	size += sizeof(struct recvmsg_retvals) - sizeof(int);
+	debugf("\trecvmsg: msgnamelen %d msg_controllen %ld msg_flags %x\n", pmsg->msg_namelen, pmsg->msg_controllen, pmsg->msg_flags);
+	size += pmsg->msg_namelen + pmsg->msg_controllen + res->retval; 
+	break;
+    }
+
+    case SYS_RECVMMSG: {
+	if (res->retval > 0) {
+	    long* plen = (long *) tptr;
+	    size += sizeof(long) + (*plen);
+	}
+	break;
+    }
+
+    case SYS_SOCKETPAIR:
+	size += sizeof(struct socketpair_retvals) - sizeof(int);
+	break;
+    case SYS_GETSOCKOPT: {
+	struct getsockopt_retvals* psor = (struct getsockopt_retvals *) (tptr - sizeof(int));
+	size += sizeof(struct getsockopt_retvals) - sizeof(int) + psor->optlen;
+	break;
+    }
+    }
+
+    return size;
+}
+
+static u_long getretparams_pread64 (struct klogfile *klog, struct klog_result *res) 
+{
+    long rc;
+    u_long size = 0;
+    char* tptr = klog->ptr;
+
+    u_int* pis_cache_read = (u_int *) tptr;
+    tptr += sizeof(u_int);
+    size += sizeof(u_int);
+    debugf("\tis_cache_file: %d\n", *pis_cache_read);
+
+    if (*pis_cache_read & CACHE_MASK) {
+	size += sizeof(loff_t);
+	
+#ifdef TRACE_READ_WRITE
+	do {
+	    struct replayfs_filemap_entry* pentry = (struct replayfs_filemap_entry *) (tptr + sizeof(loff_t));
+	    size += sizeof(struct replayfs_filemap_entry) + pentry->num_elms * sizeof(struct replayfs_filemap_value);
+	} while (0);
+#endif
+    } else {
+	size += res->retval; 
+    }
+    
+    return size;
+}
+
 
 /* Rules for klog parsing */
-/*{{{*/
 #define _DEFRULE(sysnr, default, fcn) \
 	static struct parse_rules exception_##sysnr = { \
 		.get_retparamsize = (fcn), \

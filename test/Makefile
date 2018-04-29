@@ -1,8 +1,8 @@
 CC := gcc
 
-CFLAGS :=  -g
-CPPFLAGS := -g
-LDFLAGS := -Wall -Werror -g
+CFLAGS :=  -O3
+CPPFLAGS := -O3
+LDFLAGS := -Wall -Werror 
 
 #LDLIBS := libutil.a
 
@@ -12,7 +12,7 @@ DEPS_DIR := .deps
 
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
-        recheck_support.o process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff xcmp \
+        recheck_support.o process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff \
 	xdump pidinator memcmp
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
@@ -24,9 +24,6 @@ DEPS=$(patsubst %.c, .deps/%.d, $(CFILES))
 all: $(TARGETS)
 
 # Build dependencies + any extra flags
-
-preprocess_asm.class: preprocess_asm.scala
-	scalac preprocess_asm.scala
 
 process_slice: process_slice.cpp
 	g++ -O3 -o process_slice process_slice.cpp -std=c++0x
@@ -61,7 +58,7 @@ parseklog: libutil.a parseklog.o parseklib.o
 	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
 sdaemon: libutil.a sdaemon.cpp parseklib.o libutil.a
-	g++ $(CFLAGS) $(LDFLAGS) parseklib.o sdaemon.cpp libutil.a -o sdaemon -std=c++0x -lrt
+	g++ $(CFLAGS) $(LDFLAGS) parseklib.o sdaemon.cpp libutil.a -o sdaemon -std=c++0x
 
 xdiff: libutil.a xdiff.cpp parseklib.o libutil.a
 	g++ $(CFLAGS) $(LDFLAGS) parseklib.o xdiff.cpp libutil.a -o xdiff -std=c++0x

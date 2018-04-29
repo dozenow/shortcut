@@ -321,25 +321,27 @@ struct parse_rules {
 };
 
 struct klogfile {
-	int fd;
+    u_long size;
+    char* buf;
+    char* ptr;
 
-	/* TODO: Not initialized yet... */
-	loff_t num_psrs;
-
-	loff_t cur_idx;
-
-	loff_t expected_clock;
-	loff_t expected_write_clock;
-
-	loff_t active_start_idx;
-	loff_t active_num_psrs;
-	struct klog_result *active_psrs;
-
-	struct parse_rules *parse_rules[NR_SYSCALLS];
-
-	void (*default_printfcn)(FILE *out, struct klog_result *);
-	void (*printfcns[NR_SYSCALLS])(FILE *out, struct klog_result *);
-	void (*signal_print)(FILE *out, struct klog_result *);
+    /* TODO: Not initialized yet... */
+    loff_t num_psrs;
+    
+    loff_t cur_idx;
+    
+    loff_t expected_clock;
+    loff_t expected_write_clock;
+    
+    loff_t active_start_idx;
+    loff_t active_num_psrs;
+    struct klog_result *active_psrs;
+    
+    struct parse_rules *parse_rules[NR_SYSCALLS];
+    
+    void (*default_printfcn)(FILE *out, struct klog_result *);
+    void (*printfcns[NR_SYSCALLS])(FILE *out, struct klog_result *);
+    void (*signal_print)(FILE *out, struct klog_result *);
 };
 
 /* 
