@@ -3187,6 +3187,10 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
 	}
 	fw_slice_print_footer (current_thread, 1, rc); // Do we care about errno here
 
+#ifndef OPTIMIZED
+        count_mem_taints();
+#endif
+
 	//stop tracing after this 
 	int calling_dd = dift_done ();
 	while (!calling_dd || is_pin_attaching(dev_fd)) {

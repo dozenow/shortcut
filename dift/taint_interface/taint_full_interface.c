@@ -796,6 +796,28 @@ static inline void print_value (int dumpfd, taint_t value)
     dumpbuf[dumpindex++] = value;
 }
 
+int count_mem_taints()
+{
+    u_long addr;
+    int index, low_index;
+    u_long count = 0;
+
+    for (index = 0; index < ROOT_TABLE_SIZE; index++) {
+	taint_t* leaf = mem_root[index];
+	if (leaf) {
+	    for (low_index = 0; low_index < LEAF_TABLE_SIZE; low_index++) {
+		addr = (index<<LEAF_TABLE_BITS) + low_index;
+		if (leaf[low_index] != addr) {
+                    ++count;
+		}
+	    }
+	}
+    }
+    fprintf (stderr, "Tainted memory bytes count: %lu\n", count);
+
+    return 0;
+}
+
 int dump_mem_taints(int fd)
 {
     u_long addr;
