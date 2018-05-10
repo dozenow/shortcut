@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <vector>
 
+//add comments explain each struct, class
+//add flag that marks whether should be cleaned or not. flag and sweep garbage collection
+// two sets of edges (input edges and output edges)
 struct Node {
 	string name;
 	Set<Edge*> Edges;
@@ -17,11 +20,8 @@ struct instrGraph {
 	Set<Edge*> edges;
 }
 
-struct registers {
-	std::set<register*>
-}
-
-struct register {
+//change to use same taint format as pin
+struct tregister {
 	std::vector<Node*>;
 
 	//for example EAX
@@ -34,8 +34,12 @@ struct register {
 	setLowerByte();
 }
 
+struct registers {
+	std::set<tregister*>
+}
+
 struct memLoc {
-	string name;
+	ulong address;
 	std::vector<Node*>;
 }
 
