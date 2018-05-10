@@ -6,8 +6,10 @@
 //add flag that marks whether should be cleaned or not. flag and sweep garbage collection
 // two sets of edges (input edges and output edges)
 struct Node {
-	string name;
-	Set<Edge*> Edges;
+	int lineNum;
+	std::vector<Edge*> inEdges;
+	std::vector<Edge*> outEdges;
+	bool dirty = false;
 }
 
 struct Edge {
@@ -16,8 +18,8 @@ struct Edge {
 }
 
 struct instrGraph {
-	Set<Node*> nodes;
-	Set<Edge*> edges;
+	std::vector<Node*> nodes;
+	std::vector<Edge*> edges;
 }
 
 //change to use same taint format as pin
@@ -35,7 +37,7 @@ struct tregister {
 }
 
 struct registers {
-	std::set<tregister*>
+	std::vector<tregister*>
 }
 
 struct memLoc {
