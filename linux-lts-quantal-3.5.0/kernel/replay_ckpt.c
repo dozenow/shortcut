@@ -2221,12 +2221,14 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 	}
 
 #ifdef JAVA_FIX_PTHREAD
+        #if 0
 	//java hack
 	printk ("Hacking: put the PTHREAD_LOG_OFF in the user space.\n");
 	hack_addr = (int __user*) 0xb7e211f8;
 	put_user (3, hack_addr);
 	hack_addr = (int __user*) 0xb7fc3448;
 	put_user (3, hack_addr);
+        #endif
 
 	//this is the shared clock region where go_live_clock struct lives
 	//This is to mantain the correct futex states used by recheck_thread_wait/wakeup in recheck_support.c; these futexes are shared across processes, so just copying the content won't work (check get_futex_key in kernel/futex.c)

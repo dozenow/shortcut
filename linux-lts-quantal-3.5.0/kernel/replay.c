@@ -125,7 +125,7 @@ int verify_debug = 0;
 //#define REPLAY_PAUSE
 unsigned int replay_pause_tool = 0;
 //xdou
-#define TRACE_TIMINGS //analysis for how much we can save on startup
+//#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int check_startup_db = 1;
 
@@ -16815,9 +16815,9 @@ void fw_slice_recover_swap_register (struct task_struct *main_live_tsk)
 		MPRINT ("Pid %d found a live thread to for recovery: live thread pid %d live thread replay pid %d, live thread record_pid %d\n", current->pid, live_tsk->pid, live_thread->rp_replay_pid, live_thread->rp_record_thread->rp_record_pid);
 		recover_iter = ds_list_iter_create (current->replay_thrd->rp_group->rg_replay_threads);
 		while ((recover_thread = ds_list_iter_next (recover_iter)) != NULL) { 
-			if (recover_thread->rp_record_thread->rp_record_pid == live_thread->rp_replay_pid) { 
+			if (recover_thread->rp_record_thread->rp_record_pid == live_thread->rp_record_thread->rp_record_pid) { 
 				struct task_struct* recover_tsk = find_task_by_vpid (recover_thread->rp_replay_pid);
-				MPRINT ("    The recover thread has pid %d\n", recover_thread->rp_replay_pid);
+				MPRINT ("    The recover thread has pid %d, record pid %d\n", recover_thread->rp_replay_pid, recover_thread->rp_record_thread->rp_record_pid);
 				memcpy (get_pt_regs(live_tsk), get_pt_regs(recover_tsk), sizeof (struct pt_regs));
 				//Restart the last syscall call
 				if (live_tsk == main_live_tsk) { 

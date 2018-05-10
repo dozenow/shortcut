@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -373,16 +373,16 @@ void exit_slice (long is_ckpt_thread, long retval)
 void handle_mismatch()
 {
     //TODO: uncomment these lines
-    //dump_taintbuf (DIVERGE_MISMATCH, 0);
+    dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
     DELAY;
-    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
-    //fprintf (stderr, "handle_mismatch: should not get here\n");
-    //abort();
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    fprintf (stderr, "handle_mismatch: should not get here\n");
+    abort();
 }
 
 #ifdef PRINT_TO_LOG
