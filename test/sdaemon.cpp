@@ -38,244 +38,238 @@ void print_help(char *progname) {
 	printf(" -h           Prints this dialog\n");
 }
 
-static void handle_retval (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_retval (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-
     if (trv->rettype == RETVAL) {
-	rc = read (fd, &res->retval, sizeof(long));
-	assert (rc == sizeof(long));
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
     } else {
 	assert (0);
     }
 }
 
-static void handle_clone (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_clone (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-
     if (trv->rettype == RETVAL) {
 	long prev_retval = res->retval;
-	rc = read (fd, &res->retval, sizeof(long));
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
 	clone_map[prev_retval] = res->retval;
 	DPRINT ("mapping %ld to pid %ld\n", prev_retval, res->retval);
-	assert (rc == sizeof(long));
     } else {
 	assert (0);
     }
 }
 
-static void handle_retbuf (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_retbuf (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    u_long rc;
-
     if (trv->rettype == RETBUF) {
-	rc = read (fd, (char *) res->retparams + sizeof(long), trv->size);
-	assert (rc == trv->size);
+	memcpy ((char *) res->retparams + sizeof(long), tbptr, trv->size);
+	tbptr += trv->size;
     } else {
 	assert (0);
     }
 }
 
-static void handle_time (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_time (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
     if (trv->rettype == RETVAL) {
-	u_long rc = read (fd, &res->retval, sizeof(long));
-	assert (rc == sizeof(long));
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
     } else {
-	u_long rc = read (fd, (char *) res->retparams, sizeof(time_t));
-	assert (rc == sizeof(time_t));
+	memcpy (&res->retparams, tbptr, sizeof(time_t));
+	tbptr += sizeof(time_t);
     }
 }
 
-static void handle_gettid (int fd, struct taint_retval* trv, struct klog_result* res) 
+static void handle_gettid (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
     if (trv->rettype == RETVAL) {
-	u_long rc = read (fd, &res->retval, sizeof(long));
-	assert (rc == sizeof(long));
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
     } else {
         assert (0);
     }
 }
 
-static void handle_read (int fd, struct taint_retval* trv, struct klog_result* res) 
+static void handle_read (char*& tbptr, struct taint_retval* trv, struct klog_result* res) 
 {
     if (trv->rettype == RETVAL) {
-	int rc = read (fd, &res->retval, sizeof(long));
-	DPRINT ("read rc is %ld\n", res->retval);
-	assert (rc == sizeof(long));
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
     } else {
 	char* newentry = (char *) malloc (trv->size + sizeof(u_int));
 	assert (newentry);
 	*((u_int *) newentry) = 0; // Not a cached file
-	u_long rc = read (fd, newentry + sizeof(u_int), trv->size);
-	assert (rc == trv->size);
-	free (res->retparams); 
+	memcpy (newentry + sizeof(u_int), tbptr, trv->size);
+	tbptr += trv->size;
+	//free (res->retparams); 
 	res->retparams_size = trv->size + sizeof(u_int);
 	res->retparams = newentry;
 	DPRINT ("read buffer replaced\n");
     }
 }
 
-static void handle_getdents (int fd, struct taint_retval* trv, struct klog_result* res) 
+static void handle_getdents (char*& tbptr, struct taint_retval* trv, struct klog_result* res) 
 {
     assert (trv->rettype == RETBUF);
-    int rc = read (fd, (char *) res->retparams, res->retval);
+    memcpy ((char *) res->retparams, tbptr, res->retval);
+    tbptr += res->retval;
     DPRINT ("getdents rc is %ld\n", res->retval);
-    assert (rc == res->retval);
 }
 
-static void handle_stat64 (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_stat64 (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-
     if (trv->rettype == STAT64_INO) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_ino, sizeof(((struct stat64 *) res->retparams)->st_ino));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_ino));
+	memcpy (&((struct stat64 *) res->retparams)->st_ino, tbptr, sizeof(((struct stat64 *) res->retparams)->st_ino));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_ino);
     } else if (trv->rettype == STAT64_NLINK) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_nlink, sizeof(((struct stat64 *) res->retparams)->st_nlink));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_nlink));
+	memcpy (&((struct stat64 *) res->retparams)->st_nlink, tbptr, sizeof(((struct stat64 *) res->retparams)->st_nlink));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_nlink);
     } else if (trv->rettype == STAT64_SIZE) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_size, sizeof(((struct stat64 *) res->retparams)->st_size));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_size));
+	memcpy (&((struct stat64 *) res->retparams)->st_size, tbptr, sizeof(((struct stat64 *) res->retparams)->st_size));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_size);
     } else if (trv->rettype == STAT64_MTIME) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_mtime, sizeof(((struct stat64 *) res->retparams)->st_mtime));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_mtime));
+	memcpy (&((struct stat64 *) res->retparams)->st_mtime, tbptr, sizeof(((struct stat64 *) res->retparams)->st_mtime));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_mtime);
     } else if (trv->rettype == STAT64_CTIME) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_ctime, sizeof(((struct stat64 *) res->retparams)->st_ctime));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_ctime));
+	memcpy (&((struct stat64 *) res->retparams)->st_ctime, tbptr, sizeof(((struct stat64 *) res->retparams)->st_ctime));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_ctime);
     } else if (trv->rettype == STAT64_ATIME) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_atime, sizeof(((struct stat64 *) res->retparams)->st_atime));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_atime));
+	memcpy (&((struct stat64 *) res->retparams)->st_atime, tbptr, sizeof(((struct stat64 *) res->retparams)->st_atime));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_atime);
     } else if (trv->rettype == STAT64_BLOCKS) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_blocks, sizeof(((struct stat64 *) res->retparams)->st_blocks));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_blocks));
+	memcpy (&((struct stat64 *) res->retparams)->st_blocks, tbptr, sizeof(((struct stat64 *) res->retparams)->st_blocks));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_blocks);
     } else if (trv->rettype == STAT64_RDEV) {
-	rc = read (fd, &((struct stat64 *) res->retparams)->st_rdev, sizeof(((struct stat64 *) res->retparams)->st_rdev));
-	assert (rc == sizeof(((struct stat64 *) res->retparams)->st_rdev));
+	memcpy (&((struct stat64 *) res->retparams)->st_rdev, tbptr, sizeof(((struct stat64 *) res->retparams)->st_rdev));
+	tbptr += sizeof(((struct stat64 *) res->retparams)->st_rdev);
     } else {
 	assert (0);
     }
 }
 
-static void handle_uname (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_uname (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-
     if (trv->rettype == UNAME_VERSION) {
-	rc = read (fd, &((struct utsname *) res->retparams)->version, sizeof(((struct utsname *) res->retparams)->version));
-	assert (rc == sizeof(((struct utsname *) res->retparams)->version));
+	memcpy (&((struct utsname *) res->retparams)->version, tbptr, sizeof(((struct utsname *) res->retparams)->version));
+	tbptr += sizeof(((struct utsname *) res->retparams)->version);
     } else {
 	assert (0);
     }
 }
 
-static void handle_statfs64 (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_statfs64 (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-    
     if (trv->rettype == STATFS64_BFREE) {
-	rc = read (fd, &((struct statfs64 *) res->retparams)->f_bfree, sizeof(((struct statfs64 *) res->retparams)->f_bfree));
-	assert (rc == sizeof(((struct statfs64 *) res->retparams)->f_bfree));
+	memcpy (&((struct statfs64 *) res->retparams)->f_bfree, tbptr, sizeof(((struct statfs64 *) res->retparams)->f_bfree));
+	tbptr += sizeof(((struct statfs64 *) res->retparams)->f_bfree);
     } else if (trv->rettype == STATFS64_BAVAIL) {
-	rc = read (fd, &((struct statfs64 *) res->retparams)->f_bavail, sizeof(((struct statfs64 *) res->retparams)->f_bavail));
-	assert (rc == sizeof(((struct statfs64 *) res->retparams)->f_bavail));
+	memcpy (&((struct statfs64 *) res->retparams)->f_bavail, tbptr, sizeof(((struct statfs64 *) res->retparams)->f_bavail));
+	tbptr += sizeof(((struct statfs64 *) res->retparams)->f_bavail);
     } else if (trv->rettype == STATFS64_FFREE) {
-	rc = read (fd, &((struct statfs64 *) res->retparams)->f_ffree, sizeof(((struct statfs64 *) res->retparams)->f_ffree));
-	assert (rc == sizeof(((struct statfs64 *) res->retparams)->f_ffree));
+	memcpy (&((struct statfs64 *) res->retparams)->f_ffree, tbptr, sizeof(((struct statfs64 *) res->retparams)->f_ffree));
+	tbptr += sizeof(((struct statfs64 *) res->retparams)->f_ffree);
     } else {
 	assert (0);
     }
 }
     
-static void handle_gettimeofday (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_gettimeofday (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-    
     if (trv->rettype == GETTIMEOFDAY_TV) {
-	rc = read (fd, &((struct gettimeofday_retvals *) res->retparams)->tv, sizeof(((struct gettimeofday_retvals *) res->retparams)->tv));
-	assert (rc == sizeof(((struct gettimeofday_retvals *) res->retparams)->tv));
+	memcpy (&((struct gettimeofday_retvals *) res->retparams)->tv, tbptr, sizeof(((struct gettimeofday_retvals *) res->retparams)->tv));
+	tbptr += sizeof(((struct gettimeofday_retvals *) res->retparams)->tv);
     } else if (trv->rettype == GETTIMEOFDAY_TZ) {
-	rc = read (fd, &((struct gettimeofday_retvals *) res->retparams)->tz, sizeof(((struct gettimeofday_retvals *) res->retparams)->tz));
-	assert (rc == sizeof(((struct gettimeofday_retvals *) res->retparams)->tz));
+	memcpy (&((struct gettimeofday_retvals *) res->retparams)->tz, tbptr, sizeof(((struct gettimeofday_retvals *) res->retparams)->tz));
+	tbptr += sizeof(((struct gettimeofday_retvals *) res->retparams)->tz);
     } else {
 	assert (0);
     }
 }
-
-static void handle_clock_gettime (int fd, struct taint_retval* trv, struct klog_result* res)
-{
-    int rc;
     
+static void handle_clock_gettime (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
+{
     if (trv->rettype == CLOCK_GETTIME) {
-	rc = read (fd, (char *) res->retparams, sizeof (struct timespec));
-	assert (rc == sizeof(struct timespec));
+	memcpy ((char *) res->retparams, tbptr, sizeof (struct timespec));
+	tbptr += sizeof (struct timespec);
     } else {
 	assert (0);
     }
 }
     
-static void handle_clock_getres (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_clock_getres (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-    
     if (trv->rettype == CLOCK_GETRES) {
-	rc = read (fd, (char *) res->retparams, sizeof (struct timespec));
-	assert (rc == sizeof(struct timespec));
+	memcpy ((char *) res->retparams, tbptr, sizeof (struct timespec));
+	tbptr += sizeof (struct timespec);
     } else {
 	assert (0);
     }
 }
     
-static void handle_newselect (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_newselect (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-    
     if (trv->rettype == NEWSELECT_TIMEOUT) {
-	rc = read (fd, (char *) res->retparams + res->retparams_size-sizeof(struct timeval), sizeof(struct timeval));
-	assert (rc == sizeof(struct timeval));
+	memcpy ((char *) res->retparams + res->retparams_size-sizeof(struct timeval), tbptr, sizeof(struct timeval));
+	tbptr += sizeof(struct timeval);
     } else {
 	assert (0);
     }
 }
 
-static void handle_rt_sigaction (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_rt_sigaction (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    int rc;
-
     if (trv->rettype == SIGACTION_ACTION) {
-	rc = read (fd, res->retparams, 20);
-	assert (rc == 20);
+	memcpy (res->retparams, tbptr, 20);
+	tbptr += 20;
     } else {
 	assert (0);
     }
 }
 
-static void handle_socketcall (int fd, struct taint_retval* trv, struct klog_result* res)
+static void handle_socketcall (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
-    long rc;
     int* pcall = (int *) res->retparams;
 
     switch (*pcall) {
     case SYS_RECV: {
 	struct recvfrom_retvals *precv = (struct recvfrom_retvals *) res->retparams;
-	rc = read (fd, &precv->buf, res->retval);	
-	printf ("Read %ld bytes for recv, pos=%ld\n", rc, lseek(fd, 0, SEEK_CUR));
-	assert (rc == res->retval);
+	memcpy (&precv->buf, tbptr, res->retval);
+	tbptr += res->retval;
 	break;
     }
     case SYS_RECVMSG: {
 	struct recvmsg_retvals *precvmsg = (struct recvmsg_retvals *) res->retparams;
 	char* data = (char *) res->retparams + sizeof (struct recvmsg_retvals) + precvmsg->msg_namelen + precvmsg->msg_controllen;
-	rc = read (fd, data, res->retval);	
-	printf ("Read %ld bytes for recvmsg, pos=%ld\n", rc, lseek(fd, 0, SEEK_CUR));
-	assert (rc == res->retval);
+	memcpy (data, tbptr, res->retval);
+	tbptr += res->retval;
 	break;
     }
     default:
 	fprintf (stderr, "Socketcall %d not handled in sdaemon\n", *pcall);
 	break;
     }
+}
+
+static char* map_taintbuf (int fd, u_long& size) 
+{
+    struct stat st;
+
+    int rc = fstat (fd, &st);
+    if (rc < 0) {
+	fprintf (stderr, "Cannot stat taintbuf\n");
+	return NULL;
+    }
+    size = st.st_size;
+    
+    char* p = (char *) mmap (0, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (p == MAP_FAILED) {
+	fprintf (stderr, "Cannot map taintbuf size %ld\n", size);
+	return NULL;
+    }
+
+    return p;
 }
 
 int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* plast_clock)
@@ -294,7 +288,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     int tfd = open (taintbuf_path, O_RDONLY);
     if (tfd < 0) {
 	char newfile[256], oldfile[256];
-        fprintf (stderr, "cannot open file %s\n", taintbuf_path);
+        fprintf (stderr, "cannot open file %s for klog %s\n", taintbuf_path, klogfilename);
 
 	// Just symlink the klog file to the new directory - unmodified
 	if (errno != ENOENT) fprintf (stderr, "Could not open tainted valued file %s, errno=%d\n", taintbuf_path, errno);
@@ -304,13 +298,41 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 	if (rc != 0) fprintf (stderr, "Cannot create symlink for %s\n", klogfilename);
 	return rc;
     }
-
+    
+    u_long tbsize = 0;
+    char* tbbegin = map_taintbuf (tfd, tbsize);
+    char* tbptr = tbbegin;
+    char* tbend = tbbegin + tbsize;
     DPRINT ("Opened taintbuf %s\n", taintbuf_path);
 
     // Open a file to write the result to
     char newklogpath[256], klogpath[256];
     sprintf (klogpath, "%s/%s", dir.c_str(), klogfilename);
     sprintf (newklogpath, "%s/%s", altdirname, klogfilename);
+
+    // First things in the recheck file is the divergence info
+    struct taintbuf_hdr* phdr = (struct taintbuf_hdr *) tbptr;
+    tbptr += sizeof (struct taintbuf_hdr);
+    printf ("Divergence type %lu index %lu clock %lu\n", phdr->diverge_type, phdr->diverge_ndx, phdr->last_clock);
+    *plast_clock = phdr->last_clock;
+
+    // Now read through the recheck output - these are syscall results that changed from recording
+    struct taint_retval* ptrv = (struct taint_retval *) tbptr;
+    tbptr += sizeof (struct taint_retval);
+    DPRINT ("Next syscall is %d clock %ld type %d\n", ptrv->syscall, ptrv->clock, ptrv->rettype);
+
+    if (tbptr >= tbend) {
+	fprintf (stderr, "Cannot read tainted retval, at the end\n");
+        *plast_clock = 2;
+	char newfile[256], oldfile[256];
+	// Just symlink the klog file to the new directory - unmodified
+	sprintf (oldfile, "%s/%s", dir.c_str(), klogfilename);
+	sprintf (newfile, "%s/%s", altdirname, klogfilename);
+	int rc = symlink (oldfile, newfile);
+	if (rc != 0) fprintf (stderr, "Cannot create symlink for %s\n", klogfilename);
+	return rc;
+    }
+
     int destfd = open (newklogpath, O_WRONLY|O_CREAT|O_TRUNC, 0644);
     if (destfd < 0) {
 	fprintf (stderr, "Could not open klog output file %s, rc=%d", newklogpath, destfd);
@@ -319,21 +341,6 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
       
     DPRINT ("Opened output file %s\n", newklogpath);
 
-    // First things in the recheck file is the divergence info
-    struct taintbuf_hdr hdr;
-    if (read (tfd, &hdr, sizeof(hdr)) != sizeof(hdr)) {
-	fprintf (stderr, "Cannot read taintbuf header\n");
-	return -1;
-    }
-    printf ("Divergence type %lu index %lu clock %lu\n", hdr.diverge_type, hdr.diverge_ndx, hdr.last_clock);
-    *plast_clock = hdr.last_clock;
-
-    // Now read through the recheck output - these are syscall results that changed from recording
-    struct taint_retval trv;
-    if (read (tfd, &trv, sizeof(trv)) != sizeof(trv)) {
-	fprintf (stderr, "Cannot read tainted retval\n");
-	return -1;
-    }
     DPRINT ("Next syscall is %d clock %ld type %d\n", trv.syscall, trv.clock, trv.rettype);
 
     struct klogfile *log = parseklog_open(klogpath);
@@ -345,79 +352,77 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     bool no_more_records = false;
     while (parseklog_read_next_chunk(log) > 0) {
 	struct klog_result* res;
-	while ((res = parseklog_get_next_psr_from_chunk (log)) != NULL) {
+	while ((res = parseklog_get_next_psr_from_chunk (log)) != NULL && !no_more_records) {
 	    DPRINT ("Start clock is %lu sysnum is %d\n", res->start_clock, res->psr.sysnum);
-	    if (res->start_clock < trv.clock) continue; // No modifications for this record
-	    while (res->start_clock >= trv.clock && !no_more_records) {
-		DPRINT ("Match on clock %lu,%lu syscall %d,%d\n", res->start_clock, trv.clock, res->psr.sysnum, trv.syscall);
-		assert (res->psr.sysnum == trv.syscall);
-		switch (trv.syscall) {
+	    if (res->start_clock < ptrv->clock) continue; // No modifications for this record
+	    while (res->start_clock >= ptrv->clock && !no_more_records) {
+		DPRINT ("Match on clock %lu,%lu syscall %d,%d\n", res->start_clock, ptrv->clock, res->psr.sysnum, ptrv->syscall);
+		assert (res->psr.sysnum == ptrv->syscall);
+		switch (ptrv->syscall) {
 		case SYS_read:
-		    handle_read (tfd, &trv, res);
+		    handle_read (tbptr, ptrv, res);
 		    break;
 		case SYS_stat64:
 		case SYS_fstat64:
 		case SYS_lstat64:
-		    handle_stat64 (tfd, &trv, res);
+		    handle_stat64 (tbptr, ptrv, res);
 		    break;
 		case SYS_set_tid_address:
 		case SYS_getpgrp:
 		case SYS_ipc:
-		    handle_retval (tfd, &trv, res);
+		    handle_retval (tbptr, ptrv, res);
 		    break;
 		case SYS_clone:
-		    handle_clone (tfd, &trv, res);
+		    handle_clone (tbptr, ptrv, res);
 		    break;
 		case SYS_ioctl:
-		    handle_retbuf (tfd, &trv, res);
+		    handle_retbuf (tbptr, ptrv, res);
 		    break;
 		case SYS_time:
-		    handle_time (tfd, &trv, res);
+		    handle_time (tbptr, ptrv, res);
 		    break;
 		case SYS_uname:
-		    handle_uname (tfd, &trv, res);
+		    handle_uname (tbptr, ptrv, res);
 		    break;
 		case SYS_statfs64:
-		    handle_statfs64 (tfd, &trv, res);
+		    handle_statfs64 (tbptr, ptrv, res);
 		    break;
 		case SYS_gettimeofday:
-		    handle_gettimeofday (tfd, &trv, res);
+		    handle_gettimeofday (tbptr, ptrv, res);
 		    break;
 		case SYS__newselect:
-		    handle_newselect (tfd, &trv, res);
+		    handle_newselect (tbptr, ptrv, res);
 		    break;
 		case SYS_rt_sigaction:
-		    handle_rt_sigaction (tfd, &trv, res);
+		    handle_rt_sigaction (tbptr, ptrv, res);
 		    break;
 		case SYS_clock_gettime:
-		    handle_clock_gettime (tfd, &trv, res);
+		    handle_clock_gettime (tbptr, ptrv, res);
+		    break;
+		case SYS_clock_getres:
+		    handle_clock_getres (tbptr, ptrv, res);
 		    break;
 		case SYS_socketcall:
-		    handle_socketcall (tfd, &trv, res);
+		    handle_socketcall (tbptr, ptrv, res);
 		    break;
                 case SYS_gettid:
-                    handle_gettid (tfd, &trv, res);
-                    break;
-                case SYS_clock_getres:
-                    handle_clock_getres (tfd, &trv, res);
+		    handle_gettid (tbptr, ptrv, res);
                     break;
 		case SYS_getdents:
 		case SYS_getdents64:
-		    handle_getdents (tfd, &trv, res);
+		    handle_getdents (tbptr, ptrv, res);
 		    break;
 		default:
-		    fprintf (stderr, "syscall %d unhandled\n", trv.syscall);
+		    fprintf (stderr, "syscall %d unhandled\n", ptrv->syscall);
 		    return -1;
 		}
-		long rc = read (tfd, &trv, sizeof(trv));
-		if (rc == 0) {
-		    DPRINT ("No more modification records\n");
+		if (tbptr >= tbend) {
+		    DPRINT ("No more modification records tbptr %p tbend %p\n", tbptr, tbend);
 		    no_more_records = true;
-		} else if (rc != sizeof(trv)) {
-		    fprintf (stderr, "Cannot read tainted retval, rc = %ld\n", rc);
-		    return -1;
 		} else {
-		    DPRINT ("Next syscall is %d clock %ld type %d\n", trv.syscall, trv.clock, trv.rettype);
+		    ptrv = (struct taint_retval *) tbptr;
+		    tbptr += sizeof (struct taint_retval);
+		    DPRINT ("Next syscall is %d clock %ld type %d tbptr %p tbend %p\n", ptrv->syscall, ptrv->clock, ptrv->rettype, tbptr, tbend);
 		}
 	    }
 	}
@@ -425,6 +430,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     }
     parseklog_close(log);
     close (destfd);
+    munmap (tbbegin, tbsize);
     close (tfd);
 
     return 0;

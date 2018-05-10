@@ -277,6 +277,7 @@ TAINTSIGN fw_slice_fpu_incstp (ADDRINT ip, char* ins_str, const CONTEXT* ctx);
 
 // For managing reads/writes to shared memory
 void add_shared_memory (u_long start, u_long size);
+int count_mem_taints();
 
 #ifdef __cplusplus
 }

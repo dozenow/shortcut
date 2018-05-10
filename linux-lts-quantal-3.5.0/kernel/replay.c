@@ -83,6 +83,8 @@
 #include "../kernel/replay_graph/replayfs_perftimer.h"
 #include "replay_monitor.h"
 #include "replay_perf_event_wrapper.h"
+#include <asm/i387.h>
+#include <asm/fpu-internal.h>
 
 /* For debugging failing fs operations */
 int debug_flag = 0;
@@ -9554,7 +9556,7 @@ trace_close (int fd)
 {
 	long rc = sys_close (fd);
 	if (trace_timings && rc == 0) { 
-		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid && gcc_pid == current->pid) { 
+		if (fd == atomic_read(&last_open_fd) && atomic_read(&last_pid) == current->pid) { 
 			struct timespec tp;
 			mm_segment_t old_fs = get_fs();
 			struct rusage ru;
@@ -12504,15 +12506,22 @@ replay_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 #ifdef TRACE_TIMINGS
 long trace_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_regs *regs, unsigned long stack_size, int __user *parent_tidptr, int __user *child_tidptr) {
 	long rc = do_fork (clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
-	if (trace_timings && current->pid == java_pid) {
+	if (trace_timings/* && current->pid == java_pid*/) {
 		mm_segment_t old_fs = get_fs();
 		struct rusage ru;
+		struct rusage ru1;
+		struct rusage ru2;
 		struct timespec tp;
 		set_fs (KERNEL_DS);
-		sys_getrusage (RUSAGE_SELF, &ru);
+		sys_getrusage (RUSAGE_SELF, &ru1);
+		sys_getrusage (RUSAGE_CHILDREN, &ru2);
 		set_fs (old_fs);
+		ru.ru_utime.tv_sec = ru1.ru_utime.tv_sec + ru2.ru_utime.tv_sec;
+		ru.ru_utime.tv_usec = ru1.ru_utime.tv_usec + ru2.ru_utime.tv_usec;
+		ru.ru_stime.tv_sec = ru1.ru_stime.tv_sec + ru2.ru_stime.tv_sec;
+		ru.ru_stime.tv_usec = ru1.ru_stime.tv_usec + ru2.ru_stime.tv_usec;
 		getnstimeofday(&tp);
-		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_utime.tv_sec*1000000+ru.ru_stime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
+		printk ("%d:%ld.%09ld:clone rc %ld, user %ld kernel %ld\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, ru.ru_utime.tv_sec*1000000+ru.ru_utime.tv_usec, ru.ru_stime.tv_sec*1000000+ru.ru_stime.tv_usec);
 		printk ("%ld:%ld.%09ld:clone child process\n", rc, tp.tv_sec, tp.tv_nsec);
 	}
 	return rc;
@@ -16787,6 +16796,68 @@ void wait_for_vm_dump (struct replay_thread* prept)
 void put_go_live_thread (struct replay_thread* prept)
 {
 	put_replay_group(prept->rp_group);
+}
+
+//xdou: okay...This function has to be put in this file due to the struct definitions...why don't we put these structure in a header file at the first place...I guess there is a reason?
+void fw_slice_recover_swap_register (struct task_struct *main_live_tsk) 
+{
+	ds_list_iter_t* live_iter;
+	ds_list_iter_t* recover_iter;
+	struct replay_thread* live_thread;
+	struct replay_thread* recover_thread;
+	struct fpu* fpu, *tsk_fpu;
+	u_char ch, ch2;
+
+	live_iter = ds_list_iter_create (main_live_tsk->go_live_thrd->rp_group->rg_replay_threads);
+	MPRINT ("live thread replay_group %p, clock mmap %p\n", main_live_tsk->go_live_thrd->rp_group, main_live_tsk->go_live_thrd->rp_group->rg_rec_group->rg_pkrecord_clock);
+	while ((live_thread = ds_list_iter_next (live_iter)) != NULL) {
+		struct task_struct* live_tsk = find_task_by_vpid (live_thread->rp_replay_pid);
+		MPRINT ("Pid %d found a live thread to for recovery: live thread pid %d live thread replay pid %d, live thread record_pid %d\n", current->pid, live_tsk->pid, live_thread->rp_replay_pid, live_thread->rp_record_thread->rp_record_pid);
+		recover_iter = ds_list_iter_create (current->replay_thrd->rp_group->rg_replay_threads);
+		while ((recover_thread = ds_list_iter_next (recover_iter)) != NULL) { 
+			if (recover_thread->rp_record_thread->rp_record_pid == live_thread->rp_record_thread->rp_record_pid) { 
+				struct task_struct* recover_tsk = find_task_by_vpid (recover_thread->rp_replay_pid);
+				MPRINT ("    The recover thread has pid %d, record pid %d\n", recover_thread->rp_replay_pid, recover_thread->rp_record_thread->rp_record_pid);
+				memcpy (get_pt_regs(live_tsk), get_pt_regs(recover_tsk), sizeof (struct pt_regs));
+				//Restart the last syscall call
+				if (live_tsk == main_live_tsk) { 
+					//this is the main ckpt thread
+					MPRINT ("    Main ckpt thread %d\n", live_tsk->pid);
+				} else { 
+					MPRINT ("    Other threads %d, restart last syscall\n", live_tsk->pid);
+					get_pt_regs(live_tsk)->ip -= 2;
+					get_user (ch, (u_char *) get_pt_regs(live_tsk)->ip);
+					get_user (ch2, (u_char *) get_pt_regs(live_tsk)->ip+1);
+					if (ch != 0xcd || ch2 != 0x80) {
+						printk ("Pid %d fw_slice_recover_swap_register not backing up to int 80: %x %x\n", current->pid, ch, ch2);
+					}
+					set_tsk_thread_flag (live_tsk, TIF_IRET);
+				}
+
+				unlazy_fpu(recover_tsk);
+				fpu = &(recover_tsk->thread.fpu);
+				if (fpu_allocated(fpu)) {
+					//allocate the new fpu if we need it and it isn't setup
+					tsk_fpu = &(live_tsk->thread.fpu);  
+					if (!fpu_allocated(tsk_fpu)) {
+						DPRINT ("allocating fpu\n");
+						fpu_alloc(tsk_fpu);
+					}
+					tsk_fpu->last_cpu = fpu->last_cpu;
+					tsk_fpu->has_fpu = fpu->has_fpu;
+					tsk_fpu->state = fpu->state;
+				}
+				MPRINT ("   registers are swapped\n");
+			}
+		}
+		ds_list_iter_destroy (recover_iter);
+	}
+	ds_list_iter_destroy (live_iter);
+}
+
+struct go_live_clock* get_go_live_clock (struct task_struct* tsk) 
+{
+	return  (struct go_live_clock*) tsk->go_live_thrd->rp_group->rg_pthread_clock_addr;
 }
 
 int btree_print = 0;
