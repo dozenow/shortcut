@@ -12,7 +12,7 @@ struct Node {
 	bool extra = false;
 }
 
-//An Edge represents the relationship between two Nodes in our graph. Each edge has a pointer to its origin Node and a pointer to its destination Node.
+//An Edge represents the data-flow relationship between two Nodes (asm instructions) in our graph. Each edge has a pointer to its origin Node and a pointer to its destination Node.
 //We have a boolean taint flag to keep track of the tainted inputs into our instructions.
 struct Edge {
 	Node* start;
@@ -25,27 +25,21 @@ struct instrGraph {
 	std::vector<Node*> nodes;
 }
 
-//change to use same taint format as pin
+//change to use same taint format as pin (omniplay/dift/linkage_new2.cpp) and (omniplay/dift/taint_interface/taint_full_interface.c)
+//A tregister has a register number, a size, and a pointer to the Node that most recently affected the register.
 struct tregister {
-	std::vector<Node*>;
-
-	//for example EAX
-	setWhole();
-	//for example AX
-	setLastTwoBytes();
-	//for example AH
-	setHigherByte();
-	//for example AL
-	setLowerByte();
+	int reg;
+	int size;
+	Node* author;
 }
 
 struct registers {
 	std::vector<tregister*>
 }
 
-//The memory state of our slice is represented by a map of 32-bit addresses and the Nodes that most recently affected the memory location at that address.
+//The memory state of our slice is represented by a map of 32-bit addresses (ulongs) and the Node that most recently affected the memory location at that address.
 struct memLocations {
-	std::map<ulong, Node*> mapMem;
+	std::map<u_long, Node*> mapMem;
 }
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
