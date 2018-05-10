@@ -34,7 +34,22 @@ struct register {
 	setLowerByte();
 }
 
-struct memValue {
-	std:vector<Node*>;
+struct memLoc {
+	string name;
+	std::vector<Node*>;
 }
 
+struct eflags {
+	std::vector<Node*>;
+
+	//set parts of the 4 byte EFLAGS register
+	setCF();
+	setPF();
+	setAF();
+	setZF();
+	setSF();
+	setTF();
+	setIF();
+	setDF();
+	setOF();
+}
