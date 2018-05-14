@@ -38,7 +38,7 @@ bool checkForRegs(std::string instOperand){
   int main(int,char*[])
   {
 
-    std::string filename("testslice.c");
+    std::string filename("cleanedtestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -54,31 +54,39 @@ bool checkForRegs(std::string instOperand){
 
     
     while (std::getline(file, line)) {
-      //need to eventually delete this dynamically allocated memory
-      Node* p_tempNode = new Node();
-      
-      #ifdef DEBUG_PRINT
-        //std::cout<< p_tempNode->lineNum << "\n";
-      #endif
-      
       lineNum++;
-      std::cout<< line << "\n";
-      p_tempNode->lineNum = lineNum;
 
-      #ifdef DEBUG_PRINT
-        std::cout<< p_tempNode->lineNum << "\n";
-        std::cout<< p_tempNode << "\n";
-      #endif
+      //Start reading actual slice instructions starting at line 5 (because the first 4 lines are padding that always need to be kept)
+      if(lineNum >= 5){
+        //need to eventually delete this dynamically allocated memory
+        Node* p_tempNode = new Node();
+        
+        #ifdef DEBUG_PRINT
+          //std::cout<< p_tempNode->lineNum << "\n";
+        #endif
+        
+        
+        std::cout<< line << "\n";
+        p_tempNode->lineNum = lineNum;
 
-      int checkRegs = checkForRegs(line);
+        #ifdef DEBUG_PRINT
+          std::cout<< p_tempNode->lineNum << "\n";
+          std::cout<< p_tempNode << "\n";
+        #endif
 
-      #ifdef DEBUG_PRINT
-        std::cout<< "checkRegs value is: " << checkRegs << "\n";
-      #endif
+        int checkRegs = checkForRegs(line);
+
+        #ifdef DEBUG_PRINT
+          std::cout<< "checkRegs value is: " << checkRegs << "\n";
+        #endif
 
 
-      p_sliceGraph->nodes.push_back(p_tempNode);
+        p_sliceGraph->nodes.push_back(p_tempNode);
+      }
     }
+
+    //remove the last 'node' in the nodes vector of sliceGraph, because this is not really an instruction node. Instead it is the last line of the exslice1.c file, );
+    p_sliceGraph->nodes.pop_back();
 
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
