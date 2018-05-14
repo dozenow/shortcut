@@ -68,6 +68,7 @@ bool checkForRegs(std::string instOperand){
           #endif
 
           std::cout<< line << "\n";
+          std::cout<<"mnemonic Arg: "<<instructionPieces[0]<<"\n";
           std::cout<<"dest Arg: "<<instructionPieces[1]<<"\n";
           std::cout<<"src Arg: "<<instructionPieces[2]<<"\n";
           
