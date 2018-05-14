@@ -1,4 +1,8 @@
 3q
+sopt/CMake*
+sopt/preCleaner.py
+Sopt/.DS_Store
+/.DS_Store
 dift/?
 dift/cscope.out
 dift/obj-ia32/

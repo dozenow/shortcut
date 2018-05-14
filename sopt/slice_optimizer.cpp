@@ -38,13 +38,17 @@ bool checkForRegs(std::string instOperand){
   int main(int,char*[])
   {
 
-    std::string filename("cleanedtestslice.c");
+    std::string filename("testslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
     instrGraph sliceGraph;
     instrGraph* p_sliceGraph = &sliceGraph;
     std::vector<std::string> instructionPieces;
+    std::vector<std::string> tempPieces;
+    std::string mnemonic;
+    std::string dst;
+    std::string src;
     
     tregister* edx = new tregister();
     tregister* ecx = new tregister();
@@ -60,18 +64,45 @@ bool checkForRegs(std::string instOperand){
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
 
-          boost::split(instructionPieces, line, boost::is_any_of(",/"), token_compress_on);
-          #ifdef DEBUG_PRINT
-            for (auto it = std::begin(instructionPieces); it != std::end(instructionPieces); ++it){
-              std::cout<<(*it)<<"\n";
-            }
-          #endif
+          boost::split(tempPieces, line, boost::is_any_of(" "), token_compress_on);
+          mnemonic = tempPieces[0];
+          //erase the first char of the mnemonic string to remove the extra quote symbol at the start of the mnemonic string.
+          mnemonic.erase(0,1);
 
-          std::cout<< line << "\n";
-          std::cout<<"mnemonic Arg: "<<instructionPieces[0]<<"\n";
-          std::cout<<"dest Arg: "<<instructionPieces[1]<<"\n";
-          std::cout<<"src Arg: "<<instructionPieces[2]<<"\n";
+          boost::split(tempPieces, line, boost::is_any_of(mnemonic), token_compress_on);
+          #ifdef DEBUG_PRINT
+            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
+                std::cout<<(*it)<<"\n";
+            }
+            std::cout<<tempPieces[1]<<"\n";
+          #endif
           
+          
+          boost::split(tempPieces, tempPieces[1], boost::is_any_of(","), token_compress_on);
+          
+
+          #ifdef DEBUG_PRINT
+            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
+                std::cout<<(*it)<<"\n";
+            }
+            std::cout<<tempPieces[0]<<"\n";
+          #endif
+          dst = tempPieces[0];
+          
+          boost::split(tempPieces, tempPieces[1], boost::is_any_of("/"), token_compress_on);
+          #ifdef DEBUG_PRINT
+            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
+                std::cout<<(*it)<<"\n";
+            }
+            std::cout<<tempPieces[0]<<"\n";
+          #endif
+          
+          src = tempPieces[0];
+
+
+          std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
+          std::cout<<"dst Arg: "<<dst<<"\n";
+          std::cout<<"src Arg: "<<src<<"\n";
 
           //need to eventually delete this dynamically allocated memory
           Node* p_tempNode = new Node();
