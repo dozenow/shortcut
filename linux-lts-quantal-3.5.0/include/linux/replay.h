@@ -257,5 +257,7 @@ void put_go_live_thread (struct replay_thread* prept);
 
 long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr);
 void destroy_replay_group (struct replay_group *prepg);
+void fw_slice_recover_swap_register (struct task_struct *main_live_tsk);
+struct go_live_clock* get_go_live_clock (struct task_struct* tsk);
 
 #endif
