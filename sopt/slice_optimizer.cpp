@@ -19,7 +19,7 @@
 
 using namespace boost;
 
-#define DEBUG_PRINT
+//#define DEBUG_PRINT
 
 
 bool checkForRegs(std::string instOperand){
@@ -44,8 +44,7 @@ bool checkForRegs(std::string instOperand){
     int lineNum = 0;
     instrGraph sliceGraph;
     instrGraph* p_sliceGraph = &sliceGraph;
-    //Node tempNode;
-    //Node* p_tempNode = &tempNode;
+    std::vector<std::string> instructionPieces;
     
     tregister* edx = new tregister();
     tregister* ecx = new tregister();
@@ -58,35 +57,50 @@ bool checkForRegs(std::string instOperand){
 
       //Start reading actual slice instructions starting at line 5 (because the first 4 lines are padding that always need to be kept)
       if(lineNum >= 5){
-        //need to eventually delete this dynamically allocated memory
-        Node* p_tempNode = new Node();
-        
-        #ifdef DEBUG_PRINT
-          //std::cout<< p_tempNode->lineNum << "\n";
-        #endif
-        
-        
-        std::cout<< line << "\n";
-        p_tempNode->lineNum = lineNum;
+        //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
+        if(!(contains(line, ");"))){
 
-        #ifdef DEBUG_PRINT
-          std::cout<< p_tempNode->lineNum << "\n";
-          std::cout<< p_tempNode << "\n";
-        #endif
+          boost::split(instructionPieces, line, boost::is_any_of(",/"), token_compress_on);
+          #ifdef DEBUG_PRINT
+            for (auto it = std::begin(instructionPieces); it != std::end(instructionPieces); ++it){
+              std::cout<<(*it)<<"\n";
+            }
+          #endif
 
-        int checkRegs = checkForRegs(line);
+          std::cout<< line << "\n";
+          std::cout<<"dest Arg: "<<instructionPieces[1]<<"\n";
+          std::cout<<"src Arg: "<<instructionPieces[2]<<"\n";
+          
 
-        #ifdef DEBUG_PRINT
-          std::cout<< "checkRegs value is: " << checkRegs << "\n";
-        #endif
+          //need to eventually delete this dynamically allocated memory
+          Node* p_tempNode = new Node();
+          
+          #ifdef DEBUG_PRINT
+            //std::cout<< p_tempNode->lineNum << "\n";
+            std::cout<< line << "\n";
+          #endif
+          
+          
+          p_tempNode->lineNum = lineNum;
 
+          #ifdef DEBUG_PRINT
+            std::cout<< p_tempNode->lineNum << "\n";
+            std::cout<< p_tempNode << "\n";
+          #endif
 
-        p_sliceGraph->nodes.push_back(p_tempNode);
+          int checkRegs = checkForRegs(line);
+
+          #ifdef DEBUG_PRINT
+            std::cout<< "checkRegs value is: " << checkRegs << "\n";
+          #endif
+
+          p_sliceGraph->nodes.push_back(p_tempNode);
+        }
       }
     }
 
-    //remove the last 'node' in the nodes vector of sliceGraph, because this is not really an instruction node. Instead it is the last line of the exslice1.c file, );
-    p_sliceGraph->nodes.pop_back();
+    //remove the last 'node' in the nodes vector of sliceGraph, because this last node is not really an instruction node. Instead it is the last line of the exslice1.c file, );
+    //p_sliceGraph->nodes.pop_back();
 
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
