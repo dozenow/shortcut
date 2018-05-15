@@ -33,8 +33,8 @@ struct instrGraph {
 //change to use same taint format as pin (omniplay/dift/linkage_new2.cpp) and (omniplay/dift/taint_interface/taint_full_interface.c)
 //A tregister has a register number, a size, and a pointer to the Node that most recently affected the register.
 struct tregister {
-	int reg;
-	int size;
+	uint32_t regNum;
+	uint32_t size;
 	Node* author;
 };
 
@@ -66,4 +66,4 @@ struct eflags {
 	*/
 };
 
-bool checkForRegs(std::string instOperand);
+std::string checkForRegs(std::string instOperand);

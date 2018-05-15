@@ -21,16 +21,150 @@ using namespace boost;
 
 //#define DEBUG_PRINT
 
-
-bool checkForRegs(std::string instOperand){
-  bool found = false;
-  found = (contains(instOperand, "edx"));
-  if(found)
-    {
-        std::cout << "edx is there" << "\n";
+//from taint_full_interface.c
+static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
+  {
+      switch (reg_num) {
+      case 3:
+    switch (reg_size) {
+    case 4: return "edi";
+    case 2: return "di";
     }
+    break;
+      case 4:
+    switch (reg_size) {
+    case 4: return "esi";
+    case 2: return "si";
+    }
+    break;
+      case 5:
+    switch (reg_size) {
+    case 4: return "ebp";
+    case 2: return "bp";
+    }
+    break;
+      case 6:
+    switch (reg_size) {
+    case 4: return "esp";
+    case 2: return "sp";
+    }
+    break;
+      case 7:
+    switch (reg_size) {
+    case 4: return "ebx";
+    case 2: return "bx";
+    case 1: return "bl";
+    case -1: return "bh";
+    }
+    break;
+      case 8:
+    switch (reg_size) {
+    case 4: return "edx";
+    case 2: return "dx";
+    case 1: return "dl";
+    case -1: return "dh";
+    }
+    break;
+      case 9:
+    switch (reg_size) {
+    case 4: return "ecx";
+    case 2: return "cx";
+    case 1: return "cl";
+    case -1: return "ch";
+    }
+    break;
+      case 10:
+    switch (reg_size) {
+    case 4: return "eax";
+    case 2: return "ax";
+    case 1: return "al";
+    case -1: return "ah";
+    }
+    break;
+      case 17:
+    switch (reg_size) {
+    case 4: return "eflag";
+    }
+    break;
+      case 54:
+    switch (reg_size) {
+    case 16: return "xmm0";
+    }
+    break;
+      case 55:
+    switch (reg_size) {
+    case 16: return "xmm1";
+    }
+    break;
+      case 56:
+    switch (reg_size) {
+    case 16: return "xmm2";
+    }
+    break;
+      case 57:
+    switch (reg_size) {
+    case 16: return "xmm3";
+    }
+    break;
+      case 58:
+    switch (reg_size) {
+    case 16: return "xmm4";
+    }
+    break;
+      case 59:
+    switch (reg_size) {
+    case 16: return "xmm5";
+    }
+    break;
+      case 60:
+    switch (reg_size) {
+    case 16: return "xmm6";
+    }
+    break;
+      case 61:
+    switch (reg_size) {
+    case 16: return "xmm7";
+    }
+    break;
+      }
+      fprintf (stderr, "regName: unrecognized reg %d size %d\n", reg_num, reg_size);
+      assert (0);
+      return NULL;
+  }
 
-    return found;
+std::string checkForRegs(std::string instOperand){
+  bool found = false;
+  std::string reg = "error";
+
+  std::string chk = "edx";
+  found = (contains(instOperand, chk));
+  if(found)
+      {
+          return(chk);
+      }
+
+  chk = "dx";
+  found = (contains(instOperand, chk));
+  if(found)
+      {
+          return(chk);
+      }
+
+  chk = "ecx";
+  found = (contains(instOperand, chk));
+  if(found)
+      {
+          return(chk);
+      }
+
+  chk = "edi";
+  found = (contains(instOperand, chk));
+  if(found)
+      {
+          return(chk);
+      }
+
+    return reg;
 
 }
   
@@ -49,13 +183,36 @@ bool checkForRegs(std::string instOperand){
     std::string mnemonic;
     std::string dst;
     std::string src;
+    Node* p_rootNode = new Node();
+    Edge* ptempEdge = new Edge();
+    p_rootNode->outEdges.push_back(ptempEdge);
+    p_rootNode->outEdges[0]->start = p_rootNode;
+    p_rootNode->inEdges.push_back(ptempEdge);
+
+    p_rootNode->lineNum = 0;
     
     tregister* edx = new tregister();
+    tregister* dx = new tregister();
     tregister* ecx = new tregister();
-
-
-
+    tregister* edi = new tregister();
     
+
+    edx->regNum = 8;
+    edx->size = 4;
+    edx->author = p_rootNode;
+
+    dx->regNum = 8;
+    dx->size = 2;
+    dx->author = p_rootNode;
+
+    ecx->regNum = 9;
+    ecx->size = 4;
+    ecx->author = p_rootNode;
+    
+    edi->regNum = 3;
+    edi->size = 4;
+    edi->author = p_rootNode;
+
     while (std::getline(file, line)) {
       lineNum++;
 
@@ -112,18 +269,116 @@ bool checkForRegs(std::string instOperand){
             std::cout<< line << "\n";
           #endif
           
-          
+          //setting the new instruction nodes' unique lineNum to its corresponding lineNum in the original exslice.c file.
           p_tempNode->lineNum = lineNum;
+
+          Edge* p_tempInEdge = new Edge();
+          Edge* p_tempOutEdge = new Edge();
+
+         
+
+          std::string tempSrc = checkForRegs(src);
+          //if tempSrc is not "error" then it must be a valid register
+          if (tempSrc != "error"){
+            if(tempSrc == "edx"){
+              //create a new IN edge for the new instruction node.
+              //The IN edge starts at the last Node to set edx register and finishes at the current new instruction node self.
+              
+              p_tempInEdge->start = edx->author;
+              p_tempInEdge->finish = p_tempNode;
+              edx->author->outEdges.push_back(p_tempOutEdge);
+              edx->author->outEdges.back()->start = edx->author;
+              edx->author->outEdges.back()->finish = p_tempNode;
+              }
+            if(tempSrc == "dx"){
+              //create a new IN edge for the new instruction node.
+              //The IN edge starts at the last Node to set dx register and finishes at the current new instruction node self.
+              
+              p_tempInEdge->start = dx->author;
+              p_tempInEdge->finish = p_tempNode;
+              dx->author->outEdges.push_back(p_tempOutEdge);
+              dx->author->outEdges.back()->start = dx->author;
+              dx->author->outEdges.back()->finish = p_tempNode;
+              }
+            if(tempSrc == "ecx"){
+              //create a new IN edge for the new instruction node.
+              //The IN edge starts at the last Node to set ecx register and finishes at the current new instruction node self.
+              #ifdef DEBUG_PRINT
+                std::cout<< "setting (prevAuthor of ecx)->outEdges[0]->finish = self current new node.";
+              #endif
+              std::cout<< "setting (prevAuthor of ecx)" << ecx->author->lineNum <<"->outEdges[0]->finish = self current new node. " << p_tempNode->lineNum<<"\n";
+              
+              p_tempInEdge->start = ecx->author;
+              p_tempInEdge->finish = p_tempNode;
+              ecx->author->outEdges.push_back(p_tempOutEdge);
+              ecx->author->outEdges.back()->start = ecx->author;
+              ecx->author->outEdges.back()->finish = p_tempNode;
+              }
+            if(tempSrc == "edi"){
+              //create a new IN edge for the new instruction node.
+              //The IN edge starts at the last Node to set edi register and finishes at the current new instruction node self.
+              
+              p_tempInEdge->start = edi->author;
+              p_tempInEdge->finish = p_tempNode;
+              edi->author->outEdges.push_back(p_tempOutEdge);
+              edi->author->outEdges.back()->start = edi->author;
+              edi->author->outEdges.back()->finish = p_tempNode;
+              }
+          }
+          //else if tempSrc is equal to "error" then must be a constant like "17"
+          else{
+            //so create an edge from the rootNode to the current instruction node;
+            
+            p_tempInEdge->start = p_rootNode;
+            p_tempInEdge->finish = p_tempNode;
+            p_rootNode->outEdges[0]->finish = p_tempNode;
+          }
+
+          std::string tempDst = checkForRegs(dst);
+          //if tempDst is not "error" then it must be a valid register
+          if (tempDst != "error"){
+            if(tempDst == "edx"){
+              #ifdef DEBUG_PRINT
+                std::cout<< "setting edx with a new author: " << p_tempNode->lineNum << "\n";
+              #endif
+              //modify the edx tregister object to have self current instruction node as the new author.
+              edx->author = p_tempNode;
+              }
+            if(tempDst == "dx"){
+              #ifdef DEBUG_PRINT
+                std::cout<< "setting dx with a new author: " << p_tempNode->lineNum << "\n";
+              #endif
+              dx->author = p_tempNode;
+              }
+            if(tempDst == "ecx"){
+              #ifdef DEBUG_PRINT
+                std::cout<< "setting ecx with a new author: " << p_tempNode->lineNum << "\n";
+              #endif
+              ecx->author = p_tempNode;
+              }
+            if(tempDst == "edi"){
+              #ifdef DEBUG_PRINT
+                std::cout<< "setting edi with a new author: " << p_tempNode->lineNum << "\n";
+              #endif
+              edi->author = p_tempNode;
+              }
+          }
+          //else if tempDst is equal to "error" then must be a constant like "17"
+          else{
+            //so create an edge from the rootNode to the current instruction node;
+            
+            p_tempOutEdge->start = p_tempNode;p_rootNode;
+            p_tempOutEdge->finish = p_rootNode;
+          }
+
+
+          //add the IN OUT tempEdges to the current node
+          p_tempNode->inEdges.push_back(p_tempInEdge);
+          //p_tempNode->outEdges.push_back(p_tempOutEdge);
 
           #ifdef DEBUG_PRINT
             std::cout<< p_tempNode->lineNum << "\n";
             std::cout<< p_tempNode << "\n";
-          #endif
-
-          int checkRegs = checkForRegs(line);
-
-          #ifdef DEBUG_PRINT
-            std::cout<< "checkRegs value is: " << checkRegs << "\n";
           #endif
 
           p_sliceGraph->nodes.push_back(p_tempNode);
@@ -137,41 +392,16 @@ bool checkForRegs(std::string instOperand){
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
       std::cout<<((*it)->lineNum) << "\n";
+      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+        std::cout<< "inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
+      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+        std::cout<< "outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
     }
 
-    //...
-    /*
-    std::ifstream infile("testslice.c");
-
-    std::string line;
-    while (std::getline(infile, line))
-    {
-      std::istringstream iss(line);
-      int a, b;
-
-      std::cout << line << '\n';
-      //if (!(iss >> a >> b)) { break; } // error
-
-      // process pair (a,b)
-    }
-
-    */
-    //...
-    /*
-    std::string file_path = "testslice.c";
-
-    filesystem::ifstream file(file_path);
-    std::string str;
-    std::vector<std::string> filenames;
-    while(getline(file, str)){
-      filenames.push_back(str);
-    }
-
-    for (auto it = std::begin (filenames); it != std::end (filenames); ++it) {
-      //it->doSomething ();
-      std::cout << it;
-    }
-    */
     //...
 
     // create a typedef for the Graph type
