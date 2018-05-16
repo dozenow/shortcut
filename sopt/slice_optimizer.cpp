@@ -16,13 +16,14 @@
 #include <istream>
 #include "slice_optimizer.h"
 #include <boost/algorithm/string.hpp>
+#include <boost/numeric/ublas/vector.hpp>
 
 using namespace boost;
 
 //#define DEBUG_PRINT
 
 //from taint_full_interface.c
-static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
+static inline const char* regName (int reg_num, int reg_size)
   {
       switch (reg_num) {
       case 3:
@@ -167,7 +168,41 @@ std::string checkForRegs(std::string instOperand){
     return reg;
 
 }
-  
+
+static inline void clear_reg_internal (int reg, int size)
+  {
+      int i = 0;
+
+      Node* p_Zero = 0;
+
+      for (i = 0; i < size; i++) {
+          shadow_reg_table[reg * REG_SIZE + i] = p_Zero;
+      }
+  }
+ 
+ static inline void set_reg_internal (int reg, int size, Node* author)
+  {
+      int i = 0;
+
+      for (i = 0; i < size; i++) {
+          shadow_reg_table[reg * REG_SIZE + i] = author;
+      }
+  } 
+
+  void clear_reg (int reg, int size)
+  {
+      clear_reg_internal (reg, size);
+  }
+
+  void set_reg (int reg, int size, Node* author)
+  {
+      set_reg_internal (reg, size, author);
+  }
+
+  void set_treg(tregister* tregister, int regNum, int size){
+    tregister->regNum = regNum;
+    tregister->size = size;
+  }
   
   int main(int,char*[])
   {
@@ -188,30 +223,40 @@ std::string checkForRegs(std::string instOperand){
     p_rootNode->outEdges.push_back(ptempEdge);
     p_rootNode->outEdges[0]->start = p_rootNode;
     p_rootNode->inEdges.push_back(ptempEdge);
-
     p_rootNode->lineNum = 0;
-    
-    tregister* edx = new tregister();
-    tregister* dx = new tregister();
-    tregister* ecx = new tregister();
-    tregister* edi = new tregister();
-    
 
-    edx->regNum = 8;
-    edx->size = 4;
-    edx->author = p_rootNode;
+    set_reg(0,1920,p_rootNode);
 
+
+    for (int i = 0; i < (regToNumSize["di"]).second; i++) {
+      std::cout<<shadow_reg_table.at((regToNumSize["di"]).first * REG_SIZE + i)<<"\n";
+    }
+/*
+    for (auto it = std::begin(edx->authors); it != std::end(edx->authors); ++it){
+                std::cout<<(*it)<<"\n";
+            }
+  */  
+/*
     dx->regNum = 8;
     dx->size = 2;
-    dx->author = p_rootNode;
+    if (!((edx->authors).empty())){
+      for (int i = 0; i < dx->size; i++) {
+
+      }
+    }
+    for (int i = 0; i < dx->size; i++) {
+      (edx->authors).push_back(p_rootNode);
+    }
+    //dx->authors = p_rootNode;
 
     ecx->regNum = 9;
     ecx->size = 4;
-    ecx->author = p_rootNode;
+    //ecx->authors = p_rootNode;
     
-    edi->regNum = 3;
-    edi->size = 4;
-    edi->author = p_rootNode;
+    
+    //edi->authors = p_rootNode;
+*/
+    /*
 
     while (std::getline(file, line)) {
       lineNum++;
@@ -279,6 +324,7 @@ std::string checkForRegs(std::string instOperand){
 
           std::string tempSrc = checkForRegs(src);
           //if tempSrc is not "error" then it must be a valid register
+
           if (tempSrc != "error"){
             if(tempSrc == "edx"){
               //create a new IN edge for the new instruction node.
@@ -402,6 +448,7 @@ std::string checkForRegs(std::string instOperand){
       std::cout<<"\n";
     }
 
+  */
     //...
 
     // create a typedef for the Graph type

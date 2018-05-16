@@ -1,8 +1,34 @@
 #include <iostream>
 #include <stdlib.h>
 #include <vector>
-//#include <boost/numeric/ublas/vector.hpp>
+#include <boost/numeric/ublas/vector.hpp>
 //#include <boost/numeric/ublas/io.hpp>
+#include <map>
+
+#define NUM_REGS 120
+#define REG_SIZE 16
+
+// flag register (status) 
+#define NUM_FLAGS 7
+
+//These are only flags, not corresponding to the actual hardware mask
+//The actual flag register taints are layed out according to these FLAGs instead of the actual hardware layouts
+#define CF_FLAG 0x01
+#define PF_FLAG 0x02
+#define AF_FLAG 0x04
+#define ZF_FLAG 0x08
+#define SF_FLAG 0x10
+#define OF_FLAG 0x20
+#define DF_FLAG 0x40
+#define ALL_FLAGS 0x7f
+
+#define CF_INDEX 0
+#define PF_INDEX 1
+#define AF_INDEX 2
+#define ZF_INDEX 3
+#define SF_INDEX 4
+#define OF_INDEX 5
+#define DF_INDEX 6
 
 struct Edge;
 
@@ -35,12 +61,16 @@ struct instrGraph {
 struct tregister {
 	uint32_t regNum;
 	uint32_t size;
-	Node* author;
+	std::vector<Node*> authors;
 };
 
+//No need for this struct?
 struct registers {
 	std::vector<tregister*> vectOfRegs;
 };
+
+std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
+//Node* shadow_reg_table[NUM_REGS * REG_SIZE];
 
 //The memory state of our slice is represented by a map of 32-bit addresses (ulongs) and the Node that most recently affected the memory location at that address.
 struct memLocations {
@@ -67,3 +97,39 @@ struct eflags {
 };
 
 std::string checkForRegs(std::string instOperand);
+
+std::map<std::string, std::pair<const int, const int> > regToNumSize = {
+	{"edi", {3,4}},
+	{"di", {3,2}},
+	{"esi", {4,4}},
+	{"si", {4,2}},
+	{"ebp", {5,4}},
+	{"bp", {5,2}},
+	{"esp", {6,4}},
+	{"sp", {6,2}},
+	{"ebx", {7,4}},
+	{"bx", {7,2}},
+	{"bl", {7,1}},
+	{"bh", {7,-1}},
+	{"edx", {8,4}},
+	{"dx", {8,2}},
+	{"dl", {8,1}},
+	{"dh", {8,-1}},
+	{"ecx", {9,4}},
+	{"cx", {9,2}},
+	{"cl", {9,1}},
+	{"ch", {9,-1}},
+	{"eax", {10,4}},
+	{"ax", {10,2}},
+	{"al", {10,1}},
+	{"ah", {10,-1}},
+	{"eflag", {17,4}},
+	{"xmm0", {54,16}},
+	{"xmm1", {55,16}},
+	{"xmm2", {56,16}},
+	{"xmm3", {57,16}},
+	{"xmm4", {58,16}},
+	{"xmm5", {59,16}},
+	{"xmm6", {60,16}},
+	{"xmm7", {61,16}},
+};
