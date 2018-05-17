@@ -133,39 +133,21 @@ static inline const char* regName (int reg_num, int reg_size)
       return NULL;
   }
 
-std::string checkForRegs(std::string instOperand){
+std::pair<int, int> checkForRegs(std::string instOperand){
   bool found = false;
   std::string reg = "error";
 
-  std::string chk = "edx";
-  found = (contains(instOperand, chk));
-  if(found)
-      {
-          return(chk);
-      }
+  std::pair<int, int> regNumSize (NULL,NULL);
+  regNumSize.first =(regToNumSize[instOperand]).first;
+  regNumSize.second = (regToNumSize[instOperand]).second;
 
-  chk = "dx";
-  found = (contains(instOperand, chk));
-  if(found)
-      {
-          return(chk);
-      }
+  #ifdef DEBUG_PRINT
+    std::cout<< instOperand << "\n";
+    std::cout<< regNumSize.first << "\n";
+    std::cout<< regNumSize.second << "\n";
+  #endif
 
-  chk = "ecx";
-  found = (contains(instOperand, chk));
-  if(found)
-      {
-          return(chk);
-      }
-
-  chk = "edi";
-  found = (contains(instOperand, chk));
-  if(found)
-      {
-          return(chk);
-      }
-
-    return reg;
+  return regNumSize;
 
 }
 
@@ -184,10 +166,50 @@ static inline void clear_reg_internal (int reg, int size)
   {
       int i = 0;
 
+
       for (i = 0; i < size; i++) {
           shadow_reg_table[reg * REG_SIZE + i] = author;
+          #ifdef DEBUG_PRINT
+            std::cout<< "Setting shadow_reg_table at " << (reg * REG_SIZE + i) << "to " << author->lineNum << "\n";
+            std::cout<< regNumSize.first << "\n";
+            std::cout<< regNumSize.second << "\n";
+          #endif
       }
-  } 
+  }
+
+  static inline std::vector<Node*> get_reg_internal (int reg, int size)
+  {
+      int i = 0;
+      std::vector<Node*> authors;
+
+      for (i = 0; i < size; i++) {
+          authors.push_back(shadow_reg_table[reg * REG_SIZE + i]);
+          #ifdef DEBUG_PRINT
+            std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
+          #endif
+      }
+      #ifdef DEBUG_PRINT
+        for (auto jt = std::begin(authors); jt != std::end(authors); ++jt){
+                      std::cout<<"author is : " << (*jt)->lineNum  << "\n";
+                    }
+      #endif
+      return authors;
+  }
+
+// trim from start (in place)
+static inline void ltrim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
+        return !std::isspace(ch);
+    }));
+}
+
+// trim from end (in place)
+static inline void rtrim(std::string &s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+}
+ 
 
   void clear_reg (int reg, int size)
   {
@@ -226,37 +248,6 @@ static inline void clear_reg_internal (int reg, int size)
     p_rootNode->lineNum = 0;
 
     set_reg(0,1920,p_rootNode);
-
-
-    for (int i = 0; i < (regToNumSize["di"]).second; i++) {
-      std::cout<<shadow_reg_table.at((regToNumSize["di"]).first * REG_SIZE + i)<<"\n";
-    }
-/*
-    for (auto it = std::begin(edx->authors); it != std::end(edx->authors); ++it){
-                std::cout<<(*it)<<"\n";
-            }
-  */  
-/*
-    dx->regNum = 8;
-    dx->size = 2;
-    if (!((edx->authors).empty())){
-      for (int i = 0; i < dx->size; i++) {
-
-      }
-    }
-    for (int i = 0; i < dx->size; i++) {
-      (edx->authors).push_back(p_rootNode);
-    }
-    //dx->authors = p_rootNode;
-
-    ecx->regNum = 9;
-    ecx->size = 4;
-    //ecx->authors = p_rootNode;
-    
-    
-    //edi->authors = p_rootNode;
-*/
-    /*
 
     while (std::getline(file, line)) {
       lineNum++;
@@ -301,6 +292,14 @@ static inline void clear_reg_internal (int reg, int size)
           
           src = tempPieces[0];
 
+          //trim off preceding whitespace from the registerName string
+          ltrim(src);
+          ltrim(dst);
+          ltrim(mnemonic);
+
+          rtrim(src);
+          rtrim(dst);
+          rtrim(mnemonic);
 
           std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
           std::cout<<"dst Arg: "<<dst<<"\n";
@@ -320,135 +319,122 @@ static inline void clear_reg_internal (int reg, int size)
           Edge* p_tempInEdge = new Edge();
           Edge* p_tempOutEdge = new Edge();
 
-         
-
-          std::string tempSrc = checkForRegs(src);
-          //if tempSrc is not "error" then it must be a valid register
-
-          if (tempSrc != "error"){
-            if(tempSrc == "edx"){
-              //create a new IN edge for the new instruction node.
-              //The IN edge starts at the last Node to set edx register and finishes at the current new instruction node self.
-              
-              p_tempInEdge->start = edx->author;
-              p_tempInEdge->finish = p_tempNode;
-              edx->author->outEdges.push_back(p_tempOutEdge);
-              edx->author->outEdges.back()->start = edx->author;
-              edx->author->outEdges.back()->finish = p_tempNode;
-              }
-            if(tempSrc == "dx"){
-              //create a new IN edge for the new instruction node.
-              //The IN edge starts at the last Node to set dx register and finishes at the current new instruction node self.
-              
-              p_tempInEdge->start = dx->author;
-              p_tempInEdge->finish = p_tempNode;
-              dx->author->outEdges.push_back(p_tempOutEdge);
-              dx->author->outEdges.back()->start = dx->author;
-              dx->author->outEdges.back()->finish = p_tempNode;
-              }
-            if(tempSrc == "ecx"){
-              //create a new IN edge for the new instruction node.
-              //The IN edge starts at the last Node to set ecx register and finishes at the current new instruction node self.
-              #ifdef DEBUG_PRINT
-                std::cout<< "setting (prevAuthor of ecx)->outEdges[0]->finish = self current new node.";
-              #endif
-              std::cout<< "setting (prevAuthor of ecx)" << ecx->author->lineNum <<"->outEdges[0]->finish = self current new node. " << p_tempNode->lineNum<<"\n";
-              
-              p_tempInEdge->start = ecx->author;
-              p_tempInEdge->finish = p_tempNode;
-              ecx->author->outEdges.push_back(p_tempOutEdge);
-              ecx->author->outEdges.back()->start = ecx->author;
-              ecx->author->outEdges.back()->finish = p_tempNode;
-              }
-            if(tempSrc == "edi"){
-              //create a new IN edge for the new instruction node.
-              //The IN edge starts at the last Node to set edi register and finishes at the current new instruction node self.
-              
-              p_tempInEdge->start = edi->author;
-              p_tempInEdge->finish = p_tempNode;
-              edi->author->outEdges.push_back(p_tempOutEdge);
-              edi->author->outEdges.back()->start = edi->author;
-              edi->author->outEdges.back()->finish = p_tempNode;
-              }
-          }
-          //else if tempSrc is equal to "error" then must be a constant like "17"
-          else{
-            //so create an edge from the rootNode to the current instruction node;
-            
-            p_tempInEdge->start = p_rootNode;
-            p_tempInEdge->finish = p_tempNode;
-            p_rootNode->outEdges[0]->finish = p_tempNode;
-          }
-
-          std::string tempDst = checkForRegs(dst);
-          //if tempDst is not "error" then it must be a valid register
-          if (tempDst != "error"){
-            if(tempDst == "edx"){
-              #ifdef DEBUG_PRINT
-                std::cout<< "setting edx with a new author: " << p_tempNode->lineNum << "\n";
-              #endif
-              //modify the edx tregister object to have self current instruction node as the new author.
-              edx->author = p_tempNode;
-              }
-            if(tempDst == "dx"){
-              #ifdef DEBUG_PRINT
-                std::cout<< "setting dx with a new author: " << p_tempNode->lineNum << "\n";
-              #endif
-              dx->author = p_tempNode;
-              }
-            if(tempDst == "ecx"){
-              #ifdef DEBUG_PRINT
-                std::cout<< "setting ecx with a new author: " << p_tempNode->lineNum << "\n";
-              #endif
-              ecx->author = p_tempNode;
-              }
-            if(tempDst == "edi"){
-              #ifdef DEBUG_PRINT
-                std::cout<< "setting edi with a new author: " << p_tempNode->lineNum << "\n";
-              #endif
-              edi->author = p_tempNode;
-              }
-          }
-          //else if tempDst is equal to "error" then must be a constant like "17"
-          else{
-            //so create an edge from the rootNode to the current instruction node;
-            
-            p_tempOutEdge->start = p_tempNode;p_rootNode;
-            p_tempOutEdge->finish = p_rootNode;
-          }
-
-
-          //add the IN OUT tempEdges to the current node
-          p_tempNode->inEdges.push_back(p_tempInEdge);
-          //p_tempNode->outEdges.push_back(p_tempOutEdge);
-
+          std::pair<int, int> srcRegNumSize = checkForRegs(src);
+          std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+          
           #ifdef DEBUG_PRINT
-            std::cout<< p_tempNode->lineNum << "\n";
-            std::cout<< p_tempNode << "\n";
+            for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
+                      std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
+                    }
           #endif
 
+           //else if (srcRegNumSize.first) is equal to "null" then must be a constant like "17"
+            //so create an OUTedge from the rootNode to the current tempInstruction node;
+            //and create an INedge from the rootNode to the current tempInstruction node; 
+            
+          if(regAuthors.empty()){
+            #ifdef DEBUG_PRINT
+            std::cout<< "REGAUTHORS IS EMPTY!! \n";
+            #endif
+            p_tempInEdge->start = p_rootNode;
+            p_tempInEdge->finish = p_tempNode;
+            p_tempOutEdge->start = p_rootNode;
+            p_tempOutEdge->finish = p_tempNode;
+            p_rootNode->outEdges.push_back(p_tempOutEdge);
+            p_tempNode->inEdges.push_back(p_tempInEdge);
+            
+          }
+          else{
+            //if srcRegNumSize.first) is not EMPTY then it must be a valid register
+            for (auto it = std::begin(regAuthors); it != std::end(regAuthors); ++it){
+                //4-17-18 
+                Edge* p_tempInEdge = new Edge();
+                Edge* p_tempOutEdge = new Edge();
+                p_tempInEdge->start = (*it);
+                p_tempInEdge->finish = p_tempNode;
+
+                
+                
+
+                //add correct outEdge from previous register author to self current node 
+                p_tempOutEdge->start = (*it);
+                p_tempOutEdge->finish = p_tempNode;
+
+                p_tempNode->inEdges.push_back(p_tempInEdge);
+                (*it)->outEdges.push_back(p_tempOutEdge);
+
+                
+
+                #ifdef DEBUG_PRINT
+                  std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
+                  std::cout<<"p_tempInEdge->start : " << (*it)->lineNum  << "\n";
+                  std::cout<<"p_tempInEdge->finish is : " << p_tempNode->lineNum  << "\n";
+                  for (auto jt = std::begin((*it)->outEdges); jt != std::end((*it)->outEdges); ++jt){
+                    std::cout<<"outEdges for Node: " << ((*it))->lineNum << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+                  }
+                  for (auto jt = std::begin(p_tempNode->inEdges); jt != std::end(p_tempNode->inEdges); ++jt){
+                    std::cout<<"inEdges for Node: " << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+                  }
+                #endif
+
+                
+
+                
+            }
+          }
+
+          #ifdef DEBUG_PRINT
+          std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
+          for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
+            std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
+          }
+          #endif
+
+          //...
+          std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+          //if (dstRegNumSize.first) is not NULL then it must be a valid register
+          if(dstRegNumSize.first){
+            #ifdef DEBUG_PRINT
+              if((dstRegNumSize.first) == 8){
+                std::cout<< (dstRegNumSize.second);
+              }
+            #endif
+            
+            set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+          }
+          else{
+            //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+            //so create an OUTedge from the rootNode to the current tempInstruction node;
+            //and create an INedge from the rootNode to the current tempInstruction node; 
+            
+            p_tempOutEdge->start = p_tempNode;
+            p_tempOutEdge->finish = p_rootNode;
+            p_tempNode->outEdges.push_back(p_tempOutEdge);
+          }
           p_sliceGraph->nodes.push_back(p_tempNode);
         }
       }
     }
 
-    //remove the last 'node' in the nodes vector of sliceGraph, because this last node is not really an instruction node. Instead it is the last line of the exslice1.c file, );
-    //p_sliceGraph->nodes.pop_back();
-
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-      std::cout<<((*it)->lineNum) << "\n";
+      std::cout<< ((*it)->lineNum) <<"\n";
       for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-        std::cout<< "inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
       }
       std::cout<<"\n";
       for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-        std::cout<< "outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
       }
       std::cout<<"\n";
     }
 
-  */
+    std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
+          for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
+            std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
+          }
+
+
     //...
 
     // create a typedef for the Graph type
@@ -480,7 +466,7 @@ static inline void clear_reg_internal (int reg, int size)
     // get the property map for vertex indices
     typedef property_map<Graph, vertex_index_t>::type IndexMap;
     IndexMap index = get(vertex_index, g);
-
+/*
     std::cout << "vertices(g) = ";
     typedef graph_traits<Graph>::vertex_iterator vertex_iter;
     std::pair<vertex_iter, vertex_iter> vp;
@@ -497,6 +483,7 @@ static inline void clear_reg_internal (int reg, int size)
         std::cout << "(" << index[source(*ei, g)] 
                   << "," << index[target(*ei, g)] << ") ";
     std::cout << std::endl;
+    */
     // ...
     return 0;
   }

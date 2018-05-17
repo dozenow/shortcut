@@ -4,6 +4,9 @@
 #include <boost/numeric/ublas/vector.hpp>
 //#include <boost/numeric/ublas/io.hpp>
 #include <map>
+#include <algorithm> 
+#include <cctype>
+#include <locale>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -96,7 +99,7 @@ struct eflags {
 	*/
 };
 
-std::string checkForRegs(std::string instOperand);
+std::pair<int, int> checkForRegs(std::string instOperand);
 
 std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"edi", {3,4}},
