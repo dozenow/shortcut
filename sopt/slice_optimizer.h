@@ -59,26 +59,12 @@ struct instrGraph {
 	//boost::numeric::ublas::vector<Node*> nodes;
 };
 
-//change to use same taint format as pin (omniplay/dift/linkage_new2.cpp) and (omniplay/dift/taint_interface/taint_full_interface.c)
-//A tregister has a register number, a size, and a pointer to the Node that most recently affected the register.
-struct tregister {
-	uint32_t regNum;
-	uint32_t size;
-	std::vector<Node*> authors;
-};
-
-//No need for this struct?
-struct registers {
-	std::vector<tregister*> vectOfRegs;
-};
-
 std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
 //Node* shadow_reg_table[NUM_REGS * REG_SIZE];
 
-//The memory state of our slice is represented by a map of 32-bit addresses (ulongs) and the Node that most recently affected the memory location at that address.
-struct memLocations {
-	std::map<u_long, Node*> mapMem;
-};
+//The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
+std::map<u_long, Node*> mapMem;
+
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
@@ -136,3 +122,6 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"xmm6", {60,16}},
 	{"xmm7", {61,16}},
 };
+
+void clear_reg (int reg, int size);
+void set_reg (int reg, int size, Node* author);

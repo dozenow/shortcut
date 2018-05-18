@@ -14,6 +14,7 @@
 #include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <istream>
+#include <regex>
 #include "slice_optimizer.h"
 #include <boost/algorithm/string.hpp>
 #include <boost/numeric/ublas/vector.hpp>
@@ -220,16 +221,11 @@ static inline void rtrim(std::string &s) {
   {
       set_reg_internal (reg, size, author);
   }
-
-  void set_treg(tregister* tregister, int regNum, int size){
-    tregister->regNum = regNum;
-    tregister->size = size;
-  }
   
   int main(int,char*[])
   {
 
-    std::string filename("testslice.c");
+    std::string filename("memRegtestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -237,9 +233,6 @@ static inline void rtrim(std::string &s) {
     instrGraph* p_sliceGraph = &sliceGraph;
     std::vector<std::string> instructionPieces;
     std::vector<std::string> tempPieces;
-    std::string mnemonic;
-    std::string dst;
-    std::string src;
     Node* p_rootNode = new Node();
     Edge* ptempEdge = new Edge();
     p_rootNode->outEdges.push_back(ptempEdge);
@@ -257,6 +250,63 @@ static inline void rtrim(std::string &s) {
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
 
+          std::string mnemonic;
+          std::string istr;
+          std::string dst;
+          std::string src;
+
+          std::sregex_iterator end;
+          std::regex allPreSpaceRgx("(^[^\\s]+)");
+
+          auto iterPreSpace = std::sregex_iterator(line.begin(), line.end(), allPreSpaceRgx);
+          while (iterPreSpace != end) {
+            std::smatch match = *iterPreSpace;
+            std::cout << "regex1:" << match.str() << "\n";
+            iterPreSpace++;
+          } 
+
+          std::regex allPreExtra("^.*(?=(\\/\\*))");
+          auto iterPreExtra = std::sregex_iterator(line.begin(), line.end(), allPreExtra);
+          while (iterPreExtra != end) {
+            std::smatch match = *iterPreExtra;
+            istr = match.str();
+            std::cout << "regex2:" << match.str() << "\n";
+            iterPreExtra++;
+          } 
+
+          //remove the quotes symbol char that leads the instruction string.
+          istr = istr.substr(1, istr.size());
+
+          mnemonic = istr.substr(0, istr.find(' '));
+          ltrim(mnemonic);
+          rtrim(mnemonic);
+
+          std::cout<<"mnemonic Arg1: "<<mnemonic<<"\n";
+          std::cout<<"istr:"<<istr<<"\n";
+
+          dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
+          std::cout << "dst:" << dst << "\n";
+
+          src = istr.substr((istr.find(',')+2), (istr.size()-2));
+          std::cout << "src:" << src << "\n";
+
+/*
+          std::string srcRgx = mnemonic + "(.+)";
+          std::cout<<"srcRgx:"<<srcRgx<<"\n";
+
+          std::regex allSrc(srcRgx);
+          auto iterAllSrc = std::sregex_iterator(istr.begin(), istr.end(), allSrc);
+          while (iterAllSrc != end) {
+            std::smatch match = *iterAllSrc;
+            istr = match.str();
+            std::cout << "iterAllSrc:" << match.str() << "\n";
+            iterAllSrc++;
+          } 
+          */
+
+          //...
+
+          /*
           boost::split(tempPieces, line, boost::is_any_of(" "), token_compress_on);
           mnemonic = tempPieces[0];
           //erase the first char of the mnemonic string to remove the extra quote symbol at the start of the mnemonic string.
@@ -269,6 +319,7 @@ static inline void rtrim(std::string &s) {
             }
             std::cout<<tempPieces[1]<<"\n";
           #endif
+            
           
           
           boost::split(tempPieces, tempPieces[1], boost::is_any_of(","), token_compress_on);
@@ -291,6 +342,7 @@ static inline void rtrim(std::string &s) {
           #endif
           
           src = tempPieces[0];
+          */
 
           //trim off preceding whitespace from the registerName string
           ltrim(src);
