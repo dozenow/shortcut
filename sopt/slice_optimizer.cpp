@@ -256,21 +256,15 @@ static inline void rtrim(std::string &s) {
           std::string src;
 
           std::sregex_iterator end;
-          std::regex allPreSpaceRgx("(^[^\\s]+)");
-
-          auto iterPreSpace = std::sregex_iterator(line.begin(), line.end(), allPreSpaceRgx);
-          while (iterPreSpace != end) {
-            std::smatch match = *iterPreSpace;
-            std::cout << "regex1:" << match.str() << "\n";
-            iterPreSpace++;
-          } 
 
           std::regex allPreExtra("^.*(?=(\\/\\*))");
           auto iterPreExtra = std::sregex_iterator(line.begin(), line.end(), allPreExtra);
           while (iterPreExtra != end) {
             std::smatch match = *iterPreExtra;
             istr = match.str();
-            std::cout << "regex2:" << match.str() << "\n";
+            #ifdef DEBUG_PRINT
+              std::cout << "regex2:" << match.str() << "\n";
+            #endif
             iterPreExtra++;
           } 
 
@@ -281,68 +275,11 @@ static inline void rtrim(std::string &s) {
           ltrim(mnemonic);
           rtrim(mnemonic);
 
-          std::cout<<"mnemonic Arg1: "<<mnemonic<<"\n";
           std::cout<<"istr:"<<istr<<"\n";
 
           dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
-          std::cout << "dst:" << dst << "\n";
 
           src = istr.substr((istr.find(',')+2), (istr.size()-2));
-          std::cout << "src:" << src << "\n";
-
-/*
-          std::string srcRgx = mnemonic + "(.+)";
-          std::cout<<"srcRgx:"<<srcRgx<<"\n";
-
-          std::regex allSrc(srcRgx);
-          auto iterAllSrc = std::sregex_iterator(istr.begin(), istr.end(), allSrc);
-          while (iterAllSrc != end) {
-            std::smatch match = *iterAllSrc;
-            istr = match.str();
-            std::cout << "iterAllSrc:" << match.str() << "\n";
-            iterAllSrc++;
-          } 
-          */
-
-          //...
-
-          /*
-          boost::split(tempPieces, line, boost::is_any_of(" "), token_compress_on);
-          mnemonic = tempPieces[0];
-          //erase the first char of the mnemonic string to remove the extra quote symbol at the start of the mnemonic string.
-          mnemonic.erase(0,1);
-
-          boost::split(tempPieces, line, boost::is_any_of(mnemonic), token_compress_on);
-          #ifdef DEBUG_PRINT
-            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
-                std::cout<<(*it)<<"\n";
-            }
-            std::cout<<tempPieces[1]<<"\n";
-          #endif
-            
-          
-          
-          boost::split(tempPieces, tempPieces[1], boost::is_any_of(","), token_compress_on);
-          
-
-          #ifdef DEBUG_PRINT
-            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
-                std::cout<<(*it)<<"\n";
-            }
-            std::cout<<tempPieces[0]<<"\n";
-          #endif
-          dst = tempPieces[0];
-          
-          boost::split(tempPieces, tempPieces[1], boost::is_any_of("/"), token_compress_on);
-          #ifdef DEBUG_PRINT
-            for (auto it = std::begin(tempPieces); it != std::end(tempPieces); ++it){
-                std::cout<<(*it)<<"\n";
-            }
-            std::cout<<tempPieces[0]<<"\n";
-          #endif
-          
-          src = tempPieces[0];
-          */
 
           //trim off preceding whitespace from the registerName string
           ltrim(src);
