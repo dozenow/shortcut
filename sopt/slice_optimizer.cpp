@@ -310,27 +310,105 @@ static inline void rtrim(std::string &s) {
 
           std::pair<int, int> srcRegNumSize = checkForRegs(src);
           std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
-          
+
           #ifdef DEBUG_PRINT
             for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
                       std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
                     }
           #endif
 
-           //else if (srcRegNumSize.first) is equal to "null" then must be a constant like "17"
+           
+            
+            //TODO make this check if memory src has been set by a previous instruction and link the current instruction to the last author of the src memory address
+          if(regAuthors.empty()){
+            
+
+            std::sregex_iterator end;
+            std::string bracketStr;
+            
+            //TODO right now assumes everythign is a "byte ptr", need to add logic for word(2x) double word(4x) and xmmword (16x)
+            //regex selects everything between square brackets
+            //"word ptr [0xbfffef74]" IN
+            //"[0xbfffef74]" OUT
+            std::regex allInBrackets("(?=(\\[)).*");
+            auto iterInBrack = std::sregex_iterator(src.begin(), src.end(), allInBrackets);
+            while (iterInBrack != end) {
+              std::smatch match = *iterInBrack;
+              bracketStr = match.str();
+              #ifdef DEBUG_PRINT
+                std::cout << "memAddr:" << bracketStr << "\n";
+              #endif
+              iterInBrack++;
+            }
+
+            //take the bracketString of a memory address src, [0xbfffef74]
+            //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+            if(bracketStr.size() > 0){
+              std::string memSizeStr;
+              memSizeStr = src.substr(0, dst.find(bracketStr));
+              memSizeStr = memSizeStr.substr(0, memSizeStr.find("ptr"));
+              std::cout << "srcmemSizeStr1:" << memSizeStr << "\n";
+              #ifdef DEBUG_PRINT
+              std::cout << "srcmemSizeStr1:" << memSizeStr << "\n";
+              #endif
+              
+              ltrim(memSizeStr);
+              rtrim(memSizeStr);
+              int memSize;
+
+              std::map<std::string, const int>::iterator iter2;
+              iter2 = strSizeToByte.find(memSizeStr);
+              if (iter2 != strSizeToByte.end()){
+                memSize = (*iter2).second;
+                std::cout<<"srcmemSize:" << memSize << "\n";
+              }
+              u_long i;
+
+              bracketStr = bracketStr.substr(1, (bracketStr.size()-2));
+              std::istringstream hexstr(bracketStr);
+              u_long hexValue;
+              hexstr >> std::hex >> hexValue;
+              #ifdef DEBUG_PRINT
+                std::cout<< "srcbracketStr has contents! " << bracketStr << ", " << hexValue <<"\n";
+              #endif
+              for (i=0; i<memSize; i++){
+                std::map<u_long, Node*>::iterator it;
+                it = mapMem.find(hexValue+i);
+                //if the key actually exists in our map of [memoryAddress], authorNode
+                if (it != mapMem.end()){
+                  Edge* p_tempInEdge = new Edge();
+                  Edge* p_tempOutEdge = new Edge();
+                  #ifdef DEBUG_PRINT
+                    std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
+                  #endif
+                  p_tempInEdge->start = (*it).second;
+                  p_tempInEdge->finish = p_tempNode;
+                  
+
+                  //add correct outEdge from previous register author to self current node 
+                  p_tempOutEdge->start = (*it).second;
+                  p_tempOutEdge->finish = p_tempNode;
+
+                  p_tempNode->inEdges.push_back(p_tempInEdge);
+                  ((*it).second)->outEdges.push_back(p_tempOutEdge);
+                }
+              }
+            }
+            //else if (bracketStr.size() < 0) then must be a constant src like "17"
             //so create an OUTedge from the rootNode to the current tempInstruction node;
             //and create an INedge from the rootNode to the current tempInstruction node; 
-            
-          if(regAuthors.empty()){
-            #ifdef DEBUG_PRINT
-            std::cout<< "REGAUTHORS IS EMPTY!! \n";
-            #endif
-            p_tempInEdge->start = p_rootNode;
-            p_tempInEdge->finish = p_tempNode;
-            p_tempOutEdge->start = p_rootNode;
-            p_tempOutEdge->finish = p_tempNode;
-            p_rootNode->outEdges.push_back(p_tempOutEdge);
-            p_tempNode->inEdges.push_back(p_tempInEdge);
+            else{
+              #ifdef DEBUG_PRINT
+                std::cout<< "CONST SRC DETECTED! \n";
+              #endif
+
+              p_tempInEdge->start = p_rootNode;
+              p_tempInEdge->finish = p_tempNode;
+              p_tempOutEdge->start = p_rootNode;
+              p_tempOutEdge->finish = p_tempNode;
+              p_rootNode->outEdges.push_back(p_tempOutEdge);
+              p_tempNode->inEdges.push_back(p_tempInEdge);
+            } 
             
           }
           else{
@@ -392,13 +470,81 @@ static inline void rtrim(std::string &s) {
             set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
           }
           else{
-            //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
-            //so create an OUTedge from the rootNode to the current tempInstruction node;
-            //and create an INedge from the rootNode to the current tempInstruction node; 
             
-            p_tempOutEdge->start = p_tempNode;
-            p_tempOutEdge->finish = p_rootNode;
-            p_tempNode->outEdges.push_back(p_tempOutEdge);
+
+            //handle memory dst 
+            //1 byte = 8 bits 
+            //word = 2 bytes = 16 bits  
+            //double word = 4 bytes = 32 bits
+            //xmm word = 16 bytes = 144 bits
+
+            std::sregex_iterator end;
+            std::string bracketStr;
+            
+            
+            //TODO right now assumes everythign is a "byte ptr", need to add logic for word(2x) double word(4x) and xmmword (16x)
+            //regex selects everything between square brackets
+            //"word ptr [0xbfffef74]" IN
+            //"[0xbfffef74]" OUT
+            std::regex allInBrackets("(?=(\\[)).*");
+            auto iterInBrack = std::sregex_iterator(dst.begin(), dst.end(), allInBrackets);
+            while (iterInBrack != end) {
+              std::smatch match = *iterInBrack;
+              bracketStr = match.str();
+              #ifdef DEBUG_PRINT
+                std::cout << "dstbracketStr:" << bracketStr << "\n";
+              #endif
+              iterInBrack++;
+            }
+
+
+            //take the bracketString of a memory address dst, [0xbfffef74]
+            //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+            if(bracketStr.size() > 0){
+              std::string memSizeStr;
+              memSizeStr = dst.substr(0, dst.find(bracketStr));
+              memSizeStr = memSizeStr.substr(0, memSizeStr.find("ptr"));
+              #ifdef DEBUG_PRINT
+              std::cout << "dstmemSizeStr1:" << memSizeStr << "\n";
+              #endif
+              
+              ltrim(memSizeStr);
+              rtrim(memSizeStr);
+              int memSize;
+
+              std::map<std::string, const int>::iterator it;
+              it = strSizeToByte.find(memSizeStr);
+              if (it != strSizeToByte.end()){
+                memSize = (*it).second;
+                #ifdef DEBUG_PRINT
+                std::cout<<"dstmemSize:" << memSize << "\n";
+                #endif
+              }
+
+              bracketStr = bracketStr.substr(1, (bracketStr.size()-2));
+              std::istringstream hexstr(bracketStr);
+              u_long hexValue;
+              hexstr >> std::hex >> hexValue;
+              #ifdef DEBUG_PRINT
+                std::cout<< "dstbracketStr has contents! " << bracketStr << ", " << hexValue <<"\n";
+              #endif
+              u_long i;
+              for (i=0; i<memSize; i++){
+                mapMem[(hexValue+i)] = p_tempNode;
+              } 
+              
+            }
+            else{
+              //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+              //so create an OUTedge from the rootNode to the current tempInstruction node;
+              //and create an INedge from the rootNode to the current tempInstruction node; 
+              
+              p_tempOutEdge->start = p_tempNode;
+              p_tempOutEdge->finish = p_rootNode;
+              p_tempNode->outEdges.push_back(p_tempOutEdge);
+            } 
+
+
           }
           p_sliceGraph->nodes.push_back(p_tempNode);
         }
@@ -418,10 +564,16 @@ static inline void rtrim(std::string &s) {
       std::cout<<"\n";
     }
 
-    std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
-          for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
-            std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
-          }
+      for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
+        std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
+      }
+
+    #ifdef DEBUG_PRINT
+      std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
+            for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
+              std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
+            }
+    #endif
 
 
     //...

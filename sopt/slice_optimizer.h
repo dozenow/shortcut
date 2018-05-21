@@ -7,6 +7,8 @@
 #include <algorithm> 
 #include <cctype>
 #include <locale>
+#include <sstream>
+#include <iomanip>
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -121,6 +123,17 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"xmm5", {59,16}},
 	{"xmm6", {60,16}},
 	{"xmm7", {61,16}},
+};
+
+//byte = 8 bits 
+//word = 2 bytes = 16 bits  
+//double word = 4 bytes = 32 bits
+//xmm word = 16 bytes = 144 bits
+std::map<std::string, const int > strSizeToByte = {
+	{"byte", 1},
+	{"word", 2},
+	{"double word", 4},
+	{"xmmword", 16},
 };
 
 void clear_reg (int reg, int size);
