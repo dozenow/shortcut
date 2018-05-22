@@ -23,7 +23,8 @@ using namespace boost;
 
 //#define DEBUG_PRINT
 
-//from taint_full_interface.c
+//from taint_full_interface.c.
+//the regToNumSize table in slice_optimizer.h is similar but returns 1 for the MostSigByte, or high half, such as AH and returns -1 for the leastSigByte, or low half such as AL.
 static inline const char* regName (int reg_num, int reg_size)
   {
       switch (reg_num) {
@@ -166,10 +167,15 @@ static inline void clear_reg_internal (int reg, int size)
  static inline void set_reg_internal (int reg, int size, Node* author)
   {
       int i = 0;
+      int offset = 0;
 
+      if (size == -1){
+        size = 1;
+        offset = 1;
+      }
 
       for (i = 0; i < size; i++) {
-          shadow_reg_table[reg * REG_SIZE + i] = author;
+          shadow_reg_table[(reg * REG_SIZE + i)+offset] = author;
           #ifdef DEBUG_PRINT
             std::cout<< "Setting shadow_reg_table at " << (reg * REG_SIZE + i) << "to " << author->lineNum << "\n";
             std::cout<< regNumSize.first << "\n";
@@ -178,13 +184,20 @@ static inline void clear_reg_internal (int reg, int size)
       }
   }
 
+
   static inline std::vector<Node*> get_reg_internal (int reg, int size)
   {
       int i = 0;
       std::vector<Node*> authors;
+      int offset = 0;
+
+      if (size == -1){
+        size = 1;
+        offset = 1;
+      }
 
       for (i = 0; i < size; i++) {
-          authors.push_back(shadow_reg_table[reg * REG_SIZE + i]);
+          authors.push_back(shadow_reg_table[(reg * REG_SIZE + i)+offset]);
           #ifdef DEBUG_PRINT
             std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
           #endif
@@ -221,6 +234,7 @@ static inline void rtrim(std::string &s) {
   {
       set_reg_internal (reg, size, author);
   }
+
   
   int main(int,char*[])
   {
