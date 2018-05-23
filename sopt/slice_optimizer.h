@@ -147,3 +147,4 @@ std::set<std::string> addLikeInstr = {
 
 void clear_reg (int reg, int size);
 void set_reg (int reg, int size, Node* author);
+void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);

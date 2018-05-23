@@ -9,6 +9,6 @@ asm (
 "div eax, ebx /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov ax, 53 /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"	
 "mov ah, 25 /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
-"cmov esp, eax /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov esp, edi /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
+"add esp, eax /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"	
 );

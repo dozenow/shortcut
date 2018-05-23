@@ -248,6 +248,98 @@ static inline void rtrim(std::string &s) {
       //set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
   }
 
+  std::string getStringWithBrackets(std::string stringInBrackets){
+    std::sregex_iterator end;
+    std::string bracketStr;
+    //regex selects everything between square brackets
+    //"word ptr [0xbfffef74]" IN
+    //"[0xbfffef74]" OUT
+    std::regex allInBrackets("(?=(\\[)).*");
+    auto iterInBrack = std::sregex_iterator(stringInBrackets.begin(), stringInBrackets.end(), allInBrackets);
+    while (iterInBrack != end) {
+      std::smatch match = *iterInBrack;
+      bracketStr = match.str();
+      #ifdef DEBUG_PRINT
+        std::cout << "memAddr:" << bracketStr << "\n";
+      #endif
+      iterInBrack++;
+    }
+    return bracketStr;
+  }
+
+  u_long hexStrToLong(std::string bracketStr){
+    std::istringstream hexstr(bracketStr);
+    u_long hexValue;
+    hexstr >> std::hex >> hexValue;
+    #ifdef DEBUG_PRINT
+      std::cout<< "hexStrToLong has contents! " << bracketStr << ", " << hexValue <<"\n";
+    #endif
+    return hexValue;
+  }
+
+  int getMemSizeByte(std::string src, std::string bracketStr){
+    std::string memSizeStr;
+    memSizeStr = src.substr(0, src.find("ptr"));
+    std::cout << "getMemSize:" << memSizeStr << "\n";
+    #ifdef DEBUG_PRINT
+    std::cout << "getMemSize:" << memSizeStr << "\n";
+    #endif
+    
+    ltrim(memSizeStr);
+    rtrim(memSizeStr);
+    int memSize;
+
+    std::map<std::string, const int>::iterator iter2;
+    iter2 = strSizeToByte.find(memSizeStr);
+    if (iter2 != strSizeToByte.end()){
+      memSize = (*iter2).second;
+      std::cout<<"srcmemSize:" << memSize << "\n";
+    }
+    return memSize;
+  }
+
+  void set_src_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode){
+    int i;
+    for (i=0; i<memSizeBytes; i++){
+      std::map<u_long, Node*>::iterator it;
+      it = mapMem.find(hexValue+i);
+      //if the key actually exists in our map of [memoryAddress], authorNode
+      if (it != mapMem.end()){
+        Edge* p_tempInEdge = new Edge();
+        Edge* p_tempOutEdge = new Edge();
+        #ifdef DEBUG_PRINT
+          std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
+        #endif
+        p_tempInEdge->start = (*it).second;
+        p_tempInEdge->finish = p_tempNode;
+        
+
+        //add correct outEdge from previous register author to self current node 
+        p_tempOutEdge->start = (*it).second;
+        p_tempOutEdge->finish = p_tempNode;
+
+        p_tempNode->inEdges.push_back(p_tempInEdge);
+        ((*it).second)->outEdges.push_back(p_tempOutEdge);
+      }
+    }
+  }
+
+  void set_src_root(Node* p_rootNode, Node* p_tempNode){
+    Edge* p_tempInEdge = new Edge();
+    Edge* p_tempOutEdge = new Edge();
+
+    #ifdef DEBUG_PRINT
+      std::cout<< "CONST SRC DETECTED! set_src_root() \n";
+    #endif
+
+    p_tempInEdge->start = p_rootNode;
+    p_tempInEdge->finish = p_tempNode;
+    p_tempOutEdge->start = p_rootNode;
+    p_tempOutEdge->finish = p_tempNode;
+    p_rootNode->outEdges.push_back(p_tempOutEdge);
+    p_tempNode->inEdges.push_back(p_tempInEdge);
+  }
+
   void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode){
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
   //if srcRegNumSize.first) is not EMPTY then it must be a valid register
@@ -383,134 +475,46 @@ static inline void rtrim(std::string &s) {
                     }
           #endif
 
-           
-          //if regAuthors is empty then must be a const src or memory src            
-          if(regAuthors.empty()){
+          #ifdef DEBUG_PRINT
+            std::cout<< "regAuthors.empty() is " << regAuthors.empty() << "\n";
+            std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
+          #endif
 
-            std::sregex_iterator end;
+
+          //if there is a src register, set the appropriate edges to the previous author of that register
+          if(srcRegNumSize.first){
+            set_src_reg(srcRegNumSize, p_tempNode);
+          }
+          //else must be a const src or memory src  
+          else{
             std::string bracketStr;
+            std::string memAddrStr;
+            bracketStr = getStringWithBrackets(src);
             
-            //regex selects everything between square brackets
-            //"word ptr [0xbfffef74]" IN
-            //"[0xbfffef74]" OUT
-            std::regex allInBrackets("(?=(\\[)).*");
-            auto iterInBrack = std::sregex_iterator(src.begin(), src.end(), allInBrackets);
-            while (iterInBrack != end) {
-              std::smatch match = *iterInBrack;
-              bracketStr = match.str();
-              #ifdef DEBUG_PRINT
-                std::cout << "memAddr:" << bracketStr << "\n";
-              #endif
-              iterInBrack++;
-            }
-
             //take the bracketString of a memory address src, [0xbfffef74]
             //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
             if(bracketStr.size() > 0){
-              std::string memSizeStr;
-              memSizeStr = src.substr(0, dst.find(bracketStr));
-              memSizeStr = memSizeStr.substr(0, memSizeStr.find("ptr"));
-              std::cout << "srcmemSizeStr1:" << memSizeStr << "\n";
-              #ifdef DEBUG_PRINT
-              std::cout << "srcmemSizeStr1:" << memSizeStr << "\n";
-              #endif
+              int memSizeBytes = getMemSizeByte(src,bracketStr);
+              //remove the brackets from the string
+              memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
               
-              ltrim(memSizeStr);
-              rtrim(memSizeStr);
-              int memSize;
+              u_long hexValue = hexStrToLong(memAddrStr);
 
-              std::map<std::string, const int>::iterator iter2;
-              iter2 = strSizeToByte.find(memSizeStr);
-              if (iter2 != strSizeToByte.end()){
-                memSize = (*iter2).second;
-                std::cout<<"srcmemSize:" << memSize << "\n";
-              }
-              u_long i;
+              set_src_mem(memSizeBytes, hexValue, p_tempNode);
 
-              bracketStr = bracketStr.substr(1, (bracketStr.size()-2));
-              std::istringstream hexstr(bracketStr);
-              u_long hexValue;
-              hexstr >> std::hex >> hexValue;
-              #ifdef DEBUG_PRINT
-                std::cout<< "srcbracketStr has contents! " << bracketStr << ", " << hexValue <<"\n";
-              #endif
-              for (i=0; i<memSize; i++){
-                std::map<u_long, Node*>::iterator it;
-                it = mapMem.find(hexValue+i);
-                //if the key actually exists in our map of [memoryAddress], authorNode
-                if (it != mapMem.end()){
-                  Edge* p_tempInEdge = new Edge();
-                  Edge* p_tempOutEdge = new Edge();
-                  #ifdef DEBUG_PRINT
-                    std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
-                  #endif
-                  p_tempInEdge->start = (*it).second;
-                  p_tempInEdge->finish = p_tempNode;
-                  
-
-                  //add correct outEdge from previous register author to self current node 
-                  p_tempOutEdge->start = (*it).second;
-                  p_tempOutEdge->finish = p_tempNode;
-
-                  p_tempNode->inEdges.push_back(p_tempInEdge);
-                  ((*it).second)->outEdges.push_back(p_tempOutEdge);
-                }
-              }
             }
             //else if (bracketStr.size() < 0) then must be a constant src like "17"
             //so create an OUTedge from the rootNode to the current tempInstruction node;
             //and create an INedge from the rootNode to the current tempInstruction node; 
             else{
-              #ifdef DEBUG_PRINT
-                std::cout<< "CONST SRC DETECTED! \n";
-              #endif
-
-              p_tempInEdge->start = p_rootNode;
-              p_tempInEdge->finish = p_tempNode;
-              p_tempOutEdge->start = p_rootNode;
-              p_tempOutEdge->finish = p_tempNode;
-              p_rootNode->outEdges.push_back(p_tempOutEdge);
-              p_tempNode->inEdges.push_back(p_tempInEdge);
+              set_src_root(p_rootNode, p_tempNode);
             } 
-            
           }
-          else{
-            //if srcRegNumSize.first) is not EMPTY then it must be a valid register
-            for (auto it = std::begin(regAuthors); it != std::end(regAuthors); ++it){
-                //4-17-18 
-                Edge* p_tempInEdge = new Edge();
-                Edge* p_tempOutEdge = new Edge();
-                p_tempInEdge->start = (*it);
-                p_tempInEdge->finish = p_tempNode;
+           
+          //if regAuthors is empty then must be a const src or memory src            
+          if(regAuthors.empty()){
 
-                
-                
-
-                //add correct outEdge from previous register author to self current node 
-                p_tempOutEdge->start = (*it);
-                p_tempOutEdge->finish = p_tempNode;
-
-                p_tempNode->inEdges.push_back(p_tempInEdge);
-                (*it)->outEdges.push_back(p_tempOutEdge);
-
-                
-
-                #ifdef DEBUG_PRINT
-                  std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
-                  std::cout<<"p_tempInEdge->start : " << (*it)->lineNum  << "\n";
-                  std::cout<<"p_tempInEdge->finish is : " << p_tempNode->lineNum  << "\n";
-                  for (auto jt = std::begin((*it)->outEdges); jt != std::end((*it)->outEdges); ++jt){
-                    std::cout<<"outEdges for Node: " << ((*it))->lineNum << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
-                  }
-                  for (auto jt = std::begin(p_tempNode->inEdges); jt != std::end(p_tempNode->inEdges); ++jt){
-                    std::cout<<"inEdges for Node: " << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
-                  }
-                #endif
-
-                
-
-                
-            }
+            
           }
 
           #ifdef DEBUG_PRINT
@@ -524,11 +528,14 @@ static inline void rtrim(std::string &s) {
           std::pair<int, int> dstRegNumSize = checkForRegs(dst);
 
           //if there is BOTH dstReg, srcReg
-          if(!(regAuthors.empty()) && dstRegNumSize.first){
-            
+          if((srcRegNumSize.first) && (dstRegNumSize.first)){
+            #ifdef DEBUG_PRINT
             std::cout << "WOW! srcReg, dstReg detected. " << p_tempNode->lineNum << "\n";
+            #endif
             if(addLikeInstr.find(mnemonic) != addLikeInstr.end()){
+              #ifdef DEBUG_PRINT
               std::cout << "WOW2! addLikeInstr() found. " << mnemonic << "\n";
+              #endif
               //for addLikeInstructions the dst register is also a src Register before the result of the addition is put into the dst register.
               //add dst/src1, src2
               set_src_reg(dstRegNumSize, p_tempNode);
