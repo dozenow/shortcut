@@ -136,5 +136,14 @@ std::map<std::string, const int > strSizeToByte = {
 	{"xmmword", 16},
 };
 
+//Instructions that follow a similar dataflow to the 'add' instruction
+std::set<std::string> addLikeInstr = {
+	"add",
+	"sub",
+	"mul",
+	"div",
+	"cmov",
+};
+
 void clear_reg (int reg, int size);
 void set_reg (int reg, int size, Node* author);

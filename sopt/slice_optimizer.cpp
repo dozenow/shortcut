@@ -24,7 +24,7 @@ using namespace boost;
 //#define DEBUG_PRINT
 
 //from taint_full_interface.c.
-//the regToNumSize table in slice_optimizer.h is similar but returns 1 for the MostSigByte, or high half, such as AH and returns -1 for the leastSigByte, or low half such as AL.
+//the regToNumSize table in slice_optimizer.h is similar and returns -1 for the MostSigByte, or high half, such as AH and returns 1 for the leastSigByte, or low half such as AL.
 static inline const char* regName (int reg_num, int reg_size)
   {
       switch (reg_num) {
@@ -136,9 +136,6 @@ static inline const char* regName (int reg_num, int reg_size)
   }
 
 std::pair<int, int> checkForRegs(std::string instOperand){
-  bool found = false;
-  std::string reg = "error";
-
   std::pair<int, int> regNumSize (NULL,NULL);
   regNumSize.first =(regToNumSize[instOperand]).first;
   regNumSize.second = (regToNumSize[instOperand]).second;
@@ -235,7 +232,62 @@ static inline void rtrim(std::string &s) {
       set_reg_internal (reg, size, author);
   }
 
-  
+  //...
+  void taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags)
+  {
+      unsigned i;
+     // taint_t* shadow_reg_table = current_thread->shadow_reg_table;
+     // taint_t t = 0;
+      Node* t = NULL;
+
+      for (i = 0; i < size; i++) {
+    //t = merge_taints(shadow_reg_table[dst_reg_off + i], shadow_reg_table[src_reg_off + i]);
+    shadow_reg_table[dst_reg_off + i]  = t;
+      } 
+
+      //set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
+  }
+
+  void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode){
+  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+  //if srcRegNumSize.first) is not EMPTY then it must be a valid register
+  for (auto it = std::begin(regAuthors); it != std::end(regAuthors); ++it){
+      //4-23-18
+      Edge* p_tempInEdge = new Edge();
+      Edge* p_tempOutEdge = new Edge();
+      p_tempInEdge->start = (*it);
+      p_tempInEdge->finish = p_tempNode;
+
+      
+      
+
+      //add correct outEdge from previous register author to self current node 
+      p_tempOutEdge->start = (*it);
+      p_tempOutEdge->finish = p_tempNode;
+
+      p_tempNode->inEdges.push_back(p_tempInEdge);
+      (*it)->outEdges.push_back(p_tempOutEdge);
+
+      
+
+      #ifdef DEBUG_PRINT
+        std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
+        std::cout<<"p_tempInEdge->start : " << (*it)->lineNum  << "\n";
+        std::cout<<"p_tempInEdge->finish is : " << p_tempNode->lineNum  << "\n";
+        for (auto jt = std::begin((*it)->outEdges); jt != std::end((*it)->outEdges); ++jt){
+          std::cout<<"outEdges for Node: " << ((*it))->lineNum << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+        }
+        for (auto jt = std::begin(p_tempNode->inEdges); jt != std::end(p_tempNode->inEdges); ++jt){
+          std::cout<<"inEdges for Node: " << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+        }
+      #endif
+
+      
+
+      
+    }
+  }
+    
   int main(int,char*[])
   {
 
@@ -332,15 +384,12 @@ static inline void rtrim(std::string &s) {
           #endif
 
            
-            
-            //TODO make this check if memory src has been set by a previous instruction and link the current instruction to the last author of the src memory address
+          //if regAuthors is empty then must be a const src or memory src            
           if(regAuthors.empty()){
-            
 
             std::sregex_iterator end;
             std::string bracketStr;
             
-            //TODO right now assumes everythign is a "byte ptr", need to add logic for word(2x) double word(4x) and xmmword (16x)
             //regex selects everything between square brackets
             //"word ptr [0xbfffef74]" IN
             //"[0xbfffef74]" OUT
@@ -473,6 +522,19 @@ static inline void rtrim(std::string &s) {
 
           //...
           std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+
+          //if there is BOTH dstReg, srcReg
+          if(!(regAuthors.empty()) && dstRegNumSize.first){
+            
+            std::cout << "WOW! srcReg, dstReg detected. " << p_tempNode->lineNum << "\n";
+            if(addLikeInstr.find(mnemonic) != addLikeInstr.end()){
+              std::cout << "WOW2! addLikeInstr() found. " << mnemonic << "\n";
+              //for addLikeInstructions the dst register is also a src Register before the result of the addition is put into the dst register.
+              //add dst/src1, src2
+              set_src_reg(dstRegNumSize, p_tempNode);
+            }
+          }
+
           //if (dstRegNumSize.first) is not NULL then it must be a valid register
           if(dstRegNumSize.first){
             #ifdef DEBUG_PRINT
@@ -496,7 +558,6 @@ static inline void rtrim(std::string &s) {
             std::string bracketStr;
             
             
-            //TODO right now assumes everythign is a "byte ptr", need to add logic for word(2x) double word(4x) and xmmword (16x)
             //regex selects everything between square brackets
             //"word ptr [0xbfffef74]" IN
             //"[0xbfffef74]" OUT
