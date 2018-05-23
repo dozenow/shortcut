@@ -243,7 +243,6 @@ void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscall
     if (tdata) {
         if (*ppthread_log_clock >= print_start && !trace_start) { 
             trace_start = true;
-            fprintf (stderr, "start compare at syscall %d clock %lu\n", syscall_num, *ppthread_log_clock);
         }
 	int sysnum = (int) syscall_num;
 
@@ -284,7 +283,6 @@ void syscall_after (ADDRINT ip)
 
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= print_stop) { 
-        fprintf (stderr, "exit.\n");
 	print_results();
         try_to_exit (fd, PIN_GetPid());
         PIN_ExitApplication(0);
@@ -751,10 +749,6 @@ static void PIN_FAST_ANALYSIS_CALL trace_relread (ADDRINT ip, uint32_t memloc)
 
     u_long logaddr = get_value();
 
-    if (ip == 0x81acb4d || ip == 0x81acb64) {
-	fprintf (stderr, "rel read of %x memloc %x logaddr %lx clock %lu bb_cnt %lu\n", ip, memloc, logaddr, *ppthread_log_clock, bb_cnt);
-    }
-
     if (logaddr != memloc) {
 	handle_index_diverge(ip, memloc, logaddr, false);
     }
@@ -1148,13 +1142,6 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     }
 }
 
-void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
-{
-    struct thread_data* ptdata;
-    ptdata = (struct thread_data *) malloc (sizeof(struct thread_data));
-    printf("Pid %d (recpid %d, tid %d) thread fini\n", PIN_GetPid(), ptdata->record_pid, PIN_GetTid());
-}
-
 int main(int argc, char** argv) 
 {    
     int rc;
@@ -1194,7 +1181,6 @@ int main(int argc, char** argv)
     bufsize = 0;
 
     PIN_AddThreadStartFunction(thread_start, 0);
-    PIN_AddThreadFiniFunction(thread_fini, 0);
     PIN_AddFollowChildProcessFunction(follow_child, argv);
     PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);

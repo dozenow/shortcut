@@ -6936,7 +6936,6 @@ void trace_instrumentation(TRACE trace, void* v)
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR) syscall_after_redo, IARG_INST_PTR, IARG_END);
 
     for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-#ifdef TRACK_CTRL_FLOW_DIVERGE
         INS tail = BBL_InsTail (bbl);
         char* str = get_copy_of_disasm (tail);
         INS_InsertCall (tail, IPOINT_BEFORE, (AFUNPTR) monitor_control_flow_tail, 
@@ -6948,13 +6947,11 @@ void trace_instrumentation(TRACE trace, void* v)
 			IARG_END);
 
         put_copy_of_disasm (str);
-#endif
 	bool track_this_bb = false;
 	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
 #ifdef EXTRA_DEBUG
 	  debug_print (ins);
 #endif
-#ifdef TRACK_CTRL_FLOW_DIVERGE
 	    if (current_thread->ctrl_flow_info.merge_insts->find(INS_Address(ins)) != current_thread->ctrl_flow_info.merge_insts->end()) {
 		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) monitor_merge_point,
 				IARG_FAST_ANALYSIS_CALL, 
@@ -6969,7 +6966,6 @@ void trace_instrumentation(TRACE trace, void* v)
                 instrument_print_inst_dest (ins);
 		track_this_bb = true;
             }
-#endif
 
 #ifndef OPTIMIZED
             INS_InsertCall (ins, IPOINT_BEFORE, AFUNPTR(count_instruction), 

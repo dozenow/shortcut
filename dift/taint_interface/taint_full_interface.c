@@ -4212,7 +4212,6 @@ TAINTSIGN fw_slice_regflag (ADDRINT ip, char* ins_str, int reg, uint32_t regsize
 
 TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL taken, ADDRINT target, const CONTEXT* ctx) 
 {
-#ifdef TRACK_CTRL_FLOW_DIVERGE
     if (current_thread->ctrl_flow_info.is_in_original_branch) {
         if (current_thread->ctrl_flow_info.is_tracking_orig_path == true) { 
             //this is just a simple pass to figure out all branches of the  original path 
@@ -4360,17 +4359,14 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
             }
         }
     }
-#endif
 
     if (is_flag_tainted (mask)) {
-#ifdef TRACK_CTRL_FLOW_DIVERGE
         if (current_thread->ctrl_flow_info.changed_jump || (current_thread->ctrl_flow_info.is_nested_jump && current_thread->ctrl_flow_info.is_in_diverged_branch)) { 
             current_thread->ctrl_flow_info.changed_jump = false; // We've already replaced this jump with divergence 
             current_thread->ctrl_flow_info.is_nested_jump = false;
         } else if (current_thread->ctrl_flow_info.is_in_branch_first_inst) {
             current_thread->ctrl_flow_info.is_in_branch_first_inst = false;
         } else {
-#endif
 	    char change_str[64];
 	    char *t = change_str;
 	    char *p = ins_str;
@@ -4399,9 +4395,7 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	    OUTPUT_SLICE_VERIFICATION ("popfd");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 #endif
-#ifdef TRACK_CTRL_FLOW_DIVERGE
         }
-#endif 
     } else { 
 	if (current_thread->ctrl_flow_info.changed_jump) fprintf (stderr, "Diverge at non-tainted jump: %x %s mask %x\n", ip, ins_str, mask);
         assert (current_thread->ctrl_flow_info.changed_jump == false); //we diverge at a non-tainted jump??

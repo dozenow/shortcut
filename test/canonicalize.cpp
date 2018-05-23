@@ -63,7 +63,7 @@ int main (int argc, char* argv[])
     char line[256];
     char addr[64], type[64], value[64], extra1[64], extra2[64], extra3[64], extra4[64];
     divergence div;
-    bool is_dup, is_flipped, diverged;
+    bool is_dup = false, is_flipped = false, diverged = false;
     string last_diverge_addr, last_diverge_value;
 
     map<string, struct divergence>::iterator iter;

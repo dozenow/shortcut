@@ -92,8 +92,6 @@
 #define OF_MASK 0x800
 #define DF_MASK 0x400
 
-#define TRACK_CTRL_FLOW_DIVERGE   //I suspect this will break the backward taint tracing tool, but we're not actively using it anyway. It could be broken because I didn't roll back merge log when handling ctrl flow divergences, but it may still work though as the merge log may not need to be rolled back
-
 using namespace std;
 const int FLAG_TO_MASK[] = {0, CF_MASK, PF_MASK, AF_MASK, ZF_MASK, SF_MASK, OF_MASK, DF_MASK};
 #define GET_FLAG_VALUE(eflag, index) (eflag&FLAG_TO_MASK[index])
