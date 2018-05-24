@@ -248,7 +248,7 @@ static inline void rtrim(std::string &s) {
       //set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
   }
 
-  std::string getStringWithBrackets(std::string wholeInstructionString){
+  std::string getStringWithinBrackets(std::string wholeInstructionString){
     std::sregex_iterator end;
     std::string bracketStr;
     //regex selects everything between square brackets
@@ -379,6 +379,25 @@ static inline void rtrim(std::string &s) {
       
     }
   }
+
+  void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode){
+    int i;
+    for (i=0; i<memSizeBytes; i++){
+                mapMem[(hexValue+i)] = p_tempNode;
+              } 
+  }
+
+  void set_dst_root(Node* p_rootNode, Node* p_tempNode){
+    Edge* p_tempOutEdge = new Edge();
+
+    #ifdef DEBUG_PRINT
+      std::cout<< "CONST dst DETECTED! set_dst_root() \n";
+    #endif
+
+    p_tempOutEdge->start = p_tempNode;
+    p_tempOutEdge->finish = p_rootNode;
+    p_tempNode->outEdges.push_back(p_tempOutEdge);
+  }
     
   int main(int,char*[])
   {
@@ -489,7 +508,7 @@ static inline void rtrim(std::string &s) {
           else{
             std::string bracketStr;
             std::string memAddrStr;
-            bracketStr = getStringWithBrackets(src);
+            bracketStr = getStringWithinBrackets(src);
             
             //take the bracketString of a memory address src, [0xbfffef74]
             //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
@@ -497,9 +516,7 @@ static inline void rtrim(std::string &s) {
               int memSizeBytes = getMemSizeByte(src,bracketStr);
               //remove the brackets from the string
               memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-              
               u_long hexValue = hexStrToLong(memAddrStr);
-
               set_src_mem(memSizeBytes, hexValue, p_tempNode);
 
             }
@@ -510,19 +527,6 @@ static inline void rtrim(std::string &s) {
               set_src_root(p_rootNode, p_tempNode);
             } 
           }
-           
-          //if regAuthors is empty then must be a const src or memory src            
-          if(regAuthors.empty()){
-
-            
-          }
-
-          #ifdef DEBUG_PRINT
-          std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
-          for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
-            std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
-          }
-          #endif
 
           //...
           std::pair<int, int> dstRegNumSize = checkForRegs(dst);
@@ -544,90 +548,38 @@ static inline void rtrim(std::string &s) {
 
           //if (dstRegNumSize.first) is not NULL then it must be a valid register
           if(dstRegNumSize.first){
-            #ifdef DEBUG_PRINT
-              if((dstRegNumSize.first) == 8){
-                std::cout<< (dstRegNumSize.second);
-              }
-            #endif
-            
             set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
           }
           else{
-            
-
+            //else must be a const or memory dst  
             //handle memory dst 
             //1 byte = 8 bits 
             //word = 2 bytes = 16 bits  
             //double word = 4 bytes = 32 bits
             //xmm word = 16 bytes = 144 bits
-
-            std::sregex_iterator end;
             std::string bracketStr;
-            
-            
-            //regex selects everything between square brackets
-            //"word ptr [0xbfffef74]" IN
-            //"[0xbfffef74]" OUT
-            std::regex allInBrackets("(?=(\\[)).*");
-            auto iterInBrack = std::sregex_iterator(dst.begin(), dst.end(), allInBrackets);
-            while (iterInBrack != end) {
-              std::smatch match = *iterInBrack;
-              bracketStr = match.str();
-              #ifdef DEBUG_PRINT
-                std::cout << "dstbracketStr:" << bracketStr << "\n";
-              #endif
-              iterInBrack++;
-            }
+            std::string memAddrStr;
+            bracketStr = getStringWithinBrackets(dst);
 
-
-            //take the bracketString of a memory address dst, [0xbfffef74]
-            //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+            //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
             if(bracketStr.size() > 0){
-              std::string memSizeStr;
-              memSizeStr = dst.substr(0, dst.find(bracketStr));
-              memSizeStr = memSizeStr.substr(0, memSizeStr.find("ptr"));
-              #ifdef DEBUG_PRINT
-              std::cout << "dstmemSizeStr1:" << memSizeStr << "\n";
-              #endif
-              
-              ltrim(memSizeStr);
-              rtrim(memSizeStr);
-              int memSize;
+              int memSizeBytes = getMemSizeByte(dst,bracketStr);
+              //remove the brackets from the string
+              memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+              u_long hexValue = hexStrToLong(memAddrStr);
+              set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
-              std::map<std::string, const int>::iterator it;
-              it = strSizeToByte.find(memSizeStr);
-              if (it != strSizeToByte.end()){
-                memSize = (*it).second;
-                #ifdef DEBUG_PRINT
-                std::cout<<"dstmemSize:" << memSize << "\n";
-                #endif
-              }
-
-              bracketStr = bracketStr.substr(1, (bracketStr.size()-2));
-              std::istringstream hexstr(bracketStr);
-              u_long hexValue;
-              hexstr >> std::hex >> hexValue;
-              #ifdef DEBUG_PRINT
-                std::cout<< "dstbracketStr has contents! " << bracketStr << ", " << hexValue <<"\n";
-              #endif
-              u_long i;
-              for (i=0; i<memSize; i++){
-                mapMem[(hexValue+i)] = p_tempNode;
-              } 
-              
             }
             else{
               //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
               //so create an OUTedge from the rootNode to the current tempInstruction node;
               //and create an INedge from the rootNode to the current tempInstruction node; 
-              
-              p_tempOutEdge->start = p_tempNode;
-              p_tempOutEdge->finish = p_rootNode;
-              p_tempNode->outEdges.push_back(p_tempOutEdge);
+              set_dst_root(p_rootNode, p_tempNode);              
             } 
 
 
           }
+          //add the completed node with dst edges and src edges to the graph
           p_sliceGraph->nodes.push_back(p_tempNode);
         }
       }
