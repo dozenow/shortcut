@@ -248,14 +248,14 @@ static inline void rtrim(std::string &s) {
       //set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
   }
 
-  std::string getStringWithBrackets(std::string stringInBrackets){
+  std::string getStringWithBrackets(std::string wholeInstructionString){
     std::sregex_iterator end;
     std::string bracketStr;
     //regex selects everything between square brackets
     //"word ptr [0xbfffef74]" IN
     //"[0xbfffef74]" OUT
     std::regex allInBrackets("(?=(\\[)).*");
-    auto iterInBrack = std::sregex_iterator(stringInBrackets.begin(), stringInBrackets.end(), allInBrackets);
+    auto iterInBrack = std::sregex_iterator(wholeInstructionString.begin(), wholeInstructionString.end(), allInBrackets);
     while (iterInBrack != end) {
       std::smatch match = *iterInBrack;
       bracketStr = match.str();
