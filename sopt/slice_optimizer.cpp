@@ -350,17 +350,12 @@ static inline void rtrim(std::string &s) {
       p_tempInEdge->start = (*it);
       p_tempInEdge->finish = p_tempNode;
 
-      
-      
-
       //add correct outEdge from previous register author to self current node 
       p_tempOutEdge->start = (*it);
       p_tempOutEdge->finish = p_tempNode;
 
       p_tempNode->inEdges.push_back(p_tempInEdge);
       (*it)->outEdges.push_back(p_tempOutEdge);
-
-      
 
       #ifdef DEBUG_PRINT
         std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
@@ -373,10 +368,6 @@ static inline void rtrim(std::string &s) {
           std::cout<<"inEdges for Node: " << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
         }
       #endif
-
-      
-
-      
     }
   }
 
@@ -406,8 +397,7 @@ static inline void rtrim(std::string &s) {
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
-    instrGraph sliceGraph;
-    instrGraph* p_sliceGraph = &sliceGraph;
+    instrGraph* p_sliceGraph = new instrGraph();
     std::vector<std::string> instructionPieces;
     std::vector<std::string> tempPieces;
     Node* p_rootNode = new Node();
@@ -458,11 +448,10 @@ static inline void rtrim(std::string &s) {
 
           src = istr.substr((istr.find(',')+2), (istr.size()-2));
 
-          //trim off preceding whitespace from the registerName string
+          //trim off pre AND post whitespace from the registerName string
           ltrim(src);
           ltrim(dst);
           ltrim(mnemonic);
-
           rtrim(src);
           rtrim(dst);
           rtrim(mnemonic);
@@ -598,9 +587,9 @@ static inline void rtrim(std::string &s) {
       std::cout<<"\n";
     }
 
-      for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
-        std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
-      }
+    for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
+      std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
+    }
 
     #ifdef DEBUG_PRINT
       std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
@@ -609,6 +598,24 @@ static inline void rtrim(std::string &s) {
             }
     #endif
 
+    //...Delete mem operations here
+    delete p_rootNode;
+    delete ptempEdge;
+    //iterate through each node in the slice Graph
+    //for each node, iterate through its inEdges and outEdges and delete each edge pointer
+    //then finally delete every node in the slice Graph
+    for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+      for (auto edgeIt2 = std::begin((*it)->inEdges); edgeIt2 != std::end((*it)->inEdges); ++edgeIt2){
+        delete (*edgeIt2);
+      }
+      for (auto edgeIt3 = std::begin((*it)->outEdges); edgeIt3 != std::end((*it)->outEdges); ++edgeIt3){
+        delete (*edgeIt3);
+      }
+    }
+    for (auto nodeIt = std::begin(p_sliceGraph->nodes); nodeIt != std::end(p_sliceGraph->nodes); ++nodeIt){
+      delete (*nodeIt);
+    }
+    delete p_sliceGraph;
 
     //...
 
