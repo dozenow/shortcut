@@ -507,7 +507,6 @@ static inline void rtrim(std::string &s) {
               memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
               u_long hexValue = hexStrToLong(memAddrStr);
               set_src_mem(memSizeBytes, hexValue, p_tempNode);
-
             }
             //else if (bracketStr.size() < 0) then must be a constant src like "17"
             //so create an OUTedge from the rootNode to the current tempInstruction node;
@@ -590,6 +589,16 @@ static inline void rtrim(std::string &s) {
     for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
       std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
     }
+
+    #ifdef DEBUG_PRINT
+    for (auto it = std::begin(cmovToFlags); it != std::end(cmovToFlags); ++it){
+      std::cout<<"cmovToFlags [mnemonic],{flags,}: " << (*it).first << ", " ;
+      for (auto flagIter = std::begin(((*it).second)); flagIter != std::end(((*it).second)); ++flagIter){
+        std::cout << (*flagIter) << ",";
+      }
+      std::cout << "\n";
+    }
+    #endif
 
     #ifdef DEBUG_PRINT
       std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));

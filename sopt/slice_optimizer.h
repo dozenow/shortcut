@@ -18,6 +18,7 @@
 
 //These are only flags, not corresponding to the actual hardware mask
 //The actual flag register taints are layed out according to these FLAGs instead of the actual hardware layouts
+//powers of 2
 #define CF_FLAG 0x01
 #define PF_FLAG 0x02
 #define AF_FLAG 0x04
@@ -70,22 +71,7 @@ std::map<u_long, Node*> mapMem;
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
-struct eflags {
-	std::vector<Node*> vectOfNodes;
-
-	//set parts of the 4 byte EFLAGS register
-	/*
-	setCF();
-	setPF();
-	setAF();
-	setZF();
-	setSF();
-	setTF();
-	setIF();
-	setDF();
-	setOF();
-	*/
-};
+std::vector<Node*> eflags(REG_SIZE);
 
 std::pair<int, int> checkForRegs(std::string instOperand);
 
@@ -143,6 +129,22 @@ std::set<std::string> addLikeInstr = {
 	"mul",
 	"div",
 	"cmov",
+};
+
+//map from cmov instruction mnemonic to the instr's flag srcs
+std::map<std::string, std::vector<std::string> > cmovToFlags = {
+	{"cmovbe", {"CF","ZF"}},
+	{"cmovnbe", {"CF","ZF"}},
+	{"cmovz", {"ZF"}},
+	{"cmovnz", {"ZF"}},
+	{"cmovb", {"CF"}},
+	{"cmovnb", {"CF"}},
+	{"cmovs", {"SF"}},
+	{"cmovns", {"SF"}},
+	{"cmovnle", {"ZF","SF", "OF"}},
+	{"cmovle", {"ZF","SF", "OF"}},
+	{"cmovl", {"SF","OF"}},
+	{"cmovnl", {"SF","OF"}},
 };
 
 void clear_reg (int reg, int size);
