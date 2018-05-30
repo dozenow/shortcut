@@ -181,7 +181,6 @@ static inline void clear_reg_internal (int reg, int size)
       }
   }
 
-
   static inline std::vector<Node*> get_reg_internal (int reg, int size)
   {
       int i = 0;
@@ -233,20 +232,6 @@ static inline void rtrim(std::string &s) {
   }
 
   //...
-  void taint_reg2reg_offset (int dst_reg_off, int src_reg_off, uint32_t size, uint32_t set_flags, uint32_t clear_flags)
-  {
-      unsigned i;
-     // taint_t* shadow_reg_table = current_thread->shadow_reg_table;
-     // taint_t t = 0;
-      Node* t = NULL;
-
-      for (i = 0; i < size; i++) {
-    //t = merge_taints(shadow_reg_table[dst_reg_off + i], shadow_reg_table[src_reg_off + i]);
-    shadow_reg_table[dst_reg_off + i]  = t;
-      } 
-
-      //set_clear_flags (&shadow_reg_table[REG_EFLAGS*REG_SIZE], t, set_flags, clear_flags);
-  }
 
   std::string getStringWithinBrackets(std::string wholeInstructionString){
     std::sregex_iterator end;
@@ -389,6 +374,59 @@ static inline void rtrim(std::string &s) {
     p_tempOutEdge->finish = p_rootNode;
     p_tempNode->outEdges.push_back(p_tempOutEdge);
   }
+
+  static inline void set_clear_flags(Node* author, uint32_t set_flags, uint32_t clear_flags) 
+{
+    if (set_flags != (uint32_t) -1 && clear_flags != (uint32_t) -1) {
+  for (int i = 0; i<NUM_FLAGS; ++i) {
+      if (set_flags & (1 << i)) {
+    eflags_table[i] = author;
+      } else if (clear_flags & (1 << i)) {
+    eflags_table[i] = 0;
+      }
+       }
+    }
+}
+
+static inline void set_src_flags(Node* p_tempNode, uint32_t src_flags) 
+{
+
+  if (src_flags != (uint32_t) -1) {
+    for (int i = 0; i<NUM_FLAGS; ++i) {
+      if (src_flags & (1 << i)) {
+        Edge* p_tempInEdge = new Edge();
+        Edge* p_tempOutEdge = new Edge();
+        p_tempInEdge->start = (eflags_table[i]);
+        p_tempInEdge->finish = p_tempNode;
+        //add correct outEdge from previous register author to self current node 
+        p_tempOutEdge->start = (eflags_table[i]);
+        p_tempOutEdge->finish = p_tempNode;
+
+        p_tempNode->inEdges.push_back(p_tempInEdge);
+        (eflags_table[i])->outEdges.push_back(p_tempOutEdge);
+      } 
+    }
+  }
+}
+
+void instrument_instruction (std::string mnemonic, Node* p_tempNode)
+{
+  InstType instType = s_mapStringToInstType[mnemonic];
+  switch (instType)
+  {
+      case InstType::add:
+      case InstType::sub:
+      case InstType::adc:
+          break;
+
+      case InstType::mov:
+          break;
+
+      default:
+          std::cout<< "[ERROR]Unknown InstType " << s_mapInstTypeToString[instType] << "\n";
+  }
+}
+
     
   int main(int,char*[])
   {
@@ -471,8 +509,9 @@ static inline void rtrim(std::string &s) {
           //setting the new instruction nodes' unique lineNum to its corresponding lineNum in the original exslice.c file.
           p_tempNode->lineNum = lineNum;
 
-          Edge* p_tempInEdge = new Edge();
-          Edge* p_tempOutEdge = new Edge();
+          //5-30-18 dont need these two edge creations?
+          //Edge* p_tempInEdge = new Edge();
+          //Edge* p_tempOutEdge = new Edge();
 
           std::pair<int, int> srcRegNumSize = checkForRegs(src);
           std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
@@ -531,6 +570,8 @@ static inline void rtrim(std::string &s) {
               //for addLikeInstructions the dst register is also a src Register before the result of the addition is put into the dst register.
               //add dst/src1, src2
               set_src_reg(dstRegNumSize, p_tempNode);
+              //set_src_flags();
+              //set_clear_flags();
             }
           }
 

@@ -63,7 +63,6 @@ struct instrGraph {
 };
 
 std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
-//Node* shadow_reg_table[NUM_REGS * REG_SIZE];
 
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
@@ -71,7 +70,7 @@ std::map<u_long, Node*> mapMem;
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
-std::vector<Node*> eflags(REG_SIZE);
+std::vector<Node*> eflags_table(NUM_FLAGS * REG_SIZE);
 
 std::pair<int, int> checkForRegs(std::string instOperand);
 
@@ -100,7 +99,7 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"ax", {10,2}},
 	{"al", {10,1}},
 	{"ah", {10,-1}},
-	{"eflag", {17,4}},
+	{"eflags", {17,4}},
 	{"xmm0", {54,16}},
 	{"xmm1", {55,16}},
 	{"xmm2", {56,16}},
@@ -145,6 +144,40 @@ std::map<std::string, std::vector<std::string> > cmovToFlags = {
 	{"cmovle", {"ZF","SF", "OF"}},
 	{"cmovl", {"SF","OF"}},
 	{"cmovnl", {"SF","OF"}},
+};
+
+/// <summary>
+/// Enum for String values we want to switch on
+/// </summary>
+enum class InstType
+{
+    add,
+    sub,
+    adc,
+    mov,
+    GetType
+};
+
+/// <summary>
+/// Map from strings to enum values
+/// </summary>
+std::map<std::string, InstType> s_mapStringToInstType =
+{
+    { "add", InstType::add },
+    { "sub", InstType::sub },
+    { "adc", InstType::adc },
+    { "mov", InstType::mov },
+};
+
+/// <summary>
+/// Map from enum values to strings
+/// </summary>
+std::map<InstType, std::string> s_mapInstTypeToString = 
+{
+    {InstType::add , "add"}, 
+    {InstType::sub , "sub"}, 
+    {InstType::adc , "adc"}, 
+    {InstType::mov , "mov"}, 
 };
 
 void clear_reg (int reg, int size);
