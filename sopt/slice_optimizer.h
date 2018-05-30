@@ -146,9 +146,7 @@ std::map<std::string, std::vector<std::string> > cmovToFlags = {
 	{"cmovnl", {"SF","OF"}},
 };
 
-/// <summary>
 /// Enum for String values we want to switch on
-/// </summary>
 enum class InstType
 {
     add,
@@ -158,9 +156,7 @@ enum class InstType
     GetType
 };
 
-/// <summary>
 /// Map from strings to enum values
-/// </summary>
 std::map<std::string, InstType> s_mapStringToInstType =
 {
     { "add", InstType::add },
@@ -169,9 +165,7 @@ std::map<std::string, InstType> s_mapStringToInstType =
     { "mov", InstType::mov },
 };
 
-/// <summary>
 /// Map from enum values to strings
-/// </summary>
 std::map<InstType, std::string> s_mapInstTypeToString = 
 {
     {InstType::add , "add"}, 
