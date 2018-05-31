@@ -70,7 +70,7 @@ std::map<u_long, Node*> mapMem;
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
-std::vector<Node*> eflags_table(NUM_FLAGS * REG_SIZE);
+std::vector<Node*> eflags_table(NUM_FLAGS);
 
 std::pair<int, int> checkForRegs(std::string instOperand);
 
@@ -157,7 +157,7 @@ enum class InstType
 };
 
 /// Map from strings to enum values
-std::map<std::string, InstType> s_mapStringToInstType =
+std::map<std::string, InstType> mapStringToInstType =
 {
     { "add", InstType::add },
     { "sub", InstType::sub },
@@ -166,7 +166,7 @@ std::map<std::string, InstType> s_mapStringToInstType =
 };
 
 /// Map from enum values to strings
-std::map<InstType, std::string> s_mapInstTypeToString = 
+std::map<InstType, std::string> mapInstTypeToString = 
 {
     {InstType::add , "add"}, 
     {InstType::sub , "sub"}, 
@@ -177,3 +177,17 @@ std::map<InstType, std::string> s_mapInstTypeToString =
 void clear_reg (int reg, int size);
 void set_reg (int reg, int size, Node* author);
 void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);
+std::pair<int, int> checkForRegs(std::string instOperand);
+std::string getStringWithinBrackets(std::string wholeInstructionString);
+u_long hexStrToLong(std::string bracketStr);
+int getMemSizeByte(std::string src, std::string bracketStr);
+void set_src_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode);
+void set_src_root(Node* p_rootNode, Node* p_tempNode);
+void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);
+void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode);
+void set_dst_root(Node* p_rootNode, Node* p_tempNode);
+void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString);
+std::vector<std::string> getInstrPieces (std::string wholeInstructionString);
+void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
+void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
+static inline std::string getMnemonic(std::string wholeInstructionString);

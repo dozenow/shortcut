@@ -6,7 +6,7 @@ asm (
 "mov edi, byte ptr [0xbfffef75] /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov ebx, word ptr [0xbfffef74] /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov eax, 177 /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
-"div eax, ebx /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
+"sub eax, ebx /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov ax, 53 /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"	
 "mov ah, 25 /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"
 "mov esp, edi /*[SLICE] #00000000 [SLICE_INFO] comes with b7e8c19a*/\n"

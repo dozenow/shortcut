@@ -409,25 +409,277 @@ static inline void set_src_flags(Node* p_tempNode, uint32_t src_flags)
   }
 }
 
-void instrument_instruction (std::string mnemonic, Node* p_tempNode)
+void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
 {
-  InstType instType = s_mapStringToInstType[mnemonic];
+  InstType instType = mapStringToInstType[mnemonic];
   switch (instType)
   {
       case InstType::add:
       case InstType::sub:
       case InstType::adc:
+      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
 
       case InstType::mov:
+      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
 
       default:
-          std::cout<< "[ERROR]Unknown InstType " << s_mapInstTypeToString[instType] << "\n";
+          std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
   }
 }
 
+static inline std::string getMnemonic(std::string wholeInstructionString){
+  std::string mnemonic;
+  std::string istr;
+  std::sregex_iterator end;
+
+  std::regex allPreExtra("^.*(?=(\\/\\*))");
+  auto iterPreExtra = std::sregex_iterator(wholeInstructionString.begin(), wholeInstructionString.end(), allPreExtra);
+  while (iterPreExtra != end) {
+    std::smatch match = *iterPreExtra;
+    istr = match.str();
+    #ifdef DEBUG_PRINT
+      std::cout << "regex2:" << match.str() << "\n";
+    #endif
+    iterPreExtra++;
+  } 
+
+  //remove the quotes symbol char that leads the instruction string.
+  istr = istr.substr(1, istr.size());
+
+  mnemonic = istr.substr(0, istr.find(' '));
+  ltrim(mnemonic);
+  rtrim(mnemonic);
+  #ifdef DEBUG_PRINT
+    std::cout<<"istr:"<<istr<<"\n";
+  #endif
+    return mnemonic;
+}
+
+std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
+{
+  std::string mnemonic;
+  std::string istr;
+  std::string dst;
+  std::string src;
+
+  std::sregex_iterator end;
+
+  std::regex allPreExtra("^.*(?=(\\/\\*))");
+  auto iterPreExtra = std::sregex_iterator(wholeInstructionString.begin(), wholeInstructionString.end(), allPreExtra);
+  while (iterPreExtra != end) {
+    std::smatch match = *iterPreExtra;
+    istr = match.str();
+    #ifdef DEBUG_PRINT
+      std::cout << "regex2:" << match.str() << "\n";
+    #endif
+    iterPreExtra++;
+  } 
+
+  //remove the quotes symbol char that leads the instruction string.
+  istr = istr.substr(1, istr.size());
+
+  mnemonic = istr.substr(0, istr.find(' '));
+  ltrim(mnemonic);
+  rtrim(mnemonic);
+
+  std::cout<<"istr:"<<istr<<"\n";
+
+  dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
+
+  src = istr.substr((istr.find(',')+2), (istr.size()-2));
+
+  //trim off pre AND post whitespace from the registerName string
+  ltrim(src);
+  ltrim(dst);
+  ltrim(mnemonic);
+  rtrim(src);
+  rtrim(dst);
+  rtrim(mnemonic);
+
+  std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
+  std::cout<<"dst Arg: "<<dst<<"\n";
+  std::cout<<"src Arg: "<<src<<"\n";
+
+  std::vector<std::string> instrPieces;
+  instrPieces.push_back(mnemonic);
+  instrPieces.push_back(dst);
+  instrPieces.push_back(src);
+  return instrPieces;
+}
+
+void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+
+  std::pair<int, int> srcRegNumSize = checkForRegs(src);
+  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+
+  #ifdef DEBUG_PRINT
+    for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
+              std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
+            }
+  #endif
+
+  #ifdef DEBUG_PRINT
+    std::cout<< "regAuthors.empty() is " << regAuthors.empty() << "\n";
+    std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
+  #endif
+
+  //if there is a src register, set the appropriate edges to the previous author of that register
+  if(srcRegNumSize.first){
+    set_src_reg(srcRegNumSize, p_tempNode);
+  }
+  //else must be a const src or memory src  
+  else{
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(src);
     
+    //take the bracketString of a memory address src, [0xbfffef74]
+    //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(src,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_src_mem(memSizeBytes, hexValue, p_tempNode);
+    }
+    //else if (bracketStr.size() < 0) then must be a constant src like "17"
+    //so create an OUTedge from the rootNode to the current tempInstruction node;
+    //and create an INedge from the rootNode to the current tempInstruction node; 
+    else{
+      set_src_root(p_rootNode, p_tempNode);
+    } 
+  }
+  //...
+  std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+  set_src_reg(dstRegNumSize, p_tempNode);
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+
+   //if (dstRegNumSize.first) is not NULL then it must be a valid register
+  if(dstRegNumSize.first){
+    set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+  }
+  else{
+    //else must be a const or memory dst  
+    //handle memory dst 
+    //1 byte = 8 bits 
+    //word = 2 bytes = 16 bits  
+    //double word = 4 bytes = 32 bits
+    //xmm word = 16 bytes = 144 bits
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(dst);
+
+    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(dst,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+
+    }
+    else{
+      //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+      //so create an OUTedge from the rootNode to the current tempInstruction node;
+      //and create an INedge from the rootNode to the current tempInstruction node; 
+      set_dst_root(p_rootNode, p_tempNode);              
+    } 
+  }
+}
+
+void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+
+  std::pair<int, int> srcRegNumSize = checkForRegs(src);
+  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+
+  #ifdef DEBUG_PRINT
+    for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
+              std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
+            }
+  #endif
+
+  #ifdef DEBUG_PRINT
+    std::cout<< "regAuthors.empty() is " << regAuthors.empty() << "\n";
+    std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
+  #endif
+
+  //if there is a src register, set the appropriate edges to the previous author of that register
+  if(srcRegNumSize.first){
+    set_src_reg(srcRegNumSize, p_tempNode);
+  }
+  //else must be a const src or memory src  
+  else{
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(src);
+    
+    //take the bracketString of a memory address src, [0xbfffef74]
+    //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(src,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_src_mem(memSizeBytes, hexValue, p_tempNode);
+    }
+    //else if (bracketStr.size() < 0) then must be a constant src like "17"
+    //so create an OUTedge from the rootNode to the current tempInstruction node;
+    //and create an INedge from the rootNode to the current tempInstruction node; 
+    else{
+      set_src_root(p_rootNode, p_tempNode);
+    } 
+  }
+  //...
+  std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+
+   //if (dstRegNumSize.first) is not NULL then it must be a valid register
+  if(dstRegNumSize.first){
+    set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+  }
+  else{
+    //else must be a const or memory dst  
+    //handle memory dst 
+    //1 byte = 8 bits 
+    //word = 2 bytes = 16 bits  
+    //double word = 4 bytes = 32 bits
+    //xmm word = 16 bytes = 144 bits
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(dst);
+
+    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(dst,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+
+    }
+    else{
+      //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+      //so create an OUTedge from the rootNode to the current tempInstruction node;
+      //and create an INedge from the rootNode to the current tempInstruction node; 
+      set_dst_root(p_rootNode, p_tempNode);              
+    } 
+  }
+}    
   int main(int,char*[])
   {
 
@@ -446,6 +698,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode)
     p_rootNode->lineNum = 0;
 
     set_reg(0,1920,p_rootNode);
+    set_clear_flags(p_rootNode, ALL_FLAGS, 0);
 
     while (std::getline(file, line)) {
       lineNum++;
@@ -455,48 +708,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode)
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
 
-          std::string mnemonic;
-          std::string istr;
-          std::string dst;
-          std::string src;
-
-          std::sregex_iterator end;
-
-          std::regex allPreExtra("^.*(?=(\\/\\*))");
-          auto iterPreExtra = std::sregex_iterator(line.begin(), line.end(), allPreExtra);
-          while (iterPreExtra != end) {
-            std::smatch match = *iterPreExtra;
-            istr = match.str();
-            #ifdef DEBUG_PRINT
-              std::cout << "regex2:" << match.str() << "\n";
-            #endif
-            iterPreExtra++;
-          } 
-
-          //remove the quotes symbol char that leads the instruction string.
-          istr = istr.substr(1, istr.size());
-
-          mnemonic = istr.substr(0, istr.find(' '));
-          ltrim(mnemonic);
-          rtrim(mnemonic);
-
-          std::cout<<"istr:"<<istr<<"\n";
-
-          dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
-
-          src = istr.substr((istr.find(',')+2), (istr.size()-2));
-
-          //trim off pre AND post whitespace from the registerName string
-          ltrim(src);
-          ltrim(dst);
-          ltrim(mnemonic);
-          rtrim(src);
-          rtrim(dst);
-          rtrim(mnemonic);
-
-          std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
-          std::cout<<"dst Arg: "<<dst<<"\n";
-          std::cout<<"src Arg: "<<src<<"\n";
+          std::string mnemonic = getMnemonic(line);
 
           //need to eventually delete this dynamically allocated memory
           Node* p_tempNode = new Node();
@@ -509,105 +721,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode)
           //setting the new instruction nodes' unique lineNum to its corresponding lineNum in the original exslice.c file.
           p_tempNode->lineNum = lineNum;
 
-          //5-30-18 dont need these two edge creations?
-          //Edge* p_tempInEdge = new Edge();
-          //Edge* p_tempOutEdge = new Edge();
+          instrument_instruction(mnemonic, p_tempNode, p_rootNode, line);
 
-          std::pair<int, int> srcRegNumSize = checkForRegs(src);
-          std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
-
-          #ifdef DEBUG_PRINT
-            for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
-                      std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
-                    }
-          #endif
-
-          #ifdef DEBUG_PRINT
-            std::cout<< "regAuthors.empty() is " << regAuthors.empty() << "\n";
-            std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
-          #endif
-
-
-          //if there is a src register, set the appropriate edges to the previous author of that register
-          if(srcRegNumSize.first){
-            set_src_reg(srcRegNumSize, p_tempNode);
-          }
-          //else must be a const src or memory src  
-          else{
-            std::string bracketStr;
-            std::string memAddrStr;
-            bracketStr = getStringWithinBrackets(src);
-            
-            //take the bracketString of a memory address src, [0xbfffef74]
-            //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
-            if(bracketStr.size() > 0){
-              int memSizeBytes = getMemSizeByte(src,bracketStr);
-              //remove the brackets from the string
-              memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-              u_long hexValue = hexStrToLong(memAddrStr);
-              set_src_mem(memSizeBytes, hexValue, p_tempNode);
-            }
-            //else if (bracketStr.size() < 0) then must be a constant src like "17"
-            //so create an OUTedge from the rootNode to the current tempInstruction node;
-            //and create an INedge from the rootNode to the current tempInstruction node; 
-            else{
-              set_src_root(p_rootNode, p_tempNode);
-            } 
-          }
-
-          //...
-          std::pair<int, int> dstRegNumSize = checkForRegs(dst);
-
-          //if there is BOTH dstReg, srcReg
-          if((srcRegNumSize.first) && (dstRegNumSize.first)){
-            #ifdef DEBUG_PRINT
-            std::cout << "WOW! srcReg, dstReg detected. " << p_tempNode->lineNum << "\n";
-            #endif
-            if(addLikeInstr.find(mnemonic) != addLikeInstr.end()){
-              #ifdef DEBUG_PRINT
-              std::cout << "WOW2! addLikeInstr() found. " << mnemonic << "\n";
-              #endif
-              //for addLikeInstructions the dst register is also a src Register before the result of the addition is put into the dst register.
-              //add dst/src1, src2
-              set_src_reg(dstRegNumSize, p_tempNode);
-              //set_src_flags();
-              //set_clear_flags();
-            }
-          }
-
-          //if (dstRegNumSize.first) is not NULL then it must be a valid register
-          if(dstRegNumSize.first){
-            set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
-          }
-          else{
-            //else must be a const or memory dst  
-            //handle memory dst 
-            //1 byte = 8 bits 
-            //word = 2 bytes = 16 bits  
-            //double word = 4 bytes = 32 bits
-            //xmm word = 16 bytes = 144 bits
-            std::string bracketStr;
-            std::string memAddrStr;
-            bracketStr = getStringWithinBrackets(dst);
-
-            //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
-            if(bracketStr.size() > 0){
-              int memSizeBytes = getMemSizeByte(dst,bracketStr);
-              //remove the brackets from the string
-              memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-              u_long hexValue = hexStrToLong(memAddrStr);
-              set_dst_mem(memSizeBytes, hexValue, p_tempNode);
-
-            }
-            else{
-              //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
-              //so create an OUTedge from the rootNode to the current tempInstruction node;
-              //and create an INedge from the rootNode to the current tempInstruction node; 
-              set_dst_root(p_rootNode, p_tempNode);              
-            } 
-
-
-          }
           //add the completed node with dst edges and src edges to the graph
           p_sliceGraph->nodes.push_back(p_tempNode);
         }
@@ -647,6 +762,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode)
               std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
             }
     #endif
+
+    for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
+      std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
+    }
 
     //...Delete mem operations here
     delete p_rootNode;
