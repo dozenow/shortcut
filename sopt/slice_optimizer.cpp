@@ -627,35 +627,8 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
   if(dstRegNumSize.first){
     set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
   }
-  //6-1-18 can remove this block because dst and dstB are always registers?
-  else{
-    //else must be a const or memory dst  
-    //handle memory dst 
-    //1 byte = 8 bits 
-    //word = 2 bytes = 16 bits  
-    //double word = 4 bytes = 32 bits
-    //xmm word = 16 bytes = 144 bits
-    std::string bracketStr;
-    std::string memAddrStr;
-    bracketStr = getStringWithinBrackets(dst);
 
-    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
-    if(bracketStr.size() > 0){
-      int memSizeBytes = getMemSizeByte(dst,bracketStr);
-      //remove the brackets from the string
-      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
-      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
-
-    }
-    else{
-      //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
-      //so create an OUTedge from the rootNode to the current tempInstruction node;
-      //and create an INedge from the rootNode to the current tempInstruction node; 
-      set_dst_root(p_rootNode, p_tempNode);              
-    } 
-  }
-   //if (dstRegNumSize.first) is not NULL then it must be a valid register
+   //if (dstBRegNumSize.first) is not NULL then it must be a valid register
   if(dstBRegNumSize.first){
     set_reg((dstBRegNumSize.first), (dstBRegNumSize.second), p_tempNode);
   }
