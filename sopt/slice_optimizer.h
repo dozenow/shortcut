@@ -125,9 +125,7 @@ std::map<std::string, const int > strSizeToByte = {
 std::set<std::string> addLikeInstr = {
 	"add",
 	"sub",
-	"mul",
-	"div",
-	"cmov",
+	"adc",
 };
 
 //map from cmov instruction mnemonic to the instr's flag srcs
@@ -153,6 +151,10 @@ enum class InstType
     sub,
     adc,
     mov,
+    div,
+    idiv,
+    mul,
+    imul,
     GetType
 };
 
@@ -163,6 +165,10 @@ std::map<std::string, InstType> mapStringToInstType =
     { "sub", InstType::sub },
     { "adc", InstType::adc },
     { "mov", InstType::mov },
+    { "div", InstType::div },
+    { "idiv", InstType::idiv },
+    { "mul", InstType::mul },
+    { "imul", InstType::imul },
 };
 
 /// Map from enum values to strings
@@ -171,7 +177,11 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::add , "add"}, 
     {InstType::sub , "sub"}, 
     {InstType::adc , "adc"}, 
-    {InstType::mov , "mov"}, 
+    {InstType::mov , "mov"},
+    {InstType::div , "div"}, 
+    {InstType::idiv , "idiv"}, 
+    {InstType::mul , "mul"}, 
+    {InstType::imul , "imul"}, 
 };
 
 void clear_reg (int reg, int size);
@@ -189,5 +199,6 @@ void set_dst_root(Node* p_rootNode, Node* p_tempNode);
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString);
 std::vector<std::string> getInstrPieces (std::string wholeInstructionString);
 void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
+void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);
