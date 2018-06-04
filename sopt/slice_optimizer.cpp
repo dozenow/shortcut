@@ -746,6 +746,7 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
   //...
   std::pair<int, int> dstRegNumSize = checkForRegs(dst);
   set_src_reg(dstRegNumSize, p_tempNode);
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
   if(dstRegNumSize.first){
@@ -768,6 +769,7 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
       u_long hexValue = hexStrToLong(memAddrStr);
+      set_src_mem(memSizeBytes, hexValue, p_tempNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
     }
@@ -779,7 +781,37 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
     } 
   }
 
+     //if (srcRegNumSize.first) is not NULL then it must be a valid register
+  if(srcRegNumSize.first){
+    set_reg((srcRegNumSize.first), (srcRegNumSize.second), p_tempNode);
+  }
+  else{
+    //else must be a const or memory dst  
+    //handle memory dst 
+    //1 byte = 8 bits 
+    //word = 2 bytes = 16 bits  
+    //double word = 4 bytes = 32 bits
+    //xmm word = 16 bytes = 144 bits
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(dst);
 
+    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(dst,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+
+    }
+    else{
+      //else if (srcRegNumSize.first) is equal to "null" then must be a constant like "17"
+      //so create an OUTedge from the rootNode to the current tempInstruction node;
+      //and create an INedge from the rootNode to the current tempInstruction node; 
+      set_dst_root(p_rootNode, p_tempNode);              
+    } 
+  }
 }
 
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
@@ -872,6 +904,13 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   InstType instType = mapStringToInstType[mnemonic];
   switch (instType)
   {   
+      case InstType::xchg:
+      instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::xadd:
+      instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          break;
       //have to add a 'Z' character to these mnemonic enumerator values because 'and' 'or' 'xor' are reserved keywords in C
       case InstType::Zand:
       case InstType::Zor:

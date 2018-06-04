@@ -147,6 +147,8 @@ std::map<std::string, std::vector<std::string> > cmovToFlags = {
 /// Enum for String values we want to switch on
 enum class InstType
 {
+	xchg,
+	xadd,
 	Zand,
     Zor,
     Zxor,
@@ -164,6 +166,8 @@ enum class InstType
 /// Map from strings to enum values
 std::map<std::string, InstType> mapStringToInstType =
 {
+	{ "xchg", InstType::xchg },
+	{ "xadd", InstType::xadd },
 	{ "and", InstType::Zand },
     { "or", InstType::Zor },
     { "xor", InstType::Zxor },
@@ -180,6 +184,8 @@ std::map<std::string, InstType> mapStringToInstType =
 /// Map from enum values to strings
 std::map<InstType, std::string> mapInstTypeToString = 
 {
+	{InstType::xchg , "xchg"},
+	{InstType::xadd , "xadd"},  
 	{InstType::Zand , "and"}, 
     {InstType::Zor , "or"}, 
     {InstType::Zxor , "xor"},
@@ -208,6 +214,7 @@ void set_dst_root(Node* p_rootNode, Node* p_tempNode);
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString);
 std::vector<std::string> getInstrPieces (std::string wholeInstructionString);
 void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
+void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);
