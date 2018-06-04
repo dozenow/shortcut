@@ -409,35 +409,6 @@ static inline void set_src_flags(Node* p_tempNode, uint32_t src_flags)
   }
 }
 
-void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
-{
-  InstType instType = mapStringToInstType[mnemonic];
-  switch (instType)
-  {
-      case InstType::add:
-      case InstType::sub:
-      case InstType::adc:
-      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
-          break;
-      case InstType::mov:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
-          break;
-      case InstType::div:
-      case InstType::idiv:
-      instrument_div(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
-          break;
-      case InstType::mul:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
-          break;
-      case InstType::imul:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
-          break;
-
-      default:
-          std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
-  }
-}
-
 static inline std::string getMnemonic(std::string wholeInstructionString){
   std::string mnemonic;
   std::string istr;
@@ -610,6 +581,7 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
       set_src_root(p_rootNode, p_tempNode);
       //6-1-18
       //temp hacky assumption that all constant srcs are 32 bit args
+      //the x86 'div' instruction never directly srcs in immediate constant values so this code should never be used.
       dst = "edx";
       dstB = "eax";
     } 
@@ -805,6 +777,41 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
     } 
   }
 }    
+
+void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
+{
+  InstType instType = mapStringToInstType[mnemonic];
+  switch (instType)
+  {   
+      //have to add a 'Z' character to these mnemonic enumerator values because 'and' 'or' 'xor' are reserved keywords in C
+      case InstType::Zand:
+      case InstType::Zor:
+      case InstType::Zxor:
+      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG, p_tempNode, p_rootNode);
+          break;
+      case InstType::add:
+      case InstType::sub:
+      case InstType::adc:
+      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::mov:
+      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::div:
+      case InstType::idiv:
+      instrument_div(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::mul:
+      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::imul:
+      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+
+      default:
+          std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
+  }
+}
   int main(int,char*[])
   {
 

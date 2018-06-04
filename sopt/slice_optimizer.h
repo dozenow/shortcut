@@ -147,6 +147,9 @@ std::map<std::string, std::vector<std::string> > cmovToFlags = {
 /// Enum for String values we want to switch on
 enum class InstType
 {
+	Zand,
+    Zor,
+    Zxor,
     add,
     sub,
     adc,
@@ -161,6 +164,9 @@ enum class InstType
 /// Map from strings to enum values
 std::map<std::string, InstType> mapStringToInstType =
 {
+	{ "and", InstType::Zand },
+    { "or", InstType::Zor },
+    { "xor", InstType::Zxor },
     { "add", InstType::add },
     { "sub", InstType::sub },
     { "adc", InstType::adc },
@@ -174,6 +180,9 @@ std::map<std::string, InstType> mapStringToInstType =
 /// Map from enum values to strings
 std::map<InstType, std::string> mapInstTypeToString = 
 {
+	{InstType::Zand , "and"}, 
+    {InstType::Zor , "or"}, 
+    {InstType::Zxor , "xor"},
     {InstType::add , "add"}, 
     {InstType::sub , "sub"}, 
     {InstType::adc , "adc"}, 
