@@ -681,6 +681,7 @@ void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flag
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
       u_long hexValue = hexStrToLong(memAddrStr);
+      set_src_mem(memSizeBytes, hexValue, p_tempNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
     }
@@ -691,6 +692,94 @@ void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flag
       set_dst_root(p_rootNode, p_tempNode);              
     } 
   }
+}
+
+void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+
+  std::pair<int, int> srcRegNumSize = checkForRegs(src);
+  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+
+  #ifdef DEBUG_PRINT
+    for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
+              std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
+            }
+  #endif
+
+  #ifdef DEBUG_PRINT
+    std::cout<< "regAuthors.empty() is " << regAuthors.empty() << "\n";
+    std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
+  #endif
+
+  //if there is a src register, set the appropriate edges to the previous author of that register
+  if(srcRegNumSize.first){
+    set_src_reg(srcRegNumSize, p_tempNode);
+  }
+  //else must be a const src or memory src  
+  else{
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(src);
+    
+    //take the bracketString of a memory address src, [0xbfffef74]
+    //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(src,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_src_mem(memSizeBytes, hexValue, p_tempNode);
+    }
+    //else if (bracketStr.size() < 0) then must be a constant src like "17"
+    //so create an OUTedge from the rootNode to the current tempInstruction node;
+    //and create an INedge from the rootNode to the current tempInstruction node; 
+    else{
+      set_src_root(p_rootNode, p_tempNode);
+    } 
+  }
+  //...
+  std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+  set_src_reg(dstRegNumSize, p_tempNode);
+
+   //if (dstRegNumSize.first) is not NULL then it must be a valid register
+  if(dstRegNumSize.first){
+    set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+  }
+  else{
+    //else must be a const or memory dst  
+    //handle memory dst 
+    //1 byte = 8 bits 
+    //word = 2 bytes = 16 bits  
+    //double word = 4 bytes = 32 bits
+    //xmm word = 16 bytes = 144 bits
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(dst);
+
+    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(dst,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+
+    }
+    else{
+      //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+      //so create an OUTedge from the rootNode to the current tempInstruction node;
+      //and create an INedge from the rootNode to the current tempInstruction node; 
+      set_dst_root(p_rootNode, p_tempNode);              
+    } 
+  }
+
+
 }
 
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
