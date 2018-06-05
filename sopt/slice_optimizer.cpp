@@ -399,17 +399,16 @@ static inline void set_src_flags(Node* p_tempNode, uint32_t src_flags)
       if (src_flags & (1 << i)) {
         Edge* p_tempInEdge = new Edge();
         Edge* p_tempOutEdge = new Edge();
-        std::cout<<"src_flags is: " << src_flags  << "\n";
         p_tempInEdge->start = (eflags_table[i]);
         p_tempInEdge->finish = p_tempNode;
         //add correct outEdge from previous register author to self current node 
         p_tempOutEdge->start = (eflags_table[i]);
         p_tempOutEdge->finish = p_tempNode;
-        std::cout<<"i is: " << i  << "\n";
         p_tempNode->inEdges.push_back(p_tempInEdge);
-        std::cout<<"second i is: " << i  << "\n";
         (eflags_table[i])->outEdges.push_back(p_tempOutEdge);
-        std::cout<<"third i is: " << i  << "\n";
+        #ifdef DEBUG_PRINT
+        std::cout<<" i is: " << i  << "\n";
+        #endif
       } 
     }
   }
