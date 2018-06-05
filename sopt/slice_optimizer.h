@@ -147,6 +147,18 @@ std::map<std::string, std::vector<std::string> > cmovToFlags = {
 /// Enum for String values we want to switch on
 enum class InstType
 {
+	cmovbe,
+	cmovnbe,
+	cmovz,
+	cmovnz,
+	cmovb,
+	cmovnb,
+	cmovs,
+	cmovns,
+	cmovnle,
+	cmovle,
+	cmovl,
+	cmovnl,
 	xchg,
 	xadd,
 	Zand,
@@ -166,6 +178,18 @@ enum class InstType
 /// Map from strings to enum values
 std::map<std::string, InstType> mapStringToInstType =
 {
+	{ "cmovbe", InstType::cmovbe },
+	{ "cmovnbe", InstType::cmovnbe },
+	{ "cmovz", InstType::cmovz },
+	{ "cmovnz", InstType::cmovnz },
+	{ "cmovb", InstType::cmovb },
+	{ "cmovnb", InstType::cmovnb },
+	{ "cmovs", InstType::cmovs },
+	{ "cmovns", InstType::cmovns },
+	{ "cmovnle", InstType::cmovnle },
+	{ "cmovle", InstType::cmovle },
+	{ "cmovl", InstType::cmovl },
+	{ "cmovnl", InstType::cmovnl },
 	{ "xchg", InstType::xchg },
 	{ "xadd", InstType::xadd },
 	{ "and", InstType::Zand },
@@ -184,6 +208,18 @@ std::map<std::string, InstType> mapStringToInstType =
 /// Map from enum values to strings
 std::map<InstType, std::string> mapInstTypeToString = 
 {
+	{InstType::cmovbe , "cmovbe"},
+	{InstType::cmovnbe , "cmovnbe"},
+	{InstType::cmovz , "cmovz"},
+	{InstType::cmovnz , "cmovnz"},
+	{InstType::cmovb , "cmovb"},
+	{InstType::cmovnb , "cmovnb"},
+	{InstType::cmovs , "cmovs"},
+	{InstType::cmovns , "cmovns"},
+	{InstType::cmovnle , "cmovnle"},
+	{InstType::cmovle , "cmovle"},
+	{InstType::cmovl , "cmovl"},
+	{InstType::cmovnl , "cmovnl"},
 	{InstType::xchg , "xchg"},
 	{InstType::xadd , "xadd"},  
 	{InstType::Zand , "and"}, 

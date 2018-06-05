@@ -904,36 +904,66 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   InstType instType = mapStringToInstType[mnemonic];
   switch (instType)
   {   
+      case InstType::cmovbe:
+      case InstType::cmovnbe:
+          set_src_flags(p_tempNode, CF_FLAG|ZF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::cmovz:
+      case InstType::cmovnz:
+          set_src_flags(p_tempNode, ZF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::cmovb:
+      case InstType::cmovnb:
+          set_src_flags(p_tempNode, CF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::cmovs:
+      case InstType::cmovns:
+          set_src_flags(p_tempNode, SF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::cmovnle:
+      case InstType::cmovle:
+          set_src_flags(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::cmovl:
+      case InstType::cmovnl:
+          set_src_flags(p_tempNode, SF_FLAG|OF_FLAG);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
       case InstType::xchg:
-      instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::xadd:
-      instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
-      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          instrument_xchg(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       //have to add a 'Z' character to these mnemonic enumerator values because 'and' 'or' 'xor' are reserved keywords in C
       case InstType::Zand:
       case InstType::Zor:
       case InstType::Zxor:
-      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG, p_tempNode, p_rootNode);
+          instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG, p_tempNode, p_rootNode);
           break;
       case InstType::add:
       case InstType::sub:
       case InstType::adc:
-      instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::mov:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::div:
       case InstType::idiv:
-      instrument_div(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          instrument_div(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::mul:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::imul:
-      instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
 
       default:
