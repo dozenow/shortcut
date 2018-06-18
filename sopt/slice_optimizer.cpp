@@ -485,7 +485,6 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
 
   fourth = src.substr((src.find(',')+1), (src.size()-2));
   ltrim(fourth);
-  std::cout<<"src1 Arg: "<<src<<"\n";
 
   //split this 'src' string one more time on the comma
   //this is for 4 argument (including mnemonic) instructions
@@ -741,9 +740,11 @@ void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t s
   std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
 
   std::string mnemonic = instrPieces.at(0);
-  std::string dst = instrPieces.at(1);
-  std::string src = instrPieces.at(2);
-  std::string srcB = instrPieces.at(3);
+  //in CMP/TEST instructions the two args are two srcs. The dst is setting the EFLAGS register.
+  //so src1 in this case is instrPieces.at(1)
+  //and src2 is instrPieces.at(2)
+  std::string src = instrPieces.at(1);
+  std::string srcB = instrPieces.at(2);
 
   handle_srcRegMemImm(src, p_tempNode, p_rootNode);
   handle_srcRegMemImm(srcB, p_tempNode, p_rootNode);
@@ -754,23 +755,7 @@ void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t s
 void instrument_cmp_or_test (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   
-  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
-
-  //commaCount of 1 is cmp/test with two args, eflags set by SUB temp = src1 - src2. contents of temp is discarded.
-  size_t commaCount = std::count(wholeInstructionString.begin(), wholeInstructionString.end(), ',');
-  #ifdef DEBUG_PRINT
-  std::cout << "commaCount is: " << commaCount << "\n";
-  #endif
-  std::cout << "commaCount is: " << commaCount << "\n";
-  
-
-  switch(commaCount){
-    case 1:
-      instrument_eflagsdst_twosrc(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
-      break;
-    default:
-    std::cout<< "[ERROR]instrument_cmp_or_test cant handle this instruction " << wholeInstructionString << "\n";
-  }
+  instrument_eflagsdst_twosrc(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
 }
 
 void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
@@ -1296,9 +1281,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_imul(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
       case InstType::cmp:
+      case InstType::test:
           instrument_cmp_or_test(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
-      //todo: cmp, jne, jnb, jnle, jz, jnz, jnbe, test, jbe,
+      //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
 
       default:
           std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
@@ -1308,7 +1294,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   int main(int,char*[])
   {
 
-    std::string filename("cmptestslice.c");
+    std::string filename("memregtestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
