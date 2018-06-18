@@ -448,6 +448,7 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
   std::string istr;
   std::string dst;
   std::string src;
+  std::string fourth;
 
   std::sregex_iterator end;
 
@@ -475,22 +476,34 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
 
   src = istr.substr((istr.find(',')+2), (istr.size()-2));
 
+  fourth = src.substr((src.find(',')+2), (src.size()-2));
+
+  //split this 'src' string one more time on the comma
+  //this is for 4 argument (including mnemonic) instructions
+  if((src.find(',')) != std::string::npos){
+    src = src.substr(0, (src.find(',')));
+  }
+  
   //trim off pre AND post whitespace from the registerName string
   ltrim(src);
   ltrim(dst);
   ltrim(mnemonic);
+  ltrim(fourth);
   rtrim(src);
   rtrim(dst);
   rtrim(mnemonic);
+  rtrim(fourth);
 
   std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
   std::cout<<"dst Arg: "<<dst<<"\n";
   std::cout<<"src Arg: "<<src<<"\n";
+  std::cout<<"fourth Arg: "<<fourth<<"\n";
 
   std::vector<std::string> instrPieces;
   instrPieces.push_back(mnemonic);
   instrPieces.push_back(dst);
   instrPieces.push_back(src);
+  instrPieces.push_back(fourth);
   return instrPieces;
 }
 
