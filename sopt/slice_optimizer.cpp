@@ -630,33 +630,11 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
   }
 }
 
-void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
-{
-  
-  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
-
-  std::string mnemonic = instrPieces.at(0);
-  std::string dst = instrPieces.at(1);
-  std::string dstB = instrPieces.at(1);
-  std::string src = instrPieces.at(2);
-  //mul instruction only has one argument, the src. the dst is implicit AL, AX, EAX
-  //the mul instr stores the result in the AX (AH:AL), DX:AX, or EDX:EAX registers.
-  src = instrPieces.at(1);
-
+void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
   std::pair<int, int> srcRegNumSize = checkForRegs(src);
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
-  int jz=0;
-for (auto jt = std::begin(instrPieces); jt != std::end(instrPieces); ++jt){
-              std::cout<<"[instrument_imul]instrPieces; index is: " << (*jt) << ';' << jz << "\n";
-              jz++;
-            }
-  
-  
-  #ifdef DEBUG_PRINT
-  for (auto jt = std::begin(instrPieces); jt != std::end(instrPieces); ++jt){
-              std::cout<<"[instrument_mul]srcRegNumSize.first, .second is : " << (srcRegNumSize.first) << ", "  << (srcRegNumSize.second) << "\n";
-            }
 
+  #ifdef DEBUG_PRINT
     for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
               std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
             }
@@ -670,23 +648,6 @@ for (auto jt = std::begin(instrPieces); jt != std::end(instrPieces); ++jt){
   //if there is a src register, set the appropriate edges to the previous author of that register
   if(srcRegNumSize.first){
     set_src_reg(srcRegNumSize, p_tempNode);
-    //set the dst register according to src register size
-    switch (srcRegNumSize.second)
-    {
-      case 4:
-        dst = "edx";
-        dstB = "eax";
-        break;
-      case 2:
-        dst = "dx";
-        dstB = "ax";
-        break;
-      case 1:
-      case -1:
-        dst = "ax";
-        dstB = "al";
-        break;
-    }
   }
   //else must be a const src or memory src  
   else{
@@ -702,65 +663,97 @@ for (auto jt = std::begin(instrPieces); jt != std::end(instrPieces); ++jt){
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
       u_long hexValue = hexStrToLong(memAddrStr);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
-      switch (memSizeBytes)
-      {
-        case 4:
-          dst = "edx";
-          dstB = "eax";
-          break;
-        case 2:
-          dst = "dx";
-          dstB = "ax";
-          break;
-        case 1:
-        case -1:
-          dst = "ax";
-          dstB = "al";
-          break;
-      }
-
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
     //so create an OUTedge from the rootNode to the current tempInstruction node;
     //and create an INedge from the rootNode to the current tempInstruction node; 
     else{
       set_src_root(p_rootNode, p_tempNode);
-      //6-1-18
-      //temp hacky assumption that all constant srcs are 32 bit args
-      //the x86 'mul' instruction never directly srcs in immediate constant values so this code should never be used.
-      dst = "edx";
-      dstB = "eax";
     } 
   }
+}
 
-
-
-
-  //...
-  set_clear_flags(p_tempNode, set_flags, clear_flags);
-
+void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
   std::pair<int, int> dstRegNumSize = checkForRegs(dst);
-  std::pair<int, int> dstBRegNumSize = checkForRegs(dstB);
-  set_src_reg(dstBRegNumSize, p_tempNode);
-
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
   if(dstRegNumSize.first){
     set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
   }
+  else{
+    //else must be a const or memory dst  
+    //handle memory dst 
+    //1 byte = 8 bits 
+    //word = 2 bytes = 16 bits  
+    //double word = 4 bytes = 32 bits
+    //xmm word = 16 bytes = 144 bits
+    std::string bracketStr;
+    std::string memAddrStr;
+    bracketStr = getStringWithinBrackets(dst);
 
-   //if (dstBRegNumSize.first) is not NULL then it must be a valid register
-  if(dstBRegNumSize.first){
-    set_reg((dstBRegNumSize.first), (dstBRegNumSize.second), p_tempNode);
+    //if the dst is a memory range, then set the new author to be current Instruction node 'p_tempNode'
+    if(bracketStr.size() > 0){
+      int memSizeBytes = getMemSizeByte(dst,bracketStr);
+      //remove the brackets from the string
+      memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
+      u_long hexValue = hexStrToLong(memAddrStr);
+      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+
+    }
+    else{
+      //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
+      //so create an OUTedge from the rootNode to the current tempInstruction node;
+      //and create an INedge from the rootNode to the current tempInstruction node; 
+      set_dst_root(p_rootNode, p_tempNode);              
+    } 
   }
+}
 
-#ifdef DEBUG_PRINT
-  std::cout<<"mnemonic is: " << mnemonic  << "\n";
-    std::cout<<"dst is : " << dst  << "\n";
-    std::cout<<"dstB is : " << dstB  << "\n";
-    std::cout<<"src is : " << src  << "\n";
+void instrument_onesrc_twoarg(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+  std::string srcB = instrPieces.at(3);
+
+  handle_srcRegMemImm(src, p_tempNode, p_rootNode);
+  handle_srcRegMemImm(srcB, p_tempNode, p_rootNode);
+
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+  handle_dstRegMemImm(dst, p_tempNode, p_rootNode);
+}
+
+void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  //commaCount of 0 is imul instruction with a single arg, is similar to mul instruction
+  //commaCount of 1 is imul with two args, dest = dest * src
+  //commaCount of 2 is imul with three args, dest = src * immediate
+  size_t commaCount = std::count(wholeInstructionString.begin(), wholeInstructionString.end(), ',');
+  #ifdef DEBUG_PRINT
+  std::cout << "commaCount is: " << commaCount << "\n";
   #endif
+  std::cout << "commaCount is: " << commaCount << "\n";
+  
 
+  switch(commaCount){
+    case 0:
+      instrument_mul(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
+      break;
+    case 1:
+      instrument_addorsub(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
+      break;
+    case 2:
+      instrument_onesrc_twoarg(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
+      break;
+    default:
+    std::cout<< "[ERROR]instrument_imul cant handle this instruction " << wholeInstructionString << "\n";
+  }
 }
 
 void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
@@ -778,8 +771,6 @@ void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, ui
 
   std::pair<int, int> srcRegNumSize = checkForRegs(src);
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
-
-
   
   
   #ifdef DEBUG_PRINT
@@ -944,6 +935,7 @@ void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flag
   }
   //...
   std::pair<int, int> dstRegNumSize = checkForRegs(dst);
+  //6-17 Possible Bug! this line "set_src_reg(dstRegNumSize, p_tempNode)" should be moved into the "if(dstRegNumSize.first){" scope below?
   set_src_reg(dstRegNumSize, p_tempNode);
   set_clear_flags(p_tempNode, set_flags, clear_flags);
 
@@ -1257,7 +1249,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_mul(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
       case InstType::imul:
-          instrument_imul(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          instrument_imul(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
 
       default:
@@ -1267,7 +1259,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   int main(int,char*[])
   {
 
-    std::string filename("memRegtestslice.c");
+    std::string filename("imultestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
