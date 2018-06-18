@@ -117,7 +117,7 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 std::map<std::string, const int > strSizeToByte = {
 	{"byte", 1},
 	{"word", 2},
-	{"double word", 4},
+	{"dword", 4},
 	{"xmmword", 16},
 };
 
@@ -172,6 +172,7 @@ enum class InstType
     idiv,
     mul,
     imul,
+    cmp,
     GetType
 };
 
@@ -203,6 +204,7 @@ std::map<std::string, InstType> mapStringToInstType =
     { "idiv", InstType::idiv },
     { "mul", InstType::mul },
     { "imul", InstType::imul },
+    { "cmp", InstType::cmp },
 };
 
 /// Map from enum values to strings
@@ -232,7 +234,8 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::div , "div"}, 
     {InstType::idiv , "idiv"}, 
     {InstType::mul , "mul"}, 
-    {InstType::imul , "imul"}, 
+    {InstType::imul , "imul"},
+    {InstType::cmp , "cmp"},  
 };
 
 void clear_reg (int reg, int size);
@@ -255,7 +258,9 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_instrNode, Node* p_rootNode);
 void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
-void instrument_onesrc_twoarg(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_cmp_or_test (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_onedst_twosrc(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode);
 void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);

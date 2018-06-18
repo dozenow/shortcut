@@ -421,6 +421,9 @@ static inline std::string getMnemonic(std::string wholeInstructionString){
 
   std::regex allPreExtra("^.*(?=(\\/\\*))");
   auto iterPreExtra = std::sregex_iterator(wholeInstructionString.begin(), wholeInstructionString.end(), allPreExtra);
+  if (iterPreExtra == end) {
+    istr = wholeInstructionString.substr(0, wholeInstructionString.find("\\n"));
+  }
   while (iterPreExtra != end) {
     std::smatch match = *iterPreExtra;
     istr = match.str();
@@ -429,7 +432,7 @@ static inline std::string getMnemonic(std::string wholeInstructionString){
     #endif
     iterPreExtra++;
   } 
-
+  
   //remove the quotes symbol char that leads the instruction string.
   istr = istr.substr(1, istr.size());
 
@@ -454,6 +457,9 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
 
   std::regex allPreExtra("^.*(?=(\\/\\*))");
   auto iterPreExtra = std::sregex_iterator(wholeInstructionString.begin(), wholeInstructionString.end(), allPreExtra);
+  if (iterPreExtra == end) {
+    istr = wholeInstructionString.substr(0, wholeInstructionString.find("\\n"));
+  }
   while (iterPreExtra != end) {
     std::smatch match = *iterPreExtra;
     istr = match.str();
@@ -461,7 +467,7 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
       std::cout << "regex2:" << match.str() << "\n";
     #endif
     iterPreExtra++;
-  } 
+  }
 
   //remove the quotes symbol char that leads the instruction string.
   istr = istr.substr(1, istr.size());
@@ -474,9 +480,12 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
 
   dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
 
-  src = istr.substr((istr.find(',')+2), (istr.size()-2));
+  src = istr.substr((istr.find(',')+1), (istr.size()-2));
+  ltrim(src);
 
-  fourth = src.substr((src.find(',')+2), (src.size()-2));
+  fourth = src.substr((src.find(',')+1), (src.size()-2));
+  ltrim(fourth);
+  std::cout<<"src1 Arg: "<<src<<"\n";
 
   //split this 'src' string one more time on the comma
   //this is for 4 argument (including mnemonic) instructions
@@ -709,7 +718,7 @@ void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
   }
 }
 
-void instrument_onesrc_twoarg(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+void instrument_onedst_twosrc(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   
   std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
@@ -726,6 +735,44 @@ void instrument_onesrc_twoarg(std::string wholeInstructionString,  uint32_t set_
   handle_dstRegMemImm(dst, p_tempNode, p_rootNode);
 }
 
+void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+  std::string srcB = instrPieces.at(3);
+
+  handle_srcRegMemImm(src, p_tempNode, p_rootNode);
+  handle_srcRegMemImm(srcB, p_tempNode, p_rootNode);
+
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+}
+
+void instrument_cmp_or_test (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  //commaCount of 1 is cmp/test with two args, eflags set by SUB temp = src1 - src2. contents of temp is discarded.
+  size_t commaCount = std::count(wholeInstructionString.begin(), wholeInstructionString.end(), ',');
+  #ifdef DEBUG_PRINT
+  std::cout << "commaCount is: " << commaCount << "\n";
+  #endif
+  std::cout << "commaCount is: " << commaCount << "\n";
+  
+
+  switch(commaCount){
+    case 1:
+      instrument_eflagsdst_twosrc(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
+      break;
+    default:
+    std::cout<< "[ERROR]instrument_cmp_or_test cant handle this instruction " << wholeInstructionString << "\n";
+  }
+}
+
 void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   
@@ -738,7 +785,6 @@ void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, u
   #ifdef DEBUG_PRINT
   std::cout << "commaCount is: " << commaCount << "\n";
   #endif
-  std::cout << "commaCount is: " << commaCount << "\n";
   
 
   switch(commaCount){
@@ -749,7 +795,7 @@ void instrument_imul (std::string wholeInstructionString,  uint32_t set_flags, u
       instrument_addorsub(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
       break;
     case 2:
-      instrument_onesrc_twoarg(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
+      instrument_onedst_twosrc(wholeInstructionString, set_flags, clear_flags, p_tempNode, p_rootNode);
       break;
     default:
     std::cout<< "[ERROR]instrument_imul cant handle this instruction " << wholeInstructionString << "\n";
@@ -1190,9 +1236,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {   
       case InstType::cmovbe:
       case InstType::cmovnbe:
-          std::cout<<"mnemonic is: " << mnemonic  << "\n";
           set_src_flags(p_tempNode, CF_FLAG|ZF_FLAG);
-          std::cout<<"mnemonic2 is: " << mnemonic  << "\n";
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::cmovz:
@@ -1251,15 +1295,20 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::imul:
           instrument_imul(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
+      case InstType::cmp:
+          instrument_cmp_or_test(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
+          break;
+      //todo: cmp, jne, jnb, jnle, jz, jnz, jnbe, test, jbe,
 
       default:
-          std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
+          std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
+          //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
   }
 }
   int main(int,char*[])
   {
 
-    std::string filename("imultestslice.c");
+    std::string filename("cmptestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1282,14 +1331,13 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 
     while (std::getline(file, line)) {
       lineNum++;
-
+      std::cout<< lineNum << "\n";
       //Start reading actual slice instructions starting at line 5 (because the first 4 lines are padding that always need to be kept)
       if(lineNum >= 5){
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
-
+          std::cout<<"(main) line: "<<line << "\n";
           std::string mnemonic = getMnemonic(line);
-
           //need to eventually delete this dynamically allocated memory
           Node* p_tempNode = new Node();
           
