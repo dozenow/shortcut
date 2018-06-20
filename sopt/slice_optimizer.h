@@ -45,7 +45,7 @@ struct Node {
 	int lineNum;
 	std::vector<Edge*> inEdges;
 	std::vector<Edge*> outEdges;
-	int extra;
+	int extra = 1;
 };
 
 //An Edge represents the data-flow relationship between two Nodes (asm instructions) in our graph. Each edge has a pointer to its origin Node and a pointer to its destination Node.

@@ -173,11 +173,11 @@ static inline void clear_reg_internal (int reg, int size)
 
       for (i = 0; i < size; i++) {
           shadow_reg_table[(reg * REG_SIZE + i)+offset] = author;
-          #ifdef DEBUG_PRINT
+          //#ifdef DEBUG_PRINT
             std::cout<< "Setting shadow_reg_table at " << (reg * REG_SIZE + i) << "to " << author->lineNum << "\n";
-            std::cout<< regNumSize.first << "\n";
-            std::cout<< regNumSize.second << "\n";
-          #endif
+            //std::cout<< regNumSize.first << "\n";
+            //std::cout<< regNumSize.second << "\n";
+          //#endif
       }
   }
 
@@ -1334,7 +1334,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   int main(int,char*[])
   {
 
-    std::string filename("8151testsliceC.c");
+    //std::string filename("8151testsliceC.c");
+    std::string filename("cmptestslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1416,11 +1417,32 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
               std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
             }
     #endif
+    int co = 0;
+    for (auto flagIt = std::begin(shadow_reg_table); flagIt != std::end(shadow_reg_table); ++flagIt){
+      (*flagIt)-> extra = 0;
+      std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
+      co++;
+    }
 
     for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
+      (*flagIt)-> extra = 0;
       std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
     }
 
+    std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+    for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+      std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
+      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
+      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
+    }
+
+    
     //...Delete mem operations here
     delete p_rootNode;
     delete ptempEdge;
