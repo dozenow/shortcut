@@ -175,6 +175,11 @@ enum class InstType
     cmp,
     test,
     movzx,
+    setnz,
+    pand,
+    por,
+    pxor,
+    ptest,
     GetType
 };
 
@@ -209,6 +214,11 @@ std::map<std::string, InstType> mapStringToInstType =
     { "cmp", InstType::cmp },
     { "test", InstType::test },
     { "movzx", InstType::movzx },
+    { "setnz", InstType::setnz },
+    { "pand", InstType::pand },
+    { "por", InstType::por },
+    { "pxor", InstType::pxor },
+    { "ptest", InstType::ptest },
 };
 
 /// Map from enum values to strings
@@ -241,7 +251,11 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::imul , "imul"},
     {InstType::cmp , "cmp"},
     {InstType::test , "test"},
-    {InstType::movzx , "movzx"},    
+    {InstType::movzx , "movzx"},
+    {InstType::setnz , "setnz"},
+    {InstType::por , "por"},
+    {InstType::pxor , "pxor"},
+    {InstType::ptest , "ptest"},         
 };
 
 void clear_reg (int reg, int size);
@@ -269,4 +283,5 @@ void instrument_onedst_twosrc(std::string wholeInstructionString,  uint32_t set_
 void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode);
 void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode);
+void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);

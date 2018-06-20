@@ -915,6 +915,17 @@ void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, ui
 
 }
 
+void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  std::string src = instrPieces.at(2);
+  std::string srcB = instrPieces.at(3);
+  handle_dstRegMemImm(dst, p_tempNode, p_rootNode);
+}
+
 void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   
@@ -1262,6 +1273,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::Zxor:
           instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG, OF_FLAG|CF_FLAG|AF_FLAG, p_tempNode, p_rootNode);
           break;
+      case InstType::pand:
+      case InstType::por:
+      case InstType::pxor:
+          instrument_addorsub(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
       case InstType::add:
       case InstType::sub:
       case InstType::adc:
@@ -1283,7 +1299,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           break;
       case InstType::cmp:
       case InstType::test:
+      case InstType::ptest:
           instrument_cmp_or_test(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
+          break;
+      case InstType::setnz:
+          set_src_flags(p_tempNode, ZF_FLAG);
+          instrument_set(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
 
