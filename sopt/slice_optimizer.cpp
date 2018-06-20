@@ -1268,6 +1268,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::mov:
+      case InstType::movzx:
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::div:
@@ -1294,7 +1295,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   int main(int,char*[])
   {
 
-    std::string filename("memregtestslice.c");
+    std::string filename("8151testslice.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;

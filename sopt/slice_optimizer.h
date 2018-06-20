@@ -174,6 +174,7 @@ enum class InstType
     imul,
     cmp,
     test,
+    movzx,
     GetType
 };
 
@@ -207,6 +208,7 @@ std::map<std::string, InstType> mapStringToInstType =
     { "imul", InstType::imul },
     { "cmp", InstType::cmp },
     { "test", InstType::test },
+    { "movzx", InstType::movzx },
 };
 
 /// Map from enum values to strings
@@ -238,7 +240,8 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::mul , "mul"}, 
     {InstType::imul , "imul"},
     {InstType::cmp , "cmp"},
-    {InstType::test , "test"},   
+    {InstType::test , "test"},
+    {InstType::movzx , "movzx"},    
 };
 
 void clear_reg (int reg, int size);
