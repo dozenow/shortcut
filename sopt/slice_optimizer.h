@@ -180,6 +180,14 @@ enum class InstType
     por,
     pxor,
     ptest,
+    movdqu,
+    jle,
+    jz,
+    jnbe,
+    jne,
+    jnz,
+    jnb,
+    shl,
     GetType
 };
 
@@ -219,6 +227,14 @@ std::map<std::string, InstType> mapStringToInstType =
     { "por", InstType::por },
     { "pxor", InstType::pxor },
     { "ptest", InstType::ptest },
+    { "movdqu", InstType::movdqu },
+    { "jle", InstType::jle },
+    { "jz", InstType::jz },
+    { "jnbe", InstType::jnbe },
+    { "jne", InstType::jne },
+    { "jnz", InstType::jnz },
+    { "jnb", InstType::jnb },
+    { "shl", InstType::shl },
 };
 
 /// Map from enum values to strings
@@ -255,7 +271,15 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::setnz , "setnz"},
     {InstType::por , "por"},
     {InstType::pxor , "pxor"},
-    {InstType::ptest , "ptest"},         
+    {InstType::ptest , "ptest"},
+    {InstType::movdqu , "movdqu"},
+    {InstType::jle , "jle"},
+    {InstType::jz , "jz"},
+    {InstType::jnbe , "jnbe"},
+    {InstType::jne , "jne"},
+    {InstType::jnz , "jnz"},
+    {InstType::jnb , "jnb"},
+    {InstType::shl , "shl"},           
 };
 
 void clear_reg (int reg, int size);

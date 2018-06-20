@@ -476,13 +476,13 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
   ltrim(mnemonic);
   rtrim(mnemonic);
 
-  std::cout<<"istr:"<<istr<<"\n";
+  std::cout<<"(getInstrPieces)istr:"<<istr<<"\n";
 
   dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
 
   src = istr.substr((istr.find(',')+1), (istr.size()-2));
   ltrim(src);
-
+  //std::cout<<"dst,src:"<<dst<< ','<<src<<"\n";
   fourth = src.substr((src.find(',')+1), (src.size()-2));
   ltrim(fourth);
 
@@ -1230,6 +1230,20 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   InstType instType = mapStringToInstType[mnemonic];
   switch (instType)
   {   
+      case InstType::jle:
+          set_src_flags(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
+           break;
+      case InstType::jz:
+      case InstType::jne:
+      case InstType::jnz:
+          set_src_flags(p_tempNode, ZF_FLAG);
+          break;
+      case InstType::jnbe:
+          set_src_flags(p_tempNode, CF_FLAG|ZF_FLAG);
+           break;
+      case InstType::jnb:
+          set_src_flags(p_tempNode, CF_FLAG);
+          break;
       case InstType::cmovbe:
       case InstType::cmovnbe:
           set_src_flags(p_tempNode, CF_FLAG|ZF_FLAG);
@@ -1283,8 +1297,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::adc:
           instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
+      case InstType::shl:
+          instrument_addorsub(wholeInstructionString, CF_FLAG|OF_FLAG|SF_FLAG|ZF_FLAG|PF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
+          break;
       case InstType::mov:
       case InstType::movzx:
+      case InstType::movdqu:
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::div:
@@ -1316,7 +1334,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   int main(int,char*[])
   {
 
-    std::string filename("8151testslice.c");
+    std::string filename("8151testsliceC.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
