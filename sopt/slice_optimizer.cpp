@@ -231,6 +231,12 @@ static inline void rtrim(std::string &s) {
       set_reg_internal (reg, size, author);
   }
 
+  void set_dst_reg (std::string regName, Node* author)
+  {
+      std::pair<int, int> dstRegNumSize = checkForRegs(regName);
+      set_reg_internal (dstRegNumSize.first, dstRegNumSize.second, author);
+  }
+
   //...
 
   std::string getStringWithinBrackets(std::string wholeInstructionString){
@@ -326,6 +332,38 @@ static inline void rtrim(std::string &s) {
   }
 
   void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode){
+  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
+  //if srcRegNumSize.first) is not EMPTY then it must be a valid register
+  for (auto it = std::begin(regAuthors); it != std::end(regAuthors); ++it){
+      //4-23-18
+      Edge* p_tempInEdge = new Edge();
+      Edge* p_tempOutEdge = new Edge();
+      p_tempInEdge->start = (*it);
+      p_tempInEdge->finish = p_tempNode;
+
+      //add correct outEdge from previous register author to self current node 
+      p_tempOutEdge->start = (*it);
+      p_tempOutEdge->finish = p_tempNode;
+
+      p_tempNode->inEdges.push_back(p_tempInEdge);
+      (*it)->outEdges.push_back(p_tempOutEdge);
+
+      #ifdef DEBUG_PRINT
+        std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
+        std::cout<<"p_tempInEdge->start : " << (*it)->lineNum  << "\n";
+        std::cout<<"p_tempInEdge->finish is : " << p_tempNode->lineNum  << "\n";
+        for (auto jt = std::begin((*it)->outEdges); jt != std::end((*it)->outEdges); ++jt){
+          std::cout<<"outEdges for Node: " << ((*it))->lineNum << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+        }
+        for (auto jt = std::begin(p_tempNode->inEdges); jt != std::end(p_tempNode->inEdges); ++jt){
+          std::cout<<"inEdges for Node: " << " is "  << ((*jt)->start)->lineNum << " to " << ((*jt)->finish)->lineNum  << "\n";
+        }
+      #endif
+    }
+  }
+
+  void set_src_regName(std::string regName, Node* p_tempNode){
+  std::pair<int, int> srcRegNumSize = checkForRegs(regName);
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
   //if srcRegNumSize.first) is not EMPTY then it must be a valid register
   for (auto it = std::begin(regAuthors); it != std::end(regAuthors); ++it){
@@ -1325,7 +1363,27 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_set(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
-
+      case InstType::pushfd:
+          set_src_regName("esp", p_tempNode);
+          set_src_flags(p_tempNode, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG|DF_FLAG);
+          set_dst_reg("esp", p_tempNode);
+          break;
+      case InstType::push:
+          set_src_regName("esp", p_tempNode);
+          handle_srcRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
+          set_dst_reg("esp", p_tempNode);
+          break;
+      //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
+      case InstType::popfd:
+          set_src_regName("esp", p_tempNode);
+          set_clear_flags(p_tempNode, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG|DF_FLAG, 0);
+          set_dst_reg("esp", p_tempNode);
+          break;
+      case InstType::pop:
+          set_src_regName("esp", p_tempNode);
+          handle_dstRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
+          set_dst_reg("esp", p_tempNode);
+          break;
       default:
           std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
           //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";

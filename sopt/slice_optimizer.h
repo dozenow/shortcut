@@ -188,6 +188,10 @@ enum class InstType
     jnz,
     jnb,
     shl,
+    pushfd,
+    popfd,
+    push,
+    pop,
     GetType
 };
 
@@ -235,6 +239,10 @@ std::map<std::string, InstType> mapStringToInstType =
     { "jnz", InstType::jnz },
     { "jnb", InstType::jnb },
     { "shl", InstType::shl },
+    { "pushfd", InstType::pushfd },
+    { "popfd", InstType::popfd },
+    { "push", InstType::push },
+    { "pop", InstType::pop },
 };
 
 /// Map from enum values to strings
@@ -279,12 +287,17 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::jne , "jne"},
     {InstType::jnz , "jnz"},
     {InstType::jnb , "jnb"},
-    {InstType::shl , "shl"},           
+    {InstType::shl , "shl"},
+    {InstType::pushfd , "pushfd"},
+    {InstType::popfd , "popfd"},
+    {InstType::push , "push"},
+    {InstType::pop , "pop"},            
 };
 
 void clear_reg (int reg, int size);
 void set_reg (int reg, int size, Node* author);
 void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);
+void set_src_regName(std::string regName, Node* p_tempNode);
 std::pair<int, int> checkForRegs(std::string instOperand);
 std::string getStringWithinBrackets(std::string wholeInstructionString);
 u_long hexStrToLong(std::string bracketStr);
@@ -308,4 +321,5 @@ void instrument_eflagsdst_twosrc(std::string wholeInstructionString,  uint32_t s
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode);
 void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode);
 void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void set_dst_reg (std::string regName, Node* author);
 static inline std::string getMnemonic(std::string wholeInstructionString);
