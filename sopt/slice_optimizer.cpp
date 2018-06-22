@@ -311,8 +311,8 @@ static inline void rtrim(std::string &s) {
         p_tempOutEdge->start = (*it).second;
         p_tempOutEdge->finish = p_tempNode;
 
-        p_tempNode->inEdges.insert(p_tempInEdge);
-        ((*it).second)->outEdges.insert(p_tempOutEdge);
+        p_tempNode->inEdges.push_back(p_tempInEdge);
+        ((*it).second)->outEdges.push_back(p_tempOutEdge);
       }
     }
   }
@@ -330,8 +330,8 @@ static inline void rtrim(std::string &s) {
     p_tempInEdge->finish = p_tempNode;
     p_tempOutEdge->start = p_rootNode;
     p_tempOutEdge->finish = p_tempNode;
-    p_rootNode->outEdges.insert(p_tempOutEdge);
-    p_tempNode->inEdges.insert(p_tempInEdge);
+    p_rootNode->outEdges.push_back(p_tempOutEdge);
+    p_tempNode->inEdges.push_back(p_tempInEdge);
   }
 
   void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode){
@@ -348,8 +348,8 @@ static inline void rtrim(std::string &s) {
       p_tempOutEdge->start = (*it);
       p_tempOutEdge->finish = p_tempNode;
 
-      p_tempNode->inEdges.insert(p_tempInEdge);
-      (*it)->outEdges.insert(p_tempOutEdge);
+      p_tempNode->inEdges.push_back(p_tempInEdge);
+      (*it)->outEdges.push_back(p_tempOutEdge);
 
       #ifdef DEBUG_PRINT
         std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
@@ -380,8 +380,8 @@ static inline void rtrim(std::string &s) {
       p_tempOutEdge->start = (*it);
       p_tempOutEdge->finish = p_tempNode;
 
-      p_tempNode->inEdges.insert(p_tempInEdge);
-      (*it)->outEdges.insert(p_tempOutEdge);
+      p_tempNode->inEdges.push_back(p_tempInEdge);
+      (*it)->outEdges.push_back(p_tempOutEdge);
 
       #ifdef DEBUG_PRINT
         std::cout<< "srcNoding lineNum " << (*it)->lineNum <<  " to " << p_tempNode->lineNum <<"\n";
@@ -413,7 +413,7 @@ static inline void rtrim(std::string &s) {
 
     p_tempOutEdge->start = p_tempNode;
     p_tempOutEdge->finish = p_rootNode;
-    p_tempNode->outEdges.insert(p_tempOutEdge);
+    p_tempNode->outEdges.push_back(p_tempOutEdge);
   }
 
   static inline void set_clear_flags(Node* author, uint32_t set_flags, uint32_t clear_flags) 
@@ -445,8 +445,8 @@ static inline void set_src_flags(Node* p_tempNode, uint32_t src_flags)
         //add correct outEdge from previous register author to self current node 
         p_tempOutEdge->start = (eflags_table[i]);
         p_tempOutEdge->finish = p_tempNode;
-        p_tempNode->inEdges.insert(p_tempInEdge);
-        (eflags_table[i])->outEdges.insert(p_tempOutEdge);
+        p_tempNode->inEdges.push_back(p_tempInEdge);
+        (eflags_table[i])->outEdges.push_back(p_tempOutEdge);
         #ifdef DEBUG_PRINT
         std::cout<<" i is: " << i  << "\n";
         #endif
@@ -1271,14 +1271,17 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
 }
 
 int mark_ancestors (Node* p_tempNode){
-  std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
   if ((p_tempNode->lineNum) == 0){
     return 1;
   }
-  p_tempNode-> extra = 0;
-  for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut){
-    mark_ancestors((*ut)->start);
+  std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
+  if((p_tempNode-> extra) != 0){
+    p_tempNode-> extra = 0;
+    for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut){
+      mark_ancestors((*ut)->start);
+    }
   }
+  
   return 0; 
 }
 
@@ -1415,7 +1418,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
-
+    auto t1 = Clock::now();
+    
     //std::string filename("8151testslice100.c");
     std::string filename("8151testslice21.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
@@ -1426,8 +1430,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     std::vector<std::string> tempPieces;
     Node* p_rootNode = new Node();
     Edge* ptempEdge = new Edge();
-    ptempEdge->start = p_RootNode;
-    p_rootNode->outEdges.insert(ptempEdge);
+    p_rootNode->outEdges.push_back(ptempEdge);
+    p_rootNode->outEdges[0]->start = p_rootNode;
+    p_rootNode->inEdges.push_back(ptempEdge);
     p_rootNode->lineNum = 0;
 
     set_reg(0,1920,p_rootNode);
@@ -1486,6 +1491,20 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     #endif
 
     //...
+
+    std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+      for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+        std::cout<< ((*it)->lineNum) <<"\n";
+        for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
+        for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+          std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
+      }
+
     
 
     for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
@@ -1584,6 +1603,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
     delete p_sliceGraph;
 
+    auto t2 = Clock::now();
+    std::cout << "Delta t2-t1: " 
+              << std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count()
+              << " nanoseconds" << std::endl;
     //...
 
     // create a typedef for the Graph type

@@ -10,6 +10,8 @@
 #include <locale>
 #include <sstream>
 #include <iomanip>
+#include <chrono>
+typedef std::chrono::high_resolution_clock Clock;
 
 #define NUM_REGS 120
 #define REG_SIZE 16
@@ -37,6 +39,7 @@
 #define OF_INDEX 5
 #define DF_INDEX 6
 
+
 struct Edge;
 
 //A Node represents an instruction, such as "mov EAX, 20" by its line number in the assembly exslice1.c file
@@ -44,8 +47,8 @@ struct Edge;
 //The bool extra flag is for the 'mark and sweep' tracing garbage collection to remove unnecessary slice instructions. If the node is marked as extra, then it is extraneous and unnecessary, so we can remove the instruction from the slice.
 struct Node {
 	int lineNum;
-	std::set<Edge*> inEdges;
-	std::set<Edge*> outEdges;
+	std::vector<Edge*> inEdges;
+	std::vector<Edge*> outEdges;
 	int extra = 1;
 };
 
