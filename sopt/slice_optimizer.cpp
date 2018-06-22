@@ -1512,6 +1512,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
     }
 
+    for (auto const& x : mapMem)
+    {
+      mark_ancestors(x.second);
+      std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
+    }
+
 
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
