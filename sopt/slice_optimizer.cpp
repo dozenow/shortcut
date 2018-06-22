@@ -972,8 +972,6 @@ void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, ui
 
   std::string mnemonic = instrPieces.at(0);
   std::string dst = instrPieces.at(1);
-  std::string src = instrPieces.at(2);
-  std::string srcB = instrPieces.at(3);
   handle_dstRegMemImm(dst, p_tempNode, p_rootNode);
 }
 
@@ -1455,10 +1453,18 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_cmp_or_test(wholeInstructionString, CF_FLAG|OF_FLAG, SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG, p_tempNode, p_rootNode);
           break;
       case InstType::setnz:
+      case InstType::setz:
           set_src_flags(p_tempNode, ZF_FLAG);
           instrument_set(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
-      //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
+      case InstType::sets:
+          set_src_flags(p_tempNode, SF_FLAG);
+          instrument_set(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::setb:
+          set_src_flags(p_tempNode, CF_FLAG);
+          instrument_set(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
       case InstType::pushfd:
           set_src_regName("esp", p_tempNode);
           set_src_flags(p_tempNode, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG|DF_FLAG);
@@ -1467,7 +1473,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::push:
           instrument_push(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
-      //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
       case InstType::popfd:
           set_src_regName("esp", p_tempNode);
           set_clear_flags(p_tempNode, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG|DF_FLAG, 0);

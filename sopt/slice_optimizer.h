@@ -188,7 +188,6 @@ enum class InstType
     cmp,
     test,
     movzx,
-    setnz,
     pand,
     por,
     pxor,
@@ -207,6 +206,10 @@ enum class InstType
     pop,
     call,
     pcmpistri,
+    setz,
+    sets,
+    setb,
+    setnz,
     GetType
 };
 
@@ -241,7 +244,6 @@ std::map<std::string, InstType> mapStringToInstType =
     { "cmp", InstType::cmp },
     { "test", InstType::test },
     { "movzx", InstType::movzx },
-    { "setnz", InstType::setnz },
     { "pand", InstType::pand },
     { "por", InstType::por },
     { "pxor", InstType::pxor },
@@ -260,6 +262,10 @@ std::map<std::string, InstType> mapStringToInstType =
     { "pop", InstType::pop },
     { "call", InstType::call },
     { "pcmpistri", InstType::pcmpistri },
+    { "setz", InstType::setz },
+    { "sets", InstType::sets },
+    { "setb", InstType::setb },
+    { "setnz", InstType::setnz },
 };
 
 /// Map from enum values to strings
@@ -293,7 +299,6 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::cmp , "cmp"},
     {InstType::test , "test"},
     {InstType::movzx , "movzx"},
-    {InstType::setnz , "setnz"},
     {InstType::por , "por"},
     {InstType::pxor , "pxor"},
     {InstType::ptest , "ptest"},
@@ -310,7 +315,11 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::push , "push"},
     {InstType::pop , "pop"},
     {InstType::call , "call"},
-    {InstType::pcmpistri , "pcmpistri"},              
+    {InstType::pcmpistri , "pcmpistri"},
+    {InstType::setz , "setz"},
+    {InstType::sets , "sets"},
+    {InstType::setb , "setb"},
+    {InstType::setnz , "setnz"},              
 };
 
 void clear_reg (int reg, int size);
