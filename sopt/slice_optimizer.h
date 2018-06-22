@@ -1,6 +1,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <vector>
+#include <set>
 #include <boost/numeric/ublas/vector.hpp>
 //#include <boost/numeric/ublas/io.hpp>
 #include <map>
@@ -43,8 +44,8 @@ struct Edge;
 //The bool extra flag is for the 'mark and sweep' tracing garbage collection to remove unnecessary slice instructions. If the node is marked as extra, then it is extraneous and unnecessary, so we can remove the instruction from the slice.
 struct Node {
 	int lineNum;
-	std::vector<Edge*> inEdges;
-	std::vector<Edge*> outEdges;
+	std::set<Edge*> inEdges;
+	std::set<Edge*> outEdges;
 	int extra = 1;
 };
 
