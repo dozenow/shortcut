@@ -67,6 +67,8 @@ std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
 
+std::vector<Node*> jumps;
+
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
@@ -323,4 +325,5 @@ void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode);
 void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void set_dst_reg (std::string regName, Node* author);
 int mark_ancestors (Node* p_tempNode);
+void instrument_jump (Node* p_tempNode, uint32_t src_flags);
 static inline std::string getMnemonic(std::string wholeInstructionString);

@@ -1272,7 +1272,12 @@ int mark_ancestors (Node* p_tempNode){
     mark_ancestors((*ut)->start);
   }
   return 0; 
-}    
+}
+
+void instrument_jump (Node* p_tempNode, uint32_t src_flags){
+  set_src_flags(p_tempNode, src_flags);
+  jumps.push_back(p_tempNode);
+}   
 
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
 {
@@ -1280,18 +1285,18 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   switch (instType)
   {   
       case InstType::jle:
-          set_src_flags(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
+          instrument_jump(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
            break;
       case InstType::jz:
       case InstType::jne:
       case InstType::jnz:
-          set_src_flags(p_tempNode, ZF_FLAG);
+          instrument_jump(p_tempNode, ZF_FLAG);
           break;
       case InstType::jnbe:
-          set_src_flags(p_tempNode, CF_FLAG|ZF_FLAG);
+          instrument_jump(p_tempNode, CF_FLAG|ZF_FLAG);
            break;
       case InstType::jnb:
-          set_src_flags(p_tempNode, CF_FLAG);
+          instrument_jump(p_tempNode, CF_FLAG);
           break;
       case InstType::cmovbe:
       case InstType::cmovnbe:
@@ -1501,6 +1506,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       mark_ancestors((*flagIt));
       std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
     }
+
+    for (auto flagIt = std::begin(jumps); flagIt != std::end(jumps); ++flagIt){
+      mark_ancestors((*flagIt));
+      std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
+    }
+
 
     std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
