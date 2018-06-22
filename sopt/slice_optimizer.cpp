@@ -22,6 +22,7 @@
 using namespace boost;
 
 //#define DEBUG_PRINT
+//#define EDGES_PRINT 
 
 //from taint_full_interface.c.
 //the regToNumSize table in slice_optimizer.h is similar and returns -1 for the MostSigByte, or high half, such as AH and returns 1 for the leastSigByte, or low half such as AL.
@@ -173,11 +174,11 @@ static inline void clear_reg_internal (int reg, int size)
 
       for (i = 0; i < size; i++) {
           shadow_reg_table[(reg * REG_SIZE + i)+offset] = author;
-          //#ifdef DEBUG_PRINT
+          #ifdef DEBUG_PRINT
             std::cout<< "Setting shadow_reg_table at " << (reg * REG_SIZE + i) << "to " << author->lineNum << "\n";
             //std::cout<< regNumSize.first << "\n";
             //std::cout<< regNumSize.second << "\n";
-          //#endif
+          #endif
       }
   }
 
@@ -271,9 +272,8 @@ static inline void rtrim(std::string &s) {
   int getMemSizeByte(std::string src, std::string bracketStr){
     std::string memSizeStr;
     memSizeStr = src.substr(0, src.find("ptr"));
-    std::cout << "getMemSize:" << memSizeStr << "\n";
     #ifdef DEBUG_PRINT
-    std::cout << "getMemSize:" << memSizeStr << "\n";
+      std::cout << "getMemSize:" << memSizeStr << "\n";
     #endif
     
     ltrim(memSizeStr);
@@ -284,7 +284,9 @@ static inline void rtrim(std::string &s) {
     iter2 = strSizeToByte.find(memSizeStr);
     if (iter2 != strSizeToByte.end()){
       memSize = (*iter2).second;
-      std::cout<<"srcmemSize:" << memSize << "\n";
+      #ifdef DEBUG_PRINT
+        std::cout<<"srcmemSize:" << memSize << "\n";
+      #endif
     }
     return memSize;
   }
@@ -514,7 +516,9 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
   ltrim(mnemonic);
   rtrim(mnemonic);
 
-  std::cout<<"(getInstrPieces)istr:"<<istr<<"\n";
+  #ifdef DEBUG_PRINT
+    std::cout<<"(getInstrPieces)istr:"<<istr<<"\n";
+  #endif
 
   dst = istr.substr((istr.find(mnemonic)+mnemonic.size()+1), (istr.find(',')-mnemonic.size()-1));
 
@@ -539,11 +543,12 @@ std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
   rtrim(dst);
   rtrim(mnemonic);
   rtrim(fourth);
-
-  std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
-  std::cout<<"dst Arg: "<<dst<<"\n";
-  std::cout<<"src Arg: "<<src<<"\n";
-  std::cout<<"fourth Arg: "<<fourth<<"\n";
+  #ifdef DEBUG_PRINT
+    std::cout<<"mnemonic Arg: "<<mnemonic<<"\n";
+    std::cout<<"dst Arg: "<<dst<<"\n";
+    std::cout<<"src Arg: "<<src<<"\n";
+    std::cout<<"fourth Arg: "<<fourth<<"\n";
+  #endif
 
   std::vector<std::string> instrPieces;
   instrPieces.push_back(mnemonic);
@@ -1182,10 +1187,11 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
   std::string dst = instrPieces.at(1);
   std::string src = instrPieces.at(2);
 
-
-  std::cout<<"mnemonic is: " << mnemonic  << "\n";
+  #ifdef DEBUG_PRINT
+    std::cout<<"mnemonic is: " << mnemonic  << "\n";
     std::cout<<"dst is : " << dst  << "\n";
     std::cout<<"src is : " << src  << "\n";
+  #endif
 
   std::pair<int, int> srcRegNumSize = checkForRegs(src);
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
@@ -1409,7 +1415,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {
 
     //std::string filename("8151testsliceC.c");
-    std::string filename("cmptestslice.c");
+    std::string filename("8151testslice100.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1426,18 +1432,24 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     set_reg(0,1920,p_rootNode);
     set_clear_flags(p_rootNode, ALL_FLAGS, 0);
 
-    for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
-      std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
-    }
+    #ifdef DEBUG_PRINT
+      for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
+        std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
+      }
+    #endif
 
     while (std::getline(file, line)) {
       lineNum++;
-      std::cout<< lineNum << "\n";
+      #ifdef DEBUG_PRINT
+        std::cout<< lineNum << "\n";
+      #endif
       //Start reading actual slice instructions starting at line 5 (because the first 4 lines are padding that always need to be kept)
       if(lineNum >= 5){
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
-          std::cout<<"(main) line: "<<line << "\n";
+          #ifdef DEBUG_PRINT
+            std::cout<<"(main) line: "<<line << "\n";
+          #endif
           std::string mnemonic = getMnemonic(line);
           //need to eventually delete this dynamically allocated memory
           Node* p_tempNode = new Node();
@@ -1457,19 +1469,20 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         }
       }
     }
-
-    std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
-    for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-      std::cout<< ((*it)->lineNum) <<"\n";
-      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+    #ifdef DEBUG_PRINT
+      std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+      for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+        std::cout<< ((*it)->lineNum) <<"\n";
+        for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
+        for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+          std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
       }
-      std::cout<<"\n";
-      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
-      }
-      std::cout<<"\n";
-    }
+    #endif
 
     for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
       std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
@@ -1518,21 +1531,36 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
     }
 
-
-    std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+    int allNodeCount = 0;
+    int extraNodeCount = 0;
     for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-      std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
-      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+      allNodeCount++;
+      if(((*it)->extra) == 1){
+        extraNodes.push_back((*it));
+        extraNodeCount++;
       }
-      std::cout<<"\n";
-      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
-      }
-      std::cout<<"\n";
+      #ifdef DEBUG_PRINT
+        std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+        std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
+        for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
+        for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+          std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+        }
+        std::cout<<"\n";
+      #endif
     }
 
-    
+    for (auto const& extras : extraNodes)
+    {
+      std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
+    }
+
+    std::cout<<"Original Instruction Count is : " << allNodeCount << "\n";
+    std::cout<<"Extra Instruction Count is : " << extraNodeCount << "\n";
+
     //...Delete mem operations here
     delete p_rootNode;
     delete ptempEdge;

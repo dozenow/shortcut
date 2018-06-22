@@ -67,7 +67,11 @@ std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
 
+//vector of Node pointers that contains every JUMP instruction node because we are about these nodes as an output
 std::vector<Node*> jumps;
+
+//vector of Node pointers that contains every node that is marked as EXTRA=1, so we can safely remove it from the exslice1.c file
+std::vector<Node*> extraNodes;
 
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
