@@ -346,4 +346,5 @@ void instrument_jump (Node* p_tempNode, uint32_t src_flags);
 void instrument_call (Node* p_tempNode, uint32_t src_flags);
 void instrument_push (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_pcmpistri (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);

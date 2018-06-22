@@ -1203,6 +1203,26 @@ void instrument_push (std::string wholeInstructionString,  uint32_t set_flags, u
   
 }
 
+void instrument_pcmpistri (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string src = instrPieces.at(1);
+  std::string srcB = instrPieces.at(2);
+  
+  handle_srcRegMemImm(src, p_tempNode, p_rootNode);
+  handle_srcRegMemImm(srcB, p_tempNode, p_rootNode);
+  set_dst_reg("ecx", p_tempNode);
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_pcmpistri)src is : " << src  << "\n";
+  std::cout<<"(instrument_pcmpistri)srcB is : " << srcB  << "\n";
+  std::cout  << "\n";
+  #endif
+  
+}
+
 void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   set_src_regName("esp", p_tempNode);
@@ -1457,9 +1477,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_pop(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::pcmpistri:
-          set_src_regName("esp", p_tempNode);
-          handle_srcRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
-          set_dst_reg("ecx", p_tempNode);
+          instrument_pcmpistri(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       default:
           std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
