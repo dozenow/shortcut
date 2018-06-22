@@ -173,7 +173,7 @@ static inline void clear_reg_internal (int reg, int size)
       }
 
       for (i = 0; i < size; i++) {
-          shadow_reg_table[(reg * REG_SIZE + i)+offset] = author;
+          shadow_reg_table[((reg * REG_SIZE) + i)+offset] = author;
           #ifdef DEBUG_PRINT
             std::cout<< "Setting shadow_reg_table at " << (reg * REG_SIZE + i) << "to " << author->lineNum << "\n";
             //std::cout<< regNumSize.first << "\n";
@@ -235,7 +235,7 @@ static inline void rtrim(std::string &s) {
   void set_dst_reg (std::string regName, Node* author)
   {
       std::pair<int, int> dstRegNumSize = checkForRegs(regName);
-      set_reg_internal (dstRegNumSize.first, dstRegNumSize.second, author);
+      set_reg(dstRegNumSize.first, dstRegNumSize.second, author);
   }
 
   //...
@@ -683,10 +683,14 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
 }
 
 void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
-  std::pair<int, int> srcRegNumSize = checkForRegs(src);
-  std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
-
   #ifdef DEBUG_PRINT
+  std::cout<< "(handle_srcRegMemImm) src is : " << src << "\n";
+  std::cout<< "srcRegNumSize.first, srcRegNumSize.second is " << srcRegNumSize.first << ", " <<srcRegNumSize.second << "\n";
+  #endif
+  std::pair<int, int> srcRegNumSize = checkForRegs(src);
+  
+  #ifdef DEBUG_PRINT
+    std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
     for (auto jt = std::begin(regAuthors); jt != std::end(regAuthors); ++jt){
               std::cout<<"regAuthor is : " << (*jt)->lineNum  << "\n";
             }
@@ -726,6 +730,9 @@ void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
 }
 
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
+  #ifdef DEBUG_PRINT
+  std::cout<< "(handle_dstRegMemImm) dst is : " << dst << "\n";
+  #endif
   std::pair<int, int> dstRegNumSize = checkForRegs(dst);
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
@@ -1179,6 +1186,39 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
   }
 }
 
+void instrument_push (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  set_src_regName("esp", p_tempNode);
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string src = instrPieces.at(1);
+  
+  handle_srcRegMemImm(src, p_tempNode, p_rootNode);
+  set_dst_reg("esp", p_tempNode);
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_push)src is : " << src  << "\n";
+  std::cout  << "\n";
+  #endif
+  
+}
+
+void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  set_src_regName("esp", p_tempNode);
+  std::vector<std::string> instrPieces = getInstrPieces(wholeInstructionString);
+
+  std::string mnemonic = instrPieces.at(0);
+  std::string dst = instrPieces.at(1);
+  
+  handle_dstRegMemImm(dst, p_tempNode, p_rootNode);
+  set_dst_reg("esp", p_tempNode);
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_pop)dst is : " << dst  << "\n";
+  std::cout  << "\n";
+  #endif
+}
+
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
   
@@ -1274,7 +1314,9 @@ int mark_ancestors (Node* p_tempNode){
   if ((p_tempNode->lineNum) == 0){
     return 1;
   }
-  std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
+  #ifdef DEBUG_PRINT
+    std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
+  #endif
   if((p_tempNode-> extra) != 0){
     p_tempNode-> extra = 0;
     for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut){
@@ -1288,13 +1330,20 @@ int mark_ancestors (Node* p_tempNode){
 void instrument_jump (Node* p_tempNode, uint32_t src_flags){
   set_src_flags(p_tempNode, src_flags);
   jumps.push_back(p_tempNode);
-}   
+}
+
+void instrument_call (Node* p_tempNode, uint32_t src_flags){
+  calls.push_back(p_tempNode);
+}      
 
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
 {
   InstType instType = mapStringToInstType[mnemonic];
   switch (instType)
   {   
+      case InstType::call:
+          instrument_call(p_tempNode, 0);
+           break;
       case InstType::jle:
           instrument_jump(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
            break;
@@ -1396,9 +1445,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           set_dst_reg("esp", p_tempNode);
           break;
       case InstType::push:
-          set_src_regName("esp", p_tempNode);
-          handle_srcRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
-          set_dst_reg("esp", p_tempNode);
+          instrument_push(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       //todo: jne, jnb, jnle, jz, jnz, jnbe, jbe, jb, jle, sar
       case InstType::popfd:
@@ -1407,9 +1454,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           set_dst_reg("esp", p_tempNode);
           break;
       case InstType::pop:
+          instrument_pop(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::pcmpistri:
           set_src_regName("esp", p_tempNode);
-          handle_dstRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
-          set_dst_reg("esp", p_tempNode);
+          handle_srcRegMemImm(wholeInstructionString, p_tempNode, p_rootNode);
+          set_dst_reg("ecx", p_tempNode);
           break;
       default:
           std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
@@ -1420,8 +1470,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {
     auto t1 = Clock::now();
     
-    //std::string filename("8151testslice100.c");
-    std::string filename("8151testslice21.c");
+    //std::string filename("8151testslice5000.c");
+    std::string filename("8151testslicePUSH.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1547,6 +1597,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       mark_ancestors((*flagIt));
       std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
     }
+
+    for (auto flagIt = std::begin(calls); flagIt != std::end(calls); ++flagIt){
+      mark_ancestors((*flagIt));
+      std::cout<<"calls's ancestors marked. call at line: " << (*flagIt)->lineNum << "\n";
+    }
+
 
     for (auto const& x : mapMem)
     {

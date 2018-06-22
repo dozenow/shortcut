@@ -74,6 +74,9 @@ std::map<u_long, Node*> mapMem;
 //vector of Node pointers that contains every JUMP instruction node because we are about these nodes as an output
 std::vector<Node*> jumps;
 
+//all the "call [recheck_X]" instructions. we need to keep these
+std::vector<Node*> calls;
+
 //vector of Node pointers that contains every node that is marked as EXTRA=1, so we can safely remove it from the exslice1.c file
 std::vector<Node*> extraNodes;
 
@@ -202,6 +205,8 @@ enum class InstType
     popfd,
     push,
     pop,
+    call,
+    pcmpistri,
     GetType
 };
 
@@ -253,6 +258,8 @@ std::map<std::string, InstType> mapStringToInstType =
     { "popfd", InstType::popfd },
     { "push", InstType::push },
     { "pop", InstType::pop },
+    { "call", InstType::call },
+    { "pcmpistri", InstType::pcmpistri },
 };
 
 /// Map from enum values to strings
@@ -301,7 +308,9 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::pushfd , "pushfd"},
     {InstType::popfd , "popfd"},
     {InstType::push , "push"},
-    {InstType::pop , "pop"},            
+    {InstType::pop , "pop"},
+    {InstType::call , "call"},
+    {InstType::pcmpistri , "pcmpistri"},              
 };
 
 void clear_reg (int reg, int size);
@@ -334,4 +343,7 @@ void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, ui
 void set_dst_reg (std::string regName, Node* author);
 int mark_ancestors (Node* p_tempNode);
 void instrument_jump (Node* p_tempNode, uint32_t src_flags);
+void instrument_call (Node* p_tempNode, uint32_t src_flags);
+void instrument_push (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);
