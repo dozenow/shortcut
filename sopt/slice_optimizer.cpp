@@ -1437,6 +1437,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_addorsub(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::shl:
+      case InstType::sar:
+      case InstType::sal:
+      case InstType::shr:
           instrument_addorsub(wholeInstructionString, CF_FLAG|OF_FLAG|SF_FLAG|ZF_FLAG|PF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::mov:
