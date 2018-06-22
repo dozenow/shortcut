@@ -210,6 +210,11 @@ enum class InstType
     sets,
     setb,
     setnz,
+    jnle,
+    jbe,
+    jl,
+    jnl,
+    jb,
     GetType
 };
 
@@ -266,6 +271,11 @@ std::map<std::string, InstType> mapStringToInstType =
     { "sets", InstType::sets },
     { "setb", InstType::setb },
     { "setnz", InstType::setnz },
+    { "jnle", InstType::jnle },
+    { "jbe", InstType::jbe },
+    { "jl", InstType::jl },
+    { "jnl", InstType::jnl },
+    { "jb", InstType::jb },
 };
 
 /// Map from enum values to strings
@@ -319,7 +329,12 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::setz , "setz"},
     {InstType::sets , "sets"},
     {InstType::setb , "setb"},
-    {InstType::setnz , "setnz"},              
+    {InstType::setnz , "setnz"},
+    {InstType::jnle , "jnle"},
+    {InstType::jbe , "jbe"},
+    {InstType::jl , "jl"},
+    {InstType::jnl , "jnl"},
+    {InstType::jb , "jb"},               
 };
 
 void clear_reg (int reg, int size);

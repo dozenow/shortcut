@@ -1363,7 +1363,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_call(p_tempNode, 0);
            break;
       case InstType::jle:
+      case InstType::jnle:
           instrument_jump(p_tempNode, ZF_FLAG|SF_FLAG|OF_FLAG);
+           break;
+      case InstType::jl:
+      case InstType::jnl:
+          instrument_jump(p_tempNode, SF_FLAG|OF_FLAG);
            break;
       case InstType::jz:
       case InstType::jne:
@@ -1371,9 +1376,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_jump(p_tempNode, ZF_FLAG);
           break;
       case InstType::jnbe:
+      case InstType::jbe:
           instrument_jump(p_tempNode, CF_FLAG|ZF_FLAG);
            break;
       case InstType::jnb:
+      case InstType::jb:
           instrument_jump(p_tempNode, CF_FLAG);
           break;
       case InstType::cmovbe:
