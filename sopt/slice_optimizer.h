@@ -322,4 +322,5 @@ void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode);
 void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode);
 void instrument_set (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void set_dst_reg (std::string regName, Node* author);
+int mark_ancestors (Node* p_tempNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);

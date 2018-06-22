@@ -1261,6 +1261,17 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       set_dst_root(p_rootNode, p_tempNode);              
     } 
   }
+}
+
+int mark_ancestors (Node* p_tempNode){
+  if ((p_tempNode->lineNum) == 0){
+    return 1;
+  }
+  p_tempNode-> extra = 0;
+  for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut){
+    mark_ancestors((*ut)->start);
+  }
+  return 0; 
 }    
 
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
@@ -1475,15 +1486,19 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
               std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
             }
     #endif
+
+    //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
     int co = 0;
     for (auto flagIt = std::begin(shadow_reg_table); flagIt != std::end(shadow_reg_table); ++flagIt){
-      (*flagIt)-> extra = 0;
-      std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
+      mark_ancestors((*flagIt));
+      if (((*flagIt)->lineNum) != 0){
+        std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
+      }
       co++;
     }
 
     for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
-      (*flagIt)-> extra = 0;
+      mark_ancestors((*flagIt));
       std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
     }
 
