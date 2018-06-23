@@ -113,6 +113,8 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"al", {10,1}},
 	{"ah", {10,-1}},
 	{"eflags", {17,4}},
+	{"ds", {20,2}},
+	{"es", {21,2}},
 	{"xmm0", {54,16}},
 	{"xmm1", {55,16}},
 	{"xmm2", {56,16}},
@@ -223,6 +225,10 @@ enum class InstType
     neg,
     Znot,
     pmovmskb,
+    pushw,
+    rep,
+    repne,
+    repnz,
     GetType
 };
 
@@ -292,6 +298,10 @@ std::map<std::string, InstType> mapStringToInstType =
     { "neg", InstType::neg },
     { "not", InstType::Znot },
     { "pmovmskb", InstType::pmovmskb },
+    { "pushw", InstType::pushw },
+    { "rep", InstType::rep },
+    { "repne", InstType::repne },
+    { "repnz", InstType::repnz },
 };
 
 /// Map from enum values to strings
@@ -358,7 +368,11 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::js , "js"},
     {InstType::neg , "neg"},
     {InstType::Znot , "not"},
-    {InstType::pmovmskb , "pmovmskb"},  
+    {InstType::pmovmskb , "pmovmskb"}, 
+    {InstType::pushw , "pushw"},
+    {InstType::rep , "rep"},
+    {InstType::repne , "repne"}, 
+    {InstType::repnz , "repnz"},
 };
 
 void clear_reg (int reg, int size);
@@ -395,4 +409,6 @@ void instrument_call (Node* p_tempNode, uint32_t src_flags);
 void instrument_push (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_pcmpistri (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_rep_movsd (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_repne_scasb (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);

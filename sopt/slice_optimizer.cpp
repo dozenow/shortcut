@@ -90,6 +90,16 @@ static inline const char* regName (int reg_num, int reg_size)
     case 4: return "eflag";
     }
     break;
+      case 20:
+    switch (reg_size) {
+    case 2: return "ds";
+    }
+    break;
+      case 21:
+    switch (reg_size) {
+    case 2: return "es";
+    }
+    break;
       case 54:
     switch (reg_size) {
     case 16: return "xmm0";
@@ -1248,10 +1258,45 @@ void instrument_neg_not (std::string wholeInstructionString,  uint32_t set_flags
   handle_srcRegMemImm(src, p_tempNode, p_rootNode);
   handle_dstRegMemImm(src, p_tempNode, p_rootNode);
   #ifdef DEBUG_PRINT
-  std::cout<<"(instrument_neg_not)dst is : " << src  << "\n";
+  std::cout<<"(instrument_neg_not)src is : " << src  << "\n";
   std::cout  << "\n";
   #endif
 }
+
+void instrument_rep_movsd (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  set_src_flags(p_tempNode, DF_FLAG);
+  set_src_regName("ecx", p_tempNode);
+  
+  handle_srcRegMemImm("ds", p_tempNode, p_rootNode);
+  handle_srcRegMemImm("esi", p_tempNode, p_rootNode);
+  handle_dstRegMemImm("esi", p_tempNode, p_rootNode);
+  handle_dstRegMemImm("edi", p_tempNode, p_rootNode);
+
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_rep_movsd)src is : " << ds  << "\n";
+  std::cout  << "\n";
+  #endif
+}
+
+void instrument_repne_scasb (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{
+  set_src_flags(p_tempNode, DF_FLAG|ZF_FLAG);
+  set_src_regName("ecx", p_tempNode);
+  
+  handle_srcRegMemImm("es", p_tempNode, p_rootNode);
+  handle_srcRegMemImm("edi", p_tempNode, p_rootNode);
+  handle_srcRegMemImm("al", p_tempNode, p_rootNode);
+  handle_dstRegMemImm("edi", p_tempNode, p_rootNode);
+
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_rep_movsd)src is : " << src  << "\n";
+  std::cout  << "\n";
+  #endif
+}
+
 
 void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
 {
@@ -1508,6 +1553,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           set_dst_reg("esp", p_tempNode);
           break;
       case InstType::push:
+      case InstType::pushw:
           instrument_push(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::popfd:
@@ -1520,6 +1566,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           break;
       case InstType::pcmpistri:
           instrument_pcmpistri(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::rep:
+          instrument_rep_movsd(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::repne:
+          instrument_repne_scasb(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       default:
           std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
