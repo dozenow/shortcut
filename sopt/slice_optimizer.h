@@ -11,6 +11,7 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <sys/resource.h>
 typedef std::chrono::high_resolution_clock Clock;
 
 #define NUM_REGS 120

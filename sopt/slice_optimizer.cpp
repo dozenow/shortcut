@@ -1422,7 +1422,8 @@ int mark_ancestors (Node* p_tempNode){
   #endif
   if((p_tempNode-> extra) != 0){
     p_tempNode-> extra = 0;
-    for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut){
+    for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut)
+    {
       mark_ancestors((*ut)->start);
     }
   }
@@ -1634,6 +1635,24 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
+    const rlim_t kStackSize = 32 * 1024 * 1024;   // min stack size = 64 MB
+    struct rlimit rl;
+    int result;
+
+    result = getrlimit(RLIMIT_STACK, &rl);
+    if (result == 0)
+    {
+        if (rl.rlim_cur < kStackSize)
+        {
+            rl.rlim_cur = kStackSize;
+            result = setrlimit(RLIMIT_STACK, &rl);
+            if (result != 0)
+            {
+                //fprintf(stderr, "setrlimit returned result = %d\n", result);
+                std::cout<< "setrlimit returned result =" << result << "\n";
+            }
+        }
+    }
     auto t1 = Clock::now();
     
     std::string filename("8151testslice1000000.c");
@@ -1754,8 +1773,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         extraNodes.push_back((*it));
         extraNodeCount++;
       }
+      
       #ifdef DEBUG_PRINT
-        std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
         std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
         for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
           std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
@@ -1766,22 +1785,14 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         }
         std::cout<<"\n";
       #endif
-    
-      std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
-      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
-      }
-      std::cout<<"\n";
-      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
-      }
-      std::cout<<"\n";
     }
     
+    #ifdef DEBUG_PRINT
       for (auto const& extras : extraNodes)
       {
         std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
       }
+    #endif
    
 
     std::cout<<"Original Instruction Count is : " << allNodeCount << "\n";
