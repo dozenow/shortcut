@@ -12,6 +12,7 @@ asm (
 "pop ecx\n"
 "pop edx\n"
 "call stat64_recheck\n"
+"pmovmskb edx, xmm0\n"
 "push edx\n"
 "push ecx\n"
 "call open_recheck\n"

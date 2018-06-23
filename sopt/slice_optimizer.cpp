@@ -1471,6 +1471,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::mov:
       case InstType::movzx:
       case InstType::movdqu:
+      case InstType::pmovmskb:
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
           break;
       case InstType::div:
@@ -1521,16 +1522,26 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_pcmpistri(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       default:
-          std::cout<< "[ERROR]Unknown InstType mnemonic: " << mnemonic << "\n";
+          std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
           //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
   }
+  //6-22-18 this is bugged. doesnt print error when unknown inst type is encountered.
+  if((mapStringToInstType.find(mnemonic)) == mapStringToInstType.end()){
+    std::cout<< "[ERROR2]Unknown InstType mnemonic: " << mnemonic << "\n";
+  }
+  //this is bugged. doesnt print error when unknown inst type is encountered.
+  /*
+  if(mnemonic == "pmovmskb"){
+    std::cout<< "[ERROR3]Unknown InstType mnemonic: " << mnemonic << (p_tempNode->lineNum) <<"\n";
+  }
+  */
 }
   int main(int,char*[])
   {
     auto t1 = Clock::now();
     
-    std::string filename("8151testslice5000.c");
-    //std::string filename("8151testslicePUSH.c");
+    //std::string filename("8151testslice50000.c");
+    std::string filename("8151testslicePUSH.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1597,38 +1608,22 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         }
         std::cout<<"\n";
       }
+    for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
+      std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
+    }
     #endif
 
     //...
     
 
-    for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
-      std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
-    }
-
-    #ifdef DEBUG_PRINT
-    for (auto it = std::begin(cmovToFlags); it != std::end(cmovToFlags); ++it){
-      std::cout<<"cmovToFlags [mnemonic],{flags,}: " << (*it).first << ", " ;
-      for (auto flagIter = std::begin(((*it).second)); flagIter != std::end(((*it).second)); ++flagIter){
-        std::cout << (*flagIter) << ",";
-      }
-      std::cout << "\n";
-    }
-    #endif
-
-    #ifdef DEBUG_PRINT
-      std::vector<Node*> regAuthors2 = get_reg_internal((8),(4));
-            for (auto it = std::begin(regAuthors2); it != std::end(regAuthors2); ++it){
-              std::cout<<"edx REGISTER authors: " << (*it)->lineNum << "\n";
-            }
-    #endif
+    
 
     //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
     int co = 0;
     for (auto flagIt = std::begin(shadow_reg_table); flagIt != std::end(shadow_reg_table); ++flagIt){
       if (((*flagIt)->lineNum) != 0){
         mark_ancestors((*flagIt));
-        std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
+        //std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
       }
       co++;
     }
@@ -1640,19 +1635,19 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 
     for (auto flagIt = std::begin(jumps); flagIt != std::end(jumps); ++flagIt){
       mark_ancestors((*flagIt));
-      std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
+      //std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
     }
 
     for (auto flagIt = std::begin(calls); flagIt != std::end(calls); ++flagIt){
       mark_ancestors((*flagIt));
-      std::cout<<"calls's ancestors marked. call at line: " << (*flagIt)->lineNum << "\n";
+      //std::cout<<"calls's ancestors marked. call at line: " << (*flagIt)->lineNum << "\n";
     }
 
 
     for (auto const& x : mapMem)
     {
       mark_ancestors(x.second);
-      std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
+      //std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
     }
 
     int allNodeCount = 0;
@@ -1675,12 +1670,24 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         }
         std::cout<<"\n";
       #endif
+    
+      std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
+      std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
+      for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+        std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
+      for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
+        std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
+      }
+      std::cout<<"\n";
     }
-
-    for (auto const& extras : extraNodes)
-    {
-      std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
-    }
+    
+      for (auto const& extras : extraNodes)
+      {
+        std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
+      }
+   
 
     std::cout<<"Original Instruction Count is : " << allNodeCount << "\n";
     std::cout<<"Extra Instruction Count is : " << extraNodeCount << "\n";
