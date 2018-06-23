@@ -242,6 +242,8 @@ enum class InstType
     movsx,
     jae,
     cwde,
+    bsf,
+    pcmpeqb,
     GetType
 };
 
@@ -325,6 +327,8 @@ std::map<std::string, InstType> mapStringToInstType =
     { "movsx", InstType::movsx },
     { "jae", InstType::jae },
     { "cwde", InstType::cwde },
+    { "bsf", InstType::bsf },
+    { "pcmpeqb", InstType::pcmpeqb },
 };
 
 /// Map from enum values to strings
@@ -406,6 +410,8 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::movsx , "movsx"},
     {InstType::jae , "jae"},
     {InstType::cwde , "cwde"},
+    {InstType::bsf , "bsf"},
+    {InstType::pcmpeqb , "pcmpeqb"},
 };
 
 void clear_reg (int reg, int size);

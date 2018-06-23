@@ -269,10 +269,19 @@ static inline void rtrim(std::string &s) {
     return bracketStr;
   }
 
-  u_long hexStrToLong(std::string bracketStr){
+  u_long hexStrToLong(std::string bracketStr, Node* p_tempNode, Node* p_rootNode){
     std::istringstream hexstr(bracketStr);
     u_long hexValue;
-    hexstr >> std::hex >> hexValue;
+    if (bracketStr.compare("esp") == 0){
+      hexValue = 96;
+      handle_srcRegMemImm("esp",p_tempNode, p_rootNode);
+      std::cout<< "hexStrToLong has detected address [esp]! " << bracketStr << ", " << hexValue <<"\n";
+    }
+    else{
+      std::cout<< "hexStrToLong has contents! " << bracketStr << ", " << hexValue <<"\n";
+      hexstr >> std::hex >> hexValue;
+    }
+    
     #ifdef DEBUG_PRINT
       std::cout<< "hexStrToLong has contents! " << bracketStr << ", " << hexValue <<"\n";
     #endif
@@ -640,7 +649,7 @@ void instrument_div (std::string wholeInstructionString,  uint32_t set_flags, ui
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
       switch (memSizeBytes)
       {
@@ -727,7 +736,7 @@ void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
@@ -765,7 +774,7 @@ void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
     }
@@ -913,7 +922,7 @@ void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, ui
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
       switch (memSizeBytes)
       {
@@ -1024,7 +1033,7 @@ void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flag
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
@@ -1060,7 +1069,7 @@ void instrument_addorsub (std::string wholeInstructionString,  uint32_t set_flag
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
@@ -1113,7 +1122,7 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
@@ -1148,7 +1157,7 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
@@ -1181,7 +1190,7 @@ void instrument_xchg (std::string wholeInstructionString,  uint32_t set_flags, u
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
     }
@@ -1324,6 +1333,8 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
     std::cout<<"src is : " << src  << "\n";
   #endif
 
+  set_clear_flags(p_tempNode, set_flags, clear_flags);
+
   std::pair<int, int> srcRegNumSize = checkForRegs(src);
   std::vector<Node*> regAuthors = get_reg_internal((srcRegNumSize.first),(srcRegNumSize.second));
 
@@ -1354,7 +1365,7 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       int memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
@@ -1387,7 +1398,7 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValue = hexStrToLong(memAddrStr);
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_dst_mem(memSizeBytes, hexValue, p_tempNode);
 
     }
@@ -1530,7 +1541,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::movsx:
       case InstType::movdqu:
       case InstType::pmovmskb:
+      case InstType::pcmpeqb:
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::bsf:
+          instrument_mov(wholeInstructionString, SF_FLAG|ZF_FLAG|PF_FLAG|OF_FLAG|CF_FLAG|AF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::div:
       case InstType::idiv:
