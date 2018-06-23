@@ -275,16 +275,18 @@ static inline void rtrim(std::string &s) {
     if (bracketStr.compare("esp") == 0){
       hexValue = 96;
       handle_srcRegMemImm("esp",p_tempNode, p_rootNode);
+      #ifdef DEBUG_PRINT
       std::cout<< "hexStrToLong has detected address [esp]! " << bracketStr << ", " << hexValue <<"\n";
+      #endif
     }
     else{
+      #ifdef DEBUG_PRINT
       std::cout<< "hexStrToLong has contents! " << bracketStr << ", " << hexValue <<"\n";
+      #endif
       hexstr >> std::hex >> hexValue;
     }
     
-    #ifdef DEBUG_PRINT
-      std::cout<< "hexStrToLong has contents! " << bracketStr << ", " << hexValue <<"\n";
-    #endif
+    
     return hexValue;
   }
 
