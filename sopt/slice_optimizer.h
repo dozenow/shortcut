@@ -229,6 +229,7 @@ enum class InstType
     rep,
     repne,
     repnz,
+    cld,
     GetType
 };
 
@@ -302,6 +303,7 @@ std::map<std::string, InstType> mapStringToInstType =
     { "rep", InstType::rep },
     { "repne", InstType::repne },
     { "repnz", InstType::repnz },
+    { "cld", InstType::cld },
 };
 
 /// Map from enum values to strings
@@ -373,6 +375,7 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::rep , "rep"},
     {InstType::repne , "repne"}, 
     {InstType::repnz , "repnz"},
+    {InstType::cld , "cld"},
 };
 
 void clear_reg (int reg, int size);

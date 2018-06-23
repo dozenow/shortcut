@@ -1573,6 +1573,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::repne:
           instrument_repne_scasb(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
           break;
+      case InstType::cld:
+          std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
+          set_clear_flags(p_tempNode, DF_FLAG, 0);
+          break;
       default:
           std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
           //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
@@ -1723,7 +1727,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         std::cout<<"\n";
       #endif
     
-      std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
       std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
       for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
         std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
