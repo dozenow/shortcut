@@ -1375,6 +1375,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::jnz:
           instrument_jump(p_tempNode, ZF_FLAG);
           break;
+      case InstType::jns:
+      case InstType::js:
+          instrument_jump(p_tempNode, SF_FLAG);
+          break;
       case InstType::jnbe:
       case InstType::jbe:
           instrument_jump(p_tempNode, CF_FLAG|ZF_FLAG);
@@ -1503,8 +1507,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {
     auto t1 = Clock::now();
     
-    //std::string filename("8151testslice5000.c");
-    std::string filename("8151testslicePUSH.c");
+    std::string filename("8151testslice5000.c");
+    //std::string filename("8151testslicePUSH.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1574,20 +1578,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     #endif
 
     //...
-
-    std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
-      for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-        std::cout<< ((*it)->lineNum) <<"\n";
-        for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
-        }
-        std::cout<<"\n";
-        for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-          std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
-        }
-        std::cout<<"\n";
-      }
-
     
 
     for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){

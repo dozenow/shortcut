@@ -218,6 +218,8 @@ enum class InstType
     sar,
     sal,
     shr,
+    jns,
+    js,
     GetType
 };
 
@@ -282,6 +284,8 @@ std::map<std::string, InstType> mapStringToInstType =
     { "sar", InstType::sar },
     { "sal", InstType::sal },
     { "shr", InstType::shr },
+    { "jns", InstType::jns },
+    { "js", InstType::js },
 };
 
 /// Map from enum values to strings
@@ -343,7 +347,9 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::jb , "jb"}, 
     {InstType::sar , "sar"},
     {InstType::sal , "sal"},
-    {InstType::shr , "shr"},              
+    {InstType::shr , "shr"},
+    {InstType::jns , "jns"},
+    {InstType::js , "js"},              
 };
 
 void clear_reg (int reg, int size);
