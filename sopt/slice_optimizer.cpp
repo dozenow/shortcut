@@ -1274,7 +1274,7 @@ void instrument_rep_movsd (std::string wholeInstructionString,  uint32_t set_fla
   handle_dstRegMemImm("edi", p_tempNode, p_rootNode);
 
   #ifdef DEBUG_PRINT
-  std::cout<<"(instrument_rep_movsd)src is : " << ds  << "\n";
+  std::cout<<"(instrument_rep_movsd)src is : " << "ds"  << "\n";
   std::cout  << "\n";
   #endif
 }
@@ -1292,7 +1292,18 @@ void instrument_repne_scasb (std::string wholeInstructionString,  uint32_t set_f
   set_clear_flags(p_tempNode, set_flags, clear_flags);
 
   #ifdef DEBUG_PRINT
-  std::cout<<"(instrument_rep_movsd)src is : " << src  << "\n";
+  std::cout<<"(instrument_repne_scasb)src is : " << "es"  << "\n";
+  std::cout  << "\n";
+  #endif
+}
+
+void instrument_cwde (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode)
+{  
+  handle_srcRegMemImm("ax", p_tempNode, p_rootNode);
+  handle_dstRegMemImm("eax", p_tempNode, p_rootNode);
+
+  #ifdef DEBUG_PRINT
+  std::cout<<"(instrument_cwde)src is : " << "ax"  << "\n";
   std::cout  << "\n";
   #endif
 }
@@ -1446,6 +1457,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
            break;
       case InstType::jnb:
       case InstType::jb:
+      case InstType::jae:
           instrument_jump(p_tempNode, CF_FLAG);
           break;
       case InstType::cmovbe:
@@ -1515,6 +1527,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           break;
       case InstType::mov:
       case InstType::movzx:
+      case InstType::movsx:
       case InstType::movdqu:
       case InstType::pmovmskb:
           instrument_mov(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
@@ -1574,8 +1587,18 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           instrument_repne_scasb(wholeInstructionString, CF_FLAG|PF_FLAG|AF_FLAG|ZF_FLAG|SF_FLAG|OF_FLAG, 0, p_tempNode, p_rootNode);
           break;
       case InstType::cld:
-          std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
           set_clear_flags(p_tempNode, DF_FLAG, 0);
+          break;
+      case InstType::cwde:
+          instrument_cwde(wholeInstructionString, 0, 0, p_tempNode, p_rootNode);
+          break;
+      case InstType::fld:
+      case InstType::fxch:
+      case InstType::fstp:
+      case InstType::fild:
+      case InstType::fmulp:
+      case InstType::fistp:
+          (p_tempNode->extra) = 0;
           break;
       default:
           std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";

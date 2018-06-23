@@ -115,6 +115,7 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 	{"eflags", {17,4}},
 	{"ds", {20,2}},
 	{"es", {21,2}},
+	{"fpu", {30,10}},
 	{"xmm0", {54,16}},
 	{"xmm1", {55,16}},
 	{"xmm2", {56,16}},
@@ -128,11 +129,13 @@ std::map<std::string, std::pair<const int, const int> > regToNumSize = {
 //byte = 8 bits 
 //word = 2 bytes = 16 bits  
 //double word = 4 bytes = 32 bits
+//tbyte = 80 bits 
 //xmm word = 16 bytes = 144 bits
 std::map<std::string, const int > strSizeToByte = {
 	{"byte", 1},
 	{"word", 2},
 	{"dword", 4},
+	{"tbyte", 10},
 	{"xmmword", 16},
 };
 
@@ -230,6 +233,15 @@ enum class InstType
     repne,
     repnz,
     cld,
+    fld,
+    fxch,
+    fstp,
+    fild,
+    fmulp,
+    fistp,
+    movsx,
+    jae,
+    cwde,
     GetType
 };
 
@@ -304,6 +316,15 @@ std::map<std::string, InstType> mapStringToInstType =
     { "repne", InstType::repne },
     { "repnz", InstType::repnz },
     { "cld", InstType::cld },
+    { "fld", InstType::fld },
+    { "fxch", InstType::fxch },
+    { "fstp", InstType::fstp },
+    { "fild", InstType::fild },
+    { "fmulp", InstType::fmulp },
+    { "fistp", InstType::fistp },
+    { "movsx", InstType::movsx },
+    { "jae", InstType::jae },
+    { "cwde", InstType::cwde },
 };
 
 /// Map from enum values to strings
@@ -376,6 +397,15 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::repne , "repne"}, 
     {InstType::repnz , "repnz"},
     {InstType::cld , "cld"},
+    {InstType::fld , "fld"}, 
+    {InstType::fxch , "fxch"},
+    {InstType::fstp , "fstp"},
+    {InstType::fild , "fild"},
+    {InstType::fmulp , "fmulp"},
+    {InstType::fistp , "fistp"},
+    {InstType::movsx , "movsx"},
+    {InstType::jae , "jae"},
+    {InstType::cwde , "cwde"},
 };
 
 void clear_reg (int reg, int size);
@@ -414,4 +444,5 @@ void instrument_pop (std::string wholeInstructionString,  uint32_t set_flags, ui
 void instrument_pcmpistri (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_rep_movsd (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_repne_scasb (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_cwde (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);
