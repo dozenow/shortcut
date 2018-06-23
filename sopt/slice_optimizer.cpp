@@ -1634,8 +1634,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {
     auto t1 = Clock::now();
     
-    //std::string filename("8151testslice50000.c");
-    std::string filename("8151testslicePUSH.c");
+    std::string filename("8151testslice1000000.c");
+    //std::string filename("8151testslicePUSH.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
