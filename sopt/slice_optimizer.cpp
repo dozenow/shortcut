@@ -750,6 +750,25 @@ void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
   }
 }
 
+/* 6-25-18 comeback to this breadth first search function
+void Graph::BFS(Node * s){
+    int nodeCount = ((p_sliceGraph->nodes).size);
+    bool *visited = new bool[((p_sliceGraph->nodes).size)];
+
+    for(int i = 0; i < nodeCount; i++){
+      visited[i] = false;
+    }
+    list<Node*> queue;
+    visited[s->lineNum] = true;
+    queue.push_back(s);
+
+    std::vector<node*>::iterator iterA;
+    while(!queue.empty()){
+      s = queue
+    }
+}
+*/
+
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
   #ifdef DEBUG_PRINT
   std::cout<< "(handle_dstRegMemImm) dst is : " << dst << "\n";
@@ -1430,6 +1449,30 @@ int mark_ancestors (Node* p_tempNode){
   
   return 0; 
 }
+/*
+int mark_ancestors (instrGraph graph){
+  for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+    for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
+          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
+        }
+  }
+  if ((p_tempNode->lineNum) == 0){
+    return 1;
+  }
+  #ifdef DEBUG_PRINT
+    std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
+  #endif
+  if((p_tempNode-> extra) != 0){
+    p_tempNode-> extra = 0;
+    for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut)
+    {
+      mark_ancestors((*ut)->start);
+    }
+  }
+  
+  return 0; 
+}
+*/
 
 void instrument_jump (Node* p_tempNode, uint32_t src_flags){
   set_src_flags(p_tempNode, src_flags);
@@ -1655,8 +1698,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
     auto t1 = Clock::now();
     
-    std::string filename("8151testslice1000000.c");
-    //std::string filename("8151testslicePUSH.c");
+    //std::string filename("8151testslice100.c");
+    std::string filename("8151testsliceA.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1710,23 +1753,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         }
       }
     }
-    #ifdef DEBUG_PRINT
-      std::cout<< "now printing all the nodes (identified by their line numbers) in our sliceGraph.\n";
-      for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-        std::cout<< ((*it)->lineNum) <<"\n";
-        for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
-        }
-        std::cout<<"\n";
-        for (auto kt = std::begin(((*it)->outEdges)); kt != std::end(((*it)->outEdges)); ++kt){
-          std::cout<< " outEdges: "<<((*kt)->start)->lineNum << "->" << ((*kt)->finish)->lineNum << " ";
-        }
-        std::cout<<"\n";
-      }
-    for (auto it = std::begin(mapMem); it != std::end(mapMem); ++it){
-      std::cout<<"mapMem [addr],authors: " << (*it).first << ", " << ((*it).second)->lineNum << "\n";
-    }
-    #endif
 
     //...
     
@@ -1735,35 +1761,95 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 
     //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
     int co = 0;
-    for (auto flagIt = std::begin(shadow_reg_table); flagIt != std::end(shadow_reg_table); ++flagIt){
-      if (((*flagIt)->lineNum) != 0){
-        mark_ancestors((*flagIt));
-        //std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*flagIt)->lineNum << "\n";
+    for (auto shadowIt = std::begin(shadow_reg_table); shadowIt != std::end(shadow_reg_table); ++shadowIt){
+      if (((*shadowIt)->lineNum) != 0){
+        outputNodes.insert((*shadowIt));
+        //mark_ancestors((*shadowIt));
+        //std::cout<<"shadow_reg_table REGISTER authors: " << co << ", "  << (*shadowIt)->lineNum << "\n";
+        //co++;
       }
-      co++;
     }
 
     for (auto flagIt = std::begin(eflags_table); flagIt != std::end(eflags_table); ++flagIt){
-      mark_ancestors((*flagIt));
-      std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
+      outputNodes.insert((*flagIt));
+      //mark_ancestors((*flagIt));
+      //std::cout<<"eflags REGISTER authors: " << (*flagIt)->lineNum << "\n";
     }
 
-    for (auto flagIt = std::begin(jumps); flagIt != std::end(jumps); ++flagIt){
-      mark_ancestors((*flagIt));
+    for (auto jumpIt = std::begin(jumps); jumpIt != std::end(jumps); ++jumpIt){
+      outputNodes.insert((*jumpIt));
+      //mark_ancestors((*flagIt));
       //std::cout<<"jump's ancestors marked. jump at line: " << (*flagIt)->lineNum << "\n";
     }
 
-    for (auto flagIt = std::begin(calls); flagIt != std::end(calls); ++flagIt){
-      mark_ancestors((*flagIt));
+    for (auto callIt = std::begin(calls); callIt != std::end(calls); ++callIt){
+      outputNodes.insert((*callIt));
+      //mark_ancestors((*flagIt));
       //std::cout<<"calls's ancestors marked. call at line: " << (*flagIt)->lineNum << "\n";
     }
 
 
     for (auto const& x : mapMem)
     {
-      mark_ancestors(x.second);
+      outputNodes.insert((x.second));
+      //mark_ancestors(x.second);
       //std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
     }
+
+    for (auto const& outputN : outputNodes)
+    {
+      std::cout<<"outputNodes: " << outputN->lineNum << "\n";
+      for (auto const& inE : outputN->inEdges){
+        outputAncestorNodes.insert(inE->start);
+      }
+      keepNodes.insert(outputN);
+    }
+
+    //bfs marking all ancestors of outputNodes
+    std::list <Node *> queue;
+
+    for (auto const& outputN : outputNodes)
+    {
+      outputN->visited = 1;
+      queue.push_back(outputN);
+
+      std::list<Node *>::iterator iterq;
+      while(!queue.empty()){
+        Node * vNode = queue.front();
+        #ifdef DEBUG_PRINT
+        std::cout << vNode->lineNum << " visited. \n";
+        #endif
+        queue.pop_front();
+
+        for (auto edgeIt2 = std::begin((vNode)->inEdges); edgeIt2 != std::end((vNode)->inEdges); ++edgeIt2){
+          #ifdef DEBUG_PRINT
+          std::cout << vNode->lineNum << " inEdge is " << ((*edgeIt2)->start)->lineNum << "\n";
+          #endif
+          if(((*edgeIt2)->start)->visited == 0){
+            ((*edgeIt2)->start)->visited = 1;
+            queue.push_back(((*edgeIt2)->start));
+          }
+        }
+      }
+    }
+
+    for (auto const& allNode : (p_sliceGraph->nodes))
+    {
+      std::cout<<"allNode: lineNum, visited " << allNode->lineNum << ", " << allNode->visited << "\n";
+    } 
+
+    /*
+    for (auto const& outAncest : outputAncestorNodes)
+    {
+      std::cout<<"outputAncestorNodes: " << outAncest->lineNum << "\n";
+      keepNodes.insert(outAncest);
+    }
+
+    for (auto const& keepN : keepNodes)
+    {
+      std::cout<<"keepNodes: " << keepN->lineNum << "\n";
+    }
+    */
 
     int allNodeCount = 0;
     int extraNodeCount = 0;
@@ -1823,8 +1909,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
               << " nanoseconds" << std::endl;
     //...
 
+    /* 6-25-18 come back to this boost graph lib work
+
     // create a typedef for the Graph type
-    typedef adjacency_list<vecS, vecS, bidirectionalS> Graph;
+    typedef adjacency_list<setS, vecS, bidirectionalS> digraph;
 
     // Make convenient labels for the vertices
     enum { A, B, C, D, E, N };
@@ -1839,7 +1927,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     const int num_edges = sizeof(edge_array)/sizeof(edge_array[0]);
 
     // declare a graph object
-    Graph g(num_vertices);
+    digraph g(num_vertices);
+
+    //...
+    add_edge(0,4, g);
+    //...
 
     // add the edges to the graph object
     for (int i = 0; i < num_edges; ++i)
@@ -1847,14 +1939,14 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     
     //...
 
-    typedef graph_traits<Graph>::vertex_descriptor Vertex;
+    typedef graph_traits<digraph>::vertex_descriptor Vertex;
 
     // get the property map for vertex indices
-    typedef property_map<Graph, vertex_index_t>::type IndexMap;
+    typedef property_map<digraph, vertex_index_t>::type IndexMap;
     IndexMap index = get(vertex_index, g);
-/*
+
     std::cout << "vertices(g) = ";
-    typedef graph_traits<Graph>::vertex_iterator vertex_iter;
+    typedef graph_traits<digraph>::vertex_iterator vertex_iter;
     std::pair<vertex_iter, vertex_iter> vp;
     for (vp = vertices(g); vp.first != vp.second; ++vp.first) {
       Vertex v = *vp.first;
@@ -1864,12 +1956,17 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 
     // ...
     std::cout << "edges(g) = ";
-    graph_traits<Graph>::edge_iterator ei, ei_end;
+    graph_traits<digraph>::edge_iterator ei, ei_end;
     for (boost::tie(ei, ei_end) = edges(g); ei != ei_end; ++ei)
         std::cout << "(" << index[source(*ei, g)] 
                   << "," << index[target(*ei, g)] << ") ";
     std::cout << std::endl;
-    */
+
     // ...
+     write_graphviz(std::cout, g);
+
+    */
+
+    //...
     return 0;
   }

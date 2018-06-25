@@ -12,6 +12,8 @@
 #include <iomanip>
 #include <chrono>
 #include <sys/resource.h>
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/graphviz.hpp>
 typedef std::chrono::high_resolution_clock Clock;
 
 #define NUM_REGS 120
@@ -51,6 +53,7 @@ struct Node {
 	std::vector<Edge*> inEdges;
 	std::vector<Edge*> outEdges;
 	int extra = 1;
+    int visited = 0;
 };
 
 //An Edge represents the data-flow relationship between two Nodes (asm instructions) in our graph. Each edge has a pointer to its origin Node and a pointer to its destination Node.
@@ -68,6 +71,12 @@ struct instrGraph {
 };
 
 std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
+
+std::set<Node*> outputNodes;
+
+std::set<Node*> outputAncestorNodes;
+
+std::set<Node*> keepNodes;
 
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
