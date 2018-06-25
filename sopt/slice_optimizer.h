@@ -74,10 +74,6 @@ std::vector<Node*> shadow_reg_table(NUM_REGS * REG_SIZE);
 
 std::set<Node*> outputNodes;
 
-std::set<Node*> outputAncestorNodes;
-
-std::set<Node*> keepNodes;
-
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
 

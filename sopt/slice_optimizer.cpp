@@ -1449,30 +1449,6 @@ int mark_ancestors (Node* p_tempNode){
   
   return 0; 
 }
-/*
-int mark_ancestors (instrGraph graph){
-  for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-    for (auto ut = std::begin(((*it)->inEdges)); ut != std::end(((*it)->inEdges)); ++ut){
-          std::cout <<" inEdges: "<<((*ut)->start)->lineNum << "->" << ((*ut)->finish)->lineNum << " ";
-        }
-  }
-  if ((p_tempNode->lineNum) == 0){
-    return 1;
-  }
-  #ifdef DEBUG_PRINT
-    std::cout<<"(mark_ancestors for node->lineNum: " << (p_tempNode->lineNum) << "\n";
-  #endif
-  if((p_tempNode-> extra) != 0){
-    p_tempNode-> extra = 0;
-    for (auto ut = std::begin((p_tempNode->inEdges)); ut != std::end((p_tempNode->inEdges)); ++ut)
-    {
-      mark_ancestors((*ut)->start);
-    }
-  }
-  
-  return 0; 
-}
-*/
 
 void instrument_jump (Node* p_tempNode, uint32_t src_flags){
   set_src_flags(p_tempNode, src_flags);
@@ -1698,8 +1674,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
     auto t1 = Clock::now();
     
-    //std::string filename("8151testslice100.c");
-    std::string filename("8151testsliceA.c");
+    std::string filename("8151testslice1000000.c");
+    //std::string filename("8151testsliceA.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1796,14 +1772,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       //std::cout<<"memory's ancestors marked. memory at : " << x.first << " written to by line " <<(x.second)->lineNum<< "\n";
     }
 
-    for (auto const& outputN : outputNodes)
-    {
-      std::cout<<"outputNodes: " << outputN->lineNum << "\n";
-      for (auto const& inE : outputN->inEdges){
-        outputAncestorNodes.insert(inE->start);
-      }
-      keepNodes.insert(outputN);
-    }
 
     //bfs marking all ancestors of outputNodes
     std::list <Node *> queue;
@@ -1833,32 +1801,23 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       }
     }
 
-    for (auto const& allNode : (p_sliceGraph->nodes))
-    {
-      std::cout<<"allNode: lineNum, visited " << allNode->lineNum << ", " << allNode->visited << "\n";
-    } 
-
-    /*
-    for (auto const& outAncest : outputAncestorNodes)
-    {
-      std::cout<<"outputAncestorNodes: " << outAncest->lineNum << "\n";
-      keepNodes.insert(outAncest);
-    }
-
-    for (auto const& keepN : keepNodes)
-    {
-      std::cout<<"keepNodes: " << keepN->lineNum << "\n";
-    }
-    */
 
     int allNodeCount = 0;
     int extraNodeCount = 0;
-    for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
-      allNodeCount++;
-      if(((*it)->extra) == 1){
-        extraNodes.push_back((*it));
+    for (auto const& allNode : (p_sliceGraph->nodes))
+    {
+      #ifdef DEBUG_PRINT
+      std::cout<<"allNode: lineNum, visited " << allNode->lineNum << ", " << allNode->visited << "\n";
+      #endif
+      if((allNode->visited) == 0){
+        extraNodes.push_back(allNode);
         extraNodeCount++;
       }
+    } 
+
+    
+    for (auto it = std::begin(p_sliceGraph->nodes); it != std::end(p_sliceGraph->nodes); ++it){
+      allNodeCount++;
       
       #ifdef DEBUG_PRINT
         std::cout<< ((*it)->lineNum) << " ,extra is: " << ((*it)->extra) <<"\n";
@@ -1873,6 +1832,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       #endif
     }
     
+
     #ifdef DEBUG_PRINT
       for (auto const& extras : extraNodes)
       {
@@ -1881,7 +1841,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     #endif
    
 
-    std::cout<<"Original Instruction Count is : " << allNodeCount << "\n";
+    std::cout<<"\nOriginal Instruction Count is : " << allNodeCount << "\n";
     std::cout<<"Extra Instruction Count is : " << extraNodeCount << "\n";
 
     //...Delete mem operations here
