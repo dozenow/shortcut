@@ -1634,6 +1634,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       case InstType::fistp:
           (p_tempNode->extra) = 0;
           break;
+      case InstType::ret:
+          set_src_regName("esp", p_tempNode);
+          set_dst_reg("esp", p_tempNode);
+          break;
       default:
           std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
           //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
@@ -1707,11 +1711,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           std::cout<<"(main) line: "<<line << "\n";
           if ((line.substr(1,2)).compare("b_") == 0)
             {
-              
+
               line = line.substr(1,line.length());
-              std::cout<<"(main)2 line: "<<line << "\n";
               line = "\"call " + line;
-              std::cout<<"(main)3 line: "<<line << "\n";
+              #ifdef DEBUG_PRINT
+                std::cout<<"(main)3 line: "<<line << "\n";
+              #endif
             } 
           #ifdef DEBUG_PRINT
             std::cout<<"(main) line: "<<line << "\n";
