@@ -976,9 +976,6 @@ void instrument_mul (std::string wholeInstructionString,  uint32_t set_flags, ui
     } 
   }
 
-
-
-
   //...
   set_clear_flags(p_tempNode, set_flags, clear_flags);
 
@@ -1674,8 +1671,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
     auto t1 = Clock::now();
     
-    std::string filename("8151testslice1000000.c");
-    //std::string filename("8151testsliceA.c");
+    //std::string filename("exslice1.8151.c");
+    std::string filename("8151testsliceA.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1707,6 +1704,15 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       if(lineNum >= 5){
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
+          std::cout<<"(main) line: "<<line << "\n";
+          if ((line.substr(1,2)).compare("b_") == 0)
+            {
+              
+              line = line.substr(1,line.length());
+              std::cout<<"(main)2 line: "<<line << "\n";
+              line = "\"call " + line;
+              std::cout<<"(main)3 line: "<<line << "\n";
+            } 
           #ifdef DEBUG_PRINT
             std::cout<<"(main) line: "<<line << "\n";
           #endif
