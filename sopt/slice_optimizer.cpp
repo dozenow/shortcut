@@ -1677,8 +1677,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     #endif
     auto t1 = Clock::now();
     
-    std::string filename("JUMPDexslice1.8151.c");
-    //std::string filename("8151testslice50000.c");
+    //std::string filename("JUMPDexslice1.8151.c");
+    std::string filename("8151testslice50000.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1761,7 +1761,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     
 
     //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
-    int co = 0;
+    //int co = 0;
     for (auto shadowIt = std::begin(shadow_reg_table); shadowIt != std::end(shadow_reg_table); ++shadowIt){
       if (((*shadowIt)->lineNum) != 0){
         outputNodes.insert((*shadowIt));

@@ -1,0 +1,33 @@
+CC=g++
+LDFLAGS=-g -Wall -Werror -std=c++11
+TARGETS=slice_optimizer
+
+# For automatic .h dependency tracking... may not work perfectly for launcher as
+#    the include path changes for it
+CFILES=$(wildcard *.c)
+DEPS=$(patsubst %.c, .deps/%.d, $(CFILES))
+
+.PHONY: all
+all: $(TARGETS)
+
+# Build dependencies + any extra flags
+
+slice_optimizer: slice_optimizer.cpp
+	g++ -g slice_optimizer.cpp -std=c++0x -o slice_optimizer -lboost_system
+
+.PHONY: clean
+clean:
+	rm -f *.a *.o $(TARGETS)
+
+.deps/%.d: %.c .dep_dirs_made
+	@$(CC) $(CFLAGS) -M -o $@ $<
+
+.dep_dirs_made:
+	@touch .dep_dirs_made
+	@mkdir .deps
+
+-include $(DEPS)
+
+.PHONY: nuke
+nuke: clean
+	rm -rf .deps .dep_dirs_made
