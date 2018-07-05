@@ -1655,28 +1655,30 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
-    const rlim_t kStackSize = 32 * 1024 * 1024;   // min stack size = 64 MB
-    struct rlimit rl;
-    int result;
+    #ifdef DEBUG_PRINT
+      const rlim_t kStackSize = 32 * 1024 * 1024;   // min stack size = 64 MB
+      struct rlimit rl;
+      int result;
 
-    result = getrlimit(RLIMIT_STACK, &rl);
-    if (result == 0)
-    {
-        if (rl.rlim_cur < kStackSize)
-        {
-            rl.rlim_cur = kStackSize;
-            result = setrlimit(RLIMIT_STACK, &rl);
-            if (result != 0)
-            {
-                //fprintf(stderr, "setrlimit returned result = %d\n", result);
-                std::cout<< "setrlimit returned result =" << result << "\n";
-            }
-        }
-    }
+      result = getrlimit(RLIMIT_STACK, &rl);
+      if (result == 0)
+      {
+          if (rl.rlim_cur < kStackSize)
+          {
+              rl.rlim_cur = kStackSize;
+              result = setrlimit(RLIMIT_STACK, &rl);
+              if (result != 0)
+              {
+                  //fprintf(stderr, "setrlimit returned result = %d\n", result);
+                  std::cout<< "setrlimit returned result =" << result << "\n";
+              }
+          }
+      }
+    #endif
     auto t1 = Clock::now();
     
-    //std::string filename("exslice1.8151.c");
-    std::string filename("8151testsliceA.c");
+    std::string filename("JUMPDexslice1.8151.c");
+    //std::string filename("8151testslice50000.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1699,6 +1701,12 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       }
     #endif
 
+    std::cout<<"(main) Started processing exslice.c file: " << "\n";
+    auto tb = Clock::now();
+    std::cout << "Delta tb-t1: " 
+              << std::chrono::duration_cast<std::chrono::nanoseconds>(tb - t1).count()
+              << " nanoseconds" << std::endl;  
+
     while (std::getline(file, line)) {
       lineNum++;
       #ifdef DEBUG_PRINT
@@ -1708,7 +1716,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       if(lineNum >= 5){
         //this last line in exslice1.c is not really a slice instruction. Instead it is the last line of the exslice1.c file, );
         if(!(contains(line, ");"))){
-          std::cout<<"(main) line: "<<line << "\n";
+          #ifdef DEBUG_PRINT
+            std::cout<<"(main) line: "<<line << "\n";
+          #endif
           if ((line.substr(1,2)).compare("b_") == 0)
             {
 
@@ -1743,7 +1753,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 
     //...
     
-
+    std::cout<<"\n(main) Finished processing exslice.c file: " << "\n";
+    auto ta = Clock::now();
+    std::cout << "Delta ta-t1: " 
+              << std::chrono::duration_cast<std::chrono::nanoseconds>(ta - t1).count()
+              << " nanoseconds" << std::endl;
     
 
     //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
@@ -1842,6 +1856,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
         std::cout<<"\n";
       #endif
     }
+
     
 
     #ifdef DEBUG_PRINT
