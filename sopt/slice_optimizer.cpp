@@ -1665,8 +1665,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     std::cout<<"(main) Started processing exslice.c file: " << "\n";
     auto tb = Clock::now();
     std::cout << "Delta tb-t1: " 
-              << std::chrono::duration_cast<std::chrono::nanoseconds>(tb - t1).count()
-              << " nanoseconds" << std::endl;  
+              << (std::chrono::duration_cast<std::chrono::nanoseconds>(tb - t1).count())/1000000000.0
+              << " seconds" << std::endl;  
 
     while (std::getline(file, line)) {
       lineNum++;
@@ -1717,8 +1717,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     std::cout<<"\n(main) Finished processing exslice.c file: " << "\n";
     auto ta = Clock::now();
     std::cout << "Delta ta-t1: " 
-              << std::chrono::duration_cast<std::chrono::nanoseconds>(ta - t1).count()
-              << " nanoseconds" << std::endl;
+              << std::chrono::duration_cast<std::chrono::nanoseconds>(ta - t1).count()/1000000000.0
+              << " seconds" << std::endl;
     
 
     //get authors and mark them as EXTRA(removeable) or not extra (neccessary for the ouputs we care about)
@@ -1831,6 +1831,14 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     std::cout<<"\nOriginal Instruction Count is : " << allNodeCount << "\n";
     std::cout<<"Extra Instruction Count is : " << extraNodeCount << "\n";
 
+
+    std::cout<<"\n(main) Finished doing backwards-pass over Graph.: " << "\n";
+    auto t2 = Clock::now();
+    std::cout << "Delta t2-t1: " 
+              << std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count()/1000000000.0
+              << " seconds" << std::endl;
+    //...
+
     //...Delete mem operations here
     delete p_rootNode;
     delete ptempEdge;
@@ -1850,11 +1858,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
     delete p_sliceGraph;
 
-    auto t2 = Clock::now();
-    std::cout << "Delta t2-t1: " 
-              << std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count()
-              << " nanoseconds" << std::endl;
-    //...
+   
 
     /* 6-25-18 come back to this boost graph lib work
 
