@@ -321,6 +321,8 @@ static inline void rtrim(std::string &s) {
       if (it != mapMem.end()){
         Edge* p_tempInEdge = new Edge();
         Edge* p_tempOutEdge = new Edge();
+       
+        std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
         #ifdef DEBUG_PRINT
           std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
         #endif
@@ -1639,7 +1641,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     auto t1 = Clock::now();
     
     //std::string filename("JUMPDexslice1.8151.c");
-    std::string filename("8151testslice50000.c");
+    //std::string filename("8151testslice50000.c");
+    std::string filename("3gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1818,7 +1821,10 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       #endif
     }
 
-    
+    for (auto const& extras : extraNodes)
+      {
+        std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
+      }
 
     #ifdef DEBUG_PRINT
       for (auto const& extras : extraNodes)
