@@ -205,6 +205,8 @@ static inline void clear_reg_internal (int reg, int size)
 
       for (i = 0; i < size; i++) {
           authors.push_back(shadow_reg_table[(reg * REG_SIZE + i)+offset]);
+          std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
+          
           #ifdef DEBUG_PRINT
             std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
           #endif
@@ -322,6 +324,7 @@ static inline void rtrim(std::string &s) {
         Edge* p_tempInEdge = new Edge();
         Edge* p_tempOutEdge = new Edge();
        
+        std::cout<<(p_tempNode)->lineNum<< " p_tempNode->lineNum\n";       
         std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
         #ifdef DEBUG_PRINT
           std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
@@ -424,6 +427,14 @@ static inline void rtrim(std::string &s) {
     int i;
     for (i=0; i<memSizeBytes; i++){
                 mapMem[(hexValue+i)] = p_tempNode;
+              } 
+  }
+
+  void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode, std::string regSource){
+    int i;
+    for (i=0; i<memSizeBytes; i++){
+                mapMem[(hexValue+i)] = p_tempNode;
+                mapMemValue[(hexValue+i)] = 120;
               } 
   }
 
@@ -1381,6 +1392,7 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
   if(dstRegNumSize.first){
+    std::vector<Node*> temp = get_reg_internal((dstRegNumSize.first), (dstRegNumSize.second));
     set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
   }
   else{

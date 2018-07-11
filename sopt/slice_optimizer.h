@@ -77,6 +77,9 @@ std::set<Node*> outputNodes;
 //The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
 std::map<u_long, Node*> mapMem;
 
+//The memory state of our slice is represented by a map of 4byte addresses (ulongs) and the Node that most recently affected the memory location at that address.
+std::map<u_long, std::string> mapMemValue;
+
 //vector of Node pointers that contains every JUMP instruction node because we are about these nodes as an output
 std::vector<Node*> jumps;
 
@@ -428,6 +431,7 @@ void set_src_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode);
 void set_src_root(Node* p_rootNode, Node* p_tempNode);
 void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);
 void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode);
+void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode, u_long regSource);
 void set_dst_root(Node* p_rootNode, Node* p_tempNode);
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString);
 std::vector<std::string> getInstrPieces (std::string wholeInstructionString);
