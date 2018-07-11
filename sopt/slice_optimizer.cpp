@@ -750,25 +750,6 @@ void handle_srcRegMemImm (std::string src, Node* p_tempNode, Node* p_rootNode){
   }
 }
 
-/* 6-25-18 comeback to this breadth first search function
-void Graph::BFS(Node * s){
-    int nodeCount = ((p_sliceGraph->nodes).size);
-    bool *visited = new bool[((p_sliceGraph->nodes).size)];
-
-    for(int i = 0; i < nodeCount; i++){
-      visited[i] = false;
-    }
-    list<Node*> queue;
-    visited[s->lineNum] = true;
-    queue.push_back(s);
-
-    std::vector<node*>::iterator iterA;
-    while(!queue.empty()){
-      s = queue
-    }
-}
-*/
-
 void handle_dstRegMemImm (std::string dst, Node* p_tempNode, Node* p_rootNode){
   #ifdef DEBUG_PRINT
   std::cout<< "(handle_dstRegMemImm) dst is : " << dst << "\n";
@@ -1655,26 +1636,6 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
-    #ifdef DEBUG_PRINT
-      const rlim_t kStackSize = 32 * 1024 * 1024;   // min stack size = 64 MB
-      struct rlimit rl;
-      int result;
-
-      result = getrlimit(RLIMIT_STACK, &rl);
-      if (result == 0)
-      {
-          if (rl.rlim_cur < kStackSize)
-          {
-              rl.rlim_cur = kStackSize;
-              result = setrlimit(RLIMIT_STACK, &rl);
-              if (result != 0)
-              {
-                  //fprintf(stderr, "setrlimit returned result = %d\n", result);
-                  std::cout<< "setrlimit returned result =" << result << "\n";
-              }
-          }
-      }
-    #endif
     auto t1 = Clock::now();
     
     //std::string filename("JUMPDexslice1.8151.c");

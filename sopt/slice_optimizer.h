@@ -145,13 +145,6 @@ std::map<std::string, const int > strSizeToByte = {
 	{"xmmword", 16},
 };
 
-//Instructions that follow a similar dataflow to the 'add' instruction
-std::set<std::string> addLikeInstr = {
-	"add",
-	"sub",
-	"adc",
-};
-
 //map from cmov instruction mnemonic to the instr's flag srcs
 std::map<std::string, std::vector<std::string> > cmovToFlags = {
 	{"cmovbe", {"CF","ZF"}},
@@ -460,4 +453,10 @@ void instrument_pcmpistri (std::string wholeInstructionString,  uint32_t set_fla
 void instrument_rep_movsd (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_repne_scasb (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 void instrument_cwde (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
+void instrument_neg_not (std::string wholeInstructionString,  uint32_t set_flags, uint32_t clear_flags, Node* p_tempNode, Node* p_rootNode);
 static inline std::string getMnemonic(std::string wholeInstructionString);
+static inline void clear_reg_internal (int reg, int size);
+static inline void set_reg_internal (int reg, int size, Node* author);
+static inline std::vector<Node*> get_reg_internal (int reg, int size);
+static inline void ltrim(std::string &s);
+static inline void rtrim(std::string &s);
