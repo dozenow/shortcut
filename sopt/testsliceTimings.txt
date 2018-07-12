@@ -1,0 +1,405 @@
+28 line testslice
+Delta t2-t1: 17786964 nanoseconds
+
+Original Instruction Count is : 41
+Extra Instruction Count is : 0
+Delta t2-t1: 26428947 nanoseconds
+
+Original Instruction Count is : 52
+Extra Instruction Count is : 0
+Delta t2-t1: 38248676 nanoseconds
+
+Original Instruction Count is : 502
+Extra Instruction Count is : 69
+Delta t2-t1: 135876658 nanoseconds
+
+
+Original Instruction Count is : 5022
+Extra Instruction Count is : 293
+Delta t2-t1: 979784741 nanoseconds
+
+Original Instruction Count is : 50071
+Extra Instruction Count is : 971
+Delta t2-t1: 7400758178 nanoseconds
+
+Original Instruction Count is : 100095
+Extra Instruction Count is : 1528
+Delta t2-t1: 14793742250 nanoseconds
+
+Original Instruction Count is : 300792
+Extra Instruction Count is : 2021
+Delta t2-t1: 50763186211 nanoseconds
+
+Original Instruction Count is : 500030
+Extra Instruction Count is : 6546
+Delta t2-t1: 87972527173 nanoseconds
+
+6-25-18
+
+Original Instruction Count is : 300792
+Extra Instruction Count is : 2027
+Delta t2-t1: 57170492782 nanoseconds
+
+Original Instruction Count is : 300792
+Extra Instruction Count is : 2027
+Delta t2-t1: 56538574597 nanoseconds
+
+Original Instruction Count is : 500030
+Extra Instruction Count is : 6558
+Delta t2-t1: 104368860054 nanoseconds
+
+Original Instruction Count is : 1048152
+Extra Instruction Count is : 21584
+Delta t2-t1: 200599957664 nanoseconds
+
+➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+libc++abi.dylib: terminating with uncaught exception of type std::out_of_range: basic_string
+[1]    8325 abort      ./slice_optimizer
+
+
+6-27-18
+
+➜  sopt git:(jumpstart) ✗ sudo gdb ./slice_optimizer
+Password:
+GNU gdb (GDB) 8.0.1
+Copyright (C) 2017 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "x86_64-apple-darwin17.0.0".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<http://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+<http://www.gnu.org/software/gdb/documentation/>.
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+Reading symbols from ./slice_optimizer...done.
+(gdb) catch throw
+Catchpoint 1 (throw)
+(gdb) c
+The program is not being run.
+(gdb) start
+Temporary breakpoint 2 at 0x10001e49c: file /Users/wcoomber/omniplay/sopt/slice_optimizer.cpp, line 1657.
+Starting program: /Users/wcoomber/omniplay/sopt/slice_optimizer
+[New Thread 0x1103 of process 8786]
+warning: unhandled dyld version (15)
+
+Thread 2 hit Temporary breakpoint 2, main () at /Users/wcoomber/omniplay/sopt/slice_optimizer.cpp:1657
+1657	    const rlim_t kStackSize = 32 * 1024 * 1024;   // min stack size = 64 MB
+(gdb) catch throw
+Catchpoint 3 (throw)
+(gdb) c
+Continuing.
+libc++abi.dylib: terminating with uncaught exception of type std::out_of_range: basic_string
+
+Thread 2 received signal SIGABRT, Aborted.
+0x00007fff7a623b6e in ?? ()
+(gdb) bt
+#0  0x00007fff7a623b6e in ?? ()
+#1  0x00007fff7a7ee080 in ?? ()
+#2  0x00007fffb2b03380 in ?? ()
+#3  0x00007ffeefbf9d18 in ?? ()
+#4  0x0000000000000008 in ?? ()
+#5  0x0000000000000030 in ?? ()
+#6  0x00007fff784a44d4 in ?? ()
+#7  0x00007fffb2ae29a0 in ?? ()
+#8  0x00007ffeefbf9d30 in ?? ()
+#9  0x00007fff7a57f1ae in ?? ()
+#10 0x0000000000000008 in ?? ()
+#11 0x00000000ffffffdf in ?? ()
+#12 0xffffffff784a44d4 in ?? ()
+#13 0x00007ffeefbf9e30 in ?? ()
+#14 0x00007ffeefbf9e60 in ?? ()
+#15 0x00007fff78483f8f in ?? ()
+#16 0x0000003000000020 in ?? ()
+#17 0x00007ffeefbf9e70 in ?? ()
+#18 0x00007ffeefbf9d80 in ?? ()
+#19 0x0000000121d47ff0 in ?? ()
+#20 0x0000003000000020 in ?? ()
+#21 0x00007ffeefbf9e70 in ?? ()
+#22 0x00007ffeefbf9d80 in ?? ()
+#23 0x00007ffeefbfaac8 in ?? ()
+#24 0x000000000000001a in ?? ()
+#25 0x00007fff784a455c in ?? ()
+#26 0x00007ffeefbf9e70 in ?? ()
+#27 0x0000000121d47fd8 in ?? ()
+#28 0x00007fffb23fb058 in ?? ()
+#29 0x00007ffeefbf8d90 in ?? ()
+#30 0x00007fff798cfef0 in ?? ()
+#31 0x00007fff798b9db2 in ?? ()
+#32 0x0000000000000000 in ?? ()
+(gdb)
+
+
+here's where it breaks on ./slice_optimizer on big emacs slice
+
+(main) line: "cmp eax, 0xf4240\n"
+(main) line: "pushfd\n"
+(main) line: "b_39634_3_4294967295_init:\n"
+libc++abi.dylib: terminating with uncaught exception of type std::out_of_range: basic_string
+[1]    8825 abort      ./slice_optimizer
+
+super close to working. broken on this naked "jump_diverge:\n" instruction, usually these instructions are like this "jns jump_diverge\n", which we handle correctly.
+
+(main) line: "push edx\n"
+(main) line: "call write_recheck\n"
+(main) line: "pop edx\n"
+(main) line: "call gettimeofday_recheck\n"
+(main) line: "ret\n"
+(main) line: "jump_diverge:\n"
+libc++abi.dylib: terminating with uncaught exception of type std::out_of_range: basic_string
+[1]    9652 abort      ./slice_optimizer
+
+temp fix is to change "jump_diverge:\n" to "jns jump_diverge:\n", and same for index_diverge. So this is what I did for exslice1.8151.c -> JUMPDexslice1.8151.c
+
+
+FULL BIG EMACS SLICE1 working!
+
+Extra Node at line : 9331077
+Extra Node at line : 9331078
+Extra Node at line : 9331080
+Extra Node at line : 9331640
+Extra Node at line : 9331641
+Extra Node at line : 9331643
+Extra Node at line : 9331645
+Extra Node at line : 9331646
+Extra Node at line : 9331648
+Extra Node at line : 9333704
+Extra Node at line : 9333705
+Extra Node at line : 9333706
+Extra Node at line : 9333707
+Extra Node at line : 9333708
+Extra Node at line : 9333888
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 150738
+Delta t2-t1: 2408321262930 nanoseconds 
+
+approx 40 mins
+150738/9333922 = 0.01614948142
+
+
+7-3-18
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 150738
+Delta t2-t1: 1981056606750 nanoseconds
+approx 33 minutes
+
+====
+(main) Started processing exslice.c file:
+Delta tb-t1: 1668183 nanoseconds
+(main) Finished processing exslice.c file:
+Delta ta-t1: 8304020390 nanoseconds
+
+Original Instruction Count is : 50072
+Extra Instruction Count is : 971
+Delta t2-t1: 8418974816 nanoseconds
+====
+
+➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 132071 nanoseconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 2100110892002 nanoseconds
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 150738
+Delta t2-t1: 2132567416198 nanoseconds
+
+7-5-18
+
+on linux ubuntu-14.04 Vagrant (running on JUMPDexslice1.8151.c)
+
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 105145 nanoseconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 890917199404 nanoseconds
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 150738
+Delta t2-t1: 908639381859 nanoseconds
+
+=====
+8151testslice50000.c
+
+(main) Started processing exslice.c file:
+Delta tb-t1: 219160 nanoseconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 3940042322 nanoseconds
+
+Original Instruction Count is : 50072
+Extra Instruction Count is : 971
+Delta t2-t1: 4015299759 nanoseconds
+
+===
+APPROX 2X speed up! 
+8151testslice50000.c 8.3 seconds to 4 seconds
+JUMPDexslice1.8151.c 30 minutes to 14.8 minutes
+
+
+7-11-18
+
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.000134778 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 4.31544 seconds
+
+Original Instruction Count is : 50072
+Extra Instruction Count is : 971
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 4.35209 seconds
+
+====
+emacs exslice 226MB
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.000106004 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 1024.42 seconds
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 150738
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 1031.58 seconds
+
+approx 17 minutes.
+
+====
+gcc exslice 45kb 
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.00010099 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 0.184395 seconds
+
+Original Instruction Count is : 2528
+Extra Instruction Count is : 15
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 0.186118 seconds
+
+==== 7-12-18
+
+new MOV equivalent values optimization on gccexslice1.2896.c
+* means instruction is Extra because of the new equivalent values optimization.
+? means unclear why this isntruction was optimized out. ask XZ about these.
+
+➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.000193802 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 0.322237 seconds
+Extra Node at line : 130
+Extra Node at line : 131
+Extra Node at line : 184
+Extra Node at line : 185
+Extra Node at line : 244
+Extra Node at line : 245
+Extra Node at line : 300
+Extra Node at line : 301
+Extra Node at line : 419
+Extra Node at line : 420
+Extra Node at line : 487
+Extra Node at line : 488
+Extra Node at line : 599
+Extra Node at line : 600
+*Extra Node at line : 601
+*Extra Node at line : 602
+*Extra Node at line : 604
+?Extra Node at line : 609
+?Extra Node at line : 610
+Extra Node at line : 617
+Extra Node at line : 618
+Extra Node at line : 621
+Extra Node at line : 622
+Extra Node at line : 634
+Extra Node at line : 635
+Extra Node at line : 654
+Extra Node at line : 655
+Extra Node at line : 679
+Extra Node at line : 680
+Extra Node at line : 710
+Extra Node at line : 711
+Extra Node at line : 747
+Extra Node at line : 748
+Extra Node at line : 790
+Extra Node at line : 791
+Extra Node at line : 843
+Extra Node at line : 845
+
+Original Instruction Count is : 2528
+Extra Instruction Count is : 37
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 0.323689 seconds
+
+====
+node->extra == 1 means that node was marked as extra by the new value equivalence optimization.
+
+➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.000177335 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 0.32372 seconds
+Extra Node at line : 130, node->extra is:1
+Extra Node at line : 131, node->extra is:1
+Extra Node at line : 184, node->extra is:1
+Extra Node at line : 185, node->extra is:1
+Extra Node at line : 244, node->extra is:1
+Extra Node at line : 245, node->extra is:1
+Extra Node at line : 300, node->extra is:1
+Extra Node at line : 301, node->extra is:1
+Extra Node at line : 419, node->extra is:1
+Extra Node at line : 420, node->extra is:1
+Extra Node at line : 487, node->extra is:1
+Extra Node at line : 488, node->extra is:1
+Extra Node at line : 599, node->extra is:1
+Extra Node at line : 600, node->extra is:1
+Extra Node at line : 602, node->extra is:1
+Extra Node at line : 603, node->extra is:1
+Extra Node at line : 604, node->extra is:1
+Extra Node at line : 609, node->extra is:0
+Extra Node at line : 610, node->extra is:0
+Extra Node at line : 617, node->extra is:0
+Extra Node at line : 618, node->extra is:0
+Extra Node at line : 621, node->extra is:1
+Extra Node at line : 622, node->extra is:1
+Extra Node at line : 634, node->extra is:1
+Extra Node at line : 635, node->extra is:1
+Extra Node at line : 654, node->extra is:1
+Extra Node at line : 655, node->extra is:1
+Extra Node at line : 679, node->extra is:1
+Extra Node at line : 680, node->extra is:1
+Extra Node at line : 710, node->extra is:1
+Extra Node at line : 711, node->extra is:1
+Extra Node at line : 747, node->extra is:1
+Extra Node at line : 748, node->extra is:1
+Extra Node at line : 790, node->extra is:1
+Extra Node at line : 791, node->extra is:1
+Extra Node at line : 843, node->extra is:1
+Extra Node at line : 845, node->extra is:1
+
+Original Instruction Count is : 2528
+Extra Instruction Count is : 37
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 0.325226 seconds
+
+node at line 615 and node at line 616 should be marked as extra? why or why not?
+
+====

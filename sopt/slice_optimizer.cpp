@@ -205,8 +205,6 @@ static inline void clear_reg_internal (int reg, int size)
 
       for (i = 0; i < size; i++) {
           authors.push_back(shadow_reg_table[(reg * REG_SIZE + i)+offset]);
-          std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
-          
           #ifdef DEBUG_PRINT
             std::cout<< "GETTING shadow_reg_table at " << (reg * REG_SIZE + i) << "which is " << (shadow_reg_table[reg * REG_SIZE + i])->lineNum << "\n";
           #endif
@@ -324,9 +322,8 @@ static inline void rtrim(std::string &s) {
         Edge* p_tempInEdge = new Edge();
         Edge* p_tempOutEdge = new Edge();
        
-        std::cout<<(p_tempNode)->lineNum<< " p_tempNode->lineNum\n";       
-        std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
         #ifdef DEBUG_PRINT
+          std::cout<<(p_tempNode)->lineNum<< " p_tempNode->lineNum\n";   
           std::cout<<((*it).second)->lineNum<< " authorNode in mapMem\n";
         #endif
         p_tempInEdge->start = (*it).second;
@@ -427,14 +424,6 @@ static inline void rtrim(std::string &s) {
     int i;
     for (i=0; i<memSizeBytes; i++){
                 mapMem[(hexValue+i)] = p_tempNode;
-              } 
-  }
-
-  void set_dst_mem(int memSizeBytes, u_long hexValue, Node* p_tempNode, std::string regSource){
-    int i;
-    for (i=0; i<memSizeBytes; i++){
-                mapMem[(hexValue+i)] = p_tempNode;
-                mapMemValue[(hexValue+i)] = 120;
               } 
   }
 
@@ -1361,6 +1350,9 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
     std::cout<< "srcRegNumSize.first is " << srcRegNumSize.first << "\n";
   #endif
 
+  int memSizeBytes = 0;
+  u_long hexValue = 0;
+
   //if there is a src register, set the appropriate edges to the previous author of that register
   if(srcRegNumSize.first){
     set_src_reg(srcRegNumSize, p_tempNode);
@@ -1374,10 +1366,10 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
     //take the bracketString of a memory address src, [0xbfffef74]
     //and convert the bracketStr to a u_long hexvalue of the memory address, 3221221236
     if(bracketStr.size() > 0){
-      int memSizeBytes = getMemSizeByte(src,bracketStr);
+      memSizeBytes = getMemSizeByte(src,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));
-      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
+      hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
       set_src_mem(memSizeBytes, hexValue, p_tempNode);
     }
     //else if (bracketStr.size() < 0) then must be a constant src like "17"
@@ -1392,8 +1384,24 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
   if(dstRegNumSize.first){
-    std::vector<Node*> temp = get_reg_internal((dstRegNumSize.first), (dstRegNumSize.second));
-    set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+    //if srcMem and dstReg, then get the last author of that memory range and check if the dst Reg already has that same authors. If yes dstReg has the same authors as the memory range, then mark instruction as EXTRA=1" 
+     if (memSizeBytes)
+     {
+       if(hexValue){
+         std::vector<Node*> dstRegAuthors = get_reg_internal((dstRegNumSize.first),(dstRegNumSize.second));
+         if (dstRegAuthors == mapMemValue[hexValue])
+         {
+           p_tempNode->extra = 1;
+         }
+       }
+       
+     }
+     //if the instruction node is not extra then set the reg with the p_tempNode as the new author.
+     if ((p_tempNode-> extra) == 0){
+      set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
+     } 
+     
+     
   }
   else{
     //else must be a const or memory dst  
@@ -1412,8 +1420,23 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
       u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
-      set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+     
 
+      if(srcRegNumSize.first){
+        #ifdef DEBUG_PRINT
+          std::cout<< "(instrument_mov)srcReg and dstMem DETECTED!\n";
+        #endif
+        //if memDst already has the value of srcReg, then dont set the dst_mem author to p_tempNode and mark p_tempNode as extra.
+        if (regAuthors == mapMemValue[(hexValue)]){
+          p_tempNode->extra = 1;
+        }
+        else{
+           set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+           //if srcReg and dstMem, then get the last author of that source reg and associate it with the memory address dst.
+           mapMemValue[(hexValue)] = regAuthors;
+        }
+        
+      }
     }
     else{
       //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
@@ -1652,9 +1675,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
   {
     auto t1 = Clock::now();
     
-    //std::string filename("JUMPDexslice1.8151.c");
+    std::string filename("JUMPDexslice1.8151.c");
     //std::string filename("8151testslice50000.c");
-    std::string filename("3gccexslice1.2896.c");
+    //std::string filename("gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1833,9 +1856,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       #endif
     }
 
-    for (auto const& extras : extraNodes)
+    for (auto const& extra1 : extraNodes)
       {
-        std::cout<<"Extra Node at line : " << extras->lineNum << "\n";
+        std::cout<<"Extra Node at line : " << extra1->lineNum << ", node->extra is:" << extra1->extra << "\n";
       }
 
     #ifdef DEBUG_PRINT
