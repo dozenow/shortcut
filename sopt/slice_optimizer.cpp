@@ -23,6 +23,7 @@ using namespace boost;
 
 //#define DEBUG_PRINT
 //#define EDGES_PRINT 
+#define VAL_EQV
 
 //from taint_full_interface.c.
 //the regToNumSize table in slice_optimizer.h is similar and returns -1 for the MostSigByte, or high half, such as AH and returns 1 for the leastSigByte, or low half such as AL.
@@ -1384,18 +1385,20 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
 
    //if (dstRegNumSize.first) is not NULL then it must be a valid register
   if(dstRegNumSize.first){
-    //if srcMem and dstReg, then get the last author of that memory range and check if the dst Reg already has that same authors. If yes dstReg has the same authors as the memory range, then mark instruction as EXTRA=1" 
-     if (memSizeBytes)
-     {
-       if(hexValue){
-         std::vector<Node*> dstRegAuthors = get_reg_internal((dstRegNumSize.first),(dstRegNumSize.second));
-         if (dstRegAuthors == mapMemValue[hexValue])
-         {
-           p_tempNode->extra = 1;
+    #ifdef VAL_EQV
+      //if srcMem and dstReg, then get the last author of that memory range and check if the dst Reg already has that same authors. If yes dstReg has the same authors as the memory range, then mark instruction as EXTRA=1" 
+       if (memSizeBytes)
+       {
+         if(hexValue){
+           std::vector<Node*> dstRegAuthors = get_reg_internal((dstRegNumSize.first),(dstRegNumSize.second));
+           if (dstRegAuthors == mapMemValue[hexValue])
+           {
+             p_tempNode->extra = 1;
+           }
          }
+         
        }
-       
-     }
+     #endif
      //if the instruction node is not extra then set the reg with the p_tempNode as the new author.
      if ((p_tempNode-> extra) == 0){
       set_reg((dstRegNumSize.first), (dstRegNumSize.second), p_tempNode);
@@ -1426,14 +1429,18 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
         #ifdef DEBUG_PRINT
           std::cout<< "(instrument_mov)srcReg and dstMem DETECTED!\n";
         #endif
-        //if memDst already has the value of srcReg, then dont set the dst_mem author to p_tempNode and mark p_tempNode as extra.
-        if (regAuthors == mapMemValue[(hexValue)]){
-          p_tempNode->extra = 1;
-        }
-        else{
+        #ifdef VAL_EQV
+          //if memDst already has the value of srcReg, then dont set the dst_mem author to p_tempNode and mark p_tempNode as extra.
+          if (regAuthors == mapMemValue[(hexValue)]){
+            p_tempNode->extra = 1;
+          }
+        #endif
+        if(!(regAuthors == mapMemValue[(hexValue)])){
            set_dst_mem(memSizeBytes, hexValue, p_tempNode);
            //if srcReg and dstMem, then get the last author of that source reg and associate it with the memory address dst.
-           mapMemValue[(hexValue)] = regAuthors;
+           #ifdef VAL_EQV
+             mapMemValue[(hexValue)] = regAuthors;
+           #endif
         }
         
       }
@@ -1673,7 +1680,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
-    
+
     //...
     auto t1 = Clock::now();
     
