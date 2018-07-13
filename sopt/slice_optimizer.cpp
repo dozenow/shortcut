@@ -1673,11 +1673,13 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
 }
   int main(int,char*[])
   {
+    
+    //...
     auto t1 = Clock::now();
     
-    std::string filename("JUMPDexslice1.8151.c");
+    //std::string filename("JUMPDexslice1.8151.c");
     //std::string filename("8151testslice50000.c");
-    //std::string filename("gccexslice1.2896.c");
+    std::string filename("gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
@@ -1751,6 +1753,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     }
 
     //...
+    file.close();
     
     std::cout<<"\n(main) Finished processing exslice.c file: " << "\n";
     auto ta = Clock::now();
@@ -1856,10 +1859,7 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
       #endif
     }
 
-    for (auto const& extra1 : extraNodes)
-      {
-        std::cout<<"Extra Node at line : " << extra1->lineNum << ", node->extra is:" << extra1->extra << "\n";
-      }
+    
 
     #ifdef DEBUG_PRINT
       for (auto const& extras : extraNodes)
@@ -1879,6 +1879,25 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
               << std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count()/1000000000.0
               << " seconds" << std::endl;
     //...
+    std::remove("optInfo.txt"); //delete old outfile1, optInfo.txt to make room for new one.
+    
+    std::ofstream outfile1;
+    outfile1.open ("optInfo.txt");
+
+    if (outfile1.is_open()){
+      for (auto const& extra1 : extraNodes)
+      {
+        outfile1<<"Extra Node at line : " << extra1->lineNum << ", node->extra is:" << extra1->extra << "\n";
+      }
+      outfile1.close();
+    }
+    else{
+        std::cout<< "[ERROR] Unable to open outfile1, optInfo.txt.";
+    }
+
+    
+
+    
 
     //...Delete mem operations here
     delete p_rootNode;

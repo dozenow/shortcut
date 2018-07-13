@@ -348,6 +348,7 @@ Extra Instruction Count is : 37
 Delta t2-t1: 0.323689 seconds
 
 ====
+gccexslice1.2896.c
 node->extra == 1 means that node was marked as extra by the new value equivalence optimization.
 
 ➜  sopt git:(jumpstart) ✗ ./slice_optimizer
@@ -403,3 +404,14 @@ Delta t2-t1: 0.325226 seconds
 node at line 615 and node at line 616 should be marked as extra? why or why not?
 
 ====
+
+new MOV equivalent values optimization on JUMPDexslice.c
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 1287816
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 1174.08 seconds
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$
+
+so 1.6% to 14% removal! that 854% increase! 
