@@ -432,3 +432,105 @@ Extra Instruction Count is : 1287816
 
 (main) Finished doing backwards-pass over Graph.:
 Delta t2-t1: 940.07 seconds
+
+optimization VAL_EQV flag OFF
+	vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000133099 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 4.05285 seconds
+
+	Original Instruction Count is : 50072
+	Extra Instruction Count is : 1600
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 4.08876 seconds
+
+optimization VAL_EQV flag ON
+	vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000124911 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 3.81191 seconds
+
+	Original Instruction Count is : 50072
+	Extra Instruction Count is : 2601
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 3.84563 seconds
+
+====
+emacs exslice 226MB, JUMPDexslice.c
+
+OLD optimization with no val_eqv code (this should be same as VAL_EQV flag OFF)
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000106004 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 1024.42 seconds
+
+	Original Instruction Count is : 9333922
+	Extra Instruction Count is : 150738
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 1031.58 seconds
+
+	approx 17 minutes.
+
+optimization VAL_EQV flag OFF
+	vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000219471 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 874.453 seconds
+
+	Original Instruction Count is : 9333922
+	Extra Instruction Count is : 185037
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 881.118 seconds
+
+optimization VAL_EQV flag ON
+	
+	vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.00012888 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 934.655 seconds
+
+	Original Instruction Count is : 9333922
+	Extra Instruction Count is : 1287816
+
+===fixed VAL_EQV flag bug
+
+VAL_EQV ON
+	➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000128342 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 7.44234 seconds
+
+	Original Instruction Count is : 50072
+	Extra Instruction Count is : 2601
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 7.46861 seconds
+
+VAL_EQV OFF
+	➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+	(main) Started processing exslice.c file:
+	Delta tb-t1: 0.000183616 seconds
+
+	(main) Finished processing exslice.c file:
+	Delta ta-t1: 7.4788 seconds
+
+	Original Instruction Count is : 50072
+	Extra Instruction Count is : 971
+
+	(main) Finished doing backwards-pass over Graph.:
+	Delta t2-t1: 7.50442 seconds

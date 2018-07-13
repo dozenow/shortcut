@@ -23,7 +23,7 @@ using namespace boost;
 
 //#define DEBUG_PRINT
 //#define EDGES_PRINT 
-#define VAL_EQV
+//#define VAL_EQV
 
 //from taint_full_interface.c.
 //the regToNumSize table in slice_optimizer.h is similar and returns -1 for the MostSigByte, or high half, such as AH and returns 1 for the leastSigByte, or low half such as AL.
@@ -1423,27 +1423,32 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
       u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
-     
 
+      #ifndef VAL_EQV
+        set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+      #endif
+     
+      #ifdef VAL_EQV
       if(srcRegNumSize.first){
         #ifdef DEBUG_PRINT
           std::cout<< "(instrument_mov)srcReg and dstMem DETECTED!\n";
         #endif
-        #ifdef VAL_EQV
+        
           //if memDst already has the value of srcReg, then dont set the dst_mem author to p_tempNode and mark p_tempNode as extra.
           if (regAuthors == mapMemValue[(hexValue)]){
             p_tempNode->extra = 1;
           }
-        #endif
+
         if(!(regAuthors == mapMemValue[(hexValue)])){
            set_dst_mem(memSizeBytes, hexValue, p_tempNode);
            //if srcReg and dstMem, then get the last author of that source reg and associate it with the memory address dst.
-           #ifdef VAL_EQV
+
              mapMemValue[(hexValue)] = regAuthors;
-           #endif
+
         }
         
       }
+      #endif
     }
     else{
       //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
