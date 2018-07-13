@@ -415,3 +415,20 @@ Delta t2-t1: 1174.08 seconds
 vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$
 
 so 1.6% to 14% removal! that 854% increase! 
+
+
+7-13-18 ====
+
+JUMPDexslice.c
+vagrant@vagrant-ubuntu-trusty-64:~/jumpstart/sopt$ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.00012888 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 934.655 seconds
+
+Original Instruction Count is : 9333922
+Extra Instruction Count is : 1287816
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 940.07 seconds
