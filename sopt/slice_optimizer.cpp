@@ -1422,29 +1422,33 @@ void instrument_mov (std::string wholeInstructionString,  uint32_t set_flags, ui
       int memSizeBytes = getMemSizeByte(dst,bracketStr);
       //remove the brackets from the string
       memAddrStr = bracketStr.substr(1, (bracketStr.size()-2));              
-      u_long hexValueDst = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
-     
+      u_long hexValue = hexStrToLong(memAddrStr, p_tempNode, p_rootNode);
 
+      #ifndef VAL_EQV
+        set_dst_mem(memSizeBytes, hexValue, p_tempNode);
+      #endif
+     
+      #ifdef VAL_EQV
       if(srcRegNumSize.first){
         #ifdef DEBUG_PRINT
           std::cout<< "(instrument_mov)srcReg and dstMem DETECTED!\n";
         #endif
-
+        
           //if memDst already has the value of srcReg, then dont set the dst_mem author to p_tempNode and mark p_tempNode as extra.
-        if (regAuthors == mapMemValue[(hexValueDst)]){
-	    #ifdef VAL_EQV
-              p_tempNode->extra = 1;
-            #endif
-        }
-        else{
-           set_dst_mem(memSizeBytes, hexValueDst, p_tempNode);
+          if (regAuthors == mapMemValue[(hexValue)]){
+            p_tempNode->extra = 1;
+          }
+
+        if(!(regAuthors == mapMemValue[(hexValue)])){
+           set_dst_mem(memSizeBytes, hexValue, p_tempNode);
            //if srcReg and dstMem, then get the last author of that source reg and associate it with the memory address dst.
-           #ifdef VAL_EQV
-             mapMemValue[(hexValueDst)] = regAuthors;
-           #endif
+
+             mapMemValue[(hexValue)] = regAuthors;
+
         }
         
       }
+      #endif
     }
     else{
       //else if (dstRegNumSize.first) is equal to "null" then must be a constant like "17"
@@ -1686,8 +1690,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     auto t1 = Clock::now();
     
     //std::string filename("JUMPDexslice1.8151.c");
-    //std::string filename("8151testslice50000.c");
-    std::string filename("gccexslice1.2896.c");
+    std::string filename("8151testslice50000.c");
+    //std::string filename("gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;
