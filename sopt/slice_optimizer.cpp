@@ -1885,6 +1885,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     outfile1.open ("optInfo.txt");
 
     if (outfile1.is_open()){
+      outfile1<<"Original filename is: " << filename << "\n";
+      outfile1<<"\nOriginal Instruction Count is : " << allNodeCount << "\n";
+      outfile1<<"Extra Instruction Count is : " << extraNodeCount << "\n\n" << "====" << "\n";
       for (auto const& extra1 : extraNodes)
       {
         outfile1<<"Extra Node at line : " << extra1->lineNum << ", node->extra is:" << extra1->extra << "\n";
