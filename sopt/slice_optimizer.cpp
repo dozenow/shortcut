@@ -1677,8 +1677,8 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     //...
     auto t1 = Clock::now();
     
-    //std::string filename("JUMPDexslice1.8151.c");
-    std::string filename("8151testslice50000.c");
+    std::string filename("JUMPDexslice1.8151.c");
+    //std::string filename("8151testslice50000.c");
     //std::string filename("gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
