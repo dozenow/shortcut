@@ -23,7 +23,8 @@ using namespace boost;
 
 //#define DEBUG_PRINT
 //#define EDGES_PRINT 
-//#define VAL_EQV
+#define VAL_EQV
+#define TRANS_IMME
 
 //from taint_full_interface.c.
 //the regToNumSize table in slice_optimizer.h is similar and returns -1 for the MostSigByte, or high half, such as AH and returns 1 for the leastSigByte, or low half such as AL.
@@ -508,6 +509,14 @@ static inline std::string getMnemonic(std::string wholeInstructionString){
     std::cout<<"istr:"<<istr<<"\n";
   #endif
     return mnemonic;
+}
+
+std::string getWholeInstruction (std::vector<std::string> instructionPieces){
+  std::string wholeInstructionString = "";
+  for (auto jt = std::begin(instructionPieces); jt != std::end(instructionPieces); ++jt){
+                      wholeInstructionString = wholeInstructionString + (*jt);
+                    }
+  return wholeInstructionString;
 }
 
 std::vector<std::string> getInstrPieces (std::string wholeInstructionString)
@@ -1489,6 +1498,86 @@ void instrument_call (Node* p_tempNode, uint32_t src_flags){
 void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_rootNode, std::string wholeInstructionString)
 {
   InstType instType = mapStringToInstType[mnemonic];
+
+  std::string tempM = getMnemonic(oldInstruction);
+
+  //do 'transitive immediate' optimization work here.
+  #ifdef TRANS_IMME
+    if ((tempM == "mov") && (mnemonic == "add")){
+      #ifdef DEBUG_PRINT
+      std::cout<< "[instrument_instruction]Current: " << wholeInstructionString << "\n";
+      std::cout<< "[instrument_instruction]Prev: " << oldInstruction << "\n";
+      #endif
+      std::vector<std::string> oldinstrPieces;
+      oldinstrPieces = getInstrPieces(oldInstruction);
+
+      std::string oldmnemonic;
+      oldmnemonic = oldinstrPieces.at(0);
+      std::string olddst;
+      olddst = oldinstrPieces.at(1);
+      std::string oldsrc;
+      oldsrc = oldinstrPieces.at(2);
+      std::pair<int, int> oldsrcRegNumSize = checkForRegs(oldsrc);
+      std::string oldbracketStr;
+      std::string oldmemAddrStr;
+      oldbracketStr = getStringWithinBrackets(oldsrc);
+
+      std::vector<std::string> curinstrPieces;
+      curinstrPieces = getInstrPieces(wholeInstructionString);
+
+      std::string curmnemonic;
+      curmnemonic = curinstrPieces.at(0);
+      std::string curdst;
+      curdst = curinstrPieces.at(1);
+      std::string cursrc;
+      cursrc = curinstrPieces.at(2);
+      std::pair<int, int> cursrcRegNumSize = checkForRegs(cursrc);
+      std::string curbracketStr;
+      std::string curmemAddrStr;
+      curbracketStr = getStringWithinBrackets(cursrc);
+
+      switch (instType)
+      { 
+        case InstType::add:
+          #ifdef DEBUG_PRINT
+          std::cout<< "[instrument_instruction]detected add: " << wholeInstructionString << "\n";
+          #endif
+          if (oldmnemonic == "mov"){
+            #ifdef DEBUG_PRINT
+            std::cout<< "[instrument_instruction]detected old Mov: " << oldInstruction << "\n";
+            #endif
+            if(oldsrcRegNumSize.first){
+              //reg source for old mov, so do nothing
+            }
+            else{
+              if(oldbracketStr.size() > 0){
+                //memrange source for old mov, so do nothing
+              }
+              //if the old mov instruction had a IMMEDIATE value source, do optimization
+              else{
+                #ifdef DEBUG_PRINT
+                std::cout<< "[instrument_instruction]detected IMME oldsrc: " << oldsrc << "\n";
+                #endif
+                if (cursrc == olddst){
+                  #ifdef DEBUG_PRINT
+                  std::cout<< "[instrument_instruction]detected cursrc is same as olddst: " << cursrc << ", " << olddst<< "\n";
+                  #endif
+                  std::string temp7 = "\"" + curmnemonic + " " + curdst + ", " + oldsrc + "\\n\"";
+                  #ifdef DEBUG_PRINT
+                  std::cout<< "[instrument_instruction]temp7: " << temp7 << "\n\n";
+                  #endif
+                  wholeInstructionString = temp7;
+                } 
+              }
+            }
+          }
+          break;
+        default:
+          break;  
+       }
+    }
+  #endif
+
   switch (instType)
   {   
       case InstType::call:
@@ -1672,6 +1761,11 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
           std::cout<< "[ERROR1]Unknown InstType mnemonic: " << mnemonic << "\n";
           //std::cout<< "[ERROR]Unknown InstType " << mapInstTypeToString[instType] << "\n";
   }
+  //do 'transitive immediate' optimization work here.
+  #ifdef TRANS_IMME
+    oldInstruction = wholeInstructionString;
+  #endif
+  
   //6-22-18 this is bugged. doesnt print error when unknown inst type is encountered.
   if((mapStringToInstType.find(mnemonic)) == mapStringToInstType.end()){
     std::cout<< "[ERROR2]Unknown InstType mnemonic: " << mnemonic << "\n";
@@ -1689,9 +1783,9 @@ void instrument_instruction (std::string mnemonic, Node* p_tempNode, Node* p_roo
     //...
     auto t1 = Clock::now();
     
-    //std::string filename("JUMPDexslice1.8151.c");
-    std::string filename("8151testslice50000.c");
-    //std::string filename("gccexslice1.2896.c");
+    std::string filename("JUMPDexslice1.8151.c");
+    //std::string filename("8151testslice50000.c");
+    //std::string filename("3gccexslice1.2896.c");
     boost::iostreams::stream<boost::iostreams::file_source>file(filename.c_str());
     std::string line;
     int lineNum = 0;

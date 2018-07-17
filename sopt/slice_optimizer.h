@@ -89,6 +89,8 @@ std::vector<Node*> calls;
 //vector of Node pointers that contains every node that is marked as EXTRA=1, so we can safely remove it from the exslice1.c file
 std::vector<Node*> extraNodes;
 
+//string that holds the entire last instruction before the current one, used for stateful optimization
+std::string oldInstruction = "-1";
 
 //The 32-bit EFLAGS register is represented as a vector of nodes that most recently affected each byte of the EFLAGS register.
 //We have an explicit way to modify certain flag bits such as the "CF, Carry Flag" that is the first 0 bit of the EFLAGS register.  
@@ -418,7 +420,7 @@ std::map<InstType, std::string> mapInstTypeToString =
     {InstType::pcmpeqb , "pcmpeqb"},
     {InstType::ret , "ret"},
 };
-
+std::string getWholeInstruction (std::vector<std::string> instructionPieces);
 void clear_reg (int reg, int size);
 void set_reg (int reg, int size, Node* author);
 void set_src_reg(std::pair<int, int> srcRegNumSize, Node* p_tempNode);

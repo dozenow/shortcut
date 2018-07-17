@@ -5,7 +5,11 @@ asm (
 "mov ecx, 17\n"
 "mov dword ptr [0xbffff38c], ecx\n"
 "call handle_index_diverge\n"
+"mov edx, 576\n"
+"add eax, edx\n"
 "mov eax, 5\n"
+"mov edx, eax\n"
 "mov ecx, dword ptr [0xbffff38c]\n"
+"mov edx, 9\n"
 "call handle_index_diverge\n"
 );

@@ -534,3 +534,19 @@ VAL_EQV OFF
 
 	(main) Finished doing backwards-pass over Graph.:
 	Delta t2-t1: 7.50442 seconds
+
+==== 7-17-18
+VAL_EQV ON
+TRANS_IMME ON
+➜  sopt git:(jumpstart) ✗ ./slice_optimizer
+(main) Started processing exslice.c file:
+Delta tb-t1: 0.000210265 seconds
+
+(main) Finished processing exslice.c file:
+Delta ta-t1: 12.3758 seconds
+
+Original Instruction Count is : 50072
+Extra Instruction Count is : 2778
+
+(main) Finished doing backwards-pass over Graph.:
+Delta t2-t1: 12.4059 seconds
