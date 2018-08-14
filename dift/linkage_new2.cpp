@@ -7237,8 +7237,8 @@ static void destroy_ctrl_flow_info (struct thread_data* tdata)
 
 static void init_ctrl_flow_info (struct thread_data* ptdata)
 {
-   ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_index>();
-   ptdata->ctrl_flow_info.diverge_inst = new std::map<u_long,struct ctrl_flow_block_index>();
+   ptdata->ctrl_flow_info.diverge_point = new std::deque<struct ctrl_flow_block_info>();
+   ptdata->ctrl_flow_info.diverge_inst = new std::map<u_long,struct ctrl_flow_block_info>();
    ptdata->ctrl_flow_info.clock = 0;
    ptdata->ctrl_flow_info.index = 0;
    ptdata->ctrl_flow_info.store_set_reg = new std::set<uint32_t> ();
@@ -7259,7 +7259,7 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    ptdata->ctrl_flow_info.is_orig_path_tracked = false;
    ptdata->ctrl_flow_info.handled_tags = new multimap<int, bool>();
 
-   struct ctrl_flow_block_index index;
+   struct ctrl_flow_block_info index;
    int alt_path_index = -1; //which alt path we are in
    index.ip = 0;
    for (vector<struct ctrl_flow_param>::iterator iter=ctrl_flow_params.begin(); iter != ctrl_flow_params.end(); ++iter) { 

@@ -289,7 +289,8 @@ struct ctrl_flow_branch_info {
     int tag;
 };
 
-struct ctrl_flow_block_index { 
+struct ctrl_flow_block_info { 
+    //all information for a given divergence; including the index, diverge and merge point, all branches/blocks between the divergence and merge point
     u_long clock;
     uint64_t index;
     u_long ip;
@@ -343,19 +344,21 @@ struct ctrl_flow_checkpoint {
     uint64_t save_index;  //The block index before exploring alternative paths
 };
 
+/***** 
+ * Please read https://endplay.eecs.umich.edu/wiki/index.php?title=Ctrl_flow for details 
+ * *****/
 struct ctrl_flow_info { 
     u_long clock; // Current clock value
     uint64_t index; // Current index value
-    int alt_path_index;  //which path we are in
-    //struct ctrl_flow_block_index block_index;  //current block index
-    std::deque<struct ctrl_flow_block_index> *diverge_point; //index for all divergences at a specific dynamic bb
-    std::map<u_long, struct ctrl_flow_block_index> *diverge_inst; //index for all divergences at all occurrences of a static bb
+    int alt_path_index;  //which alternative path we are in
 
+    std::deque<struct ctrl_flow_block_info> *diverge_point; //index for all divergences at a specific dynamic bb
+    std::map<u_long, struct ctrl_flow_block_info> *diverge_inst; //index for all divergences at all occurrences of a static bb
+
+
+    //a store set is a set of modified mem/register during a possible path
     std::set<uint32_t> *store_set_reg;
     std::map<u_long, struct ctrl_flow_origin_value> *store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back
-
-    /*std::set<uint32_t> *that_branch_store_set_reg;
-    std::map<u_long, struct ctrl_flow_origin_value> *that_branch_store_set_mem; //for memory, we also store the original taint value and value for this memory location, which is used laster for rolling back*/
 
     //these two vectors cover all alternative branches
     vector<set<uint32_t> > *alt_branch_store_set_reg;
@@ -365,14 +368,14 @@ struct ctrl_flow_info {
     set<uint32_t> *insts_instrumented;  //these are the instructions we need to inspect and potentially add to the store set
 
     //checkpoint and rollback
-    bool is_in_original_branch;
-    bool is_in_branch_first_inst;
-    bool is_in_diverged_branch;
-    bool is_rolled_back;
-    bool changed_jump;
+    bool is_in_original_branch; //are we tracking along the original path?
+    bool is_in_branch_first_inst; //are we at the first instruction, which is often equal to the jump instruction at the divergence point
+    bool is_in_diverged_branch; //are we tracking one of the alternative paths?
+    bool is_rolled_back; //have we rolled back to our checkpoints for at least once?
+    bool changed_jump; //True is we change the jump instruction to take the opposite direction
     bool is_nested_jump; //True if this is a nested divergence
-    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
-    bool is_orig_path_tracked; //True if this is a multi-path divergence with wildcards and we have to figure out which path is the original path for this instance...
+    bool is_tracking_orig_path; //True if this is a multi-path divergence with wildcards and we *will* figure out which path is the original path for this instance...
+    bool is_orig_path_tracked; //True if this is a multi-path divergence with wildcards and we have *already* figure out which path is the original path for this instance...
     deque<struct ctrl_flow_branch_info>* tracked_orig_path; //Used with the above flag
     int swap_index; //The index of the alternative path that will be swapped with the original path; used by wildcard matching
     FILE* saved_slice_output_file; 
