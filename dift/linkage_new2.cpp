@@ -5076,7 +5076,7 @@ static void instrument_pop(INS ins)
         REG index_reg = INS_OperandMemoryIndexReg (ins, 0);
         SETUP_BASE_INDEX (base_reg, index_reg);
         char* ins_str = get_copy_of_disasm (ins);
-        INS_InsertCall (ins, IPOINT_AFTER, 
+        INS_InsertCall (ins, IPOINT_BEFORE, 
                 AFUNPTR (fw_slice_pop_mem), 
                 IARG_FAST_ANALYSIS_CALL, 
                 IARG_INST_PTR, 
