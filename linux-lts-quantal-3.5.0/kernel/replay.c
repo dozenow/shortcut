@@ -8220,6 +8220,18 @@ asmlinkage long trace_exit (int error_code) {
 #endif
 
 asmlinkage long 
+sys_jumpstart_runtime (void) {
+	if (current->record_thrd) { 
+	}
+	return 1;
+}
+
+SIMPLE_RECORD0(jumpstart_runtime, 222);
+SIMPLE_REPLAY(jumpstart_runtime, 222, void);
+asmlinkage long shim_jumpstart_runtime(void) SHIM_CALL(jumpstart_runtime, 222);
+
+
+asmlinkage long 
 shim_exit(int error_code)
 {
 	if (current->record_thrd) MPRINT ("Recording Pid %d naturally exiting\n", current->pid);
