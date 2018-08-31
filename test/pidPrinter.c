@@ -27,7 +27,9 @@ int main()
             }*/
             char tmp[32];
             struct stat stat;
+            syscall (222);
             int x = processID;
+            syscall (222);
             int y = 0;
             //itoa (test,tmp, 2);
             if (processID%2) { 
@@ -37,6 +39,7 @@ int main()
                 x += 2;
                 y = 2;
             }
+
 
 		//printf("The process id is %d addr is %p\n", processID, &processID);
             sprintf(tmp, "%d=%d-%d", processID, x, y);

@@ -61,9 +61,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 12484007 
+#define EXTRA_DEBUG 61
 //#define EXTRA_DEBUG_STOP 12506617 
-//#define EXTRA_DEBUG_FUNCTI60
+//#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -136,6 +136,7 @@ extern unsigned long handled_index_divergence;
 int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
+bool function_level_tracking = false;
 unsigned int checkpoint_clock = UINT_MAX;
 unsigned long recheck_group = 0;
 const char* filter_read_filename = NULL;
@@ -361,6 +362,9 @@ KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobCheckFilename(KNOB_MODE_WRITEONCE, 
     "pintool", "chk", "",
     "a file with allowed control and data flow divergences");
+KNOB<bool> KnobFunctionLevel (KNOB_MODE_WRITEONCE, 
+        "pintool", "fl", "", 
+        "Run the pintool in fine granularities and generated patch-based checkpoints");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -2679,6 +2683,58 @@ static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_l
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
 }
 
+static inline void sys_jumpstart_runtime_start (struct thread_data* data) 
+{
+}
+
+static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
+    if (function_level_tracking && current_thread->patch_based_ckpt_info.start == false) {
+        printf ("jumpstart_runtime slice begins.\n");
+        fprintf (stderr, "# jumpstart_runtime slice begins.\n");
+        fflush (stdout);
+        current_thread->patch_based_ckpt_info.start = true;
+    } else if (function_level_tracking && current_thread->patch_based_ckpt_info.start == true) {
+        current_thread->patch_based_ckpt_info.start = false;
+        //sum up the checkpoint and verification set for patch_based_ckpt
+        bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
+        char* read_reg_value = current_thread->patch_based_ckpt_info.read_reg_value;
+        set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
+        map<u_long, char>* read_mem = current_thread->patch_based_ckpt_info.read_mem;
+        set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
+        //checkpoint 
+        //regs
+        fprintf (stderr, "===== checkpoint reg ====\n");
+        for (set<int>::iterator iter = write_reg->begin(); iter != write_reg->end(); ++iter) { 
+            if (REG_Size ((REG)*iter) <=4) {
+                PIN_REGISTER value;
+                PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
+                fprintf (stderr, "%s: %u\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value));
+            } else {
+                fprintf (stderr, "%s: skip\n", REG_StringShort ((REG)*iter).c_str());
+            }
+        }
+        fprintf (stderr, "===== checkpoint mem ====\n");
+        for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
+            fprintf (stderr, "0x%lx: %u\n", *iter, (unsigned int)(*(unsigned char*)(*iter)));
+        }
+        //verifications
+        fprintf (stderr, "===== verification reg ==== \n");
+        for (unsigned int i = 0; i < sizeof(read_reg)/sizeof(bool); ++i) { 
+            if (read_reg[i]) { 
+                fprintf (stderr, "%d (%s): %u\n", i, REG_StringShort((REG) (i/REG_SIZE)).c_str(), (unsigned int)read_reg_value[i]);
+            }
+        }
+        fprintf (stderr, "===== verification mem ==== \n");
+        for (map<u_long, char>::iterator iter = read_mem->begin(); iter != read_mem->end(); ++iter) {
+            fprintf (stderr, "0x%lx: %u\n", iter->first, (unsigned int)(unsigned char) iter->second);
+        }
+        fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
+        printf ("jumpstart_runtime slice ends.\n");
+        fflush (stdout);
+        fprintf (stderr, "# jumpstart_runtime slice ends.\n");
+    }
+}
+
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
 		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
 { 
@@ -2962,13 +3018,16 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_prctl:
 	    sys_prctl_start (tdata, (int) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2, (u_long) syscallarg3, (u_long) syscallarg4);
 	    break;
+        case 222:
+            sys_jumpstart_runtime_start (tdata);
+            break;
         case SYS_getcwd:
             fprintf (stderr, "[ERROR]getcwd is not handled buffer is %x\n", syscallarg0);
             break;
     }
 }
 
-void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
+void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
 {
     int rc = (int) ret_value;
 
@@ -3120,6 +3179,10 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno)
             current_thread->socketcall = 0;
 	    break;
 	}
+        case 222:
+            sys_jumpstart_runtime_end(rc, ctx);
+            break;
+
     }
     //Note: the checkpoint is always taken after a syscall and ppthread_log_clock should be the next expected clock
     if (*ppthread_log_clock >= checkpoint_clock) { 
@@ -3302,7 +3365,7 @@ static void instrument_syscall_ret(THREADID thread_id, CONTEXT* ctxt, SYSCALL_ST
 	if (ret_value == (ADDRINT) -1) {
 	    ret_errno = PIN_GetSyscallErrno(ctxt, std);
 	}
-	syscall_end(current_thread->sysnum, ret_value, ret_errno);
+	syscall_end(current_thread->sysnum, ret_value, ret_errno, ctxt);
     }
 
     if (current_thread->syscall_in_progress) {
@@ -5176,14 +5239,12 @@ void instrument_sbb (INS ins)
     int op2imm = INS_OperandIsImmediate(ins, 1);
 
     if((op1mem && op2reg)) {
-	fprintf (stderr, "[ERROR] should handle CF_FLAG for sbb mem/reg\n");
         REG reg = INS_OperandReg(ins, 1);
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
 	fw_slice_src_regmem (ins, reg, REG_Size(reg), IARG_MEMORYREAD_EA, INS_MemoryReadSize(ins), base_reg, index_reg);
         instrument_taint_add_reg2mem(ins, reg, OF_FLAG|SF_FLAG|ZF_FLAG|AF_FLAG|PF_FLAG|CF_FLAG, 0);
     } else if(op1reg && op2mem) {
-	fprintf (stderr, "[ERROR] should handle CF_FLAG for sbb reg/mem\n");
         REG reg = INS_OperandReg(ins, 0);
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 1);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 1);
@@ -6862,11 +6923,11 @@ void instruction_instrumentation(INS ins, void *v)
 	
 }
 
-static void instrument_print_inst_dest (INS ins) 
+static void instrument_ctrl_flow_track_inst_dest (INS ins) 
 { 
     uint32_t operand_count = INS_OperandCount (ins);
     if (INS_IsCall (ins)) {
-        fprintf (stderr, "instrument_print_inst_dest: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
+        fprintf (stderr, "instrument_ctrl_flow_track_inst_dest: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
         return;
     }
     //printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
@@ -6886,10 +6947,10 @@ static void instrument_print_inst_dest (INS ins)
                 } else { 
 		    //printf ("      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                     INS_InsertCall (ins, IPOINT_BEFORE, 
-                            AFUNPTR(print_inst_dest_reg),
+                            AFUNPTR(ctrl_flow_print_inst_dest_reg),
                             IARG_FAST_ANALYSIS_CALL,
                             IARG_INST_PTR,
-                            IARG_UINT32, reg, //I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're restored twice for certain bytes in one register
+                            IARG_UINT32, reg, //for control flow handling: I don't think we need translate_reg here, as it doesn't matter if we put both EAX and AL in the store set; value restore and taint should be correct even if they're restored twice for certain bytes in one register; 
                             IARG_REG_REFERENCE, reg,
                             IARG_END);
                 }
@@ -6899,7 +6960,7 @@ static void instrument_print_inst_dest (INS ins)
                 REG index_reg = INS_OperandMemoryIndexReg(ins, i);
                 SETUP_BASE_INDEX (base_reg, index_reg);
                 INS_InsertCall (ins, IPOINT_BEFORE, 
-                        AFUNPTR(print_inst_dest_mem), 
+                        AFUNPTR(ctrl_flow_print_inst_dest_mem), 
                         IARG_FAST_ANALYSIS_CALL,
                         IARG_INST_PTR, 
                         IARG_MEMORYWRITE_EA, 
@@ -6913,13 +6974,253 @@ static void instrument_print_inst_dest (INS ins)
                 //printf ("      --- implicit? %d, address generator\n", implicit);
                 assert (0);
             } else {
-                if (INS_IsRet (ins) || INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
-                    //what else operand can be????
+                //what else operand can be????
+                if (INS_IsRet (ins)) {
+                    //RET can be safely ignored as we always verify the control flow
+                } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
                 } else 
-		    fprintf (stderr, " instruemnt_print_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
+		    fprintf (stderr, " instrument_ctrl_flow_track_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
                 //assert (0);
             }
+        } 
+    }
+}
+
+
+static void instrument_track_patch_based_ckpt (INS ins) 
+{ 
+    printf ("instrument_track_patch_based_ckpt called\n"); fflush (stdout);
+    uint32_t operand_count = INS_OperandCount (ins);
+    if (INS_IsCall (ins)) {
+        fprintf (stderr, "instrument_track_patch_based_ckpt: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
+        return;
+    }
+    set<REG> readRegs;
+    set<REG> writtenRegs; 
+    //first check the number of read operands and written operands
+    //Note: sometimes the same operand is both read and written
+    for (uint32_t i = 0; i<operand_count; ++i) { 
+        if (INS_OperandWritten (ins, i)) { 
+            if (INS_OperandIsReg (ins, i)) {
+                REG reg = INS_OperandReg (ins, i);
+                assert (REG_valid(reg));
+                if (reg != LEVEL_BASE::REG_EFLAGS)
+                    writtenRegs.insert (reg);
+            }
+            else if (INS_OperandIsMemory (ins, i)) { 
+                //add base and index registers
+                REG base_reg = INS_OperandMemoryBaseReg(ins, i);
+                REG index_reg = INS_OperandMemoryIndexReg(ins, i);
+                if (REG_valid (base_reg)) readRegs.insert (base_reg);
+                if (REG_valid (index_reg)) readRegs.insert (index_reg);
+            } else if (INS_OperandIsBranchDisplacement (ins, i)) {
+                assert (0);
+            } else if (INS_OperandIsAddressGenerator(ins, i)) {
+                assert (0);
+            } else {
+                //what else operand can be????
+                if (INS_IsRet (ins)) {
+
+
+                    //TODO: I still want to make sure these instrucionts doesn't have more than 1 unknow operands
+                    
+                    
+                    //RET can be safely ignored as we always verify the control flow
+                } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
+                } else 
+                    fprintf (stderr, " instrument_track_patch_based_ckpt: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
+                //assert (0);
+            }
+        } 
+        if (INS_OperandRead (ins, i)) {
+            if (INS_OperandIsReg (ins, i)) {
+                if (INS_OperandReg(ins, i) != LEVEL_BASE::REG_EFLAGS)
+                    readRegs.insert (INS_OperandReg (ins, i));
+            } else if (INS_OperandIsMemory (ins, i)) {
+                //add base and index registers
+                REG base_reg = INS_OperandMemoryBaseReg(ins, i);
+                REG index_reg = INS_OperandMemoryIndexReg(ins, i);
+                if (REG_valid (base_reg)) readRegs.insert (base_reg);
+                if (REG_valid (index_reg)) readRegs.insert (index_reg);
+            } else if (INS_OperandIsImmediate (ins, i)) {
+                //do nothing
+            } else if (INS_OperandIsAddressGenerator (ins, i)) {
+                REG base_reg = INS_OperandMemoryBaseReg(ins, i);
+                REG index_reg = INS_OperandMemoryIndexReg(ins, i);
+                if (REG_valid (base_reg)) readRegs.insert (base_reg);
+                if (REG_valid (index_reg)) readRegs.insert (index_reg);
+            } else { 
+                if (INS_IsRet (ins)) {
+
+
+                    //TODO: I still want to make sure these instrucionts doesn't have more than 1 unknow operands
+                    
+                    
+                    //RET can be safely ignored as we always verify the control flow
+                } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
+                } else if (INS_OperandIsBranchDisplacement (ins, i)) {
+                } else if (INS_OperandIsFixedMemop (ins, i)) {
+                    fprintf (stderr, "Fixed memoop at pos %d for %s\n", i, INS_Disassemble(ins).c_str());
+                } else if (INS_OperandIsAddressGenerator(ins, i)) {
+                    assert (0);
+                } else {
+		    fprintf (stderr, "implicit?%d unkonwn operand at pos %d?????? %s\n", INS_OperandIsImmediate (ins, i), i, INS_Disassemble(ins).c_str());
+                    //assert (0);
+                }
+            }
         }
+
+    }
+
+    //now instrument all regs 
+    vector<REG> regs(readRegs.begin(), readRegs.end());
+    int read = 1;
+            for (int i = 0; i < 2; ++i) { 
+            switch (regs.size()) {
+                case 1: 
+                    INS_InsertPredicatedCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR (log_inst_reg1),
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_UINT32, read, 
+                            IARG_UINT32, regs[0], 
+                            IARG_UINT32, get_reg_off(regs[0]),
+                            IARG_UINT32, REG_Size(regs[0]), 
+                            IARG_REG_REFERENCE, regs[0],
+                            IARG_END);
+                    break;
+                case 2:
+                    INS_InsertPredicatedCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR (log_inst_reg2),
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_UINT32, read, 
+                            IARG_UINT32, regs[0], 
+                            IARG_UINT32, get_reg_off(regs[0]),
+                            IARG_UINT32, REG_Size(regs[0]), 
+                            IARG_REG_REFERENCE, regs[0],
+                            IARG_UINT32, regs[1],
+                            IARG_UINT32, get_reg_off(regs[1]),
+                            IARG_UINT32, REG_Size(regs[1]), 
+                            IARG_REG_REFERENCE, regs[1],
+                            IARG_END);
+                    break;
+                case 3:
+                    INS_InsertPredicatedCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR (log_inst_reg3),
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_UINT32, read, 
+                            IARG_UINT32, regs[0],
+                            IARG_UINT32, get_reg_off(regs[0]),
+                            IARG_UINT32, REG_Size(regs[0]), 
+                            IARG_REG_REFERENCE, regs[0],
+                            IARG_UINT32, regs[1],
+                            IARG_UINT32, get_reg_off(regs[1]),
+                            IARG_UINT32, REG_Size(regs[1]), 
+                            IARG_REG_REFERENCE, regs[1],
+                            IARG_UINT32, regs[2],
+                            IARG_UINT32, get_reg_off(regs[2]),
+                            IARG_UINT32, REG_Size(regs[2]), 
+                            IARG_REG_REFERENCE, regs[2],
+                            IARG_END);
+                    break;
+                case 4:
+                    INS_InsertPredicatedCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR (log_inst_reg4),
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_UINT32, read, 
+                            IARG_UINT32, regs[0],
+                            IARG_UINT32, get_reg_off(regs[0]),
+                            IARG_UINT32, REG_Size(regs[0]), 
+                            IARG_REG_REFERENCE, regs[0],
+                            IARG_UINT32, regs[1],
+                            IARG_UINT32, get_reg_off(regs[1]),
+                            IARG_UINT32, REG_Size(regs[1]), 
+                            IARG_REG_REFERENCE, regs[1],
+                            IARG_UINT32, regs[2],
+                            IARG_UINT32, get_reg_off(regs[2]),
+                            IARG_UINT32, REG_Size(regs[2]), 
+                            IARG_REG_REFERENCE, regs[2],
+                            IARG_UINT32, regs[3],
+                            IARG_UINT32, get_reg_off(regs[3]),
+                            IARG_UINT32, REG_Size(regs[3]), 
+                            IARG_REG_REFERENCE, regs[3],
+                            IARG_END);
+                    break;
+                case 5:
+                    INS_InsertPredicatedCall (ins, IPOINT_BEFORE, 
+                            AFUNPTR (log_inst_reg5),
+                            IARG_FAST_ANALYSIS_CALL, 
+                            IARG_INST_PTR,
+                            IARG_UINT32, read, 
+                            IARG_UINT32, regs[0],
+                            IARG_UINT32, get_reg_off(regs[0]),
+                            IARG_UINT32, REG_Size(regs[0]), 
+                            IARG_REG_REFERENCE, regs[0],
+                            IARG_UINT32, regs[1],
+                            IARG_UINT32, get_reg_off(regs[1]),
+                            IARG_UINT32, REG_Size(regs[1]), 
+                            IARG_REG_REFERENCE, regs[1],
+                            IARG_UINT32, regs[2],
+                            IARG_UINT32, get_reg_off(regs[2]),
+                            IARG_UINT32, REG_Size(regs[2]), 
+                            IARG_REG_REFERENCE, regs[2],
+                            IARG_UINT32, regs[3],
+                            IARG_UINT32, get_reg_off(regs[3]),
+                            IARG_UINT32, REG_Size(regs[3]), 
+                            IARG_REG_REFERENCE, regs[3],
+                            IARG_UINT32, regs[4],
+                            IARG_UINT32, get_reg_off(regs[4]),
+                            IARG_UINT32, REG_Size(regs[4]), 
+                            IARG_REG_REFERENCE, regs[4],
+                            IARG_END);
+                    break;
+                default:
+                    if (regs.size() == 0 && (INS_IsStackRead (ins) || INS_IsStackWrite (ins))) break;
+                    if (readRegs.size () + writtenRegs.size() == 0) {
+                        fprintf (stderr, "There is no reg operand for inst %s???\n", INS_Disassemble(ins).c_str());
+                    } else {
+                        if (regs.size() != 0)
+                            fprintf (stderr, "total of %d %s operands for %s\n", regs.size(), read?"read":"write", INS_Disassemble(ins).c_str());
+                    }
+            }
+            regs.clear();
+            regs.insert (regs.begin(), writtenRegs.begin(), writtenRegs.end());
+            read = 0;
+        }
+    //instrument mem reads
+    //TODO: We might want to eliminate this extra instrumentation and do this work on each fw_slice_XXX function
+    //Of course this requires some work to modify 20 functions, but may be more efficient; and may be more accurate (or maybe not? depends on how you define accuracy) for REP instructions since fw_slice_strnig_XX capture the upper bound of all input memory while the below method only capture the actual input memory
+    if (INS_IsMemoryRead (ins)) {
+        if (INS_HasMemoryRead2 (ins)) { 
+            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
+                    (AFUNPTR)log_inst_src_mem2,
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_INST_PTR,
+                    IARG_MEMORYREAD_EA, 
+                    IARG_MEMORYREAD2_EA, 
+                    IARG_UINT32, INS_MemoryReadSize(ins),
+                    IARG_END);
+        } else { 
+            INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
+                    (AFUNPTR)log_inst_src_mem1,
+                    IARG_FAST_ANALYSIS_CALL,
+                    IARG_INST_PTR,
+                    IARG_MEMORYREAD_EA, 
+                    IARG_UINT32, INS_MemoryReadSize(ins),
+                    IARG_END);
+        }
+    }
+    if (INS_IsMemoryWrite (ins)) { 
+        INS_InsertPredicatedCall(ins, IPOINT_BEFORE,
+                (AFUNPTR)log_inst_dest_mem,
+                IARG_FAST_ANALYSIS_CALL,
+                IARG_INST_PTR,
+                IARG_MEMORYWRITE_EA, 
+                IARG_UINT32, INS_MemoryWriteSize(ins),
+                IARG_END);
     }
 }
 
@@ -6962,8 +7263,11 @@ void trace_instrumentation(TRACE trace, void* v)
 				IARG_END);
 	    }
 
+            if (function_level_tracking) 
+                instrument_track_patch_based_ckpt (ins);
+
             if (track_this_bb || current_thread->ctrl_flow_info.insts_instrumented->find(INS_Address(ins)) != current_thread->ctrl_flow_info.insts_instrumented->end()) {
-                instrument_print_inst_dest (ins);
+                instrument_ctrl_flow_track_inst_dest (ins);
 		track_this_bb = true;
             }
 
@@ -7351,6 +7655,26 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
    }
 }
 
+void init_patch_based_ckpt_info (struct thread_data* tdata)
+{
+    struct patch_based_ckpt_info* info = &tdata->patch_based_ckpt_info;
+    memset (info->read_reg, 0, sizeof(info->read_reg));
+    memset (info->read_reg_value, 0, sizeof(info->read_reg_value));
+    info->write_reg = new set<int>();
+    info->write_mem = new set<u_long>();
+    info->read_mem = new map<u_long, char>();
+    info->start = false;
+}
+
+void destroy_patch_based_ckpt_info (struct thread_data* tdata) 
+{
+    struct patch_based_ckpt_info* info = &tdata->patch_based_ckpt_info;
+    if (info->write_reg) delete info->write_reg;
+    if (info->write_mem) delete info->write_mem;
+    if (info->read_mem) delete info->read_mem;
+    info->start = false;
+}
+
 void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
 {
     PRINTX(stderr, "%d,%d:AfterForkInChild\n", PIN_GetPid(),get_record_pid());
@@ -7372,6 +7696,7 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     /* Some of these should be global, not per-thread */
     current_thread->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (current_thread);
+    init_patch_based_ckpt_info (current_thread);
 
     current_thread->syscall_cnt = 0; //not ceratin that this is right anymore.. 
 
@@ -7513,6 +7838,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
 
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (ptdata);
+    init_patch_based_ckpt_info (ptdata);
 
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
@@ -7769,6 +8095,7 @@ void thread_fini (THREADID threadid, const CONTEXT* ctxt, INT32 code, VOID* v)
     }
     if (tdata->slice_buffer) delete tdata->slice_buffer;
     destroy_ctrl_flow_info (tdata);
+    destroy_patch_based_ckpt_info (current_thread);
 }
 
 void PIN_FAST_ANALYSIS_CALL print_function_name (char* name)
@@ -8155,6 +8482,7 @@ int main(int argc, char** argv)
 
     // Read in command line args
     print_all_opened_files = KnobRecordOpenedFiles.Value();
+    function_level_tracking = KnobFunctionLevel.Value();
     filter_read_filename = KnobFilterReadFile.Value().c_str();
     segment_length = KnobSegmentLength.Value();
     splice_output = KnobSpliceOutput.Value();

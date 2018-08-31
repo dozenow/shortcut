@@ -28,6 +28,7 @@ parser.add_argument("-outputdir", help = "the output dir of all output files.")
 parser.add_argument("-compile_only", help = "needs an input file name. Skip the slice generation phase and directly compiles assemble to .so")
 parser.add_argument("-compile_all", help = "Skip the slice generation phase and directly compiles all assemble files to .so", action="store_true")
 parser.add_argument("-no_ckpt", help = "Skip the ckpt phase", action="store_true")
+parser.add_argument("-function_level", help = "Only slice a region bounded by two sys_jumpstart_runtime.", action="store_true")
 args = parser.parse_args()
 
 rec_dir = args.rec_group_id
@@ -69,24 +70,24 @@ if len(input_asm_file) is 0:
 
         outfd = open(outputdir+"/pinout", "w")
         checkfilename = outputdir+"/checks"
+        commands = [""]
         if (taint_filter > 0):
         	if (taint_syscall):
-	        	p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-s", 
-		        	str(taint_syscall), "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir], 
-			        stdout=outfd)
+	        	commands = ["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-s", 
+                            str(taint_syscall), "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir]
         	elif (taint_byterange):
-	        	p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-b", 
-		        	taint_byterange, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir], 
-			        stdout=outfd)
+	        	commands = ["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-b", 
+		        	taint_byterange, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir]
         	elif (taint_byterange_file):
-	        	p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-rf", 
-		        	taint_byterange_file, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir], 
-			        stdout=outfd)
+	        	commands = ["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-rf", 
+		        	taint_byterange_file, "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir]
         else:
-            p = Popen(["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", 
-                       "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir], 
-                      stdout=outfd)
-        print ("./runpintool" +  " /replay_logdb/rec_" + str(rec_dir) + " ../dift/obj-ia32/linkage_offset.so" +  " -i -s " + str(taint_syscall) +  " -recheck_group " + str(rec_dir) +  " -ckpt_clock " +  str(ckpt_at) +  " -chk " + checkfilename +  " -group_dir "  + outputdir)
+                commands = ["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", 
+                       "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir]
+        if (args.function_level):
+            commands.append ("-fl")
+        p = Popen (commands, stdout=outfd)
+        print (commands)
         p.wait()
         outfd.close()
 

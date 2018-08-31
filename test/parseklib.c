@@ -1205,7 +1205,7 @@ static __attribute__((const)) char *syscall_name(int nr) {
 		//case 219: ret = "madvise1"; break;
 		case 220: ret = "getdents64"; break;
 		case 221: ret = "fcntl64"; break;
-/* 223 is unused */
+		case 222: ret = "jumpstart_runtime"; break;
 		case 224: ret = "gettid"; break;
 		case 225: ret = "readahead"; break;
 		case 226: ret = "setxattr"; break;

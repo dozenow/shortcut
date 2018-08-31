@@ -401,6 +401,15 @@ struct lll_lock_info_cache {
     ADDRINT type;
 };
 
+struct patch_based_ckpt_info  {
+    bool start;
+    bool read_reg[NUM_REGS*REG_SIZE];
+    char read_reg_value[NUM_REGS*REG_SIZE];
+    set<int>* write_reg;
+    set<u_long> *write_mem;
+    map<u_long, char> *read_mem;   
+};
+
 // Per-thread data structure
 // Note: if you add more fields, remeber to add checkpoints to ctrl_flow_info if necessary
 struct thread_data {
@@ -461,6 +470,7 @@ struct thread_data {
     struct thread_data*      prev;
     struct recheck_handle* recheck_handle;
     struct ctrl_flow_info ctrl_flow_info;
+    struct patch_based_ckpt_info patch_based_ckpt_info;
 
     queue<string>* slice_buffer;  //generated slice is put on this buffer first:::: deprecated
     FILE* slice_output_file;        //and then written to this file

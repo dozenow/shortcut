@@ -11,7 +11,7 @@ TAINTS_OBJ=$(OBJDIR)
 TAINTS_INTERFACE=taint_interface
 REPLAY_LIB += $(SDEV)/libutil.a 
 TOOL_LIBS += $(SDEV)/libutil.a
-TOOL_CXXFLAGS += -I$(SDEV) -O3
+TOOL_CXXFLAGS += -I$(SDEV)
 #TOOL_CXXFLAGS += -I$(SDEV) -DDEBUGTRACE=0x201e42 -DDEBUGTRACE_OUTPUT=0xcc1f
 #TOOL_CXXFLAGS += -I$(SDEV) -DDEBUGTRACE=0x201e42 -DDEBUGTRACE_OUTPUT=0x0000
 GLIB_INCLUDES=-I/usr/include/glib-2.0 -I/usr/lib/i386-linux-gnu/glib-2.0/include
@@ -93,31 +93,31 @@ LIB_ROOTS :=
 #
 ##############################################################
 $(OBJDIR)xray_token$(OBJ_SUFFIX): xray_token.h xray_token.c
-	$(APP_CC) -Wall -Werror -O2 -c -o $(OBJDIR)xray_token$(OBJ_SUFFIX) $(GLIB_INCLUDES) xray_token.c
+	$(APP_CC) $(TOOL_CXXFLAGS) -Wall -Werror  -c -o $(OBJDIR)xray_token$(OBJ_SUFFIX) $(GLIB_INCLUDES) xray_token.c
 
 $(OBJDIR)maputil$(OBJ_SUFFIX): maputil.h maputil.c
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(OBJDIR)maputil$(OBJ_SUFFIX) $(GLIB_INCLUDES) maputil.c
+	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror  -c -o $(OBJDIR)maputil$(OBJ_SUFFIX) $(GLIB_INCLUDES) maputil.c
 
 $(OBJDIR)postprocess_linkage: xray_slab_alloc.h postprocess_linkage.cpp $(OBJDIR)xray_token$(OBJ_SUFFIX) maputil.c maputil.h
-	$(CXX) -std=c++0x $(TOOL_CXXFLAGS) -Wall -Werror -O2 -o $(OBJDIR)postprocess_linkage $(GLIB_INCLUDES) $(OBJDIR)xray_token$(OBJ_SUFFIX) postprocess_linkage.cpp maputil.c -lglib-2.0 -lrt
+	$(CXX) -std=c++0x $(TOOL_CXXFLAGS) -Wall -Werror  -o $(OBJDIR)postprocess_linkage $(GLIB_INCLUDES) $(OBJDIR)xray_token$(OBJ_SUFFIX) postprocess_linkage.cpp maputil.c -lglib-2.0 -lrt
 
 $(OBJDIR)parse_outputs: xray_slab_alloc.h parse_outputs.c $(OBJDIR)xray_token$(OBJ_SUFFIX) maputil.c maputil.h
-	$(APP_CC) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -o $(OBJDIR)parse_outputs $(GLIB_INCLUDES) $(OBJDIR)xray_token$(OBJ_SUFFIX) parse_outputs.c maputil.c -lglib-2.0 -lrt
+	$(APP_CC) $(TOOL_CXXFLAGS) -Wall -Werror  -o $(OBJDIR)parse_outputs $(GLIB_INCLUDES) $(OBJDIR)xray_token$(OBJ_SUFFIX) parse_outputs.c maputil.c -lglib-2.0 -lrt
 
 $(OBJDIR)showall: showall.c maputil.c maputil.h
-	$(APP_CC) -Wall -Werror -o $(OBJDIR)showall $(GLIB_INCLUDES) showall.c maputil.c -lglib-2.0
+	$(APP_CC) $(TOOL_CXXFLAGS) -Wall -Werror -o $(OBJDIR)showall $(GLIB_INCLUDES) showall.c maputil.c -lglib-2.0
 
 $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX): xray_slab_alloc.h xray_slab_alloc.c
-	$(APP_CC) -Wall -Werror -O2 -c -o $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX) xray_slab_alloc.c
+	$(APP_CC) $(TOOL_CXXFLAGS)  -Wall -Werror  -c -o $(OBJDIR)xray_slab_alloc$(OBJ_SUFFIX) xray_slab_alloc.c
 
 $(OBJDIR)taint_byte_creation$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_byte_creation.c $(TAINTS_INTERFACE)/taint_creation.h taint_nw.h
-	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_byte_creation$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_byte_creation.c
+	$(CXX) $(TOOL_CXXFLAGS) -Wall -Werror  -c -o $(TAINTS_OBJ)taint_byte_creation$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_byte_creation.c
 
 $(OBJDIR)mmap_regions$(OBJ_SUFFIX): mmap_regions.h mmap_regions.cpp linkage_common.h
-	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror -O2 -c -o $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) $(GLIB_INCLUDES) mmap_regions.cpp 
+	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror  -c -o $(TAINTS_OBJ)mmap_regions$(OBJ_SUFFIX) $(GLIB_INCLUDES) mmap_regions.cpp 
 
 $(OBJDIR)taint_full_interface$(OBJ_SUFFIX): $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_interface.h taint_nw.h mmap_regions.h mmap_regions.cpp linkage_common.h
-	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror -O2 -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
+	$(CXX) $(TOOL_CXXFLAGS) -std=c++0x -Wall -Werror  -c -o $(TAINTS_OBJ)taint_full_interface$(OBJ_SUFFIX) $(GLIB_INCLUDES) $(TAINTS_INTERFACE)/taint_full_interface.c 
 
 $(OBJDIR)linkage_new2$(OBJ_SUFFIX): linkage_new2.cpp xray_slab_alloc.c xray_slab_alloc.h mmap_regions.h mmap_regions.cpp $(TAINTS_INTERFACE)/taint_interface.h $(TAINTS_INTERFACE)/taint_full_interface.c $(TAINTS_INTERFACE)/taint_byte_creation.c taint_nw.h linkage_common.h
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<

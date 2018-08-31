@@ -100,8 +100,8 @@ extern struct thread_data* current_thread;
 
 #define BASE_INDEX_ARGS int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, int index_reg, uint32_t index_reg_size, uint32_t index_reg_value, uint32_t index_reg_u8
 #define BASE_INDEX_PARAMS base_reg,base_reg_size,base_reg_value,base_reg_u8,index_reg,index_reg_size,index_reg_value,index_reg_u8
-TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
-TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
+TAINTSIGN ctrl_flow_print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS);
+TAINTSIGN ctrl_flow_print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue);
   TAINTSIGN monitor_merge_point (ADDRINT ip, char* ins_str, BOOL taken, const CONTEXT* ctx);
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip, char* str, BOOL taken, const CONTEXT* ctx);
 
@@ -279,6 +279,14 @@ TAINTSIGN fw_slice_fpu_incstp (ADDRINT ip, char* ins_str, const CONTEXT* ctx);
 void add_shared_memory (u_long start, u_long size);
 int count_mem_taints();
 
+TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PIN_REGISTER* reg_value) ;
+TAINTSIGN log_inst_reg2 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2) ;
+TAINTSIGN log_inst_reg3 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3, PIN_REGISTER* reg_value3) ;
+TAINTSIGN log_inst_reg4 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3,int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4) ;
+TAINTSIGN log_inst_reg5 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4, int reg5, int regoff5, int size5, PIN_REGISTER* reg_value5) ;
+TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size);
+TAINTSIGN log_inst_src_mem2 (ADDRINT ip, u_long mem_loc1, u_long mem_loc2, uint32_t size);
+TAINTSIGN log_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size);
 #ifdef __cplusplus
 }
 #endif

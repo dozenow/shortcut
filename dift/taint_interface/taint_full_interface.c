@@ -149,6 +149,7 @@ extern int s;
 #endif
 extern int outfd;
 
+//xdou: I found a PIN api for doing the same thing...REG_StringShort
 static inline const char* regName (uint32_t reg_num, uint32_t reg_size)
 {
     switch (reg_num) {
@@ -2500,15 +2501,17 @@ static inline void print_extra_move_reg (ADDRINT ip, int reg, uint32_t reg_size,
 { 
     switch (reg_size) {
         case 1:
-            if (is_upper8)
+            if (is_upper8) {
+                assert (*((UINT8*)(regvalue->word)) == *(regvalue->byte + 1)); //not sure about the memory layout of the union; if failed, modify the log_inst_reg* funcitons
 		print_extra_move_reg_1 (ip, reg, *((UINT8*)(regvalue->word)), is_upper8);
-            else
+            } else
 		print_extra_move_reg_1 (ip, reg, *regvalue->byte, is_upper8);
             break;
         case 2:
             print_extra_move_reg_2 (ip, reg, *regvalue->word, tainted);
             break;
         case 4:
+            assert (regvalue->byte == (UINT8*)(regvalue->dword));//not sure about the memory layout of the union; if failed, modify the log_inst_reg* funcitons
 	    print_extra_move_reg_4 (ip, reg, *regvalue->dword, tainted);
             break;
         case 8:
@@ -3023,10 +3026,100 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
     assert (0);
 }
 
+TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PIN_REGISTER* reg_value) 
+{
+    printf ("log_inst_reg1 called\n"); fflush (stdout);
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
+    bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
+    char* read_reg_value = current_thread->patch_based_ckpt_info.read_reg_value;
+    char* val = (char*) reg_value;
+    val += (regoff%REG_SIZE);
+    if (read) {
+        for (int i = 0; i<size; ++i) {
+            if (write_reg->find (reg) != write_reg->end() || read_reg[regoff + i]) continue;
+            else {
+                read_reg[regoff + i] = true;
+                read_reg_value[regoff + i] = *(val + i);
+            }
+        }
+    } else {
+        for (int i = 0; i<size; ++i) { 
+            write_reg->insert (reg);
+        }
+    }
+}
+
+TAINTSIGN log_inst_reg2 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2) 
+{
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
+    log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
+}
+
+TAINTSIGN log_inst_reg3 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3, PIN_REGISTER* reg_value3) 
+{
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
+    log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
+    log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
+}
+
+TAINTSIGN log_inst_reg4 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3,int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4) 
+{
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
+    log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
+    log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
+    log_inst_reg1 (ip, read, reg4, regoff4, size4, reg_value4);
+}
+
+TAINTSIGN log_inst_reg5 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4, int reg5, int regoff5, int size5, PIN_REGISTER* reg_value5) 
+{
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
+    log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
+    log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
+    log_inst_reg1 (ip, read, reg4, regoff4, size4, reg_value4);
+    log_inst_reg1 (ip, read, reg5, regoff5, size5, reg_value5);
+}
+
+TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size)
+{
+    printf ("log_inst_src_mem1 called\n"); fflush (stdout);
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
+    map<u_long, char> *read_mem = current_thread->patch_based_ckpt_info.read_mem;
+
+    for (uint32_t i = 0; i<size; ++i) {
+        if (write_mem->find(mem_loc + i) == write_mem->end() && read_mem->find (mem_loc + i) == read_mem->end()) {
+            read_mem->insert (pair<u_long, char> (mem_loc + i, *((char*) (mem_loc + i))));
+        }
+    }
+}
+
+TAINTSIGN log_inst_src_mem2 (ADDRINT ip, u_long mem_loc1, u_long mem_loc2, uint32_t size)
+{
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    log_inst_src_mem1 (ip, mem_loc1, size);
+    log_inst_src_mem1 (ip, mem_loc2, size);
+}
+
+TAINTSIGN log_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size)
+{
+    printf ("log_inst_dest_mem1 called\n"); fflush (stdout);
+    if (current_thread->patch_based_ckpt_info.start == false) return;
+    set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
+    for (uint32_t i = 0; i<size; ++i) {
+        write_mem->insert (mem_loc + i);
+    }
+}
+
 //This function should always be called before the actual taint function
-TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
+TAINTSIGN ctrl_flow_print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_INDEX_ARGS) 
 { 
   if (current_thread->ctrl_flow_info.is_in_original_branch || current_thread->ctrl_flow_info.is_in_diverged_branch) {
+      //used by the control flow handling 
         CFDEBUG ("[CONTROL_FLOW_MEM] ip %x mem(0x%lx,%u), index %lu_%llu, one bye value %u\n", ip, mem_loc, size, current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index, *((uint8_t*) mem_loc));
 
         int base_tainted = (base_reg_size>0)?is_reg_tainted (base_reg, base_reg_size, base_reg_u8):0;
@@ -3057,20 +3150,19 @@ TAINTSIGN print_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size, BASE_I
             }
             offset += count;
         }
-    }
+    } 
 }
 
-TAINTSIGN print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
+TAINTSIGN ctrl_flow_print_inst_dest_reg (ADDRINT ip, int reg, PIN_REGISTER* regvalue) 
 {
-    //we don't need save the original value and taint for regs since we checkpoint all of them
     if (current_thread->ctrl_flow_info.is_in_original_branch) {
+        //we don't need save the original value and taint for regs since we checkpoint all of them
 	CFDEBUG ("[CONTROL_FLOW_REG] ip %x reg %d @ %lu_%llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index, *regvalue->dword);
 	current_thread->ctrl_flow_info.store_set_reg->insert (reg);
-    }
-    if (current_thread->ctrl_flow_info.is_in_diverged_branch) {
+    } else if (current_thread->ctrl_flow_info.is_in_diverged_branch) {
 	CFDEBUG ("[CONTROL_FLOW_REG] ip %x reg %d @ %lu_%llu, value(%x)\n", ip, reg, current_thread->ctrl_flow_info.clock, current_thread->ctrl_flow_info.index, *regvalue->dword);
 	current_thread->ctrl_flow_info.alt_branch_store_set_reg->at(current_thread->ctrl_flow_info.alt_path_index).insert (reg);
-    }
+    } 
 }
 
 static inline bool is_path_matching (queue <struct ctrl_flow_branch_info>* expected, deque<struct ctrl_flow_branch_info> *tracked) 
@@ -3986,6 +4078,8 @@ TAINTSIGN fw_slice_memreg (ADDRINT ip, char* ins_str, int reg, uint32_t reg_size
 	if (!still_tainted && (reg_tainted || mem_tainted)) {
 	    print_abs_address (ip, ins_str, mem_loc);
 	} else {
+            if (!strncmp (ins_str, "sbb", 3)) 
+                fprintf (stderr, "[ERROR] should handle CF_FLAG for sbb mem/reg\n");
 	    OUTPUT_SLICE (ip, "%s", ins_str);
 	}
 	OUTPUT_SLICE_INFO ("#src_memreg[%lx:%d:%u,%d:%d:%u] #mem_value %u, reg_value %s", mem_loc, mem_tainted, mem_size, reg, reg_tainted, reg_size, get_mem_value32 (mem_loc, mem_size), print_regval(tmpbuf, reg_value, reg_size));
