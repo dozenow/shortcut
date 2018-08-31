@@ -28,7 +28,7 @@ int main()
             char tmp[32];
             struct stat stat;
             syscall (222);
-            int x = processID;
+            int x = processID - 1;
             syscall (222);
             int y = 0;
             //itoa (test,tmp, 2);

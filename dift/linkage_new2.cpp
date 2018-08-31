@@ -2687,6 +2687,48 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data)
 {
 }
 
+//LINUX kernel
+/*
+struct pt_regs {
+    unsigned long bx;   0
+    unsigned long cx;   1
+    unsigned long dx;   2
+    unsigned long si;   3
+    unsigned long di;   4
+    unsigned long bp;   5
+    unsigned long ax;   6
+    unsigned long ds;   7
+    unsigned long es;   8
+    unsigned long fs;   9
+    unsigned long gs;   10
+    unsigned long orig_ax;  11
+    unsigned long ip;   12
+    unsigned long cs;   13
+    unsigned long flags;14
+    unsigned long sp;   15
+    unsigned long ss;   16
+};
+*/
+
+static inline int get_reg_ckpt_index (REG reg)
+{
+    switch (reg) { 
+        case LEVEL_BASE::REG_EBX: return 0;
+        case LEVEL_BASE::REG_ECX: return 1;
+        case LEVEL_BASE::REG_EDX: return 2;
+        case LEVEL_BASE::REG_ESI: return 3;
+        case LEVEL_BASE::REG_EDI: return 4;
+        case LEVEL_BASE::REG_EBP: return 5;
+        case LEVEL_BASE::REG_EAX: return 6;
+        case LEVEL_BASE::REG_EIP: return 12;
+        case LEVEL_BASE::REG_EFLAGS: return 14;
+        case LEVEL_BASE::REG_ESP: return 15;
+        default:
+            assert (0);
+    }
+    return -1;
+}
+
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
     if (function_level_tracking && current_thread->patch_based_ckpt_info.start == false) {
         printf ("jumpstart_runtime slice begins.\n");
@@ -2702,21 +2744,46 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         map<u_long, char>* read_mem = current_thread->patch_based_ckpt_info.read_mem;
         set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
         //checkpoint 
+        char ckpt_filename[256];
+        snprintf (ckpt_filename, 256, "%s/pckpt", group_directory);
+        int fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        assert (fd > 0);
         //regs
         fprintf (stderr, "===== checkpoint reg ====\n");
+        write_reg->insert (LEVEL_BASE::REG_ESP);
+        write_reg->insert (LEVEL_BASE::REG_EFLAGS);
         for (set<int>::iterator iter = write_reg->begin(); iter != write_reg->end(); ++iter) { 
-            if (REG_Size ((REG)*iter) <=4) {
+            if (REG_Size ((REG)*iter) == 4) {
                 PIN_REGISTER value;
                 PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
                 fprintf (stderr, "%s: %u\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value));
+                int index = get_reg_ckpt_index ((REG)(*iter)); 
+                int ret = write (fd, (char*) &index, sizeof(int));
+                assert (ret == sizeof(int));
+                ret = write (fd, (char*) ((unsigned int*) &value), sizeof(unsigned int));
+                assert (ret == sizeof(unsigned int));
             } else {
-                fprintf (stderr, "%s: skip\n", REG_StringShort ((REG)*iter).c_str());
+                fprintf (stderr, "%s: -----skip-----\n", REG_StringShort ((REG)*iter).c_str());
             }
         }
+        //mark the end of checkpoint regs
+        int tmp  = -1;
+        int ret = write (fd, (char*) &tmp, sizeof (tmp)); 
+        assert (ret == sizeof(tmp));
+        ret = write (fd, (char*) &tmp, sizeof (unsigned int));
+        assert (ret == sizeof (unsigned int));
+
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             fprintf (stderr, "0x%lx: %u\n", *iter, (unsigned int)(*(unsigned char*)(*iter)));
+            u_long addr = *iter;
+            ret = write (fd, (char*) &addr, sizeof (unsigned long));
+            assert (ret == sizeof(unsigned long));
+            ret = write (fd, (char*) (*iter), sizeof (char));
+            assert (ret == sizeof (char));
         }
+        close (fd);
+
         //verifications
         fprintf (stderr, "===== verification reg ==== \n");
         for (unsigned int i = 0; i < sizeof(read_reg)/sizeof(bool); ++i) { 
