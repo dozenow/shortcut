@@ -7,10 +7,17 @@
 #include <sys/mman.h>
 #include <string.h>
 
-int main()
+int main(int argc, char* argv[], char* envp[])
 {
 	pid_t processID, processParentID;
 	int i = 0, count = 0;
+        /*for (i = 0; argv[i] != NULL; ++i) 
+            printf ("len %d: %s\n", strlen (argv[i]), argv[i]);
+        for (i = 0; envp[i] != NULL; i++)
+        {    
+            printf("len %d: %s\n", strlen (envp[i]), envp[i]);
+        }*/
+        i = 0;
 
 	//fork();
 
@@ -27,9 +34,11 @@ int main()
             }*/
             char tmp[32];
             struct stat stat;
-            syscall (222);
+            asm ("push eax");
+            asm ("mov eax, 222");
+            asm ("int 0x80");
+            asm ("pop eax");
             int x = processID - 1;
-            syscall (222);
             int y = 0;
             //itoa (test,tmp, 2);
             if (processID%2) { 
@@ -39,10 +48,14 @@ int main()
                 x += 2;
                 y = 2;
             }
-
-
+            
 		//printf("The process id is %d addr is %p\n", processID, &processID);
             sprintf(tmp, "%d=%d-%d", processID, x, y);
+            asm ("push eax");
+            asm ("mov eax, 222");
+            asm ("int 0x80");
+            asm ("pop eax");
+
             //fstat (1, &stat);
             printf ("The process id is %s, int address %p, string address %p\n", tmp, &processID, tmp);
 	}

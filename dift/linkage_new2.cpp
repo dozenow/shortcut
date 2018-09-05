@@ -2683,10 +2683,6 @@ static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_l
     fprintf (stderr, "user-level mapped clock address %p, status %p, newly maped clock %p\n", user_clock_addr, status, ppthread_log_clock);
 }
 
-static inline void sys_jumpstart_runtime_start (struct thread_data* data) 
-{
-}
-
 //LINUX kernel
 /*
 struct pt_regs {
@@ -2729,13 +2725,19 @@ static inline int get_reg_ckpt_index (REG reg)
     return -1;
 }
 
+static inline void sys_jumpstart_runtime_start (struct thread_data* data, const CONTEXT* ctx) 
+{
+
+}
+
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
     if (function_level_tracking && current_thread->patch_based_ckpt_info.start == false) {
         printf ("jumpstart_runtime slice begins.\n");
         fprintf (stderr, "# jumpstart_runtime slice begins.\n");
         fflush (stdout);
         current_thread->patch_based_ckpt_info.start = true;
-    } else if (function_level_tracking && current_thread->patch_based_ckpt_info.start == true) {
+    } 
+    else if (function_level_tracking && current_thread->patch_based_ckpt_info.start == true) {
         current_thread->patch_based_ckpt_info.start = false;
         //sum up the checkpoint and verification set for patch_based_ckpt
         bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
@@ -2756,12 +2758,14 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
             if (REG_Size ((REG)*iter) == 4) {
                 PIN_REGISTER value;
                 PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
-                fprintf (stderr, "%s: %u\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value));
+                fprintf (stderr, "%s: %u (%x)\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value), *((unsigned int*)&value));
                 int index = get_reg_ckpt_index ((REG)(*iter)); 
                 int ret = write (fd, (char*) &index, sizeof(int));
                 assert (ret == sizeof(int));
-                ret = write (fd, (char*) ((unsigned int*) &value), sizeof(unsigned int));
-                assert (ret == sizeof(unsigned int));
+                if (index == 15)//esp
+                    *((unsigned long*) &value) = *((unsigned long*) &value);
+                ret = write (fd, (char*) ((unsigned long*) &value), sizeof(unsigned long));
+                assert (ret == sizeof(unsigned long));
             } else {
                 fprintf (stderr, "%s: -----skip-----\n", REG_StringShort ((REG)*iter).c_str());
             }
@@ -2803,7 +2807,8 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
 }
 
 void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
-		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5,
+                   const CONTEXT* ctx)
 { 
     switch (sysnum) {
         case SYS_execve:
@@ -3086,7 +3091,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_prctl_start (tdata, (int) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2, (u_long) syscallarg3, (u_long) syscallarg4);
 	    break;
         case 222:
-            sys_jumpstart_runtime_start (tdata);
+            sys_jumpstart_runtime_start (tdata, ctx);
             break;
         case SYS_getcwd:
             fprintf (stderr, "[ERROR]getcwd is not handled buffer is %x\n", syscallarg0);
@@ -3334,7 +3339,9 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
 // called before every application system call
 static void instrument_syscall(ADDRINT syscall_num, 
 			ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
-			ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+			ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5,
+                        const CONTEXT* ctx
+                        )
 {   
     int sysnum = (int) syscall_num;
 
@@ -3387,7 +3394,7 @@ static void instrument_syscall(ADDRINT syscall_num,
     detect_slice_ordering (sysnum);
 	
     syscall_start(tdata, sysnum, syscallarg0, syscallarg1, syscallarg2, 
-		  syscallarg3, syscallarg4, syscallarg5);
+		  syscallarg3, syscallarg4, syscallarg5, ctx);
     
     tdata->app_syscall = syscall_num;
 }
@@ -6175,7 +6182,7 @@ static void instrument_ldmxcsr (INS ins)
             IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, const CONTEXT* ctx)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, ADDRINT value3, const CONTEXT* ctx)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -6213,7 +6220,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-        printf ("ecx value %u edx %u\n", value1, value2);
+        printf ("ecx value %u edx %u esp %u\n", value1, value2, value3);
         printf ("jump_diverge index %lu\n", jump_count);
 
 	PIN_REGISTER value;
@@ -6267,6 +6274,7 @@ static void debug_print (INS ins)
 			   IARG_MEMORYREAD2_EA, 
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
@@ -6278,6 +6286,7 @@ static void debug_print (INS ins)
 			   IARG_MEMORYWRITE_EA,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6293,6 +6302,7 @@ static void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6304,6 +6314,7 @@ static void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	}
@@ -6316,6 +6327,7 @@ static void debug_print (INS ins)
 		       IARG_ADDRINT, 0,
 		       IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
 		       IARG_CONST_CONTEXT,
 		       IARG_END);
     }
@@ -6343,6 +6355,7 @@ void instruction_instrumentation(INS ins, void *v)
                 IARG_SYSARG_VALUE, 3,
                 IARG_SYSARG_VALUE, 4,
                 IARG_SYSARG_VALUE, 5,
+                IARG_CONST_CONTEXT,
                 IARG_END);
 	slice_handled = 1;
     } 

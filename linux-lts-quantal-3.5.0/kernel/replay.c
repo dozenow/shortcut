@@ -127,7 +127,9 @@ unsigned int replay_pause_tool = 0;
 //xdou
 //#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
-int check_startup_db = 1;
+int run_patched_ckpt = 0;
+int check_startup_db = 0;
+int pause_after_slice = 0;
 
 //#define KFREE(x) my_kfree(x, __LINE__)
 //#define KMALLOC(size, flags) my_kmalloc(size, flags, __LINE__)
@@ -8221,15 +8223,70 @@ asmlinkage long trace_exit (int error_code) {
 
 asmlinkage long 
 sys_jumpstart_runtime (void) {
-	if (current->record_thrd) { 
+	if (run_patched_ckpt) {
+		char* filename = "/replay_logdb/rec_245763/pckpt";
+		struct file* f = NULL;
+		int retval = 0;
+		mm_segment_t old_fs = get_fs();
+		char* buf = VMALLOC (1024*1024);
+		int reg_index = 0;
+		unsigned long reg_value;
+		unsigned long mem_loc;
+		unsigned char mem_value;
+		int len = 0;
+		int offset = 0;
+		struct pt_regs* regs = get_pt_regs (NULL);
+
+		printk ("Now loading the ckpt\n");
+
+		set_fs (KERNEL_DS);
+		f = filp_open (filename, O_RDONLY, 0);	
+		BUG_ON (f == NULL);
+		retval = vfs_read (f, buf, 1024*1024, &f->f_pos);
+		BUG_ON (retval >= 1024*1024);
+		printk ("------checkpoint regs ------\n");
+		len = retval;
+
+		reg_index = *((unsigned int*) buf);
+		offset += sizeof (unsigned int);
+		if (reg_index != -1)
+			set_tsk_thread_flag (current, TIF_IRET);
+		while (reg_index != -1) {
+			reg_value = *((unsigned long*) (buf + offset));
+			offset += sizeof (unsigned long);
+			//set the regs value
+			((unsigned long*) regs)[reg_index] = reg_value;
+			printk ("reg %d value %lu\n", reg_index, reg_value);
+			reg_index = *((int*) (buf + offset));
+			offset += sizeof (int);
+		} 
+		offset += sizeof (int);
+		printk ("------checkpoint mem------\n");
+		while (offset < len) { 
+			mem_loc = *((unsigned long*) (buf + offset));
+			offset += sizeof (unsigned long);
+			mem_value = *((unsigned char*)(buf + offset));
+			offset += sizeof (unsigned char);
+			printk ("mem 0x%lx value %u\n", mem_loc, (unsigned int) mem_value);
+			put_user (mem_value, (unsigned char*) mem_loc);
+		}
+		filp_close (f, NULL);
+
+		set_fs(old_fs);
+		VFREE (buf);
+
+		/*printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule();
+		printk("Pid %d woken up.\n", current->pid);*/
 	}
+
 	return 1;
 }
 
 SIMPLE_RECORD0(jumpstart_runtime, 222);
 SIMPLE_REPLAY(jumpstart_runtime, 222, void);
 asmlinkage long shim_jumpstart_runtime(void) SHIM_CALL(jumpstart_runtime, 222);
-
 
 asmlinkage long 
 shim_exit(int error_code)
@@ -16886,7 +16943,6 @@ int replayfs_diskalloc_debug_lock = 0;
 int replayfs_diskalloc_debug_alloc = 0;
 int replayfs_diskalloc_debug_alloc_min = 0;
 int slice_dump_vm = 0;
-int pause_after_slice = 0;
 
 int replayfs_debug_allocnum = -1;
 int replayfs_debug_page = -1;
@@ -17323,8 +17379,8 @@ static struct ctl_table replay_ctl[] = {
 		.proc_handler	= &proc_dointvec,
 	},
 	{
-		.procname	= "check_startup_db",
-		.data		= &check_startup_db,
+		.procname	= "run_patched_ckpt",
+		.data		= &run_patched_ckpt,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,

@@ -13,7 +13,7 @@ DEPS_DIR := .deps
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
         recheck_support.o process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff \
-	xdump pidinator memcmp
+	xdump pidinator memcmp parsepckpt
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -126,6 +126,9 @@ sync_files: sync_files.cpp streamserver.h parseklib.o streamnw.cpp streamnw.h
 
 recheck_support.o: recheck_support.c ../dift/recheck_log.h
 	gcc recheck_support.c -c -o recheck_support.o -Wall -lrt -lpthread
+
+parsepckpt: parsepckpt.c
+	gcc -o parsepckpt parsepckpt.c
 
 .PHONY: clean
 clean:

@@ -3028,7 +3028,7 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
 
 TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PIN_REGISTER* reg_value) 
 {
-    printf ("log_inst_reg1 called\n"); fflush (stdout);
+    printf ("log_inst_reg1 called for reg %d read %d\n", reg, read); fflush (stdout);
     if (current_thread->patch_based_ckpt_info.start == false) return;
     set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
     bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
