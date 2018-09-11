@@ -13,6 +13,7 @@ bool is_readonly (u_long addr, int len);
 bool is_readonly_mmap_region (u_long addr, int len, u_long& start, u_long& end);
 void handle_downprotected_pages (struct thread_data*);
 void handle_upprotected_pages (struct thread_data*);
+bool is_existed (u_long addr);
 
 
 #endif

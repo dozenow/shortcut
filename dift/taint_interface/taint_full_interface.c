@@ -3028,7 +3028,7 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
 
 TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PIN_REGISTER* reg_value) 
 {
-    printf ("log_inst_reg1 called for reg %d read %d\n", reg, read); fflush (stdout);
+    //printf ("log_inst_reg1 called for reg %d read %d\n", reg, read); fflush (stdout);
     if (current_thread->patch_based_ckpt_info.start == false) return;
     set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
     bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
@@ -3086,7 +3086,7 @@ TAINTSIGN log_inst_reg5 (ADDRINT ip, int read, int reg1, int regoff1, int size1,
 
 TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size)
 {
-    printf ("log_inst_src_mem1 called\n"); fflush (stdout);
+    //printf ("log_inst_src_mem1 called\n"); fflush (stdout);
     if (current_thread->patch_based_ckpt_info.start == false) return;
     set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
     map<u_long, char> *read_mem = current_thread->patch_based_ckpt_info.read_mem;
@@ -3107,10 +3107,13 @@ TAINTSIGN log_inst_src_mem2 (ADDRINT ip, u_long mem_loc1, u_long mem_loc2, uint3
 
 TAINTSIGN log_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size)
 {
-    printf ("log_inst_dest_mem1 called\n"); fflush (stdout);
+    //printf ("log_inst_dest_mem1 called\n"); fflush (stdout);
     if (current_thread->patch_based_ckpt_info.start == false) return;
     set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
     for (uint32_t i = 0; i<size; ++i) {
+        if (mem_loc + i == 0xb6456ba0) {
+            fprintf (stderr, "ip %x is modifying b6456ba0 pid %d\n", ip, getpid());
+        }
         write_mem->insert (mem_loc + i);
     }
 }

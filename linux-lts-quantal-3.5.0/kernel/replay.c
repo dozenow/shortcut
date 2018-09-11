@@ -130,6 +130,7 @@ unsigned int trace_timings = 0;
 int run_patched_ckpt = 0;
 int check_startup_db = 0;
 int pause_after_slice = 0;
+int slice_dump_vm = 0;
 
 //#define KFREE(x) my_kfree(x, __LINE__)
 //#define KMALLOC(size, flags) my_kmalloc(size, flags, __LINE__)
@@ -192,16 +193,22 @@ static inline void dump_vmas(void) {
 	       current->mm->env_end);
 
 	for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
-		
-			if (vma->vm_start == (u_long) current->mm->context.vdso) {
-				continue; // Don't save VDSO - will regenerate it on restore
-			}			
-			printk("\tstart %lx len %lx flags %lx shar %d pgoff %lx\n",
-			       vma->vm_start,
-			       vma->vm_end - vma->vm_start,			       
-			       (vma->vm_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
-			       ((vma->vm_flags&VM_MAYSHARE) ? MAP_SHARED : MAP_PRIVATE)|MAP_FIXED, 
-			       vma->vm_pgoff);
+		char buf[256];
+		char* s = NULL;
+
+		if (vma->vm_start == (u_long) current->mm->context.vdso) {
+			printk (" this is vdso.\n");
+		}			
+		printk("\tstart %lx end %lx len %lx flags %lx shar %d pgoff %lx ",
+				vma->vm_start,
+				vma->vm_end,
+				vma->vm_end - vma->vm_start,			       
+				(vma->vm_flags&(VM_READ|VM_WRITE|VM_EXEC)), 
+				((vma->vm_flags&VM_MAYSHARE) ? MAP_SHARED : MAP_PRIVATE)|MAP_FIXED, 
+				vma->vm_pgoff);
+		if (vma->vm_file)
+			s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+		printk ("      file %s\n", s) ;
 	}
 	up_read (&current->mm->mmap_sem);
 }
@@ -8221,14 +8228,16 @@ asmlinkage long trace_exit (int error_code) {
 }
 #endif
 
+#define PCKPT_MAX_BUF 1024*1024
 asmlinkage long 
 sys_jumpstart_runtime (void) {
+	dump_vmas();
 	if (run_patched_ckpt) {
-		char* filename = "/replay_logdb/rec_245763/pckpt";
+		char* filename = "/replay_logdb/pckpt";
 		struct file* f = NULL;
 		int retval = 0;
 		mm_segment_t old_fs = get_fs();
-		char* buf = VMALLOC (1024*1024);
+		char* buf = VMALLOC (PCKPT_MAX_BUF);
 		int reg_index = 0;
 		unsigned long reg_value;
 		unsigned long mem_loc;
@@ -8236,49 +8245,75 @@ sys_jumpstart_runtime (void) {
 		int len = 0;
 		int offset = 0;
 		struct pt_regs* regs = get_pt_regs (NULL);
+		int i = 0;
+		unsigned int regcount = 0;
 
 		printk ("Now loading the ckpt\n");
 
 		set_fs (KERNEL_DS);
 		f = filp_open (filename, O_RDONLY, 0);	
 		BUG_ON (f == NULL);
-		retval = vfs_read (f, buf, 1024*1024, &f->f_pos);
-		BUG_ON (retval >= 1024*1024);
+		retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
+		BUG_ON (retval != sizeof(unsigned int));
+		retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
+		BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
 		printk ("------checkpoint regs ------\n");
 		len = retval;
 
-		reg_index = *((unsigned int*) buf);
-		offset += sizeof (unsigned int);
-		if (reg_index != -1)
+		if (regcount != 0)
 			set_tsk_thread_flag (current, TIF_IRET);
-		while (reg_index != -1) {
-			reg_value = *((unsigned long*) (buf + offset));
-			offset += sizeof (unsigned long);
-			//set the regs value
-			((unsigned long*) regs)[reg_index] = reg_value;
-			printk ("reg %d value %lu\n", reg_index, reg_value);
+
+		for (i = 0; i<regcount; ++i) {
 			reg_index = *((int*) (buf + offset));
 			offset += sizeof (int);
-		} 
-		offset += sizeof (int);
-		printk ("------checkpoint mem------\n");
-		while (offset < len) { 
-			mem_loc = *((unsigned long*) (buf + offset));
+			reg_value = *((unsigned long*) (buf + offset));
 			offset += sizeof (unsigned long);
-			mem_value = *((unsigned char*)(buf + offset));
-			offset += sizeof (unsigned char);
-			printk ("mem 0x%lx value %u\n", mem_loc, (unsigned int) mem_value);
-			put_user (mem_value, (unsigned char*) mem_loc);
+			if (reg_index == -1) {
+				//printk ("skipped reg.\n");
+				continue;
+			}
+			//set the regs value
+			((unsigned long*) regs)[reg_index] = reg_value;
+			printk ("%d:%lu\n", reg_index, reg_value);
+		} 
+		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+		set_fs(old_fs);
+		dump_vmas();
+		printk ("------checkpoint mem------\n");
+		while (len != 0) {
+			offset = 0;
+			while (offset < len) { 
+				mem_loc = *((unsigned long*) (buf + offset));
+				offset += sizeof (unsigned long);
+				mem_value = *((unsigned char*)(buf + offset));
+				offset += sizeof (unsigned char);
+				//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+				put_user (mem_value, (unsigned char __user*) mem_loc);
+				if (mem_loc == 0xb6456ba0)
+					printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+			}
+			set_fs (KERNEL_DS);
+			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+			set_fs(old_fs);
 		}
+
 		filp_close (f, NULL);
 
-		set_fs(old_fs);
 		VFREE (buf);
 
-		/*printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
-		set_current_state(TASK_INTERRUPTIBLE);
-		schedule();
-		printk("Pid %d woken up.\n", current->pid);*/
+		if(slice_dump_vm) {
+			printk ("Dumping memory.\n");
+			dump_vmas_content();
+			printk ("Dumping memory done.\n");
+		}
+
+		if (pause_after_slice) {
+			printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule();
+			printk("Pid %d woken up.\n", current->pid);
+		}
+		printk ("pckpt is loaded.\n");
 	}
 
 	return 1;
@@ -16942,7 +16977,6 @@ int replayfs_diskalloc_debug_allocref = 0;
 int replayfs_diskalloc_debug_lock = 0;
 int replayfs_diskalloc_debug_alloc = 0;
 int replayfs_diskalloc_debug_alloc_min = 0;
-int slice_dump_vm = 0;
 
 int replayfs_debug_allocnum = -1;
 int replayfs_debug_page = -1;

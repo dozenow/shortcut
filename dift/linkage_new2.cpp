@@ -61,7 +61,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 61
+//#define EXTRA_DEBUG 61
 //#define EXTRA_DEBUG_STOP 12506617 
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
@@ -2732,7 +2732,7 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
     if (function_level_tracking && current_thread->patch_based_ckpt_info.start == false) {
-        printf ("jumpstart_runtime slice begins.\n");
+        printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "# jumpstart_runtime slice begins.\n");
         fflush (stdout);
         current_thread->patch_based_ckpt_info.start = true;
@@ -2754,32 +2754,39 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         fprintf (stderr, "===== checkpoint reg ====\n");
         write_reg->insert (LEVEL_BASE::REG_ESP);
         write_reg->insert (LEVEL_BASE::REG_EFLAGS);
+        
+        unsigned int reg_size = write_reg->size();
+        int ret = write (fd, (char*) &reg_size, sizeof (unsigned int));
+        assert (ret == sizeof (unsigned int)); 
+
         for (set<int>::iterator iter = write_reg->begin(); iter != write_reg->end(); ++iter) { 
             if (REG_Size ((REG)*iter) == 4) {
                 PIN_REGISTER value;
                 PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
                 fprintf (stderr, "%s: %u (%x)\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value), *((unsigned int*)&value));
                 int index = get_reg_ckpt_index ((REG)(*iter)); 
-                int ret = write (fd, (char*) &index, sizeof(int));
+                ret = write (fd, (char*) &index, sizeof(int));
                 assert (ret == sizeof(int));
-                if (index == 15)//esp
-                    *((unsigned long*) &value) = *((unsigned long*) &value);
                 ret = write (fd, (char*) ((unsigned long*) &value), sizeof(unsigned long));
                 assert (ret == sizeof(unsigned long));
             } else {
+                int tmp = -1;
+                ret = write (fd, (char*) &tmp, sizeof (int));
+                assert (ret == sizeof(int));
+                ret = write (fd, (char*) &tmp, sizeof (unsigned long));
+                assert (ret == sizeof (unsigned long));
                 fprintf (stderr, "%s: -----skip-----\n", REG_StringShort ((REG)*iter).c_str());
             }
         }
-        //mark the end of checkpoint regs
-        int tmp  = -1;
-        int ret = write (fd, (char*) &tmp, sizeof (tmp)); 
-        assert (ret == sizeof(tmp));
-        ret = write (fd, (char*) &tmp, sizeof (unsigned int));
-        assert (ret == sizeof (unsigned int));
 
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
-            fprintf (stderr, "0x%lx: %u\n", *iter, (unsigned int)(*(unsigned char*)(*iter)));
+            fprintf (stderr, "0x%lx", *iter);
+            if (is_existed (*iter) == false) {
+                fprintf (stderr, "unavailable.\n");
+                continue;
+            }
+            fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
             u_long addr = *iter;
             ret = write (fd, (char*) &addr, sizeof (unsigned long));
             assert (ret == sizeof(unsigned long));
@@ -7069,7 +7076,7 @@ static void instrument_ctrl_flow_track_inst_dest (INS ins)
 
 static void instrument_track_patch_based_ckpt (INS ins) 
 { 
-    printf ("instrument_track_patch_based_ckpt called\n"); fflush (stdout);
+    //printf ("instrument_track_patch_based_ckpt called\n"); fflush (stdout);
     uint32_t operand_count = INS_OperandCount (ins);
     if (INS_IsCall (ins)) {
         fprintf (stderr, "instrument_track_patch_based_ckpt: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
@@ -7084,7 +7091,9 @@ static void instrument_track_patch_based_ckpt (INS ins)
             if (INS_OperandIsReg (ins, i)) {
                 REG reg = INS_OperandReg (ins, i);
                 assert (REG_valid(reg));
-                if (reg != LEVEL_BASE::REG_EFLAGS)
+                if (REG_is_st (reg))
+                    fprintf (stderr, "instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
+                else if (reg != LEVEL_BASE::REG_EFLAGS)
                     writtenRegs.insert (reg);
             }
             else if (INS_OperandIsMemory (ins, i)) { 
@@ -7114,8 +7123,15 @@ static void instrument_track_patch_based_ckpt (INS ins)
         } 
         if (INS_OperandRead (ins, i)) {
             if (INS_OperandIsReg (ins, i)) {
-                if (INS_OperandReg(ins, i) != LEVEL_BASE::REG_EFLAGS)
-                    readRegs.insert (INS_OperandReg (ins, i));
+                REG reg = INS_OperandReg (ins, i);
+                if (!REG_valid (reg)) {
+                    fprintf (stderr, "instrument_track_patch_based_ckpt: Invalid read reg operand?? for inst %s\n", INS_Disassemble(ins).c_str());
+                } else if (REG_is_st (reg)) {
+                    fprintf (stderr, "instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
+                } else {
+                    if (reg != LEVEL_BASE::REG_EFLAGS)
+                        readRegs.insert (reg);
+                }
             } else if (INS_OperandIsMemory (ins, i)) {
                 //add base and index registers
                 REG base_reg = INS_OperandMemoryBaseReg(ins, i);

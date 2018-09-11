@@ -121,6 +121,11 @@ void change_mmap_region (u_long addr, int len, int prot)
 }
 
 #define is_readonly_now(i)  (ro_pages.test(i) && !max_rw_pages.test(i))
+bool is_existed (u_long addr)
+{
+    if (ro_pages.test(addr/PAGE_SIZE) || rw_pages.test(addr/PAGE_SIZE)) return true;
+    return false;
+}
 
 bool is_readonly (u_long addr, int len) 
 {

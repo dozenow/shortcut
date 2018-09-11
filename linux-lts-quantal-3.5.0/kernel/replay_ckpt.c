@@ -1798,7 +1798,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	return 0;
 }
 
-static void dump_vmas(void)
+void dump_vmas_content(void)
 {
 	mm_segment_t old_fs = get_fs();
 	struct vm_area_struct* vma;
@@ -1807,16 +1807,18 @@ static void dump_vmas(void)
 	int mmapinfo_fd = 0;
 	loff_t mmapinfo_ppos = 0;
 
+	set_fs (KERNEL_DS);
 	strcpy (mmapinfo_filename, "/tmp/slice_vma_info");
 
 	mmapinfo_fd = sys_open (mmapinfo_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
 	if (mmapinfo_fd < 0) {
-		printk ("dump_vmas: open of %s returns %d\n", mmapinfo_filename, mmapinfo_fd);
+		printk ("dump_vmas_content: open of %s returns %d\n", mmapinfo_filename, mmapinfo_fd);
 		set_fs(old_fs);
 		return;
 	}
 
 	mmapinfo_file = fget (mmapinfo_fd);
+	set_fs (old_fs);
 
 	down_read (&current->mm->mmap_sem);
 	for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
@@ -1831,7 +1833,7 @@ static void dump_vmas(void)
 		char* p;
 
 		if (vma->vm_start == (u_long) current->mm->context.vdso) {
-			printk ("dump_vmas: skip vdso %lx to %lx\n", vma->vm_start, vma->vm_end);
+			printk ("dump_vmas_content: skip vdso %lx to %lx\n", vma->vm_start, vma->vm_end);
 			continue; // Not in ckpt so do not save it
 		}
 		
@@ -1846,7 +1848,7 @@ static void dump_vmas(void)
 
 		copied = vfs_write(mmapinfo_file, buffer, strlen(buffer), &mmapinfo_ppos);
 		if (copied != strlen(buffer)) {
-			printk ("dump_vmas: tried to write vma info, got rc %ld\n", copied);
+			printk ("dump_vmas_content: tried to write vma info, got rc %ld\n", copied);
 		}
 
 		if (!strncmp(mmap_filename, "/dev/zero", 9)) {
@@ -1856,14 +1858,15 @@ static void dump_vmas(void)
 
 		if (((vma->vm_flags&VM_MAYSHARE) && 
 		     (strncmp(mmap_filename, WRITABLE_MMAPS,WRITABLE_MMAPS_LEN) && strncmp (mmap_filename, "/replay_cache/", 14)))) { //why is this in here...? 
-			printk ("dump_vmas: skipped file %s, range %lx to %lx, flags read %ld, shared %ld\n", mmap_filename, vma->vm_start, vma->vm_end, vma->vm_flags & VM_READ, vma->vm_flags & VM_MAYSHARE);
+			printk ("dump_vmas_content: skipped file %s, range %lx to %lx, flags read %ld, shared %ld\n", mmap_filename, vma->vm_start, vma->vm_end, vma->vm_flags & VM_READ, vma->vm_flags & VM_MAYSHARE);
 			continue;
 		}
 
 		sprintf (vma_filename, "/tmp/slice_vma.%lx", vma->vm_start);
+		set_fs (KERNEL_DS);
 		mmap_fd = sys_open (vma_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
 		if (mmap_fd < 0) {
-			printk ("dump_vmas: open of %s returns %d\n", mmap_filename, mmap_fd);
+			printk ("dump_vmas_content: open of %s returns %d\n", mmap_filename, mmap_fd);
 			up_read (&current->mm->mmap_sem);
 			fput (mmapinfo_file);	
 			sys_close (mmapinfo_fd);
@@ -1872,6 +1875,7 @@ static void dump_vmas(void)
 		}
 
 		mmap_file = fget (mmap_fd);
+		set_fs (old_fs);
 
 		if (!(vma->vm_flags&VM_READ)){
 			struct vm_area_struct *prev = NULL;
@@ -1881,7 +1885,7 @@ static void dump_vmas(void)
 			printk ("Pid %d change region to readable file %s, range %lx to %lx, flags read %ld, shared %ld\n", current->pid, mmap_filename, vma->vm_start, vma->vm_end, 
 				vma->vm_flags & VM_READ, vma->vm_flags & VM_MAYSHARE);
 			if (rc || prev != vma) { 
-				printk ("dump_vmas: mprotect_fixup fails %ld\n", rc);
+				printk ("dump_vmas_content: mprotect_fixup fails %ld\n", rc);
 				fput (mmap_file);
 				sys_close (mmap_fd);
 				up_read (&current->mm->mmap_sem);
@@ -1898,7 +1902,7 @@ static void dump_vmas(void)
 		for (i = 0; i < nr_pages; i++) {
 		    copied = vfs_write(mmap_file, p, PAGE_SIZE, &mmap_ppos);
 		    if (copied != PAGE_SIZE) {
-			printk ("dump_vmas: tried to write vma data, got rc %ld instead of %ld\n", copied, PAGE_SIZE);
+			printk ("dump_vmas_content: tried to write vma data, got rc %ld instead of %ld\n", copied, PAGE_SIZE);
 		    }
 		    p += PAGE_SIZE;
 		}
@@ -1971,7 +1975,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 		if (slice_dump_vm) {
 			if (is_ckpt_thread) {
-				dump_vmas ();
+				dump_vmas_content ();
 				if (current->go_live_thrd) {
 					wake_up_vm_dump_waiters (current->go_live_thrd);
 				}
