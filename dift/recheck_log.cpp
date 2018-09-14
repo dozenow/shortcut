@@ -21,7 +21,7 @@ struct recheck_handle {
     int recheckfd;
 };
 
-struct recheck_handle* open_recheck_log (int threadid, u_long record_grp, pid_t record_pid)
+struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
     char recheck_filename[512];

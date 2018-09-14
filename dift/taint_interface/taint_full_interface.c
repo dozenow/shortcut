@@ -3029,7 +3029,7 @@ static inline void ctrl_flow_rollback (struct ctrl_flow_checkpoint* ckpt, std::m
 TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PIN_REGISTER* reg_value) 
 {
     //printf ("log_inst_reg1 called for reg %d read %d\n", reg, read); fflush (stdout);
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
     bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
     char* read_reg_value = current_thread->patch_based_ckpt_info.read_reg_value;
@@ -3052,14 +3052,14 @@ TAINTSIGN log_inst_reg1 (ADDRINT ip, int read, int reg, int regoff, int size, PI
 
 TAINTSIGN log_inst_reg2 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2) 
 {
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
     log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
 }
 
 TAINTSIGN log_inst_reg3 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3, PIN_REGISTER* reg_value3) 
 {
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
     log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
     log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
@@ -3067,7 +3067,7 @@ TAINTSIGN log_inst_reg3 (ADDRINT ip, int read, int reg1, int regoff1, int size1,
 
 TAINTSIGN log_inst_reg4 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3,int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4) 
 {
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
     log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
     log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
@@ -3076,7 +3076,7 @@ TAINTSIGN log_inst_reg4 (ADDRINT ip, int read, int reg1, int regoff1, int size1,
 
 TAINTSIGN log_inst_reg5 (ADDRINT ip, int read, int reg1, int regoff1, int size1, PIN_REGISTER* reg_value1, int reg2, int regoff2, int size2, PIN_REGISTER* reg_value2, int reg3, int regoff3, int size3,  PIN_REGISTER* reg_value3, int reg4, int regoff4, int size4, PIN_REGISTER* reg_value4, int reg5, int regoff5, int size5, PIN_REGISTER* reg_value5) 
 {
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     log_inst_reg1 (ip, read, reg1, regoff1, size1, reg_value1);
     log_inst_reg1 (ip, read, reg2, regoff2, size2, reg_value2);
     log_inst_reg1 (ip, read, reg3, regoff3, size3, reg_value3);
@@ -3087,7 +3087,7 @@ TAINTSIGN log_inst_reg5 (ADDRINT ip, int read, int reg1, int regoff1, int size1,
 TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size)
 {
     //printf ("log_inst_src_mem1 called\n"); fflush (stdout);
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
     map<u_long, char> *read_mem = current_thread->patch_based_ckpt_info.read_mem;
 
@@ -3100,7 +3100,7 @@ TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size)
 
 TAINTSIGN log_inst_src_mem2 (ADDRINT ip, u_long mem_loc1, u_long mem_loc2, uint32_t size)
 {
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     log_inst_src_mem1 (ip, mem_loc1, size);
     log_inst_src_mem1 (ip, mem_loc2, size);
 }
@@ -3108,7 +3108,7 @@ TAINTSIGN log_inst_src_mem2 (ADDRINT ip, u_long mem_loc1, u_long mem_loc2, uint3
 TAINTSIGN log_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size)
 {
     //printf ("log_inst_dest_mem1 called\n"); fflush (stdout);
-    if (current_thread->patch_based_ckpt_info.start == false) return;
+    if (current_thread->start_tracking == false) return;
     set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
     for (uint32_t i = 0; i<size; ++i) {
         if (mem_loc + i == 0xb6456ba0) {

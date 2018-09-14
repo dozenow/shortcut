@@ -61,7 +61,7 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 61
+//#define EXTRA_DEBUG 0
 //#define EXTRA_DEBUG_STOP 12506617 
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
@@ -195,6 +195,7 @@ inline void output_slice (struct thread_data* tdata, const char* format, ...)
 //tdata: the previous thread that has to wait 
 static inline void slice_thread_wait (struct thread_data* tdata) 
 {
+    if (!current_thread->start_tracking) return;
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     //necessary: preserve registers before function calls
@@ -224,6 +225,7 @@ static inline void slice_thread_wait (struct thread_data* tdata)
 //tdata: the previous thread that has to wakes up the current thread (with record pid as wakeup_record_pid)
 static inline void slice_thread_wakeup (struct thread_data* tdata, int wakeup_record_pid) 
 {
+    if (!current_thread->start_tracking) return;
     OUTPUT_SLICE_THREAD (tdata, 0, "pushfd");
     OUTPUT_SLICE_INFO_THREAD (tdata, "slice ordering, clock %lu, prev pid %d, next pid %d", *ppthread_log_clock, tdata->record_pid, current_thread->record_pid);
     OUTPUT_SLICE_THREAD (tdata, 0, "push eax");
@@ -864,28 +866,30 @@ static inline void sys_read_stop(int rc)
 		read_fileno = FILENO_STDIN;
 	}
 
-	tci.rg_id = current_thread->rg_id;
-	tci.record_pid = current_thread->record_pid;
-	tci.syscall_cnt = current_thread->syscall_cnt;
-	tci.offset = 0;
-	tci.fileno = read_fileno;
-	tci.data = 0;
-	tci.type = TOK_READ;
+        if (current_thread->start_tracking) {
+            tci.rg_id = current_thread->rg_id;
+            tci.record_pid = current_thread->record_pid;
+            tci.syscall_cnt = current_thread->syscall_cnt;
+            tci.offset = 0;
+            tci.fileno = read_fileno;
+            tci.data = 0;
+            tci.type = TOK_READ;
 
-        LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
-                        rc, (unsigned long) ri->buf);
-        //fprintf(stderr, "inst_count = %lld\n", inst_count);
-	//clear mem taints: if we don't taint this input buffer, then the memory region should be untainted
-	if (rc > 0) clear_mem_taints ((u_long)ri->buf, rc);
-	tci.fileno = -1;
-	tci.type = TOK_READ_RET;
-	if (max_taint > 0) {
-	    create_taints_from_buffer_unfiltered (ri->buf, max_taint, &tci, tokens_fd);
-	    create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
-	} else {
-	    create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
-	    create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
-	}
+            LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
+                    rc, (unsigned long) ri->buf);
+            //fprintf(stderr, "inst_count = %lld\n", inst_count);
+            //clear mem taints: if we don't taint this input buffer, then the memory region should be untainted
+            if (rc > 0) clear_mem_taints ((u_long)ri->buf, rc);
+            tci.fileno = -1;
+            tci.type = TOK_READ_RET;
+            if (max_taint > 0) {
+                create_taints_from_buffer_unfiltered (ri->buf, max_taint, &tci, tokens_fd);
+                create_syscall_retval_taint_unfiltered (&tci, tokens_fd);
+            } else {
+                create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+                create_syscall_retval_taint (&tci, tokens_fd, channel_name_ret);
+            }
+        }
     }
 
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
@@ -920,17 +924,19 @@ static inline void sys_pread_stop(int rc)
             read_fileno = 0;
         }
 
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = read_fileno;
-        tci.data = 0;
-	tci.type = TOK_READ;
+        if (current_thread->start_tracking) {
+            tci.rg_id = current_thread->rg_id;
+            tci.record_pid = current_thread->record_pid;
+            tci.syscall_cnt = current_thread->syscall_cnt;
+            tci.offset = 0;
+            tci.fileno = read_fileno;
+            tci.data = 0;
+            tci.type = TOK_READ;
 
-        LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
-                        rc, (unsigned long) ri->buf);
-        create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+            LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
+                    rc, (unsigned long) ri->buf);
+            create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+        }
     }
 
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
@@ -940,6 +946,7 @@ static inline void sys_pread_stop(int rc)
 static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_long size) 
 {
     struct taint_creation_info tci;
+    if (current_thread->start_tracking == false) return;
     tci.type = TOK_SYSCALL_MEM;
     tci.rg_id = current_thread->rg_id;
     tci.record_pid = current_thread->record_pid;
@@ -955,6 +962,7 @@ static inline void taint_syscall_memory_out (const char* sysname, char* buf, u_l
 static inline void taint_syscall_retval (const char* sysname)
 {
     struct taint_creation_info tci;
+    if (current_thread->start_tracking == false) return;
     tci.type = TOK_RETVAL;
     tci.rg_id = current_thread->rg_id;
     tci.record_pid = current_thread->record_pid;
@@ -1125,29 +1133,31 @@ static inline void sys_clone_stop (int rc)
     struct clone_info* info = &current_thread->op.clone_info_cache;
     pid_t* ptid = info->ptid;
     pid_t* ctid = info->ctid;
-    if (info->flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
-	fprintf (stderr, "A pthread-like clone is called, flags %x, ptid %p, ctid %p, force to wait on the clock\n", info->flags, ptid, ctid);
-        //put a fake clone syscall here
-        //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
-        OUTPUT_SLICE (0, "pushfd");
-        OUTPUT_SLICE_INFO ("clone");
-        OUTPUT_SLICE (0, "push %p", ctid);
-        OUTPUT_SLICE_INFO ("clone ctid");
-        OUTPUT_SLICE (0, "push %p", ptid);
-        OUTPUT_SLICE_INFO ("clone ptid");
-        OUTPUT_SLICE (0, "push %d", info->child_pid);
-        OUTPUT_SLICE_INFO ("clone record pid");
-        OUTPUT_SLICE (0, "call recheck_fake_clone");
-        OUTPUT_SLICE_INFO ("clone record pid %d, child pid %d", current_thread->record_pid, rc);
-        OUTPUT_SLICE (0, "add esp, 12");
-        OUTPUT_SLICE_INFO ("record_pid %d", current_thread->record_pid);
-        OUTPUT_SLICE (0, "popfd");
-        OUTPUT_SLICE_INFO ("clone");
-        taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
-        taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));
-        taint_syscall_retval ("clone");
-    } else {
-	fprintf (stderr, "clone with flags %x called\n", info->flags);
+    if (current_thread->start_tracking) {
+        if (info->flags & (CLONE_VM|CLONE_THREAD|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
+            fprintf (stderr, "A pthread-like clone is called, flags %x, ptid %p, ctid %p, force to wait on the clock\n", info->flags, ptid, ctid);
+            //put a fake clone syscall here
+            //TODO: should I also call a fake clone at the beginning of the child thread to clear/set ctid value??
+            OUTPUT_SLICE (0, "pushfd");
+            OUTPUT_SLICE_INFO ("clone");
+            OUTPUT_SLICE (0, "push %p", ctid);
+            OUTPUT_SLICE_INFO ("clone ctid");
+            OUTPUT_SLICE (0, "push %p", ptid);
+            OUTPUT_SLICE_INFO ("clone ptid");
+            OUTPUT_SLICE (0, "push %d", info->child_pid);
+            OUTPUT_SLICE_INFO ("clone record pid");
+            OUTPUT_SLICE (0, "call recheck_fake_clone");
+            OUTPUT_SLICE_INFO ("clone record pid %d, child pid %d", current_thread->record_pid, rc);
+            OUTPUT_SLICE (0, "add esp, 12");
+            OUTPUT_SLICE_INFO ("record_pid %d", current_thread->record_pid);
+            OUTPUT_SLICE (0, "popfd");
+            OUTPUT_SLICE_INFO ("clone");
+            taint_syscall_memory_out ("clone", (char*)ptid, sizeof (pid_t));
+            taint_syscall_memory_out ("clone", (char*)ctid, sizeof (pid_t));
+            taint_syscall_retval ("clone");
+        } else {
+            fprintf (stderr, "clone with flags %x called\n", info->flags);
+        }
     }
 }
 
@@ -1264,17 +1274,19 @@ static void sys_mmap_stop(int rc)
             fprintf(stderr, "mmap file name is %s, %d\n", channel_name, mmi->prot & PROT_EXEC);
         }
         if (!(mmi->prot & PROT_EXEC)) {
-            struct taint_creation_info tci;
-            tci.rg_id = current_thread->rg_id;
-            tci.record_pid = current_thread->record_pid;
-            tci.syscall_cnt = current_thread->syscall_cnt;
-            tci.offset = 0;
-            tci.fileno = read_fileno;
-            tci.data = 0;
-	    tci.type = TOK_MMAP;
+            if (current_thread->start_tracking) {
+                struct taint_creation_info tci;
+                tci.rg_id = current_thread->rg_id;
+                tci.record_pid = current_thread->record_pid;
+                tci.syscall_cnt = current_thread->syscall_cnt;
+                tci.offset = 0;
+                tci.fileno = read_fileno;
+                tci.data = 0;
+                tci.type = TOK_MMAP;
 
-            create_taints_from_buffer ((void *) rc, mmi->length, &tci, tokens_fd,
-                                        channel_name);
+                create_taints_from_buffer ((void *) rc, mmi->length, &tci, tokens_fd,
+                        channel_name);
+            }
         } else {
             fprintf(stderr, "mmap is PROT_EXEC\n");
         }
@@ -1343,7 +1355,7 @@ static inline void sys_write_stop(int rc)
 	    tci.fileno = channel_fileno;
 	    
 	    LOG_PRINT ("Output buffer result syscall %u, %#lx\n", tci.syscall_cnt, (u_long) wi->buf);
-	    if (produce_output) { 
+	    if (produce_output && current_thread->start_tracking) { 
 		output_buffer_result (wi->buf, rc, &tci, outfd);
 	    }
 	}
@@ -1397,7 +1409,7 @@ static inline void sys_writev_stop(int rc)
 		if (!monitor_has_fd(open_x_fds, wvi->fd)) {
 		    for (int i = 0; i < wvi->count; i++) {
 			struct iovec* vi = (wvi->vi + i);
-			if (produce_output) { 
+			if (produce_output && current_thread->start_tracking) { 
 			    output_buffer_result(vi->iov_base, vi->iov_len, &tci, outfd);
 			}
 			tci.offset += vi->iov_len;
@@ -1406,7 +1418,7 @@ static inline void sys_writev_stop(int rc)
 	    } else {
 		for (int i = 0; i < wvi->count; i++) {
 		    struct iovec* vi = (wvi->vi + i);
-		    if (produce_output) { 
+		    if (produce_output && current_thread->start_tracking) { 
 			output_buffer_result(vi->iov_base, vi->iov_len, &tci, outfd);
 		    }
 		    tci.offset += vi->iov_len;
@@ -1642,15 +1654,17 @@ static void sys_recv_stop(int rc)
             channel_name = oi->name;
         }
 
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = read_fileno;
-        tci.data = 0;
-	tci.type = TOK_RECV;
+        if (current_thread->start_tracking) {
+            tci.rg_id = current_thread->rg_id;
+            tci.record_pid = current_thread->record_pid;
+            tci.syscall_cnt = current_thread->syscall_cnt;
+            tci.offset = 0;
+            tci.fileno = read_fileno;
+            tci.data = 0;
+            tci.type = TOK_RECV;
 
-        create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+            create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+        }
     }
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     current_thread->save_syscall_info = 0;
@@ -1750,15 +1764,17 @@ static void sys_recvfrom_stop(int rc)
             channel_name = oi->name;
         }
 
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = read_fileno;
-        tci.data = 0;
-	tci.type = TOK_RECV;
+        if (current_thread->start_tracking) {
+            tci.rg_id = current_thread->rg_id;
+            tci.record_pid = current_thread->record_pid;
+            tci.syscall_cnt = current_thread->syscall_cnt;
+            tci.offset = 0;
+            tci.fileno = read_fileno;
+            tci.data = 0;
+            tci.type = TOK_RECV;
 
-        create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+            create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
+        }
     }
     memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
     free (current_thread->save_syscall_info);
@@ -1840,19 +1856,21 @@ static void sys_recvmsg_stop(int rc)
         }
 
         //fprintf (stderr, "rcvmsg_stop from channel: %s\n", channel_name);
-        tci.rg_id = current_thread->rg_id;
-        tci.record_pid = current_thread->record_pid;
-        tci.syscall_cnt = current_thread->syscall_cnt;
-        tci.offset = 0;
-        tci.fileno = read_fileno;
-        tci.data = 0;
-	tci.type = TOK_RECVMSG;
-        for (i = 0; i < rmi->msg->msg_iovlen; i++) {
-            struct iovec* vi = (rmi->msg->msg_iov + i);
-            // TODO support filtering on certain sockets
-            create_taints_from_buffer(vi->iov_base, vi->iov_len, &tci, tokens_fd,
-                                        channel_name);
-            tci.offset += vi->iov_len;
+        if (current_thread->start_tracking) {
+            tci.rg_id = current_thread->rg_id;
+            tci.record_pid = current_thread->record_pid;
+            tci.syscall_cnt = current_thread->syscall_cnt;
+            tci.offset = 0;
+            tci.fileno = read_fileno;
+            tci.data = 0;
+            tci.type = TOK_RECVMSG;
+            for (i = 0; i < rmi->msg->msg_iovlen; i++) {
+                struct iovec* vi = (rmi->msg->msg_iov + i);
+                // TODO support filtering on certain sockets
+                create_taints_from_buffer(vi->iov_base, vi->iov_len, &tci, tokens_fd,
+                        channel_name);
+                tci.offset += vi->iov_len;
+            }
         }
     }
     free(rmi);
@@ -1905,7 +1923,7 @@ static void sys_sendmsg_stop(int rc)
 	    
 	    for (i = 0; i < smi->msg->msg_iovlen; i++) {
 		struct iovec* vi = (smi->msg->msg_iov + i);
-		if (produce_output) { 
+		if (produce_output && current_thread->start_tracking) { 
 		    output_buffer_result(vi->iov_base, vi->iov_len, &tci, outfd);
 		}
 		tci.offset += vi->iov_len;
@@ -1968,7 +1986,7 @@ static void sys_send_stop(int rc)
 	    tci.fileno = channel_fileno;
 	    
 	    LOG_PRINT ("Output buffer result syscall %u, %#lx\n", tci.syscall_cnt, (u_long) si->buf);
-	    if (produce_output) { 
+	    if (produce_output && current_thread->start_tracking) { 
 		output_buffer_result (si->buf, rc, &tci, outfd);
 	    }
 	}
@@ -2029,7 +2047,7 @@ static void sys_sendto_stop(int rc)
 	    tci.fileno = channel_fileno;
 	    
 	    LOG_PRINT ("Output buffer result syscall %u, %#lx\n", tci.syscall_cnt, (u_long) si->buf);
-	    if (produce_output) { 
+	    if (produce_output && current_thread->start_tracking) { 
 		output_buffer_result (si->buf, rc, &tci, outfd);
 	    }
 	}
@@ -2495,6 +2513,7 @@ static inline void sys_getrusage_start (struct thread_data* tdata, struct rusage
 static inline void sys_getrusage_stop (int rc) {
 	struct getrusage_info* ri = (struct getrusage_info*) &current_thread->op.getrusage_info_cache;
 	if (rc == 0) {
+            if (current_thread->start_tracking) {
 		struct taint_creation_info tci;
 		char* channel_name = (char*) "getrusage";
 		tci.rg_id = current_thread->rg_id;
@@ -2505,6 +2524,7 @@ static inline void sys_getrusage_stop (int rc) {
 		tci.data = 0;
 		tci.type = TOK_GETRUSAGE;
 		create_taints_from_buffer (ri->usage, sizeof(struct rusage), &tci, tokens_fd, channel_name);	
+            }
 	}
 	memset (&current_thread->op.getrusage_info_cache, 0, sizeof(struct rusage));
 	current_thread->save_syscall_info = 0;
@@ -2522,17 +2542,21 @@ static inline void sys_eventfd2_start (struct thread_data* tdata, unsigned int c
 
 static inline void sys_poll_start (struct thread_data* tdata, struct pollfd* fds, u_int nfds, int timeout)
 {
-    recheck_poll (tdata->recheck_handle, fds, nfds, timeout, *ppthread_log_clock);
+    if (tdata->recheck_handle) {
+        recheck_poll (tdata->recheck_handle, fds, nfds, timeout, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_poll_stop (long rc)
 {
-    OUTPUT_SLICE(0, "push edx");
-    OUTPUT_SLICE_INFO ("");
-    OUTPUT_SLICE(0, "call poll_recheck");
-    OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
-    OUTPUT_SLICE(0, "pop edx");
-    OUTPUT_SLICE_INFO ("");
+    if (current_thread->recheck_handle) {
+        OUTPUT_SLICE(0, "push edx");
+        OUTPUT_SLICE_INFO ("");
+        OUTPUT_SLICE(0, "call poll_recheck");
+        OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+        OUTPUT_SLICE(0, "pop edx");
+        OUTPUT_SLICE_INFO ("");
+    }
 }
 
 static inline void sys_kill_start (struct thread_data* tdata, pid_t pid, int sig)
@@ -2636,9 +2660,11 @@ static inline void sys_prctl_start (struct thread_data* tdata, int option, u_lon
 static inline void sys_shmget_start (struct thread_data* tdata, key_t key, size_t size, int shmflg)
 { 
     fprintf (stderr, "[WARNING]: Calling shmget key 0x%x size 0x%x shmflag 0x%x\n", key, size, shmflg);
-    OUTPUT_SLICE(0, "call shmget_recheck");
-    OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
-    recheck_shmget (tdata->recheck_handle, key, size, shmflg, *ppthread_log_clock);
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE(0, "call shmget_recheck");
+        OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+        recheck_shmget (tdata->recheck_handle, key, size, shmflg, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_shmget_stop (int rc) 
@@ -2652,13 +2678,15 @@ static inline void sys_shmat_start (struct thread_data* tdata, int shmid, void* 
     si->raddr = raddr;
 
     fprintf (stderr, "[WARNING]: Calling shmat shmid 0x%x shmaddr 0x%lx raddr 0x%lx shmflag 0x%x\n", shmid, (u_long) shmaddr, (u_long) raddr, shmflg);
-    OUTPUT_SLICE (0, "push ecx");
-    OUTPUT_SLICE_INFO ("");
-    OUTPUT_SLICE (0, "call shmat_recheck");
-    OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-    OUTPUT_SLICE (0, "pop ecx");
-    OUTPUT_SLICE_INFO ("");
-    recheck_shmat (tdata->recheck_handle, shmid, shmaddr, raddr, shmflg, *ppthread_log_clock);
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE (0, "push ecx");
+        OUTPUT_SLICE_INFO ("");
+        OUTPUT_SLICE (0, "call shmat_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+        OUTPUT_SLICE (0, "pop ecx");
+        OUTPUT_SLICE_INFO ("");
+        recheck_shmat (tdata->recheck_handle, shmid, shmaddr, raddr, shmflg, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_shmat_stop (int rc) 
@@ -2669,13 +2697,15 @@ static inline void sys_shmat_stop (int rc)
 
 static inline void sys_ipc_rmid_start (struct thread_data* tdata, int shmid, int cmd)
 { 
-    OUTPUT_SLICE (0, "push ecx");
-    OUTPUT_SLICE_INFO ("");
-    OUTPUT_SLICE (0, "call ipc_rmid_recheck");
-    OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
-    OUTPUT_SLICE (0, "pop ecx");
-    OUTPUT_SLICE_INFO ("");
-    recheck_ipc_rmid (tdata->recheck_handle, shmid, cmd, *ppthread_log_clock);
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE (0, "push ecx");
+        OUTPUT_SLICE_INFO ("");
+        OUTPUT_SLICE (0, "call ipc_rmid_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+        OUTPUT_SLICE (0, "pop ecx");
+        OUTPUT_SLICE_INFO ("");
+        recheck_ipc_rmid (tdata->recheck_handle, shmid, cmd, *ppthread_log_clock);
+    }
 }
 
 static inline void sys_pthread_init (struct thread_data* tdata, int* status, u_long record_hoook, u_long replay_hook, void* user_clock_addr) 
@@ -2731,14 +2761,19 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 }
 
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
-    if (function_level_tracking && current_thread->patch_based_ckpt_info.start == false) {
+    if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "# jumpstart_runtime slice begins.\n");
         fflush (stdout);
-        current_thread->patch_based_ckpt_info.start = true;
+	current_thread->recheck_handle = open_recheck_log (current_thread->rg_id, current_thread->record_pid);
+        if (fw_slice_print_header(current_thread->rg_id, current_thread, 0) < 0) {
+            fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
+            return;
+        }
+        current_thread->start_tracking = true;
     } 
-    else if (function_level_tracking && current_thread->patch_based_ckpt_info.start == true) {
-        current_thread->patch_based_ckpt_info.start = false;
+    else if (function_level_tracking && current_thread->start_tracking == true) {
+        current_thread->start_tracking = false;
         //sum up the checkpoint and verification set for patch_based_ckpt
         bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
         char* read_reg_value = current_thread->patch_based_ckpt_info.read_reg_value;
@@ -7759,7 +7794,6 @@ void init_patch_based_ckpt_info (struct thread_data* tdata)
     info->write_reg = new set<int>();
     info->write_mem = new set<u_long>();
     info->read_mem = new map<u_long, char>();
-    info->start = false;
 }
 
 void destroy_patch_based_ckpt_info (struct thread_data* tdata) 
@@ -7768,7 +7802,6 @@ void destroy_patch_based_ckpt_info (struct thread_data* tdata)
     if (info->write_reg) delete info->write_reg;
     if (info->write_mem) delete info->write_mem;
     if (info->read_mem) delete info->read_mem;
-    info->start = false;
 }
 
 void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
@@ -7779,14 +7812,20 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     /* Do some of the things we would normally do in thread_start here */
     current_thread->threadid = threadid;
     current_thread->record_pid = get_record_pid();
-    if (recheck_group) {
-	current_thread->recheck_handle = open_recheck_log (threadid, recheck_group, current_thread->record_pid);
-    } else {
-	current_thread->recheck_handle = NULL;
-    }	
-    if (fw_slice_print_header(recheck_group, current_thread, 0) < 0) {
-        fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
-        return;
+    if (!function_level_tracking) {
+        if (recheck_group) {
+            current_thread->recheck_handle = open_recheck_log (recheck_group, current_thread->record_pid);
+        } else {
+            current_thread->recheck_handle = NULL;
+        }	
+        if (fw_slice_print_header(recheck_group, current_thread, 0) < 0) {
+            fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
+            return;
+        }
+        current_thread->start_tracking = true;
+    } else { 
+        current_thread->start_tracking = false;
+        current_thread->recheck_handle = NULL;
     }
 
     /* Some of these should be global, not per-thread */
@@ -7921,15 +7960,21 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->app_syscall = 0;
     ptdata->record_pid = get_record_pid();
     get_record_group_id(dev_fd, &(ptdata->rg_id));
-    if (recheck_group) {
-	ptdata->recheck_handle = open_recheck_log (threadid, recheck_group, ptdata->record_pid);
+    if (!function_level_tracking) {
+        if (recheck_group) {
+            ptdata->recheck_handle = open_recheck_log (recheck_group, ptdata->record_pid);
+        } else {
+            ptdata->recheck_handle = NULL;
+        }	
+        //ptdata->slice_buffer = new queue<string>();
+        if (fw_slice_print_header(recheck_group, ptdata, !first_thread) < 0) {
+            fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
+            return;
+        }
+        ptdata->start_tracking = true; //start to track from the beginning
     } else {
-	ptdata->recheck_handle = NULL;
-    }	
-    //ptdata->slice_buffer = new queue<string>();
-    if (fw_slice_print_header(recheck_group, ptdata, !first_thread) < 0) {
-        fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
-        return;
+        ptdata->start_tracking = false; //start to track until we encounter sys_jumpstart_runtime
+        ptdata->recheck_handle = NULL;
     }
 
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
@@ -8150,28 +8195,30 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     }
     active_threads[ptdata->record_pid] = ptdata;
     //slice ordering
-    if (*ppthread_log_clock != 0) {
-        //this is the first thread that executes
-        if (*ppthread_log_clock <=2) { 
-            previous_thread = current_thread;
-            //init clock values for the first thread
-            OUTPUT_SLICE (0, "pushfd");
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-            //init mutex and condition var 
-            OUTPUT_SLICE (0, "call recheck_wait_init");
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-            OUTPUT_SLICE (0, "popfd");
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-        } else {
-            //init for other threads
-            OUTPUT_SLICE (0, "pushfd"); 
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-            OUTPUT_SLICE (0, "call recheck_wait_proc_init"); 
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-            OUTPUT_SLICE (0, "popfd");
-            OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
-            //wait until it should start
-            slice_thread_wait (current_thread);
+    if (!function_level_tracking) {
+        if (*ppthread_log_clock != 0) {
+            //this is the first thread that executes
+            if (*ppthread_log_clock <=2) { 
+                previous_thread = current_thread;
+                //init clock values for the first thread
+                OUTPUT_SLICE (0, "pushfd");
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+                //init mutex and condition var 
+                OUTPUT_SLICE (0, "call recheck_wait_init");
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+                OUTPUT_SLICE (0, "popfd");
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+            } else {
+                //init for other threads
+                OUTPUT_SLICE (0, "pushfd"); 
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+                OUTPUT_SLICE (0, "call recheck_wait_proc_init"); 
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+                OUTPUT_SLICE (0, "popfd");
+                OUTPUT_SLICE_INFO ("slice ordering clock %lu", *ppthread_log_clock);
+                //wait until it should start
+                slice_thread_wait (current_thread);
+            }
         }
     }
 }

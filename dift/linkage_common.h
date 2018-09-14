@@ -402,7 +402,6 @@ struct lll_lock_info_cache {
 };
 
 struct patch_based_ckpt_info  {
-    bool start;
     bool read_reg[NUM_REGS*REG_SIZE];
     char read_reg_value[NUM_REGS*REG_SIZE];
     set<int>* write_reg;
@@ -485,6 +484,7 @@ struct thread_data {
     } pthread_info; //for remembering input parameters to pthread functions
 
     int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
+    bool start_tracking; //Used along with function level tracking; only start to slice and taint when this flag is true
 };
 
 #define FP_POP   1
