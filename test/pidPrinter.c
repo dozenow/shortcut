@@ -6,6 +6,19 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <dlfcn.h>
+
+inline void jumpstart_runtime (void) {
+    int ret = -1;
+    asm ("movl $222,%%eax\n\t"
+            "int $0x80\n\t"
+            "movl %%eax, %0"
+            : "=r" (ret)
+            :
+            : "eax" //verify if more registers are added
+            );
+    fprintf (stderr, "ret is %d\n", ret);
+}
 
 int main(int argc, char* argv[], char* envp[])
 {
@@ -34,10 +47,20 @@ int main(int argc, char* argv[], char* envp[])
             }*/
             char tmp[32];
             struct stat stat;
-            asm ("pushl %eax");
-            asm ("movl $222,  %eax");
-            asm ("int $0x80");
-            asm ("popl %eax");
+            {
+                int ret = -1;
+                asm ("pushl %%eax\n\t"
+                        "movl $222,%%eax\n\t"
+                        "int $0x80\n\t"
+                        "movl %%eax, %0\n\t"
+                        "popl %%eax"
+                        : "=r" (ret)
+                        :
+                        : "eax","memory" //verify if more registers are added
+                    );
+                fprintf (stderr, "ret is %d\n", ret);
+            }
+
             int x = processID - 1;
             int y = 0;
             //itoa (test,tmp, 2);
@@ -48,19 +71,41 @@ int main(int argc, char* argv[], char* envp[])
                 x += 2;
                 y = 2;
             }
+            printf (" in the middle\n");
             
             fstat (1, &stat);
-		//printf("The process id is %d addr is %p\n", processID, &processID);
             sprintf(tmp, "%d=%d-%d, %ld ", processID, x, y, stat.st_atime);
-            asm ("pushl %eax");
-            asm ("movl $222,  %eax");
-            asm ("int $0x80");
-            asm ("popl %eax");
+            {
+                int ret = -1;
+                asm ("pushl %%eax\n\t"
+                        "movl $222,%%eax\n\t"
+                        "int $0x80\n\t"
+                        "movl %%eax, %0\n\t"
+                        "popl %%eax"
+                        : "=r" (ret)
+                        :
+                        : "eax","memory" //verify if more registers are added
+                    );
+                fprintf (stderr, "ret is %d\n", ret);
+                if (ret == 1) {
+                    void* hndl;
+                    char slicename[256];
+                    void (*pfn)(void);
+                    snprintf (slicename, 256, "/replay_logdb/exslice.so");
+                    hndl = dlopen (slicename, RTLD_NOW);
+                    if (hndl == NULL) {
+                        fprintf (stderr, "slice %s dlopen failed: %s\n", slicename, dlerror());
+                        exit (0);
+                    }
+                    pfn = dlsym (hndl, "_start");
+                    if (pfn == NULL) {
+                        perror ("dlsym");
+                    }
+                    (*pfn) ();
+                }
+            }
 
-            /*asm ("push eax");
-            asm ("mov eax, 222");
-            asm ("int 0x80");
-            asm ("pop eax");*/
+		//printf("The process id is %d addr is %p\n", processID, &processID);
 
             //fstat (1, &stat);
             printf ("The process id is %s, int address %p, string address %p\n", tmp, &processID, tmp);

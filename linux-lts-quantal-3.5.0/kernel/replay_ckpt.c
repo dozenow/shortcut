@@ -1778,7 +1778,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	if (recheck_filename) {
 		strcpy (recheck_log_name, recheck_filename);
 	} else {
-		snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/tmp/recheck.%ld", record_pid);
+		snprintf (recheck_log_name, RECHECK_FILE_NAME_LEN, "/replay_logdb/recheck");
 	}
 
         DPRINT ("start_fw_slice: recheck filename %s\n", recheck_log_name);
@@ -1802,7 +1802,7 @@ void dump_vmas_content(void)
 {
 	mm_segment_t old_fs = get_fs();
 	struct vm_area_struct* vma;
-	char mmapinfo_filename[256];
+	char mmapinfo_filename[128];
 	struct file* mmapinfo_file = NULL;
 	int mmapinfo_fd = 0;
 	loff_t mmapinfo_ppos = 0;

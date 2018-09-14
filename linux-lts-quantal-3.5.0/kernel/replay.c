@@ -8230,98 +8230,140 @@ asmlinkage long trace_exit (int error_code) {
 
 #define PCKPT_MAX_BUF 1024*1024
 asmlinkage long 
-sys_jumpstart_runtime (void) {
+sys_jumpstart_runtime (int mode) {
 	dump_vmas();
 	if (run_patched_ckpt) {
-		char* filename = "/replay_logdb/pckpt";
-		struct file* f = NULL;
-		int retval = 0;
-		mm_segment_t old_fs = get_fs();
-		char* buf = VMALLOC (PCKPT_MAX_BUF);
-		int reg_index = 0;
-		unsigned long reg_value;
-		unsigned long mem_loc;
-		unsigned char mem_value;
-		int len = 0;
-		int offset = 0;
-		struct pt_regs* regs = get_pt_regs (NULL);
-		int i = 0;
-		unsigned int regcount = 0;
+		if (mode == 1) { //load the ckpt
+			char* filename = "/replay_logdb/pckpt";
+			struct file* f = NULL;
+			int retval = 0;
+			mm_segment_t old_fs = get_fs();
+			char* buf = VMALLOC (PCKPT_MAX_BUF);
+			int reg_index = 0;
+			unsigned long reg_value;
+			unsigned long mem_loc;
+			unsigned char mem_value;
+			int len = 0;
+			int offset = 0;
+			struct pt_regs* regs = get_pt_regs (NULL);
+			int i = 0;
+			unsigned int regcount = 0;
 
-		printk ("Now loading the ckpt\n");
+			printk ("Now loading the ckpt\n");
 
-		set_fs (KERNEL_DS);
-		f = filp_open (filename, O_RDONLY, 0);	
-		BUG_ON (f == NULL);
-		retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
-		BUG_ON (retval != sizeof(unsigned int));
-		retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
-		BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
-		printk ("------checkpoint regs ------\n");
-		len = retval;
-
-		if (regcount != 0)
-			set_tsk_thread_flag (current, TIF_IRET);
-
-		for (i = 0; i<regcount; ++i) {
-			reg_index = *((int*) (buf + offset));
-			offset += sizeof (int);
-			reg_value = *((unsigned long*) (buf + offset));
-			offset += sizeof (unsigned long);
-			if (reg_index == -1) {
-				//printk ("skipped reg.\n");
-				continue;
-			}
-			//set the regs value
-			((unsigned long*) regs)[reg_index] = reg_value;
-			printk ("%d:%lu\n", reg_index, reg_value);
-		} 
-		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
-		set_fs(old_fs);
-		dump_vmas();
-		printk ("------checkpoint mem------\n");
-		while (len != 0) {
-			offset = 0;
-			while (offset < len) { 
-				mem_loc = *((unsigned long*) (buf + offset));
-				offset += sizeof (unsigned long);
-				mem_value = *((unsigned char*)(buf + offset));
-				offset += sizeof (unsigned char);
-				//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
-				put_user (mem_value, (unsigned char __user*) mem_loc);
-				if (mem_loc == 0xb6456ba0)
-					printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
-			}
 			set_fs (KERNEL_DS);
+			f = filp_open (filename, O_RDONLY, 0);	
+			BUG_ON (f == NULL);
+			retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
+			BUG_ON (retval != sizeof(unsigned int));
+			retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
+			BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
+			printk ("------checkpoint regs ------\n");
+			len = retval;
+
+			if (regcount != 0)
+				set_tsk_thread_flag (current, TIF_IRET);
+
+			for (i = 0; i<regcount; ++i) {
+				reg_index = *((int*) (buf + offset));
+				offset += sizeof (int);
+				reg_value = *((unsigned long*) (buf + offset));
+				offset += sizeof (unsigned long);
+				if (reg_index == -1) {
+					//printk ("skipped reg.\n");
+					continue;
+				}
+				//set the regs value
+				((unsigned long*) regs)[reg_index] = reg_value;
+				printk ("%d:%lu\n", reg_index, reg_value);
+			} 
 			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
 			set_fs(old_fs);
+			dump_vmas();
+			printk ("------checkpoint mem------\n");
+			while (len != 0) {
+				offset = 0;
+				while (offset < len) { 
+					mem_loc = *((unsigned long*) (buf + offset));
+					offset += sizeof (unsigned long);
+					mem_value = *((unsigned char*)(buf + offset));
+					offset += sizeof (unsigned char);
+					//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+					put_user (mem_value, (unsigned char __user*) mem_loc);
+					if (mem_loc == 0xb6456ba0)
+						printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+				}
+				set_fs (KERNEL_DS);
+				len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+				set_fs(old_fs);
+			}
+
+			filp_close (f, NULL);
+
+			VFREE (buf);
+
+			if(slice_dump_vm) {
+				printk ("Dumping memory.\n");
+				dump_vmas_content();
+				printk ("Dumping memory done.\n");
+			}
+
+			if (pause_after_slice) {
+				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+				set_current_state(TASK_INTERRUPTIBLE);
+				schedule();
+				printk("Pid %d woken up.\n", current->pid);
+			}
+			printk ("pckpt is loaded.\n");
+			return 1;
+		} else if (mode == 2) { //set up the slice
+			if (current->record_thrd == NULL) {
+				printk ("We currently require the process is recording during acceleration....\n");
+			} else {
+				//xdou: I'm not sure whether this sruct is useful or not for function level support...
+				struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
+				//figure out where the slice is loaded
+				struct vm_area_struct* vma;
+				u_long slice_addr = 0, slice_size;
+
+				down_read (&current->mm->mmap_sem);
+
+				for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+					char buf[256];
+					char* s = NULL;
+
+					if (vma->vm_start == (u_long) current->mm->context.vdso) {
+						//printk (" this is vdso.\n");
+						continue;
+					}			
+					if (vma->vm_file) {
+						s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+						if (!strcmp (s, "/replay_logdb/exslice.so")) {
+							if (slice_addr == 0) {
+								slice_addr = vma->vm_start;
+								slice_size = vma->vm_end - vma->vm_start;
+							}
+						}
+
+					}
+				}
+				up_read (&current->mm->mmap_sem);
+				if (slice_addr == 0) {
+					printk ("BUG: cannot load the slice. \n");
+					BUG();
+				}
+
+				start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+			}
 		}
-
-		filp_close (f, NULL);
-
-		VFREE (buf);
-
-		if(slice_dump_vm) {
-			printk ("Dumping memory.\n");
-			dump_vmas_content();
-			printk ("Dumping memory done.\n");
-		}
-
-		if (pause_after_slice) {
-			printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
-			set_current_state(TASK_INTERRUPTIBLE);
-			schedule();
-			printk("Pid %d woken up.\n", current->pid);
-		}
-		printk ("pckpt is loaded.\n");
 	}
 
-	return 1;
+	return 0;
 }
 
-SIMPLE_RECORD0(jumpstart_runtime, 222);
-SIMPLE_REPLAY(jumpstart_runtime, 222, void);
-asmlinkage long shim_jumpstart_runtime(void) SHIM_CALL(jumpstart_runtime, 222);
+SIMPLE_RECORD1(jumpstart_runtime, 222, int, mode);
+SIMPLE_REPLAY(jumpstart_runtime, 222, int mode);
+asmlinkage long shim_jumpstart_runtime(int mode) SHIM_CALL(jumpstart_runtime, 222, mode);
 
 asmlinkage long 
 shim_exit(int error_code)
