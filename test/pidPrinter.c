@@ -49,16 +49,50 @@ int main(int argc, char* argv[], char* envp[])
             struct stat stat;
             {
                 int ret = -1;
-                asm ("pushl %%eax\n\t"
+                asm volatile ("pushl %%eax\n\t"
+                        "pushl %%ebx\n\t"
+                        "movl $1,%%ebx\n\t"
                         "movl $222,%%eax\n\t"
                         "int $0x80\n\t"
                         "movl %%eax, %0\n\t"
+                        "popl %%ebx\n\t"
                         "popl %%eax"
                         : "=r" (ret)
                         :
-                        : "eax","memory" //verify if more registers are added
+                        : "eax", "ebx", "memory" //verify if more registers are added
                     );
+
                 fprintf (stderr, "ret is %d\n", ret);
+                if (ret == 1) {
+                    void* hndl;
+                    char slicename[256];
+                    void (*pfn)(void);
+                    fprintf (stderr, "jumping to the kernel for setting up the slice.\n");
+                    snprintf (slicename, 256, "/replay_logdb/exslice.so");
+                    hndl = dlopen (slicename, RTLD_NOW);
+                    if (hndl == NULL) {
+                        fprintf (stderr, "slice %s dlopen failed: %s\n", slicename, dlerror());
+                        exit (0);
+                    }
+                    pfn = dlsym (hndl, "_start");
+                    if (pfn == NULL) {
+                        perror ("dlsym");
+                    }
+                    //(*pfn) ();
+                    asm volatile ("pushl %%eax\n\t"
+                            "pushl %%ebx\n\t"
+                            "movl $2,%%ebx\n\t"
+                            "movl $222,%%eax\n\t"
+                            "int $0x80\n\t"
+                            "movl %%eax, %0\n\t"
+                            "popl %%ebx\n\t"
+                            "popl %%eax"
+                            : "=r" (ret)
+                            :
+                            : "eax", "ebx", "memory" //verify if more registers are added
+                        );
+                }
+
             }
 
             int x = processID - 1;
@@ -77,32 +111,19 @@ int main(int argc, char* argv[], char* envp[])
             sprintf(tmp, "%d=%d-%d, %ld ", processID, x, y, stat.st_atime);
             {
                 int ret = -1;
-                asm ("pushl %%eax\n\t"
+                asm volatile ("pushl %%eax\n\t"
+                        "pushl %%ebx\n\t"
+                        "movl $1,%%ebx\n\t"
                         "movl $222,%%eax\n\t"
                         "int $0x80\n\t"
                         "movl %%eax, %0\n\t"
+                        "popl %%ebx\n\t"
                         "popl %%eax"
                         : "=r" (ret)
                         :
-                        : "eax","memory" //verify if more registers are added
+                        : "eax", "ebx", "memory" //verify if more registers are added
                     );
                 fprintf (stderr, "ret is %d\n", ret);
-                if (ret == 1) {
-                    void* hndl;
-                    char slicename[256];
-                    void (*pfn)(void);
-                    snprintf (slicename, 256, "/replay_logdb/exslice.so");
-                    hndl = dlopen (slicename, RTLD_NOW);
-                    if (hndl == NULL) {
-                        fprintf (stderr, "slice %s dlopen failed: %s\n", slicename, dlerror());
-                        exit (0);
-                    }
-                    pfn = dlsym (hndl, "_start");
-                    if (pfn == NULL) {
-                        perror ("dlsym");
-                    }
-                    (*pfn) ();
-                }
             }
 
 		//printf("The process id is %d addr is %p\n", processID, &processID);

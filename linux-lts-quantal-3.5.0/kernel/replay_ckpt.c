@@ -48,7 +48,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 0
+#define PRINT_TIME 1
 //#define JAVA_FIX_PTHREAD
 
 /* Prototypes not in header files */
@@ -2020,7 +2020,6 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			}
 		}
 
-		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 

@@ -1121,7 +1121,10 @@ static inline void sys_inotify_add_watch_start(struct thread_data* tdata, int fd
 static inline void sys_clone_start (struct thread_data* tdata, int flags, pid_t* ptid, pid_t* ctid)  //don't trust the manual page on clone, it's different than the clone syscall
 {
     struct clone_info* info = &tdata->op.clone_info_cache;
-    int child_pid = recheck_clone (current_thread->recheck_handle, *ppthread_log_clock-1);
+    int child_pid = -1;
+    if (tdata->recheck_handle) {
+        recheck_clone (current_thread->recheck_handle, *ppthread_log_clock-1);
+    }
     info->flags = flags;
     info->ptid = ptid;
     info->ctid = ctid;
@@ -1301,7 +1304,7 @@ static void sys_mmap_stop(int rc)
 
 #endif
     if (rc > 0 || rc < -1024) {
-        add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
+        if (current_thread->start_tracking) add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
     }
 }
 
@@ -2121,8 +2124,10 @@ static inline void sys_mremap_stop (int rc)
     struct mremap_info* mri = (struct mremap_info*) &current_thread->op.mremap_info_cache;
     fprintf (stderr, "mremap: rc 0x%x\n", rc);
     if (rc > 0 || rc < -1024) {
-	move_mem_taints (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
-	move_mmap_region (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
+        if (current_thread->start_tracking) {
+            move_mem_taints (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
+            move_mmap_region (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
+        }
     }
 }
 
@@ -2766,11 +2771,12 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         fprintf (stderr, "# jumpstart_runtime slice begins.\n");
         fflush (stdout);
 	current_thread->recheck_handle = open_recheck_log (current_thread->rg_id, current_thread->record_pid);
-        if (fw_slice_print_header(current_thread->rg_id, current_thread, 0) < 0) {
+        if (fw_slice_print_header(current_thread->rg_id, current_thread, 1) < 0) {
             fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
             return;
         }
         current_thread->start_tracking = true;
+        first_thread = current_thread->record_pid;
     } 
     else if (function_level_tracking && current_thread->start_tracking == true) {
         current_thread->start_tracking = false;
@@ -2817,10 +2823,10 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             fprintf (stderr, "0x%lx", *iter);
-            if (is_existed (*iter) == false) {
-                fprintf (stderr, "unavailable.\n");
+            /*if (is_existed (*iter) == false) {
+                fprintf (stderr, " unavailable.\n");
                 continue;
-            }
+            }*/
             fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
             u_long addr = *iter;
             ret = write (fd, (char*) &addr, sizeof (unsigned long));
@@ -3012,10 +3018,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
-            delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            if (current_thread->start_tracking) 
+                delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
-            change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            if (current_thread->start_tracking) 
+                change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);

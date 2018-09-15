@@ -361,6 +361,7 @@ void print_value (u_long foo)
 
 void exit_slice (long is_ckpt_thread, long retval)
 {
+    fprintf (stderr, "exit_slice is called.\n");
 #ifdef SLICE_VM_DUMP
     // For debugging memory differeces
     dump_taintbuf (DIVERGE_DEBUG, 0);

@@ -8231,9 +8231,12 @@ asmlinkage long trace_exit (int error_code) {
 #define PCKPT_MAX_BUF 1024*1024
 asmlinkage long 
 sys_jumpstart_runtime (int mode) {
+	printk ("calling jumpstart_runtime with mode %d\n", mode);
 	dump_vmas();
 	if (run_patched_ckpt) {
-		if (mode == 1) { //load the ckpt
+		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
+			return 1;
+		} if (mode == 2) { //load the ckpt
 			char* filename = "/replay_logdb/pckpt";
 			struct file* f = NULL;
 			int retval = 0;
@@ -8308,53 +8311,57 @@ sys_jumpstart_runtime (int mode) {
 				printk ("Dumping memory done.\n");
 			}
 
-			if (pause_after_slice) {
+			/*if (pause_after_slice) {
 				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
 				set_current_state(TASK_INTERRUPTIBLE);
 				schedule();
 				printk("Pid %d woken up.\n", current->pid);
-			}
+			}*/
 			printk ("pckpt is loaded.\n");
-			return 1;
-		} else if (mode == 2) { //set up the slice
-			if (current->record_thrd == NULL) {
-				printk ("We currently require the process is recording during acceleration....\n");
-			} else {
-				//xdou: I'm not sure whether this sruct is useful or not for function level support...
-				struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
-				//figure out where the slice is loaded
-				struct vm_area_struct* vma;
-				u_long slice_addr = 0, slice_size;
+			{
+				//set up the slice
+				if (current->record_thrd == NULL) {
+					printk ("We currently require the process is recording during acceleration....\n");
+				} else {
+					//xdou: I'm not sure whether this sruct is useful or not for function level support...
+					struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
+					//figure out where the slice is loaded
+					struct vm_area_struct* vma;
+					u_long slice_addr = 0, slice_size;
 
-				down_read (&current->mm->mmap_sem);
+					printk ("Loading the slice.\n");
 
-				for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
-					char buf[256];
-					char* s = NULL;
+					down_read (&current->mm->mmap_sem);
 
-					if (vma->vm_start == (u_long) current->mm->context.vdso) {
-						//printk (" this is vdso.\n");
-						continue;
-					}			
-					if (vma->vm_file) {
-						s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
-						if (!strcmp (s, "/replay_logdb/exslice.so")) {
-							if (slice_addr == 0) {
-								slice_addr = vma->vm_start;
-								slice_size = vma->vm_end - vma->vm_start;
+					for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+						char buf[256];
+						char* s = NULL;
+
+						if (vma->vm_start == (u_long) current->mm->context.vdso) {
+							//printk (" this is vdso.\n");
+							continue;
+						}			
+						if (vma->vm_file) {
+							s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+							if (!strcmp (s, "/replay_logdb/exslice.so")) {
+								if (slice_addr == 0) {
+									slice_addr = vma->vm_start;
+									slice_size = vma->vm_end - vma->vm_start;
+								}
 							}
+
 						}
-
 					}
-				}
-				up_read (&current->mm->mmap_sem);
-				if (slice_addr == 0) {
-					printk ("BUG: cannot load the slice. \n");
-					BUG();
-				}
+					up_read (&current->mm->mmap_sem);
+					if (slice_addr == 0) {
+						printk ("BUG: cannot load the slice. \n");
+						BUG();
+					}
 
-				start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+					start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+				}
 			}
+			return 0;
 		}
 	}
 
