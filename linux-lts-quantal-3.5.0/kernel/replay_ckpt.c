@@ -1798,7 +1798,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	return 0;
 }
 
-void dump_vmas_content(void)
+void dump_vmas_content(u_long prefix)
 {
 	mm_segment_t old_fs = get_fs();
 	struct vm_area_struct* vma;
@@ -1862,7 +1862,7 @@ void dump_vmas_content(void)
 			continue;
 		}
 
-		sprintf (vma_filename, "/tmp/slice_vma.%lx", vma->vm_start);
+		sprintf (vma_filename, "/tmp/slice_vma.%lu.%lx", prefix, vma->vm_start);
 		set_fs (KERNEL_DS);
 		mmap_fd = sys_open (vma_filename, O_WRONLY|O_CREAT|O_TRUNC, 0777);
 		if (mmap_fd < 0) {
@@ -1975,7 +1975,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 		if (slice_dump_vm) {
 			if (is_ckpt_thread) {
-				dump_vmas_content ();
+				dump_vmas_content (0);
 				if (current->go_live_thrd) {
 					wake_up_vm_dump_waiters (current->go_live_thrd);
 				}

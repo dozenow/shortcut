@@ -8231,8 +8231,11 @@ asmlinkage long trace_exit (int error_code) {
 #define PCKPT_MAX_BUF 1024*1024
 asmlinkage long 
 sys_jumpstart_runtime (int mode) {
-	printk ("calling jumpstart_runtime with mode %d\n", mode);
-	dump_vmas();
+	struct timeval tv;
+	do_gettimeofday (&tv);
+	printk ("calling jumpstart_runtime with mode %d,  %ld.%06ld\n", mode, tv.tv_sec, tv.tv_usec);
+
+	//dump_vmas();
 	if (run_patched_ckpt) {
 		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
 			return 1;
@@ -8282,7 +8285,7 @@ sys_jumpstart_runtime (int mode) {
 			} 
 			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
 			set_fs(old_fs);
-			dump_vmas();
+			//dump_vmas();
 			printk ("------checkpoint mem------\n");
 			while (len != 0) {
 				offset = 0;
@@ -8293,8 +8296,6 @@ sys_jumpstart_runtime (int mode) {
 					offset += sizeof (unsigned char);
 					//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
 					put_user (mem_value, (unsigned char __user*) mem_loc);
-					if (mem_loc == 0xb6456ba0)
-						printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
 				}
 				set_fs (KERNEL_DS);
 				len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
@@ -8307,7 +8308,7 @@ sys_jumpstart_runtime (int mode) {
 
 			if(slice_dump_vm) {
 				printk ("Dumping memory.\n");
-				dump_vmas_content();
+				dump_vmas_content(0);
 				printk ("Dumping memory done.\n");
 			}
 
@@ -8369,7 +8370,19 @@ sys_jumpstart_runtime (int mode) {
 }
 
 SIMPLE_RECORD1(jumpstart_runtime, 222, int, mode);
-SIMPLE_REPLAY(jumpstart_runtime, 222, int mode);
+static asmlinkage long replay_jumpstart_runtime (int mode)
+{
+	long rc = get_next_syscall (222, NULL);
+
+	if(slice_dump_vm) {
+		printk ("Dumping memory, clock is %lu.\n", *(current->replay_thrd->rp_preplay_clock));
+		dump_vmas_content(*(current->replay_thrd->rp_preplay_clock));
+		printk ("Dumping memory done.\n");
+	}
+
+	return rc;
+
+}
 asmlinkage long shim_jumpstart_runtime(int mode) SHIM_CALL(jumpstart_runtime, 222, mode);
 
 asmlinkage long 

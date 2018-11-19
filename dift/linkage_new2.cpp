@@ -2823,10 +2823,10 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             fprintf (stderr, "0x%lx", *iter);
-            /*if (is_existed (*iter) == false) {
-                fprintf (stderr, " unavailable.\n");
-                continue;
-            }*/
+            if (is_existed (*iter) == false) {
+                fprintf (stderr, " potentially unavailable?.\n");
+                //continue;
+            }
             fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
             u_long addr = *iter;
             ret = write (fd, (char*) &addr, sizeof (unsigned long));
