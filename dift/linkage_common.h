@@ -504,5 +504,5 @@ struct syscall_check {
     u_long clock;
     long   value;
 };
-
+#define PAGE_SIZE 4096
 #endif

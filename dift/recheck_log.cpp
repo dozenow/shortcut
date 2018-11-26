@@ -170,6 +170,14 @@ static long calculate_partial_read_size (int is_cache_file, int partial_read, si
 	}
 }
 
+void recheck_jumpstart_start (struct recheck_handle* handle)
+{
+    struct klog_result* res;
+    do {
+	res = parseklog_get_next_psr(handle->log);
+    } while (res->psr.sysnum != 222);
+}
+
 int recheck_read_ignore (struct recheck_handle* handle) 
 {
     skip_to_syscall (handle, SYS_read);

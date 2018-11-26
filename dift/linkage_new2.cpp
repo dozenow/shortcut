@@ -28,6 +28,7 @@
 #include <sys/utsname.h>
 #include <sys/vfs.h>
 #include <sys/prctl.h>
+#include <bitset>
 
 #include <map>
 using namespace std;
@@ -2124,7 +2125,7 @@ static inline void sys_mremap_stop (int rc)
     struct mremap_info* mri = (struct mremap_info*) &current_thread->op.mremap_info_cache;
     fprintf (stderr, "mremap: rc 0x%x\n", rc);
     if (rc > 0 || rc < -1024) {
-        if (current_thread->start_tracking) {
+        if (current_thread->start_tracking) { 
             move_mem_taints (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
             move_mmap_region (rc, mri->new_size, (u_long) mri->old_address, mri->old_size);
         }
@@ -2775,6 +2776,8 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
             fprintf (stderr, "[ERROR] fw_slice_print_header fails.\n");
             return;
         }
+        //skip log entries
+        recheck_jumpstart_start (current_thread->recheck_handle);
         current_thread->start_tracking = true;
         first_thread = current_thread->record_pid;
     } 
@@ -2820,11 +2823,34 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
             }
         }
 
+        //print out  mmap regions
+        bitset<0xc0000> pages;
+        char procname[256], buf[256];
+        sprintf (procname, "/proc/%d/maps", getpid());
+        FILE* file = fopen(procname, "r");
+        while (!feof(file)) {
+            if (fgets (buf+2, sizeof(buf)-2, file)) {
+                printf ("%s\n", buf);
+                buf[0] = '0'; buf[1] = 'x'; buf[10] = '\0';
+                u_long start = strtold(buf, NULL);
+                buf[9] = '0'; buf[10] = 'x'; buf[19] = '\0';
+                u_long end = strtold(buf+9, NULL);
+                for (u_long addr = start; addr < end; addr+=PAGE_SIZE) {
+                    pages.set(addr/PAGE_SIZE, true);
+                }
+            }
+        }
+        fclose(file);
+
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             fprintf (stderr, "0x%lx", *iter);
+            if (!pages.test (*iter/PAGE_SIZE)) {
+                fprintf (stderr, " doesn't exist\n");
+                continue;
+            }
             if (is_existed (*iter) == false) {
-                fprintf (stderr, " potentially unavailable?.\n");
+                fprintf (stderr, " has been deallocated?  ");
                 //continue;
             }
             fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
@@ -3015,15 +3041,15 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_mmap:
         case SYS_mmap2:
+            if (current_thread->start_tracking) printf ("mmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
-            if (current_thread->start_tracking) 
-                delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            if (current_thread->start_tracking) printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
+            if (current_thread->start_tracking) delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
             break;
         case SYS_mprotect:
-            if (current_thread->start_tracking) 
-                change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            if (current_thread->start_tracking) change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
@@ -7060,22 +7086,17 @@ static void instrument_ctrl_flow_track_inst_dest (INS ins)
         fprintf (stderr, "instrument_ctrl_flow_track_inst_dest: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
         return;
     }
-    //printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
     for (uint32_t i = 0; i<operand_count; ++i) { 
         if (INS_OperandWritten (ins, i)) { 
-            //bool implicit = INS_OperandIsImplicit (ins, i);
             if (INS_OperandIsReg (ins, i)) {
                 REG reg = INS_OperandReg (ins, i);
                 assert (REG_valid(reg));
                 if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
                     //ignore ip register
-                    //printf ("      --- EIP ignored  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else if (reg == LEVEL_BASE::REG_EFLAGS) {
                     //as the eflag reg is almost certainly modified by some instruction in a basic block (which the jump at the bb exit probably uses), I'll always put eflags in the store set
                     //so it's safe to ignore it here
-                    //printf ("      --- EFLAGS ignored (always put to the store set)  implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                 } else { 
-		    //printf ("      --- implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
                     INS_InsertCall (ins, IPOINT_BEFORE, 
                             AFUNPTR(ctrl_flow_print_inst_dest_reg),
                             IARG_FAST_ANALYSIS_CALL,
@@ -7085,7 +7106,6 @@ static void instrument_ctrl_flow_track_inst_dest (INS ins)
                             IARG_END);
                 }
             } else if (INS_OperandIsMemory (ins, i)) { 
-                //printf ("      --- implicit? %d, operand mem, base %d, index %d\n", implicit, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
                 REG base_reg = INS_OperandMemoryBaseReg(ins, i);
                 REG index_reg = INS_OperandMemoryIndexReg(ins, i);
                 SETUP_BASE_INDEX (base_reg, index_reg);
@@ -7098,10 +7118,8 @@ static void instrument_ctrl_flow_track_inst_dest (INS ins)
                         PASS_BASE_INDEX,
                         IARG_END);
             } else if (INS_OperandIsBranchDisplacement (ins, i)) {
-		// printf ("      --- implicit? %d, branch displacement.\n", implicit);
                 assert (0);
             } else if (INS_OperandIsAddressGenerator(ins, i)) {
-                //printf ("      --- implicit? %d, address generator\n", implicit);
                 assert (0);
             } else {
                 //what else operand can be????
@@ -7110,19 +7128,54 @@ static void instrument_ctrl_flow_track_inst_dest (INS ins)
                 } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
                 } else 
 		    fprintf (stderr, " instrument_ctrl_flow_track_inst_dest: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
-                //assert (0);
             }
         } 
     }
 }
 
+static void print_all_operands (INS ins) { 
+    uint32_t operand_count = INS_OperandCount (ins);
+    printf ("[print_dest] %s, operand count %u\n", INS_Disassemble(ins).c_str(), operand_count);
+    for (uint32_t i = 0; i<operand_count; ++i) { 
+        bool implicit = INS_OperandIsImplicit (ins, i);
+        if (INS_OperandIsReg (ins, i)) {
+            REG reg = INS_OperandReg (ins, i);
+            assert (REG_valid(reg));
+            if (reg == LEVEL_BASE::REG_EIP && INS_IsBranchOrCall (ins)) { 
+                //ignore ip register
+                printf ("      --- EIP implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+            } else if (reg == LEVEL_BASE::REG_EFLAGS) {
+                printf ("      --- EFLAGS implicit? %d, operand reg %d\n", implicit, INS_OperandReg (ins, i));
+            } else { 
+                printf ("      --- implicit? %d, pos %d, operand reg %d\n", implicit, i, INS_OperandReg (ins, i));
+            }
+        } else if (INS_OperandIsMemory (ins, i)) { 
+            printf ("      --- implicit? %d, operand mem pos %d, base %d, index %d\n", implicit, i, INS_OperandMemoryBaseReg (ins, i), INS_OperandMemoryIndexReg(ins, i));
+        } else if (INS_OperandIsBranchDisplacement (ins, i)) {
+            printf ("      --- implicit? %d, branch displacement.\n", implicit);
+        } else if (INS_OperandIsAddressGenerator(ins, i)) {
+            printf ("      --- implicit? %d, address generator\n", implicit);
+        } else if (INS_OperandIsFixedMemop (ins, i)) { 
+            printf ("      --- implicit? %d, fixed memoop pos %d\n", implicit, i);
+        } else {
+            printf ("      --- unknown operand read?%d write?%d, pos %d\n", INS_OperandRead(ins, i), INS_OperandWritten(ins, i), i);
+            //what else operand can be????
+            if (INS_IsRet (ins)) {
+                printf ("    ---- RET inst.\n");
+            } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
+                printf ("    ---- stack read/write inst.\n");
+            } 
+        }
+    }
+
+}
 
 static void instrument_track_patch_based_ckpt (INS ins) 
 { 
-    //printf ("instrument_track_patch_based_ckpt called\n"); fflush (stdout);
     uint32_t operand_count = INS_OperandCount (ins);
     if (INS_IsCall (ins)) {
-        fprintf (stderr, "instrument_track_patch_based_ckpt: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
+        //TODO: what effects should we consider for patch_based_ckpt with call instructions? 
+        //fprintf (stderr, "instrument_track_patch_based_ckpt: we might have a call instruction on potential diverged branch. Make sure both branches make the same call inst\n");
         return;
     }
     set<REG> readRegs;
@@ -7135,7 +7188,7 @@ static void instrument_track_patch_based_ckpt (INS ins)
                 REG reg = INS_OperandReg (ins, i);
                 assert (REG_valid(reg));
                 if (REG_is_st (reg))
-                    fprintf (stderr, "instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
+                    printf ("instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
                 else if (reg != LEVEL_BASE::REG_EFLAGS)
                     writtenRegs.insert (reg);
             }
@@ -7159,9 +7212,13 @@ static void instrument_track_patch_based_ckpt (INS ins)
                     
                     //RET can be safely ignored as we always verify the control flow
                 } else if (INS_IsStackRead(ins) || INS_IsStackWrite(ins)) {
-                } else 
-                    fprintf (stderr, " instrument_track_patch_based_ckpt: unkonwn operand?????? %s\n", INS_Disassemble(ins).c_str());
-                //assert (0);
+                } else if (INS_IsStringop (ins)) {
+                } else {
+                    string dis = INS_Disassemble (ins); 
+                    if (dis[0] == 'f') continue; //ignore fpu instructions; these operands doesn't matter 
+                    fprintf (stderr, " instrument_track_patch_based_ckpt: unkonwn operand?????? %s at pos %d, operand_count %d\n", dis.c_str(), i, operand_count);
+                    print_all_operands (ins);
+                }
             }
         } 
         if (INS_OperandRead (ins, i)) {
@@ -7170,7 +7227,7 @@ static void instrument_track_patch_based_ckpt (INS ins)
                 if (!REG_valid (reg)) {
                     fprintf (stderr, "instrument_track_patch_based_ckpt: Invalid read reg operand?? for inst %s\n", INS_Disassemble(ins).c_str());
                 } else if (REG_is_st (reg)) {
-                    fprintf (stderr, "instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
+                    printf ("instrument_track_patch_based_ckpt: fpu reg for inst %s\n", INS_Disassemble(ins).c_str());
                 } else {
                     if (reg != LEVEL_BASE::REG_EFLAGS)
                         readRegs.insert (reg);
@@ -7202,9 +7259,12 @@ static void instrument_track_patch_based_ckpt (INS ins)
                     fprintf (stderr, "Fixed memoop at pos %d for %s\n", i, INS_Disassemble(ins).c_str());
                 } else if (INS_OperandIsAddressGenerator(ins, i)) {
                     assert (0);
+                } else if (INS_IsStringop (ins)) {
                 } else {
-		    fprintf (stderr, "implicit?%d unkonwn operand at pos %d?????? %s\n", INS_OperandIsImmediate (ins, i), i, INS_Disassemble(ins).c_str());
-                    //assert (0);
+                    string dis = INS_Disassemble (ins); 
+                    if (dis[0] == 'f') continue; //ignore fpu instructions; these operands doesn't matter 
+		    fprintf (stderr, "implicit?%d unknown operand at pos %d?????? %s, ip %x, operand_count %d\n", INS_OperandIsImplicit (ins, i), i, dis.c_str(), INS_Address(ins), operand_count);
+                    print_all_operands (ins);
                 }
             }
         }
@@ -7319,7 +7379,7 @@ static void instrument_track_patch_based_ckpt (INS ins)
                 default:
                     if (regs.size() == 0 && (INS_IsStackRead (ins) || INS_IsStackWrite (ins))) break;
                     if (readRegs.size () + writtenRegs.size() == 0) {
-                        fprintf (stderr, "There is no reg operand for inst %s???\n", INS_Disassemble(ins).c_str());
+                        //fprintf (stderr, "There is no reg operand for inst %s???\n", INS_Disassemble(ins).c_str());
                     } else {
                         if (regs.size() != 0)
                             fprintf (stderr, "total of %d %s operands for %s\n", regs.size(), read?"read":"write", INS_Disassemble(ins).c_str());

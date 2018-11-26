@@ -588,5 +588,6 @@ int recheck_pipe (struct recheck_handle* handle, int pipefd[2], u_long clock);
 int recheck_shmget (struct recheck_handle* handle, key_t key, size_t size, int shmflg, u_long clock);
 int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void* raddr, int shmflg, u_long clock);
 int recheck_ipc_rmid (struct recheck_handle* handle, int shmid, int cmd, u_long clock);
+void recheck_jumpstart_start (struct recheck_handle* handle);
 
 #endif

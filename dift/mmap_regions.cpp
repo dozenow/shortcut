@@ -17,7 +17,6 @@ using namespace std;
 #include "mmap_regions.h"
 
 // Let's optimize for fast checking and easy code!
-#define PAGE_SIZE 4096
 bitset<0xc0000> ro_pages;
 bitset<0xc0000> rw_pages;
 bitset<0xc0000> ex_pages;
@@ -123,7 +122,7 @@ void change_mmap_region (u_long addr, int len, int prot)
 #define is_readonly_now(i)  (ro_pages.test(i) && !max_rw_pages.test(i))
 bool is_existed (u_long addr)
 {
-    if (ro_pages.test(addr/PAGE_SIZE) || rw_pages.test(addr/PAGE_SIZE)) return true;
+    if (ro_pages.test(addr/PAGE_SIZE) || rw_pages.test(addr/PAGE_SIZE) || ex_pages.test(addr/PAGE_SIZE)) return true;
     return false;
 }
 
