@@ -1257,8 +1257,23 @@ static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int 
     tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
 }
 
+static void print_memory_regions () 
+{
+    char buf[256];
+    string procname=  "/proc/self/maps";
+    FILE* file = fopen(procname.c_str(), "r");
+    while (!feof(file)) {
+        if (fgets (buf, sizeof(buf), file)) {
+            printf ("%s", buf);
+        }
+    }
+    fclose(file);
+}
+
+
 static void sys_mmap_stop(int rc)
 {
+
     struct mmap_info* mmi = (struct mmap_info*) current_thread->save_syscall_info;
 //    struct timeval mm_st, mm_end; 
 
@@ -1306,6 +1321,10 @@ static void sys_mmap_stop(int rc)
 #endif
     if (rc > 0 || rc < -1024) {
         if (current_thread->start_tracking) add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
+    }
+    if (current_thread->start_tracking) {
+        printf ("mmap 0x%x size %d, prot %x, flags %x\n", rc, mmi->length, mmi->prot, mmi->flags); 
+        print_memory_regions();
     }
 }
 
@@ -2769,7 +2788,7 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
     if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
-        fprintf (stderr, "# jumpstart_runtime slice begins.\n");
+        fprintf (stderr, "####### jumpstart_runtime slice begins.\n");
         fflush (stdout);
 	current_thread->recheck_handle = open_recheck_log (current_thread->rg_id, current_thread->record_pid);
         if (fw_slice_print_header(current_thread->rg_id, current_thread, 1) < 0) {
@@ -2824,28 +2843,34 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         }
 
         //print out  mmap regions
-        bitset<0xc0000> pages;
+        bitset<0xc0000> write_pages;
         char procname[256], buf[256];
         sprintf (procname, "/proc/%d/maps", getpid());
         FILE* file = fopen(procname, "r");
         while (!feof(file)) {
             if (fgets (buf+2, sizeof(buf)-2, file)) {
-                printf ("%s\n", buf);
+                printf ("%s", buf);
                 buf[0] = '0'; buf[1] = 'x'; buf[10] = '\0';
                 u_long start = strtold(buf, NULL);
                 buf[9] = '0'; buf[10] = 'x'; buf[19] = '\0';
                 u_long end = strtold(buf+9, NULL);
-                for (u_long addr = start; addr < end; addr+=PAGE_SIZE) {
-                    pages.set(addr/PAGE_SIZE, true);
+                if (buf[20] == 'r' || buf[21] == 'w' || buf[22] == 'x') {
+                    for (u_long addr = start; addr < end; addr+=PAGE_SIZE) {
+                        write_pages.set(addr/PAGE_SIZE, true);
+                    }
+                } else {
+                    //TODO, let's track the deallocated memory regions by munmap and mmap syscalls instead of this heuristic
+                    fprintf (stderr, "[TODO] skipping regions.\n");
                 }
             }
         }
         fclose(file);
+        fflush(stdout);
 
         fprintf (stderr, "===== checkpoint mem ====\n");
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             fprintf (stderr, "0x%lx", *iter);
-            if (!pages.test (*iter/PAGE_SIZE)) {
+            if (!write_pages.test (*iter/PAGE_SIZE)) {
                 fprintf (stderr, " doesn't exist\n");
                 continue;
             }
@@ -2876,7 +2901,7 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
-        fprintf (stderr, "# jumpstart_runtime slice ends.\n");
+        fprintf (stderr, "###### jumpstart_runtime slice ends.\n");
     }
 }
 
@@ -3041,7 +3066,6 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    break;
         case SYS_mmap:
         case SYS_mmap2:
-            if (current_thread->start_tracking) printf ("mmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
@@ -3053,6 +3077,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_mremap:
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
+            break;
+        case SYS_madvise:
+            if (current_thread->start_tracking) printf ("madvise 0x%lx size %d, advise %x\n", (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2); 
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -3216,6 +3243,9 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
         case SYS_mmap:
         case SYS_mmap2:
             sys_mmap_stop(rc);
+            break;
+        case SYS_munmap:
+            if (current_thread->start_tracking) print_memory_regions ();
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);

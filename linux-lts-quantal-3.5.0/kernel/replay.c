@@ -8238,6 +8238,12 @@ sys_jumpstart_runtime (int mode) {
 	//dump_vmas();
 	if (run_patched_ckpt) {
 		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
+			if (pause_after_slice) {
+				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+				set_current_state(TASK_INTERRUPTIBLE);
+				schedule();
+				printk("Pid %d woken up.\n", current->pid);
+			}
 			return 1;
 		} if (mode == 2) { //load the ckpt
 			char* filename = "/replay_logdb/pckpt";
@@ -8324,7 +8330,7 @@ sys_jumpstart_runtime (int mode) {
 				if (current->record_thrd == NULL) {
 					printk ("We currently require the process is recording during acceleration....\n");
 				} else {
-					//xdou: I'm not sure whether this sruct is useful or not for function level support...
+					//xdou: I'm not sure whether this struct is useful or not for function level support...
 					struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
 					//figure out where the slice is loaded
 					struct vm_area_struct* vma;
@@ -8354,12 +8360,13 @@ sys_jumpstart_runtime (int mode) {
 						}
 					}
 					up_read (&current->mm->mmap_sem);
+					//TODO: uncomment these two lines
 					if (slice_addr == 0) {
 						printk ("BUG: cannot load the slice. \n");
-						BUG();
+						//BUG();
 					}
 
-					start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+					//start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
 				}
 			}
 			return 0;
