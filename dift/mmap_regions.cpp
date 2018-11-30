@@ -264,6 +264,16 @@ void handle_downprotected_pages (struct thread_data* tdata)
     if (prev_type) {
 	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
     } 
+    //now allocate max heap 
+    u_long max_heap = tdata->max_heap;
+    if (max_heap != (u_long)syscall(SYS_brk, 0)) { 
+        fprintf (stderr, "[BUG] Shrink the heap if necessary! max heap %lx, cur heap %lx\n", max_heap, syscall(SYS_brk, 0));  //haven't seen this behavior yet, so just put a sanity check here
+        //assert (false);
+    }
+    OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_brk);
+    OUTPUT_MAIN_THREAD (tdata, "mov ebx, 0x%lx", max_heap);
+    OUTPUT_MAIN_THREAD (tdata, "int 0x80");
+    
     OUTPUT_MAIN_THREAD (tdata, "ret");
 }
 

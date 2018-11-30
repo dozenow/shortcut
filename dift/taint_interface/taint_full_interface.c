@@ -3940,7 +3940,8 @@ static void translate_fpu_inst (char* ins_str, char* slice)
     while (*ch != '\0') {
 	*outch++ = *ch++; // Copies space
 	if (!strncmp(ch, "st0", 3) && strncmp(ins_str, "fmul ", 5) && strncmp(ins_str, "fmulp ", 6) 
-	    && strncmp(ins_str, "faddp ", 6) && strncmp(ins_str, "fcmov", 5) && strncmp (ins_str, "fdiv", 4)) {
+	    && strncmp(ins_str, "faddp ", 6) && strncmp(ins_str, "fcmov", 5) && strncmp (ins_str, "fdiv", 4)
+            && strncmp (ins_str, "fsubp ", 6) && strncmp (ins_str, "fsubrp ", 7)) {
 	    ch += 3; // Skip over st0
 	    if (*ch == ',') ch ++; // Skip following comma
 	} else if (!strncmp(ch, "st", 2)) {

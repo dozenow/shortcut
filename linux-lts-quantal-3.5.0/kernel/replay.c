@@ -8366,7 +8366,7 @@ sys_jumpstart_runtime (int mode) {
 						//BUG();
 					}
 
-					//start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+					start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
 				}
 			}
 			return 0;

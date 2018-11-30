@@ -781,14 +781,12 @@ static inline void sys_llseek_start(struct thread_data* tdata, u_int fd, u_long 
     }
 }
 
-static inline void sys_brk_start(struct thread_data* tdata, void *addr)
+static inline void sys_brk_stop (int rc) 
 {
-    tdata->save_syscall_info = (void *) addr;
-}
-
-static inline void sys_brk_stop(int rc)
-{
-    current_thread->save_syscall_info = 0;
+    if (current_thread->start_tracking) { 
+        u_long cur = (u_long) rc; 
+        if (cur > current_thread->max_heap) current_thread->max_heap = cur;
+    }
 }
 
 static inline void sys_read_start(struct thread_data* tdata, int fd, char* buf, int size)
@@ -3235,7 +3233,7 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
             sys_pread_stop(rc);
             break;
         case SYS_brk:
-	    //  sys_brk_stop(rc);
+	    sys_brk_stop(rc);
 	    break;
         case SYS__newselect:
             sys__newselect_stop(rc);
@@ -7930,6 +7928,7 @@ void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)
     current_thread->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (current_thread);
     init_patch_based_ckpt_info (current_thread);
+    current_thread->max_heap = (u_long) syscall (SYS_brk, 0);
 
     current_thread->syscall_cnt = 0; //not ceratin that this is right anymore.. 
 
@@ -8078,6 +8077,7 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     ptdata->saved_flag_taints = new std::stack<struct flag_taints>();
     init_ctrl_flow_info (ptdata);
     init_patch_based_ckpt_info (ptdata);
+    ptdata->max_heap = (u_long) syscall (SYS_brk, 0);
 
     int thread_ndx;
     long thread_status = set_pin_addr (dev_fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 

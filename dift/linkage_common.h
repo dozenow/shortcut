@@ -485,6 +485,7 @@ struct thread_data {
 
     int slice_fp_top; //tracks the top of fpu stack registers in the slice; this could be different than the top of stack in the original execution
     bool start_tracking; //Used along with function level tracking; only start to slice and taint when this flag is true
+    u_long max_heap; //The maximum heap size (denoted by the end addr) the program uses; similar ideas to the mechanism we use for mmap regions in mmap_regions.cpp
 };
 
 #define FP_POP   1
