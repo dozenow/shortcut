@@ -2941,7 +2941,9 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         first_thread = current_thread->record_pid;
         print_memory_regions ();
         //remember existing memory regions
+        clear_mmap_region();
         get_existing_pages (current_thread->patch_based_ckpt_info.read_pages, true);
+        init_mmap_region();
         //taint necessary memory bytes
         //let's ignore this method and use checks file first
         //taint_input_mem_predicate_from_file ();

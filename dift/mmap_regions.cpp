@@ -53,6 +53,15 @@ void init_mmap_region ()
     }
 }
 
+void clear_mmap_region ()
+{
+    ro_pages.reset();
+    rw_pages.reset();
+    ex_pages.reset();
+    max_ro_pages.reset();
+    max_rw_pages.reset();
+}
+
 void add_mmap_region (u_long addr, int len, int prot, int flags) 
 { 
     bool ro_val = (prot & PROT_READ) && !(prot & PROT_WRITE); /* this only included private pages - why? */
