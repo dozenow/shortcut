@@ -62,8 +62,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 0
-//#define EXTRA_DEBUG_STOP 12506617 
+//#define EXTRA_DEBUG 167156
+//#define EXTRA_DEBUG_STOP 167180
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -781,6 +781,24 @@ static inline void sys_llseek_start(struct thread_data* tdata, u_int fd, u_long 
     }
 }
 
+static inline void sys_lseek_start (struct thread_data* tdata, u_int fd, off_t offset, u_int whence) 
+{
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE (0, "call lseek_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+        recheck_lseek (tdata->recheck_handle, fd, offset, whence, *ppthread_log_clock);
+    }
+}
+
+static inline void sys_fsync_start (struct thread_data* tdata, u_int fd) 
+{
+    if (tdata->recheck_handle) {
+        OUTPUT_SLICE (0, "call fsync_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+        recheck_fsync (tdata->recheck_handle, fd, *ppthread_log_clock);
+    }
+}
+
 static inline void sys_brk_stop (int rc) 
 {
     if (current_thread->start_tracking) { 
@@ -1058,6 +1076,23 @@ static inline void sys_readlink_start(struct thread_data* tdata, char* path, cha
     }
 }
 
+static inline void sys_getcwd_start (struct thread_data* tdata, char* buf, size_t size)
+{
+    struct two_long_info* info = &current_thread->op.two_long_info_cache;
+    info->first = (u_long) buf;
+    info->second = (u_long) size;
+}
+
+static void sys_getcwd_stop (int rc)
+{
+    struct two_long_info* info = &current_thread->op.two_long_info_cache; 
+    if (current_thread->recheck_handle) {
+        OUTPUT_SLICE (0, "call getcwd_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+        recheck_getcwd (current_thread->recheck_handle, (char*) info->first, (size_t) info->second, *ppthread_log_clock);
+    }
+}
+
 static void sys_ioctl_start(struct thread_data* tdata, int fd, u_int cmd, char* arg)
 {
     struct ioctl_info* ii = &tdata->op.ioctl_info_cache;
@@ -1096,6 +1131,15 @@ static inline void sys_chmod_start(struct thread_data* tdata, char* filename, mo
 	OUTPUT_SLICE (0, "call chmod_recheck");
         OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
 	recheck_chmod (tdata->recheck_handle, filename, mode, *ppthread_log_clock);
+    } 
+}
+
+static inline void sys_chdir_start(struct thread_data* tdata, char* filename)
+{
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE (0, "call chdir_recheck");
+        OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	recheck_chdir (tdata->recheck_handle, filename, *ppthread_log_clock);
     } 
 }
 
@@ -1214,6 +1258,13 @@ static void sys_fcntl64_start(struct thread_data* tdata, int fd, int cmd, void* 
 	    OUTPUT_SLICE_INFO ("");
 	    recheck_fcntl64_setown (tdata->recheck_handle, fd, (long) arg, is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), *ppthread_log_clock);
 	    break;
+        case F_SETLK: //I think this might not need to be handled since we already have the correct thread scheduling with replay clocks
+        case F_SETLKW:
+        case F_SETLK64:
+        case F_SETLKW64:
+            skip_to_syscall (tdata->recheck_handle, SYS_fcntl64);
+	    fprintf (stderr, "[ERROR] fcntl64 cmd %d (SETLK or SETLKW) not yet handled for recheck\n", cmd);
+            break;
 	default:
 	    fprintf (stderr, "[ERROR] fcntl64 cmd %d not yet handled for recheck\n", cmd);
 	}
@@ -1322,7 +1373,7 @@ static void sys_mmap_stop(int rc)
     }
     if (current_thread->start_tracking) {
         printf ("mmap 0x%x size %d, prot %x, flags %x\n", rc, mmi->length, mmi->prot, mmi->flags); 
-        print_memory_regions();
+        //print_memory_regions();
     }
 }
 
@@ -2668,6 +2719,16 @@ static inline void sys_ftruncate_start (struct thread_data* tdata, u_int fd, u_l
     }
 }
 
+static inline void sys_ftruncate64_start (struct thread_data* tdata, u_int fd, loff_t length) 
+{ 
+    if (tdata->recheck_handle) {
+	OUTPUT_SLICE(0, "call ftruncate64_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+	recheck_ftruncate64 (tdata->recheck_handle, fd, length, *ppthread_log_clock);
+    }
+}
+
+
 static inline void sys_prctl_start (struct thread_data* tdata, int option, u_long arg2, u_long arg3, u_long arg4, u_long arg5)
 { 
     if (tdata->recheck_handle) {
@@ -2778,6 +2839,87 @@ static inline int get_reg_ckpt_index (REG reg)
     return -1;
 }
 
+static void get_existing_pages (bitset<0xc0000>* pages, bool ignore_shared_clock)
+{
+    char procname[256], buf[256];
+    sprintf (procname, "/proc/%d/maps", getpid());
+    FILE* file = fopen(procname, "r");
+    while (!feof(file)) {
+        if (fgets (buf+2, sizeof(buf)-2, file)) {
+            printf ("%s", buf);
+            if (ignore_shared_clock && strstr (buf, "/run/shm/uclock") != NULL) continue;
+            buf[0] = '0'; buf[1] = 'x'; buf[10] = '\0';
+            u_long start = strtold(buf, NULL);
+            buf[9] = '0'; buf[10] = 'x'; buf[19] = '\0';
+            u_long end = strtold(buf+9, NULL);
+            if (buf[20] == 'r' || buf[21] == 'w' || buf[22] == 'x') {
+                for (u_long addr = start; addr < end; addr+=PAGE_SIZE) {
+                    pages->set(addr/PAGE_SIZE, true);
+                }
+            } else {
+                //TODO, let's track the deallocated memory regions by munmap and mmap syscalls instead of this heuristic
+                fprintf (stderr, "[TODO] skipping regions.\n");
+            }
+        }
+    }
+    fclose(file);
+}
+
+void taint_memory_out (int type, char* buf, u_long size) 
+{
+    struct taint_creation_info tci;
+    if (current_thread->start_tracking == false) return;
+    tci.type = type;
+    tci.rg_id = current_thread->rg_id;
+    tci.record_pid = current_thread->record_pid;
+    tci.syscall_cnt = current_thread->syscall_cnt;
+    tci.offset = 0;
+    tci.fileno = 0;
+    tci.data = 0;
+    create_taints_from_buffer_unfiltered (buf, size, &tci, tokens_fd);
+    add_modified_mem_for_final_check ((u_long)buf, size);
+}
+
+void taint_input_mem_predicate_from_checks (void) 
+{
+    for (map<u_long, int>::iterator iter = mem_predicate_map.begin(); iter != mem_predicate_map.end(); ++iter) {
+        fprintf (stderr, "tainting mem inputs: %lx size %d\n", iter->first, iter->second);
+        taint_memory_out (TOK_INIT_MEMORY_INPUT, (char*) iter->first, iter->second);
+    }
+}
+
+#define MAX_BUF 1024*16
+#if 0
+static void taint_input_mem_predicate_from_file (void)
+{
+    char filename[256];
+    int fd, offset = 0, len = 0; 
+
+    sprintf (filename, "%s/verification_output", group_directory);
+    fd = open (filename, O_RDONLY);
+    if (fd < 0) {
+        fprintf (stderr, "cannot open file %s\n", filename);
+        return; 
+    }
+
+    char buf[MAX_BUF];
+
+    len = read (fd, buf, MAX_BUF/5*5);
+    while (len != 0) {
+        offset = 0;
+        while (offset < len) { 
+            unsigned long mem_loc = *((unsigned long*) (buf + offset));
+            offset += sizeof (unsigned long);
+            offset += sizeof (unsigned char);
+            taint_memory_out (TOK_INIT_MEMORY_INPUT, (char*) mem_loc, 1);
+            fprintf (stderr, "taint %lx\n", mem_loc);
+        }
+        len = read (fd, buf, MAX_BUF/5*5);
+    }
+    close (fd);
+}
+#endif
+
 static inline void sys_jumpstart_runtime_start (struct thread_data* data, const CONTEXT* ctx) 
 {
 
@@ -2797,6 +2939,13 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         recheck_jumpstart_start (current_thread->recheck_handle);
         current_thread->start_tracking = true;
         first_thread = current_thread->record_pid;
+        print_memory_regions ();
+        //remember existing memory regions
+        get_existing_pages (current_thread->patch_based_ckpt_info.read_pages, true);
+        //taint necessary memory bytes
+        //let's ignore this method and use checks file first
+        //taint_input_mem_predicate_from_file ();
+        taint_input_mem_predicate_from_checks();
     } 
     else if (function_level_tracking && current_thread->start_tracking == true) {
         current_thread->start_tracking = false;
@@ -2842,41 +2991,21 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
 
         //print out  mmap regions
         bitset<0xc0000> write_pages;
-        char procname[256], buf[256];
-        sprintf (procname, "/proc/%d/maps", getpid());
-        FILE* file = fopen(procname, "r");
-        while (!feof(file)) {
-            if (fgets (buf+2, sizeof(buf)-2, file)) {
-                printf ("%s", buf);
-                buf[0] = '0'; buf[1] = 'x'; buf[10] = '\0';
-                u_long start = strtold(buf, NULL);
-                buf[9] = '0'; buf[10] = 'x'; buf[19] = '\0';
-                u_long end = strtold(buf+9, NULL);
-                if (buf[20] == 'r' || buf[21] == 'w' || buf[22] == 'x') {
-                    for (u_long addr = start; addr < end; addr+=PAGE_SIZE) {
-                        write_pages.set(addr/PAGE_SIZE, true);
-                    }
-                } else {
-                    //TODO, let's track the deallocated memory regions by munmap and mmap syscalls instead of this heuristic
-                    fprintf (stderr, "[TODO] skipping regions.\n");
-                }
-            }
-        }
-        fclose(file);
+        get_existing_pages (&write_pages, false);
         fflush(stdout);
 
         fprintf (stderr, "===== checkpoint mem ====\n");
+        print_memory_regions();
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
-            fprintf (stderr, "0x%lx", *iter);
+            //fprintf (stderr, "0x%lx", *iter);
             if (!write_pages.test (*iter/PAGE_SIZE)) {
-                fprintf (stderr, " doesn't exist\n");
+                //fprintf (stderr, " doesn't exist\n");
                 continue;
             }
             if (is_existed (*iter) == false) {
-                fprintf (stderr, " has been deallocated?  ");
-                //continue;
+                //fprintf (stderr, " has been deallocated?  ");
             }
-            fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
+            //fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
             u_long addr = *iter;
             ret = write (fd, (char*) &addr, sizeof (unsigned long));
             assert (ret == sizeof(unsigned long));
@@ -2886,16 +3015,40 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         close (fd);
 
         //verifications
+        char verification_filename[256];
+        snprintf (verification_filename, 256, "%s/verification", group_directory);
+        fd = open (verification_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        assert (fd > 0);
+
         fprintf (stderr, "===== verification reg ==== \n");
         for (unsigned int i = 0; i < sizeof(read_reg)/sizeof(bool); ++i) { 
             if (read_reg[i]) { 
                 fprintf (stderr, "%d (%s): %u\n", i, REG_StringShort((REG) (i/REG_SIZE)).c_str(), (unsigned int)read_reg_value[i]);
             }
         }
+        ret = write (fd, (char*) read_reg, sizeof(current_thread->patch_based_ckpt_info.read_reg));
+        assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg));
+        fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg));
+        ret = write (fd, read_reg_value, sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
+        assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
+        fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
         fprintf (stderr, "===== verification mem ==== \n");
         for (map<u_long, char>::iterator iter = read_mem->begin(); iter != read_mem->end(); ++iter) {
-            fprintf (stderr, "0x%lx: %u\n", iter->first, (unsigned int)(unsigned char) iter->second);
+            //fprintf (stderr, "0x%lx: ", iter->first);
+            if (!current_thread->patch_based_ckpt_info.read_pages->test (iter->first/PAGE_SIZE)) {
+                //fprintf (stderr, " doesn't exist beforehand\n");
+                continue;
+            }
+            //fprintf (stderr, " %u\n", (unsigned int)(unsigned char) iter->second);
+            u_long addr = iter->first;
+            ret = write (fd, (char*)&addr, sizeof(addr));
+            assert (ret == sizeof(addr));
+            char value = iter->second;
+            ret = write (fd, &value, sizeof(value));
+            assert (ret== sizeof(value));
         }
+        close(fd);
+
         fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
@@ -2949,6 +3102,12 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_llseek_start(tdata, (u_int) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2,
 			     (loff_t *) syscallarg3, (u_int) syscallarg4); 
             break;
+        case SYS_lseek:
+            sys_lseek_start (tdata, (u_int) syscallarg0, (off_t) syscallarg1, (u_int) syscallarg2);
+            break;
+        case SYS_fsync:
+            sys_fsync_start (tdata, (u_int) syscallarg0);
+            break;
         case SYS_readlink:
 	    sys_readlink_start(tdata, (char *) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2);
             break;
@@ -2973,6 +3132,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_chmod:
 	    sys_chmod_start (tdata, (char*) syscallarg0, (mode_t) syscallarg1);
+            break;
+        case SYS_chdir:
+	    sys_chdir_start (tdata, (char*) syscallarg0);
             break;
         case SYS_inotify_init1:
 	    sys_inotify_init1_start (tdata, (int) syscallarg0);
@@ -3185,6 +3347,9 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
         case SYS_ftruncate:
             sys_ftruncate_start (tdata, (u_int)syscallarg0, (u_long)syscallarg1);
             break;
+        case SYS_ftruncate64:
+            sys_ftruncate64_start (tdata, (u_int)syscallarg0, (loff_t)syscallarg1);
+            break;
         case SYS_nanosleep:
             printf ("skipped syscall nanosleep.\n");
             break;
@@ -3195,7 +3360,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_jumpstart_runtime_start (tdata, ctx);
             break;
         case SYS_getcwd:
-            fprintf (stderr, "[ERROR]getcwd is not handled buffer is %x\n", syscallarg0);
+            sys_getcwd_start (tdata, (char*) syscallarg0, (size_t) syscallarg1);
             break;
     }
 }
@@ -3243,7 +3408,7 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
             sys_mmap_stop(rc);
             break;
         case SYS_munmap:
-            if (current_thread->start_tracking) print_memory_regions ();
+            //if (current_thread->start_tracking) print_memory_regions ();
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_stop(rc);
@@ -3357,6 +3522,9 @@ void syscall_end(int sysnum, ADDRINT ret_value, ADDRINT ret_errno, CONTEXT* ctx)
 	}
         case 222:
             sys_jumpstart_runtime_end(rc, ctx);
+            break;
+        case SYS_getcwd:
+            sys_getcwd_stop(rc);
             break;
 
     }
@@ -7453,7 +7621,8 @@ static void instrument_track_patch_based_ckpt (INS ins)
 
 void PIN_FAST_ANALYSIS_CALL count_instruction ()
 {
-    ++inst_count;
+    if (current_thread->start_tracking)
+        ++inst_count;
 }
 
 void trace_instrumentation(TRACE trace, void* v)
@@ -7890,6 +8059,7 @@ void init_patch_based_ckpt_info (struct thread_data* tdata)
     info->write_reg = new set<int>();
     info->write_mem = new set<u_long>();
     info->read_mem = new map<u_long, char>();
+    info->read_pages = new bitset<0xc0000>();
 }
 
 void destroy_patch_based_ckpt_info (struct thread_data* tdata) 
@@ -7898,6 +8068,7 @@ void destroy_patch_based_ckpt_info (struct thread_data* tdata)
     if (info->write_reg) delete info->write_reg;
     if (info->write_mem) delete info->write_mem;
     if (info->read_mem) delete info->read_mem;
+    if (info->read_pages) delete info->read_pages;
 }
 
 void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)

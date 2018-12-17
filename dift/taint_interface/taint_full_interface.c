@@ -83,6 +83,7 @@ vector<struct ctrl_flow_param> ctrl_flow_params;
 vector<struct check_syscall> ignored_syscall;
 vector<u_long> ignored_inst;
 boost::icl::interval_set<unsigned long> address_taint_set;
+map<u_long, int> mem_predicate_map;
 
 struct mmap_region {
     u_long start;
@@ -1394,6 +1395,8 @@ static int init_check_map (const char* check_filename)
                     // If set, the instruction uses the recorded value from previous runs and untaints the regs
                     // This is a workaround for not modifying java's random stack addresses
                     ignored_inst.push_back (ip);
+                } else if (!strcmp (type, "mem_predicate")) {
+                    mem_predicate_map[strtoul (value, NULL, 0)] = atoi(extra1);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type, type is %s\n", line, type);
 		    return -1;
@@ -3092,7 +3095,7 @@ TAINTSIGN log_inst_src_mem1 (ADDRINT ip, u_long mem_loc, uint32_t size)
     map<u_long, char> *read_mem = current_thread->patch_based_ckpt_info.read_mem;
 
     for (uint32_t i = 0; i<size; ++i) {
-        if (write_mem->find(mem_loc + i) == write_mem->end() && read_mem->find (mem_loc + i) == read_mem->end()) {
+        if (write_mem->find(mem_loc + i) == write_mem->end() && is_mem_tainted(mem_loc + i, 1) == 0) {
             read_mem->insert (pair<u_long, char> (mem_loc + i, *((char*) (mem_loc + i))));
         }
     }
@@ -3111,9 +3114,6 @@ TAINTSIGN log_inst_dest_mem (ADDRINT ip, u_long mem_loc, uint32_t size)
     if (current_thread->start_tracking == false) return;
     set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
     for (uint32_t i = 0; i<size; ++i) {
-        if (mem_loc + i == 0xb6456ba0) {
-            fprintf (stderr, "ip %x is modifying b6456ba0 pid %d\n", ip, getpid());
-        }
         write_mem->insert (mem_loc + i);
     }
 }

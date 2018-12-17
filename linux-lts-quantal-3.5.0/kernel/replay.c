@@ -128,6 +128,7 @@ unsigned int replay_pause_tool = 0;
 //#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
 int run_patched_ckpt = 0;
+int run_patched_ckpt_record_pid = 0;
 int check_startup_db = 0;
 int pause_after_slice = 0;
 int slice_dump_vm = 0;
@@ -1341,25 +1342,6 @@ int should_call_recplay_exit_start() {
 	return (is_pin_attached() && current->replay_thrd->rp_pin_restart_syscall == REPLAY_PIN_TRAP_STATUS_ENTER);
 
 }
-
-#if 0
-void print_memory_areas (void) 
-{
-	struct vm_area_struct *existing_mmap;
-	if (current->mm) {
-		existing_mmap = current->mm->mmap;
-	}
-	else {
-		existing_mmap = 0;
-	}
-	printk ("Pid %d let's print out the memory mappings:\n", current->pid);
-	while (existing_mmap) {
-		// vm_area's are a singly-linked list
-		printk ("  addr: %#lx, len %lu\n", existing_mmap->vm_start, existing_mmap->vm_end - existing_mmap->vm_start);
-		existing_mmap = existing_mmap->vm_next;
-	}
-}
-#endif
 
 // Cannot unlink shared path page when a replay group is deallocated, so we queue the work up for later
 struct replay_paths_to_free {
@@ -8229,13 +8211,89 @@ asmlinkage long trace_exit (int error_code) {
 #endif
 
 #define PCKPT_MAX_BUF 1024*1024
+#define NUM_REGS 120
+#define REG_SIZE 16
+static void jumpstart_mem_verification (char* prefix) {
+	char filename[256], outputname[256];
+	unsigned long mem_loc;
+	unsigned char mem_value;
+	int len = 0;
+	int offset = 0;
+	char *read_reg = NULL;
+	char *read_reg_value  = NULL;
+	char* buf = VMALLOC (PCKPT_MAX_BUF); 
+	mm_segment_t old_fs = get_fs ();
+	struct file* f = NULL, *output = NULL;
+	char* output_buf = NULL;
+	int output_len = 0; 
+
+	set_fs (KERNEL_DS);
+	sprintf (filename, "%s/verification", prefix);
+	sprintf (outputname, "%s/verification_output", prefix);
+	f = filp_open (filename, O_RDONLY, 0);
+	output = filp_open (outputname, O_RDWR | O_TRUNC | O_CREAT, 0644);
+	
+	if (f == NULL) {
+		printk ("cannot open %s\n", filename);
+		VFREE (buf);
+		return;
+	}
+	if (output == NULL) { 
+		printk ("cannot open %s\n", outputname);
+		VFREE (buf);
+		return;
+	}
+
+	read_reg = VMALLOC (NUM_REGS*REG_SIZE);
+	read_reg_value = VMALLOC (NUM_REGS*REG_SIZE);
+	len = vfs_read (f, (char*) read_reg, NUM_REGS*REG_SIZE, &f->f_pos);
+	BUG_ON (len != NUM_REGS*REG_SIZE);
+	len = vfs_read (f, read_reg_value, NUM_REGS*REG_SIZE, &f->f_pos);
+	BUG_ON (len != NUM_REGS*REG_SIZE);
+
+	output_buf = VMALLOC (PCKPT_MAX_BUF);
+	dump_vmas();
+	printk ("------verification regs ------\n");
+
+	printk ("------verify mem------\n");
+	len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+	set_fs (old_fs);
+	while (len != 0) {
+		int out_ret = 0; 
+		offset = 0;
+		while (offset < len) { 
+			mem_loc = *((unsigned long*) (buf + offset));
+			offset += sizeof (unsigned long);
+			mem_value = *((unsigned char*)(buf + offset));
+			offset += sizeof (unsigned char);
+			if (*((unsigned char*)mem_loc) != mem_value) {
+				printk ("mem 0x%lx value %u, cur %u\n", mem_loc, (unsigned int) mem_value, (unsigned int)(*((unsigned char*)mem_loc)));
+				memcpy (output_buf + output_len, buf + offset - sizeof(unsigned long) - sizeof(unsigned char), sizeof(unsigned long) + sizeof(unsigned char));
+				output_len += sizeof(unsigned long) + sizeof (unsigned char);
+			}
+		}
+		set_fs (KERNEL_DS);
+		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+		out_ret = vfs_write (output, output_buf, output_len, &output->f_pos);
+		BUG_ON (out_ret != output_len);
+		output_len = 0; 
+		set_fs (old_fs);
+	}
+
+	filp_close (f, NULL);
+	filp_close (output, NULL);
+	VFREE (read_reg);
+	VFREE (read_reg_value);
+	VFREE (buf);
+	VFREE (output_buf);
+}
+
 asmlinkage long 
 sys_jumpstart_runtime (int mode) {
 	struct timeval tv;
 	do_gettimeofday (&tv);
 	printk ("calling jumpstart_runtime with mode %d,  %ld.%06ld\n", mode, tv.tv_sec, tv.tv_usec);
 
-	//dump_vmas();
 	if (run_patched_ckpt) {
 		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
 			if (pause_after_slice) {
@@ -8245,8 +8303,9 @@ sys_jumpstart_runtime (int mode) {
 				printk("Pid %d woken up.\n", current->pid);
 			}
 			return 1;
-		} if (mode == 2) { //load the ckpt
-			char* filename = "/replay_logdb/pckpt";
+		} else if (mode == 2) { //load the ckpt
+			char prefix[64];
+			char filename[128];
 			struct file* f = NULL;
 			int retval = 0;
 			mm_segment_t old_fs = get_fs();
@@ -8261,7 +8320,10 @@ sys_jumpstart_runtime (int mode) {
 			int i = 0;
 			unsigned int regcount = 0;
 
+			sprintf (prefix, "/replay_logdb/rec_%d", run_patched_ckpt);
+			sprintf (filename, "%s/pckpt", prefix);
 			printk ("Now loading the ckpt\n");
+			jumpstart_mem_verification (prefix);
 
 			set_fs (KERNEL_DS);
 			f = filp_open (filename, O_RDONLY, 0);	
@@ -8334,7 +8396,9 @@ sys_jumpstart_runtime (int mode) {
 					struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
 					//figure out where the slice is loaded
 					struct vm_area_struct* vma;
-					u_long slice_addr = 0, slice_size;
+					char tmp_filename[256];
+					u_long slice_addr = 0, slice_size = 0;
+					sprintf (tmp_filename, "%s/exslice.%d.so", prefix, run_patched_ckpt_record_pid);
 
 					printk ("Loading the slice.\n");
 
@@ -8350,7 +8414,7 @@ sys_jumpstart_runtime (int mode) {
 						}			
 						if (vma->vm_file) {
 							s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
-							if (!strcmp (s, "/replay_logdb/exslice.so")) {
+							if (!strcmp (s, tmp_filename)) {
 								if (slice_addr == 0) {
 									slice_addr = vma->vm_start;
 									slice_size = vma->vm_end - vma->vm_start;
@@ -8366,7 +8430,12 @@ sys_jumpstart_runtime (int mode) {
 						//BUG();
 					}
 
-					start_fw_slice (go_live_clock, slice_addr, slice_size, 0, NULL, 0);
+					sprintf (tmp_filename, "%s/recheck.%d", prefix, run_patched_ckpt_record_pid);
+					start_fw_slice (go_live_clock, slice_addr, slice_size, run_patched_ckpt_record_pid, tmp_filename, 0);
+					//quit replay mode: TODO check if I've done everything
+					current->go_live_thrd = current->replay_thrd;
+					current->replay_thrd = NULL;
+					current->record_thrd = NULL;
 				}
 			}
 			return 0;
@@ -8376,11 +8445,23 @@ sys_jumpstart_runtime (int mode) {
 	return 0;
 }
 
-SIMPLE_RECORD1(jumpstart_runtime, 222, int, mode);
+static asmlinkage long record_jumpstart_runtime (int mode)
+{
+	long rc;
+	new_syscall_enter (222);
+	rc = sys_jumpstart_runtime (mode);
+	if (run_patched_ckpt == 0 && mode != 2) {
+		new_syscall_done (222, rc);
+		new_syscall_exit (222, NULL);
+	}
+	return rc;
+}
+
 static asmlinkage long replay_jumpstart_runtime (int mode)
 {
 	long rc = get_next_syscall (222, NULL);
 
+	dump_vmas();
 	if(slice_dump_vm) {
 		printk ("Dumping memory, clock is %lu.\n", *(current->replay_thrd->rp_preplay_clock));
 		dump_vmas_content(*(current->replay_thrd->rp_preplay_clock));
@@ -14562,6 +14643,25 @@ shim_vfork(unsigned long clone_flags, unsigned long stack_start, struct pt_regs 
 
 RET1_SHIM2(getrlimit, 191, struct rlimit, rlim, unsigned int, resource, struct rlimit __user *, rlim);
 
+static int is_shared_clock_region (struct record_group* prg, u_long addr) 
+{
+	struct vm_area_struct *vma;
+	struct mm_struct *mm = current->mm;
+	int ret = 0; 
+	down_read(&mm->mmap_sem);
+	vma = find_vma(mm, addr);
+	if (vma && (vma->vm_flags & MAP_SHARED) && addr >= vma->vm_start && vma->vm_file) {
+		char buffer[256];
+		char* p = d_path (&vma->vm_file->f_path, buffer, 256);
+		if (strcmp (p, prg->rg_shmpath) == 0) {
+			printk ("record_mmap_pgoff: skipping region starting at %lx (shared clock region)\n", addr);
+			ret = 1;
+		}
+	}
+	up_read(&mm->mmap_sem);
+	return ret;
+}
+
 static asmlinkage long 
 record_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned long fd, unsigned long pgoff)
 {
@@ -14598,7 +14698,8 @@ record_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 	if (current->record_thrd->rp_group->rg_save_mmap_flag) {
 		if (rc > 0 || rc < -1024) {
 			MPRINT("Pid %d record mmap_pgoff reserve memory addr %lx len %lx\n", current->pid, addr, len);
-			reserve_memory(rc, len);
+			if (is_shared_clock_region (current->record_thrd->rp_group, rc) == 0) 
+				reserve_memory(rc, len);
 		}
 	}
 
@@ -14696,7 +14797,7 @@ replay_mmap_pgoff (unsigned long addr, unsigned long len, unsigned long prot, un
 	if (prt->rp_record_thread->rp_group->rg_save_mmap_flag) {
 		if ((long) rc > 0 || (long) rc < -1024) {
 			MPRINT ("Pid %d replay mmap_pgoff reserve memory addr %lx len %lx\n", current->pid, rc, len);
-			reserve_memory(rc, len);
+			if (is_shared_clock_region (current->replay_thrd->rp_group->rg_rec_group, rc) == 0) reserve_memory(rc, len);
 		}
 	}
 
@@ -17484,6 +17585,13 @@ static struct ctl_table replay_ctl[] = {
 	{
 		.procname	= "run_patched_ckpt",
 		.data		= &run_patched_ckpt,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "run_patched_ckpt_record_pid",
+		.data		= &run_patched_ckpt_record_pid,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,

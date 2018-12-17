@@ -279,6 +279,12 @@ struct readlink_recheck {
 /* Followed by readlink results (size given by rc) */
 /* Followed by variable length path */
 
+struct getcwd_recheck { 
+    char* buf;
+    size_t size;
+};
+/* Followed by readlink results (size given by rc) */
+
 struct socket_recheck {
     int domain;
     int type; 
@@ -323,6 +329,12 @@ struct llseek_recheck {
     u_long offset_high;
     u_long offset_low;
     loff_t result;
+    u_int whence;
+};
+
+struct lseek_recheck {
+    u_int fd;
+    off_t offset;
     u_int whence;
 };
 
@@ -449,6 +461,11 @@ struct chmod_recheck {
 };
 /* Followed by filename */
 
+struct chdir_recheck {
+    char* pathname;
+};
+/* Followed by filename */
+
 struct inotify_init1_recheck {
     int flags;
 };
@@ -471,6 +488,11 @@ struct sched_getaffinity_recheck {
 struct ftruncate_recheck {
     u_int fd;
     u_long length;
+};
+
+struct ftruncate64_recheck {
+    u_int fd;
+    loff_t length;
 };
 
 struct prctl_recheck {
@@ -577,6 +599,7 @@ int recheck_clock_getres (struct recheck_handle* handle, clockid_t clk_id, struc
 int recheck_mkdir (struct recheck_handle* handle, char* pathname, int mode, u_long clock);
 int recheck_unlink (struct recheck_handle* handle, char* pathname, u_long clock);
 int recheck_chmod (struct recheck_handle* handle, char* pathname, mode_t mode, u_long clock);
+int recheck_chdir (struct recheck_handle* handle, char* pathname, u_long clock);
 int recheck_inotify_init1 (struct recheck_handle* handle, int flags, u_long clock);
 int recheck_inotify_add_watch (struct recheck_handle* handle, int fd, char* pathname, uint32_t mask, u_long clock);
 int recheck_sched_getaffinity (struct recheck_handle* handle, pid_t pid, size_t cpusetsize, cpu_set_t* mask, int is_pid_tainted, u_long clock);
@@ -589,5 +612,9 @@ int recheck_shmget (struct recheck_handle* handle, key_t key, size_t size, int s
 int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void* raddr, int shmflg, u_long clock);
 int recheck_ipc_rmid (struct recheck_handle* handle, int shmid, int cmd, u_long clock);
 void recheck_jumpstart_start (struct recheck_handle* handle);
-
+int recheck_getcwd (struct recheck_handle* handle, char* buf, size_t size, u_long clock);
+struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall);
+int recheck_lseek (struct recheck_handle* handle, unsigned int fd, off_t offset, unsigned int whence, u_long clock);
+int recheck_fsync (struct recheck_handle* handle, unsigned int fd, u_long clock);
+int recheck_ftruncate64 (struct recheck_handle* handle, u_int fd, loff_t length, u_long clock);
 #endif

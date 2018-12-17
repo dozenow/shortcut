@@ -17,6 +17,7 @@
 #include <queue>
 #include <deque>
 #include <set>
+#include <bitset>
 #include "../test/parseklib.h"
 #include "../test/parseulib.h"
 #include "track_pthread.h"
@@ -407,6 +408,12 @@ struct patch_based_ckpt_info  {
     set<int>* write_reg;
     set<u_long> *write_mem;
     map<u_long, char> *read_mem;   
+    bitset<0xc0000> *read_pages; //All pages that exist before sys_jumpstart_runtime
+};
+
+struct two_long_info {
+    u_long first; 
+    u_long second;
 };
 
 // Per-thread data structure
@@ -451,6 +458,7 @@ struct thread_data {
 	struct shmat_info shmat_info_cache;
         struct recvfrom_info recvfrom_info_cache;
 	struct mremap_info mremap_info_cache;
+        struct two_long_info two_long_info_cache; 
     } op;
 
     void* save_syscall_info;
@@ -505,5 +513,6 @@ struct syscall_check {
     u_long clock;
     long   value;
 };
+extern map<u_long, int> mem_predicate_map;
 #define PAGE_SIZE 4096
 #endif

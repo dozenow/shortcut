@@ -81,8 +81,12 @@ static void pthread_log_init (void)
 	pthread_log_debug("shm_open failed\n");
 	exit (0);
     }
-    ppage = mmap (0, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    //we'll try to pin the user clock page in the same place during recording/replay/replay+pin
+    //without this addr hint, the user clock page appears at a different location on replay+pin, than on replay and recording
+    //This is only at best efforts, and is only necessary for funtion-level support with jumpstart 
+    ppage = mmap (0x80000000, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     DPRINT ("Initial mmap returns %p\n", ppage);
+    if ((unsigned long) ppage != 0x80000000) pthread_log_debug ("Cannot pin the user level clock page to the fixed position.\n");
 
     if (ppage == MAP_FAILED) {
         pthread_log_debug ("Cannot setup shared page for clock\n");

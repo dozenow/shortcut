@@ -2035,6 +2035,10 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		    do_gettimeofday (&tv);
 		    printk ("slice fails check at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
+		{
+			printk ("let's skip recovery for now.\n");
+			return 0;
+		}
 
 		pstask = KMALLOC (sizeof(struct slice_task), GFP_KERNEL);
 		if (pstask == NULL) {

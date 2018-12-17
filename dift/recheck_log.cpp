@@ -98,7 +98,7 @@ static void write_taintmask_into_recheck_log (struct recheck_handle* handle, u_l
     write_data_into_recheck_log (handle->recheckfd, (void *) mem_loc, size);
 }
 
-static struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall) 
+struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall) 
 {
     struct klog_result* res;
 
@@ -984,6 +984,23 @@ int recheck_readlink (struct recheck_handle* handle, char* path, char* buf, size
     return 0;
 }
 
+int recheck_getcwd (struct recheck_handle* handle, char* buf, size_t size, u_long clock)
+{
+    struct getcwd_recheck gchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_getcwd);
+
+    check_reg_arguments ("getcwd", 2);
+
+    u_long bufsize = sizeof(getcwd_recheck) + (res->retval > 0?res->retval:0);
+    write_header_into_recheck_log (handle->recheckfd, SYS_getcwd, res->retval, bufsize, clock);
+    gchk.buf = buf; 
+    gchk.size = size;
+    write_data_into_recheck_log (handle->recheckfd, &gchk, sizeof(gchk));
+    if (res->retval > 0) write_data_into_recheck_log (handle->recheckfd, res->retparams, res->retval);
+
+    return 0;
+}
+
 int recheck_socket (struct recheck_handle* handle, int domain, int type, int protocol, u_long clock)
 {
     struct socket_recheck schk;
@@ -1199,6 +1216,33 @@ int recheck_llseek (struct recheck_handle* handle, u_int fd, u_long offset_high,
     if (res->retval >= 0) rchk.result = *((loff_t *) res->retparams);
     rchk.whence = whence;
     write_data_into_recheck_log (handle->recheckfd, &rchk, sizeof(rchk));
+
+    return 0;
+}
+
+int recheck_lseek (struct recheck_handle* handle, unsigned int fd, off_t offset, unsigned int whence, u_long clock) 
+{
+    struct lseek_recheck rchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_lseek);
+
+    check_reg_arguments ("lseek", 3);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_lseek, res->retval, sizeof(rchk), clock);
+    rchk.fd = fd;
+    rchk.offset = offset;
+    rchk.whence = whence;
+    write_data_into_recheck_log (handle->recheckfd, &rchk, sizeof(rchk));
+
+    return 0;
+}
+
+int recheck_fsync (struct recheck_handle* handle, unsigned int fd, u_long clock) 
+{
+    struct klog_result* res = skip_to_syscall (handle, SYS_fsync);
+
+    check_reg_arguments ("fsync", 1);
+    write_header_into_recheck_log (handle->recheckfd, SYS_fsync, res->retval, sizeof(u_int), clock);
+    write_data_into_recheck_log (handle->recheckfd, &fd, sizeof (fd));
 
     return 0;
 }
@@ -1645,6 +1689,22 @@ int recheck_chmod (struct recheck_handle* handle, char* pathname, mode_t mode, u
     return 0;
 }
 
+int recheck_chdir (struct recheck_handle* handle, char* pathname, u_long clock)
+{
+    struct chdir_recheck cchk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_chdir);
+
+    check_reg_arguments ("chdir", 1);
+    if (is_mem_arg_tainted ((u_long) pathname, strlen (pathname) + 1)) fprintf (stderr, "[ERROR] chdir pathname is tainted: %s\n", pathname);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_chdir, res->retval, sizeof(struct chdir_recheck) + strlen(pathname)+1, clock);
+    cchk.pathname = pathname;
+    write_data_into_recheck_log (handle->recheckfd, &cchk, sizeof(cchk));
+    write_data_into_recheck_log (handle->recheckfd, pathname, strlen(pathname) + 1);
+
+    return 0;
+}
+
 int recheck_inotify_init1 (struct recheck_handle* handle, int flags, u_long clock)
 {
     struct inotify_init1_recheck ichk;
@@ -1701,6 +1761,20 @@ int recheck_ftruncate (struct recheck_handle* handle, u_int fd, u_long length, u
     check_reg_arguments ("ftruncate", 2);
 
     write_header_into_recheck_log (handle->recheckfd, SYS_ftruncate, res->retval, sizeof(struct ftruncate_recheck), clock);
+    chk.fd = fd;
+    chk.length = length;
+    write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
+
+    return 0;
+}
+
+int recheck_ftruncate64 (struct recheck_handle* handle, u_int fd, loff_t length, u_long clock)
+{
+    struct ftruncate64_recheck chk;
+    struct klog_result* res = skip_to_syscall (handle, SYS_ftruncate64);
+    check_reg_arguments ("ftruncate64", 2);
+
+    write_header_into_recheck_log (handle->recheckfd, SYS_ftruncate64, res->retval, sizeof(struct ftruncate64_recheck), clock);
     chk.fd = fd;
     chk.length = length;
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
