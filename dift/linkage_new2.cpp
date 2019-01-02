@@ -62,8 +62,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 167156
-//#define EXTRA_DEBUG_STOP 167180
+//#define EXTRA_DEBUG 169252
+//#define EXTRA_DEBUG_STOP 172425 
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -2183,6 +2183,7 @@ static inline void sys_mremap_start (struct thread_data* tdata, void* old_addres
 {
     struct mremap_info* mri = (struct mremap_info*) &tdata->op.mremap_info_cache;
     fprintf (stderr, "mremap: old_address 0x%lx old_size 0x%x new_size 0x%x flags 0x%x new_address 0x%lx clock %lu\n", (u_long) old_address, old_size, new_size, flags, (u_long) new_address, *ppthread_log_clock);
+    fprintf (stderr, "[TODO] mremap: clear mem taints\n"); 
     mri->old_address = old_address;
     mri->old_size = old_size;
     mri->new_size = new_size;
@@ -2841,8 +2842,9 @@ static inline int get_reg_ckpt_index (REG reg)
 
 static void get_existing_pages (bitset<0xc0000>* pages, bool ignore_shared_clock)
 {
+    printf ("----------------get_existing_pages starts--------------------\n");
     char procname[256], buf[256];
-    sprintf (procname, "/proc/%d/maps", getpid());
+    sprintf (procname, "/proc/self/maps");
     FILE* file = fopen(procname, "r");
     while (!feof(file)) {
         if (fgets (buf+2, sizeof(buf)-2, file)) {
@@ -2858,11 +2860,13 @@ static void get_existing_pages (bitset<0xc0000>* pages, bool ignore_shared_clock
                 }
             } else {
                 //TODO, let's track the deallocated memory regions by munmap and mmap syscalls instead of this heuristic
-                fprintf (stderr, "[TODO] skipping regions.\n");
+                fprintf (stderr, "[TODO] skipping regions %s\n", buf);
+                printf ("[TODO] skipping regions %s\n", buf);
             }
         }
     }
     fclose(file);
+    printf ("----------------get_existing_pages ends--------------------\n");
 }
 
 void taint_memory_out (int type, char* buf, u_long size) 
@@ -3232,7 +3236,10 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             break;
         case SYS_munmap:
             if (current_thread->start_tracking) printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
-            if (current_thread->start_tracking) delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            if (current_thread->start_tracking) {
+                clear_mem_taints ((u_long) syscallarg0, (uint32_t)syscallarg1);
+                delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            }
             break;
         case SYS_mprotect:
             if (current_thread->start_tracking) change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
@@ -3241,7 +3248,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
             break;
         case SYS_madvise:
-            if (current_thread->start_tracking) printf ("madvise 0x%lx size %d, advise %x\n", (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2); 
+            if (current_thread->start_tracking) fprintf (stderr, "madvise 0x%lx size %d, advise %x\n", (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2); 
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -6456,7 +6463,7 @@ static void instrument_ldmxcsr (INS ins)
             IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, ADDRINT value3, const CONTEXT* ctx)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, ADDRINT value3, ADDRINT value4, const CONTEXT* ctx)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -6466,6 +6473,8 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
     bool print_me = true;
+    if (mem_loc1 == 0x8b91044 || mem_loc2 == 0x8b91044 || mem_loc1 == 0x8b91040 || mem_loc2 == 0x8b91040) print_me = true;
+    else print_me = false;
 
 #if 0
     #define ADDR_TO_CHECK 0x86a4dc1
@@ -6494,7 +6503,7 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-        printf ("ecx value %u edx %u esp %u\n", value1, value2, value3);
+        printf ("ecx value %u edx %u ebx %u eax %u\n", value1, value2, value3, value4);
         printf ("jump_diverge index %lu\n", jump_count);
 
 	PIN_REGISTER value;
@@ -6548,7 +6557,8 @@ static void debug_print (INS ins)
 			   IARG_MEMORYREAD2_EA, 
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
@@ -6560,7 +6570,8 @@ static void debug_print (INS ins)
 			   IARG_MEMORYWRITE_EA,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6576,7 +6587,8 @@ static void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6588,7 +6600,8 @@ static void debug_print (INS ins)
 			   IARG_ADDRINT, 0,
 			   IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	}
@@ -6601,7 +6614,8 @@ static void debug_print (INS ins)
 		       IARG_ADDRINT, 0,
 		       IARG_REG_VALUE, LEVEL_BASE::REG_ECX, 			
 		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
-			   IARG_REG_VALUE, LEVEL_BASE::REG_ESP, 			
+                       IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
+                       IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
 		       IARG_CONST_CONTEXT,
 		       IARG_END);
     }

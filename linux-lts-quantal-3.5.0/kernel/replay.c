@@ -8296,12 +8296,12 @@ sys_jumpstart_runtime (int mode) {
 
 	if (run_patched_ckpt) {
 		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
-			if (pause_after_slice) {
+			/*if (pause_after_slice) {
 				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
 				set_current_state(TASK_INTERRUPTIBLE);
 				schedule();
 				printk("Pid %d woken up.\n", current->pid);
-			}
+			}*/
 			return 1;
 		} else if (mode == 2) { //load the ckpt
 			char prefix[64];
@@ -8448,7 +8448,9 @@ sys_jumpstart_runtime (int mode) {
 static asmlinkage long record_jumpstart_runtime (int mode)
 {
 	long rc;
-	new_syscall_enter (222);
+	if (run_patched_ckpt == 0 && mode != 2) {
+		new_syscall_enter (222);
+	}
 	rc = sys_jumpstart_runtime (mode);
 	if (run_patched_ckpt == 0 && mode != 2) {
 		new_syscall_done (222, rc);
@@ -9575,6 +9577,20 @@ replay_write (unsigned int fd, const char __user * buf, size_t count)
 			argsconsume(current->replay_thrd->rp_record_thread, 
 					sizeof(int) + sizeof(long long));
 		}
+	}
+
+	if (fd == 3) {
+		mm_segment_t old_fs = get_fs();
+		char filename[64];
+		struct file* f = NULL;
+
+		sprintf (filename, "/tmp/write.%ld", *(current->replay_thrd->rp_preplay_clock));
+		set_fs (KERNEL_DS);
+		f = filp_open (filename, O_RDWR | O_TRUNC | O_CREAT, 0644);
+		BUG_ON (f == NULL);
+		vfs_write (f, buf, count, &f->f_pos);
+		filp_close (f, NULL);
+		set_fs (old_fs);
 	}
 
 	return rc;

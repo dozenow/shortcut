@@ -886,7 +886,7 @@ long recv_recheck ()
     u_long bytes_received = 0;
     do {
 	block[1] = (u_long) precv->buf + bytes_received;
-	if (pentry->retval > 0 && pentry->retval - bytes_received < precv->len) {
+	if (pentry->retval >= 0 && pentry->retval - bytes_received < precv->len) {
 	    block[2] = pentry->retval - bytes_received;
 	} else {
 	    block[2] = precv->len;
@@ -1448,6 +1448,7 @@ long write_recheck (size_t count)
 
     start_timing();
     rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
+    //if (pwrite->fd == 3) LPRINT ("%s\n", writedata);
     if (rc == -1 && errno == EINTR) {
 	LPRINT ("Write interrupted try again\n");
 	rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
