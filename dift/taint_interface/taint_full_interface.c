@@ -1380,7 +1380,7 @@ static int init_check_map (const char* check_filename)
 		    schk.type = SYSCALL_READ_EXTRA;
 		    schk.clock = ip;
 		    schk.value = atoi(value);
-		    printf ("syscall read extra ip %ld value %ld\n", schk.clock, schk.value);
+		    printf ("syscall read extra clock %ld value %ld\n", schk.clock, schk.value);
 		    syscall_checks[ip] = schk;
                 } else if (!strcmp (type, "ignore_syscall")) {
                     /*

@@ -184,6 +184,12 @@ int recheck_read_ignore (struct recheck_handle* handle)
     return 0;
 }
 
+int recheck_pread_ignore (struct recheck_handle* handle) 
+{
+    skip_to_syscall (handle, SYS_pread64);
+    return 0;
+}
+
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int partial_read, size_t partial_read_start, size_t partial_read_end, u_long max_bound, u_long clock)
 {
     struct read_recheck rrchk;
@@ -226,6 +232,34 @@ int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count
     }
 
     return 0;
+}
+
+int recheck_pread (struct recheck_handle* handle, int fd, void* buf, size_t count, loff_t offset, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
+{
+    struct pread_recheck rrchk;
+    struct klog_result *res = skip_to_syscall (handle, SYS_pread64);
+
+    check_reg_arguments ("pread", 4); 
+    
+    if (res->retval > 0) {
+	rrchk.readlen = res->retval;
+    } else {
+	rrchk.readlen = 0;
+    }
+    write_header_into_recheck_log (handle->recheckfd, SYS_pread64, res->retval, sizeof (struct pread_recheck) + rrchk.readlen, clock);
+    rrchk.fd = fd;
+    rrchk.buf = buf;
+    rrchk.count = count;
+    rrchk.offset = offset;
+    rrchk.partial_read_cnt = partial_read_cnt;
+    memcpy (rrchk.partial_read_starts, partial_read_starts, partial_read_cnt*sizeof(size_t));
+    memcpy (rrchk.partial_read_ends, partial_read_ends, partial_read_cnt*sizeof(size_t));
+    write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
+    int is_cache_file = *(unsigned int*) res->retparams;
+    if (is_cache_file & CACHE_MASK) fprintf (stderr, "recheck_pread: we'll put all bytes into the recheck file, even if the pread is reading from a cached file. Note this might make the recheck file larger. \n");
+    if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, buf, rrchk.readlen);
+
+    return res->retval;
 }
 
 int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)

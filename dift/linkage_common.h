@@ -118,6 +118,14 @@ struct read_info {
     struct recheck_handle* recheck_handle;
 };
 
+struct pread_info {
+    int fd; 
+    char* buf; 
+    size_t size;
+    off_t offset; 
+    u_long   clock;
+};
+
 struct write_info {
     int      fd;
     char*    buf;
@@ -409,6 +417,8 @@ struct patch_based_ckpt_info  {
     set<u_long> *write_mem;
     map<u_long, char> *read_mem;   
     bitset<0xc0000> *read_pages; //All pages that exist before sys_jumpstart_runtime
+    map<u_long, int> *munmap_regions;//All regions that are allocated during the code region; 
+    map<u_long, int> *mmap_regions; //All mmap regions that are allocated during the code region; a mmap region might be cancelled out due to a following mummap in this code region
 };
 
 struct two_long_info {
@@ -459,6 +469,7 @@ struct thread_data {
         struct recvfrom_info recvfrom_info_cache;
 	struct mremap_info mremap_info_cache;
         struct two_long_info two_long_info_cache; 
+        struct pread_info pread_info_cache;
     } op;
 
     void* save_syscall_info;

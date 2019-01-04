@@ -477,6 +477,7 @@ static inline void check_retval (const char* name, u_long clock, int expected, i
     } else {
 	if (expected != -1*(errno)) {
 	    fprintf (stderr, "[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, -1*(errno));
+	    LPRINT ("[MISMATCH] retval for %s at clock %ld expected %d ret %d\n", name, clock, expected, -1*(errno));
 	    handle_mismatch();
 	}  
     }
@@ -740,6 +741,88 @@ long read_recheck (size_t count)
     return pentry->retval;
 }
 
+long pread_recheck ()
+{
+    struct recheck_entry* pentry;
+    struct pread_recheck* pread;
+    int rc, i;
+    start_timing_func ();
+
+    pentry = (struct recheck_entry *) bufptr;
+    bufptr += sizeof(struct recheck_entry);
+    last_clock = pentry->clock;
+    pread = (struct pread_recheck *) bufptr;
+    char* readData = bufptr+sizeof(*pread);
+    bufptr += pentry->len;
+
+#ifdef PRINT_VALUES
+    LPRINT ( "pread: fd %d buf %lx count %d readlen %d offset %lu returns %ld clock %lu\n", 
+	     pread->fd, (u_long) pread->buf, pread->count, pread->readlen, pread->offset, pentry->retval, pentry->clock);
+#endif
+
+    start_timing();
+    rc = syscall(SYS_pread64, pread->fd, pread->buf, pentry->retval, (loff_t)pread->offset);
+    end_timing (SYS_pread64, rc);
+    check_retval ("pread", pentry->clock, pentry->retval, rc);
+    if (rc > 0) {
+#ifdef PRINT_DEBUG
+	print_buffer_hex (pread->buf, pentry->retval);
+	print_buffer_hex ((u_char *) readData, pentry->retval);
+#endif
+	DPRINT ("About to compare %p and %p partial_read_cnt %d\n", pread->buf, readData, pread->partial_read_cnt);
+	if (pread->partial_read_cnt > 0) {
+	    u_long bytes_so_far = 0;
+	    int i;
+	    for (i = 0; i < pread->partial_read_cnt; i++) {
+		if (pread->partial_read_starts[i] > bytes_so_far) {
+		    if (memcmp (pread->buf+bytes_so_far, readData+bytes_so_far, pread->partial_read_starts[i]-bytes_so_far)) {
+			int j;
+			LPRINT ("[MISMATCH] partial read %lu start %d returns different values - read/expected:\n", pentry->clock, i);
+			for (j = bytes_so_far; j < pread->partial_read_starts[i]; j++) {
+			    if (((char *)pread->buf)[j] != readData[j]) {
+				LPRINT ("%d ", j);
+			    }
+			}
+			LPRINT ("\n");
+			handle_mismatch();
+		    }
+		} 
+		bytes_so_far = pread->partial_read_ends[i];
+	    }
+	    if (pread->partial_read_ends[pread->partial_read_cnt-1] < pentry->retval) {
+		if (memcmp (pread->buf+pread->partial_read_ends[pread->partial_read_cnt-1], 
+			    readData+pread->partial_read_ends[pread->partial_read_cnt-1], 
+			    pentry->retval-pread->partial_read_ends[pread->partial_read_cnt-1])) {
+		    LPRINT ("[MISMATCH] partial read %lu end returns different values - read/expected:\n", pentry->clock);
+		    for (i = pread->partial_read_ends[pread->partial_read_cnt-1]; i < pentry->retval; i++) {
+			if (((char *)pread->buf)[i] != readData[i]) LPRINT ("%d ", i);
+		    }
+		    handle_mismatch();
+		}
+	    }
+	    add_to_taintbuf (pentry, RETBUF, pread->buf, pentry->retval);
+	} else {
+	    if (memcmp (pread->buf, readData, pentry->retval)) {
+		LPRINT ("[MISMATCH] read %lu returns different values - read/expected:\n", pentry->clock);
+		if (memcmp (pread->buf, readData, pentry->retval)) {
+		    for (i = 0; i < pentry->retval; i++) {
+			LPRINT ("%02x/%02x ", ((char *)pread->buf)[i]&0xff, readData[i]&0xff);
+			if (i%16 == 15) LPRINT ("\n");
+		    }
+		    LPRINT ("\n");
+		    for (i = 0; i < pentry->retval; i++) {
+			if (((char *)pread->buf)[i] != readData[i]) LPRINT ("%d ", i);
+		    }
+		    LPRINT ("\n");
+		    handle_mismatch();
+		}
+	    }
+	}
+    }
+    end_timing_func (SYS_pread64);
+    return pentry->retval;
+}
+
 #ifdef REORDERING
 static u_char reorderbuf[65536];
 static u_char* reorderin = reorderbuf;
@@ -758,6 +841,8 @@ static int get_message_length (u_char* buffer, int buflen)
 	return 32;
     }
 }
+
+
 
 #ifdef PRINT_DEBUG
 static void print_reorder_buffer ()

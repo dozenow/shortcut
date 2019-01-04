@@ -833,7 +833,7 @@ static inline void sys_read_stop(int rc)
 
     if (check_is_syscall_ignored (current_thread->record_pid, current_thread->syscall_cnt)) {
         fprintf (stderr, "Syscall is ignored during rechecking, read syscall, pid %d, index %d, rc %d\n", current_thread->record_pid, current_thread->syscall_cnt, rc);            
-        recheck_read_ignore (ri->recheck_handle);
+        if (ri->recheck_handle) recheck_read_ignore (ri->recheck_handle);
     } else { 
         if (ri->recheck_handle) {
             OUTPUT_SLICE (0, "push edx");
@@ -842,19 +842,19 @@ static inline void sys_read_stop(int rc)
             OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
             OUTPUT_SLICE (0, "pop edx");
             OUTPUT_SLICE_INFO ("");
-                if (filter_input()) {
-                    size_t start = 0;
-                    size_t end = 0;
-                    if (get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
-                        recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
-                        add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
-			OUTPUT_TAINT_INFO_THREAD (current_thread, "read %lx %lx", (u_long) ri->buf+start, (u_long) end-start);  
-		    } else {
-			recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
-                    }
+            if (filter_input()) {
+                size_t start = 0;
+                size_t end = 0;
+                if (get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, &start, &end)) {
+                    recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 1, start, end, max_taint, ri->clock);
+                    add_modified_mem_for_final_check ((u_long) (ri->buf+start), end-start);
+                    OUTPUT_TAINT_INFO_THREAD (current_thread, "read %lx %lx", (u_long) ri->buf+start, (u_long) end-start);  
                 } else {
                     recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
                 }
+            } else {
+                recheck_read (ri->recheck_handle, ri->fd, ri->buf, ri->size, 0, 0, 0, max_taint, ri->clock);
+            }
         }
     }
 
@@ -913,32 +913,74 @@ static inline void sys_read_stop(int rc)
     current_thread->save_syscall_info = 0;
 }
 
-static inline void sys_pread_start(struct thread_data* tdata, int fd, char* buf, int size)
+static inline void sys_pread_start(struct thread_data* tdata, int fd, char* buf, size_t size, loff_t offset)
 {
-    struct read_info* ri = &tdata->op.read_info_cache;
+    struct pread_info* ri = &tdata->op.pread_info_cache;
     ri->fd = fd;
     ri->buf = buf;
+    ri->size = size;
+    ri->offset = offset;
+    ri->clock = *ppthread_log_clock;
     tdata->save_syscall_info = (void *) ri;
 }
 
 static inline void sys_pread_stop(int rc)
 {
-    int read_fileno = -1;
-    struct read_info* ri = (struct read_info*) &current_thread->op.read_info_cache;
+    struct pread_info* ri = (struct pread_info*) &current_thread->op.pread_info_cache;
 
-    fprintf (stderr, "[ERROR] sys_pread hasn't been put into recheck log.\n");
-    // If global_syscall_cnt == 0, then handled in previous epoch
+    if (current_thread->recheck_handle) {
+	OUTPUT_SLICE(0, "call pread_recheck");
+	OUTPUT_SLICE_INFO("clock %lu", *ppthread_log_clock);
+
+	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
+	int regions;
+	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends)) > 0) {
+	    if (regions > 0) {
+		int retaddrlen = recheck_pread (current_thread->recheck_handle, ri->fd, ri->buf, ri->size, ri->offset, regions, starts, ends, ri->clock);
+		if (retaddrlen > 0) {
+		    clear_mem_taints ((u_long)ri->buf, retaddrlen); 
+		    add_modified_mem_for_final_check ((u_long)ri->buf, retaddrlen);
+		    for (int i = 0; i < regions; i++) {
+			OUTPUT_TAINT_INFO_THREAD (current_thread, "pread %lx %lx", (u_long) ri->buf+starts[i], (u_long) ends[i]-starts[i]);  
+		    }
+		}
+	    }
+	} else {
+	    int retaddrlen = recheck_pread (current_thread->recheck_handle, ri->fd, ri->buf, ri->size, ri->offset, 0, 0, 0, ri->clock);
+	    if (retaddrlen > 0) {
+		clear_mem_taints ((u_long)ri->buf, retaddrlen); 
+		add_modified_mem_for_final_check ((u_long)ri->buf, retaddrlen);
+	    }
+	}
+
+    }
+
+    // If syscall cnt = 0, then write handled in previous epoch
     if (rc > 0) {
         struct taint_creation_info tci;
         char* channel_name = (char *) "--";
+        int read_fileno = -1;
+        if(ri->fd == fileno(stdin)) {
+            read_fileno = 0;
+            channel_name = (char *) "stdin";
+        } else if (monitor_has_fd(open_socks, ri->fd)) {
+            struct socket_info* si;
+            si = (struct socket_info *) monitor_get_fd_data(open_socks, ri->fd);
+            read_fileno = si->fileno;
+            // FIXME
+	    if (si->domain == AF_INET || si->domain == AF_INET6) {
+		channel_name = (char *) "inetsocket";
+	    } else {
+		channel_name = (char *) "recvsocket";
+	    }
+	    //not sure why we'd need this... but I can't get the filter inets to work out for me
+        }
 
-        if (monitor_has_fd(open_fds, ri->fd)) {
+	else if (monitor_has_fd(open_fds, ri->fd)) {
             struct open_info* oi;
             oi = (struct open_info *)monitor_get_fd_data(open_fds, ri->fd);
             read_fileno = oi->fileno;
             channel_name = oi->name;
-        } else if(ri->fd == fileno(stdin)) {
-            read_fileno = 0;
         }
 
         if (current_thread->start_tracking) {
@@ -948,15 +990,12 @@ static inline void sys_pread_stop(int rc)
             tci.offset = 0;
             tci.fileno = read_fileno;
             tci.data = 0;
-            tci.type = TOK_READ;
+            tci.type = TOK_PREAD;
 
-            LOG_PRINT ("Create taints from buffer sized %d at location %#lx\n",
-                    rc, (unsigned long) ri->buf);
             create_taints_from_buffer(ri->buf, rc, &tci, tokens_fd, channel_name);
         }
     }
-
-    memset(&current_thread->op.read_info_cache, 0, sizeof(struct read_info));
+    memset(&current_thread->op.pread_info_cache, 0, sizeof(struct pread_info));
     current_thread->save_syscall_info = 0;
 }
 
@@ -1294,18 +1333,6 @@ static void sys__newselect_stop(int rc)
     }
 }
 
-static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd, int flags)
-{
-    struct mmap_info* mmi = &tdata->op.mmap_info_cache;
-    mmi->addr = addr;
-    mmi->length = len;
-    mmi->prot = prot;
-    mmi->fd = fd;
-    mmi->flags = flags;
-    tdata->save_syscall_info = (void *) mmi;
-    tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
-}
-
 static void print_memory_regions () 
 {
     char buf[256];
@@ -1317,6 +1344,18 @@ static void print_memory_regions ()
         }
     }
     fclose(file);
+}
+
+static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd, int flags)
+{
+    struct mmap_info* mmi = &tdata->op.mmap_info_cache;
+    mmi->addr = addr;
+    mmi->length = len;
+    mmi->prot = prot;
+    mmi->fd = fd;
+    mmi->flags = flags;
+    tdata->save_syscall_info = (void *) mmi;
+    tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
 }
 
 
@@ -1369,7 +1408,10 @@ static void sys_mmap_stop(int rc)
 
 #endif
     if (rc > 0 || rc < -1024) {
-        if (current_thread->start_tracking) add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
+        if (current_thread->start_tracking) {
+            add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
+            current_thread->patch_based_ckpt_info.mmap_regions->insert (pair<u_long, int>(rc, mmi->length));
+        }
     }
     if (current_thread->start_tracking) {
         printf ("mmap 0x%x size %d, prot %x, flags %x\n", rc, mmi->length, mmi->prot, mmi->flags); 
@@ -2840,7 +2882,7 @@ static inline int get_reg_ckpt_index (REG reg)
     return -1;
 }
 
-static void get_existing_pages (bitset<0xc0000>* pages, bool ignore_shared_clock)
+static void get_existing_pages (bitset<0xc0000>* pages,  bool ignore_shared_clock)
 {
     printf ("----------------get_existing_pages starts--------------------\n");
     char procname[256], buf[256];
@@ -3102,7 +3144,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_writev_start(tdata, (int) syscallarg0, (struct iovec *) syscallarg1, (int) syscallarg2);
             break;
         case SYS_pread64:
-            sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (int) syscallarg2);
+            sys_pread_start(tdata, (int) syscallarg0, (char *) syscallarg1, (size_t) syscallarg2, (loff_t) syscallarg3);
             break;
         case SYS__llseek:
             sys_llseek_start(tdata, (u_int) syscallarg0, (u_long) syscallarg1, (u_long) syscallarg2,
@@ -3235,20 +3277,36 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
-            if (current_thread->start_tracking) printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
-            if (current_thread->start_tracking) {
-                clear_mem_taints ((u_long) syscallarg0, (uint32_t)syscallarg1);
-                delete_mmap_region ((u_long)syscallarg0, (int)syscallarg1);
+            if (tdata->start_tracking) printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
+            if (tdata->start_tracking) {
+                u_long addr = (u_long)syscallarg0;
+                int size = (int)syscallarg1;
+                clear_mem_taints (addr, (uint32_t)syscallarg1);
+                delete_mmap_region (addr, size);
+                map<u_long, int>* mmap_regions = tdata->patch_based_ckpt_info.mmap_regions;
+                if (mmap_regions->find (addr) == mmap_regions->end()) 
+                    tdata->patch_based_ckpt_info.munmap_regions->insert (make_pair(addr, size));
+                else {
+                    int orig_size = (*mmap_regions)[addr];
+                    mmap_regions->erase (addr);
+                    if (orig_size != size) {
+                        if (orig_size < size) {
+                            fprintf (stderr, "[ERROR] munmap several regions together - unsupport.\n");
+                            assert (0);
+                        }
+                        mmap_regions->insert (make_pair (addr + size, orig_size - size)); //partial unmap of a region
+                    }
+                }
             }
             break;
         case SYS_mprotect:
-            if (current_thread->start_tracking) change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
+            if (tdata->start_tracking) change_mmap_region ((u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2);
             break;
         case SYS_mremap:
 	    sys_mremap_start (tdata, (void*)syscallarg0, (size_t)syscallarg1, (size_t)syscallarg2, (int)syscallarg3, (void*)syscallarg4);
             break;
         case SYS_madvise:
-            if (current_thread->start_tracking) fprintf (stderr, "madvise 0x%lx size %d, advise %x\n", (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2); 
+            if (tdata->start_tracking) fprintf (stderr, "madvise 0x%lx size %d, advise %x\n", (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2); 
             break;
 	case SYS_gettimeofday:
 	    sys_gettimeofday_start(tdata, (struct timeval*) syscallarg0, (struct timezone*) syscallarg1);
@@ -8076,6 +8134,8 @@ void init_patch_based_ckpt_info (struct thread_data* tdata)
     info->write_mem = new set<u_long>();
     info->read_mem = new map<u_long, char>();
     info->read_pages = new bitset<0xc0000>();
+    info->mmap_regions = new map<u_long, int>();
+    info->munmap_regions = new map<u_long, int>();
 }
 
 void destroy_patch_based_ckpt_info (struct thread_data* tdata) 
@@ -8085,6 +8145,8 @@ void destroy_patch_based_ckpt_info (struct thread_data* tdata)
     if (info->write_mem) delete info->write_mem;
     if (info->read_mem) delete info->read_mem;
     if (info->read_pages) delete info->read_pages;
+    if (info->mmap_regions) delete info->mmap_regions;
+    if (info->munmap_regions) delete info->munmap_regions;
 }
 
 void AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID* arg)

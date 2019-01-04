@@ -227,7 +227,7 @@ int filter_regex(char* buf, int len) {
 
 // Assumes syscalls are uniquely ordered in a replay group,
 // so don't the pid
-// xdou:why??? the syscall here is the index in each thread I think, not the global replay clock
+// xdou:is this true??? the syscall here is the index in each thread I think, not the global replay clock
 int filter_byte_range(pid_t pid, int syscall, int byteoffset)
 {
     struct filter_byterange* fbr;

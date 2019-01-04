@@ -57,6 +57,18 @@ struct read_recheck {
 };
 /* Followed by variable length read data */
 
+struct pread_recheck {
+    int fd;
+    void* buf;
+    size_t count;
+    loff_t offset;
+    size_t readlen;
+    int partial_read_cnt; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
+    size_t partial_read_starts[MAX_REGIONS];
+    size_t partial_read_ends[MAX_REGIONS];
+};
+/* Followed by variable length read data */
+
 struct recv_recheck {
     int sockfd;
     void* buf;
@@ -617,4 +629,6 @@ struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall)
 int recheck_lseek (struct recheck_handle* handle, unsigned int fd, off_t offset, unsigned int whence, u_long clock);
 int recheck_fsync (struct recheck_handle* handle, unsigned int fd, u_long clock);
 int recheck_ftruncate64 (struct recheck_handle* handle, u_int fd, loff_t length, u_long clock);
+int recheck_pread_ignore (struct recheck_handle* handle);
+int recheck_pread (struct recheck_handle* handle, int fd, void* buf, size_t count, loff_t offset, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 #endif
