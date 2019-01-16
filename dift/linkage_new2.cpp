@@ -62,9 +62,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 169252
-//#define EXTRA_DEBUG_STOP 172425 
-//#define EXTRA_DEBUG_FUNCTION
+#define EXTRA_DEBUG 169260
+#define EXTRA_DEBUG_STOP 172603
+#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -1410,7 +1410,11 @@ static void sys_mmap_stop(int rc)
     if (rc > 0 || rc < -1024) {
         if (current_thread->start_tracking) {
             add_mmap_region (rc, mmi->length, mmi->prot, mmi->flags);
-            current_thread->patch_based_ckpt_info.mmap_regions->insert (pair<u_long, int>(rc, mmi->length));
+            struct mmap_region_info* info = (struct mmap_region_info*) malloc (sizeof(struct mmap_region_info));
+            info->prot = mmi->prot;
+            info->flags = mmi->flags;
+            info->size = mmi->length;
+            current_thread->patch_based_ckpt_info.mmap_regions->insert (pair<u_long, struct mmap_region_info*>(rc, info));
         }
     }
     if (current_thread->start_tracking) {
@@ -2971,7 +2975,8 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 
 }
 
-static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
+static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) 
+{
     if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "####### jumpstart_runtime slice begins.\n");
@@ -3041,6 +3046,11 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         bitset<0xc0000> write_pages;
         get_existing_pages (&write_pages, false);
         fflush(stdout);
+        //now we remove any locations that will be stored in the mmap_region_ckpt
+        for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
+            for (u_long addr = iter->first; addr < iter->first + iter->second->size; addr += PAGE_SIZE)
+                write_pages.reset (addr/PAGE_SIZE);
+        }
 
         fprintf (stderr, "===== checkpoint mem ====\n");
         print_memory_regions();
@@ -3098,9 +3108,61 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) {
         close(fd);
 
         fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
+        //mmap_region ckpt
+        snprintf (ckpt_filename, 256, "%s/mmap_region_ckpt", group_directory);
+        fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        assert (fd > 0);
+        fprintf (stderr, "======munmap regions====\n");
+        int region_count = current_thread->patch_based_ckpt_info.munmap_regions->size();
+        ret = write (fd, &region_count, sizeof(region_count)); 
+        assert (ret == sizeof (region_count));
+        for (map<u_long, int>::iterator iter = current_thread->patch_based_ckpt_info.munmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.munmap_regions->end(); ++iter) {
+            fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second);
+            ret = write (fd, &iter->first, sizeof (u_long));
+            assert (ret == sizeof(u_long));
+            ret = write (fd, &iter->second, sizeof (int));
+            assert (ret == sizeof(int));
+        }
+
+        region_count = current_thread->patch_based_ckpt_info.mmap_regions->size();
+        fprintf (stderr, "======mmap regions====\n");
+        ret = write (fd, &region_count, sizeof(int));
+        assert (ret == sizeof(int));
+        for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
+            fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second->size);
+            if ((iter->second->prot & PROT_READ) == 0) { 
+                fprintf (stderr, "non-readable regions?\n");
+                assert (0);
+            }
+            if ((iter->second->flags & MAP_SHARED) != 0) {
+                fprintf (stderr, "shared regions?\n");
+                assert (0);
+            }
+            ret = write (fd, &iter->first, sizeof(u_long));
+            assert (ret == sizeof(u_long));
+            ret = write (fd, (char*) iter->second, sizeof(struct mmap_region_info));
+            assert (ret == sizeof (struct mmap_region_info));
+            //dump the region
+            char region_filename[256];
+            snprintf (region_filename, 256, "%s/mmap_region_ckpt.%lx", group_directory, iter->first);
+            int mckpt_fd = open (region_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            assert (mckpt_fd > 0);
+            int count = 0;
+            int to_copy = 4096;
+            while (count < iter->second->size) {
+                to_copy = (iter->second->size - count) > 4096?4096:(iter->second->size - count);
+                ret = write (mckpt_fd, (char*) (iter->first + count), to_copy);
+                assert (ret == to_copy);
+                count += to_copy;
+            }
+            close (mckpt_fd);
+        }
+        close (fd);
+
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
         fprintf (stderr, "###### jumpstart_runtime slice ends.\n");
+        fprintf (stderr, "0x8cc34c0 0x%lx 0x8b943fc 0x%lx 0x8b943e8 0x%lx 0x8b943f8 0x%lx\n", *((long*)0x8cc34c0), *((long*) 0x8b943fc), *((long*)0x8b943e8), *((long*)0x8b943f8)); 
     }
 }
 
@@ -3277,24 +3339,54 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
             sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4, (int)syscallarg3);
             break;
         case SYS_munmap:
-            if (tdata->start_tracking) printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
             if (tdata->start_tracking) {
                 u_long addr = (u_long)syscallarg0;
                 int size = (int)syscallarg1;
+                printf ("munmap 0x%lx size %d\n", (u_long)syscallarg0, (int)syscallarg1); 
+                fflush (stdout);
                 clear_mem_taints (addr, (uint32_t)syscallarg1);
                 delete_mmap_region (addr, size);
-                map<u_long, int>* mmap_regions = tdata->patch_based_ckpt_info.mmap_regions;
-                if (mmap_regions->find (addr) == mmap_regions->end()) 
-                    tdata->patch_based_ckpt_info.munmap_regions->insert (make_pair(addr, size));
-                else {
-                    int orig_size = (*mmap_regions)[addr];
+                map<u_long, struct mmap_region_info*>* mmap_regions = tdata->patch_based_ckpt_info.mmap_regions;
+                if (mmap_regions->find (addr) == mmap_regions->end()) {
+                    //ok, sanity check; will we munmap from the middle of a region?
+                    bool found = false;
+                    map<u_long, struct mmap_region_info*>::iterator iter;
+                    for (iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
+                        if (addr > iter->first && addr+size <= iter->first + iter->second->size) {
+                            fprintf (stderr, "munmap from the middle of a region? %lx+%d %lx+%d\n", addr,size, iter->first, iter->second->size);
+                            found = true;
+                            break;
+                        } else if (addr > iter->first && addr <= iter->first + iter->second->size) {
+                            fprintf (stderr, "[ERROR] munmap multiple regions? %lx+%d %lx+%d\n", addr,size, iter->first, iter->second->size);
+                            assert (0);
+                        }
+                    }
+                    if (!found) tdata->patch_based_ckpt_info.munmap_regions->insert (make_pair(addr, size)); 
+                    else {
+                        mmap_regions->erase (iter);
+                        struct mmap_region_info* info = iter->second;
+                        info->size = addr - iter->first;
+                        mmap_regions->insert (make_pair (iter->first, info));
+                        if (addr + size < iter->first + iter->second->size) {
+                            info = (struct mmap_region_info*) malloc (sizeof(struct mmap_region_info));
+                            memcpy (info, iter->second, sizeof (struct mmap_region_info));
+                            info->size = iter->first + iter->second->size - addr - size;
+                            mmap_regions->insert (make_pair (addr + size, info));
+                        }
+                    }
+                } else {
+                    struct mmap_region_info* info = (*mmap_regions)[addr];
                     mmap_regions->erase (addr);
-                    if (orig_size != size) {
-                        if (orig_size < size) {
+                    if (info->size != size) {
+                        if (info->size < size) {
                             fprintf (stderr, "[ERROR] munmap several regions together - unsupport.\n");
                             assert (0);
                         }
-                        mmap_regions->insert (make_pair (addr + size, orig_size - size)); //partial unmap of a region
+                        info->size = info->size - size;
+                        mmap_regions->insert (make_pair (addr + size, info)); //partial unmap of a region
+                    } else {
+                        //fully unmap of a region
+                        free (info);
                     }
                 }
             }
@@ -6530,9 +6622,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
-    bool print_me = true;
-    if (mem_loc1 == 0x8b91044 || mem_loc2 == 0x8b91044 || mem_loc1 == 0x8b91040 || mem_loc2 == 0x8b91040) print_me = true;
-    else print_me = false;
+    bool print_me = false;
+   if (abs(mem_loc1- 0x8cc34c0) <= 20 || abs(mem_loc2-0x8cc34c0) <=20) print_me = true;
+   if (abs(mem_loc1- 0x8b943fc) <= 20 || abs(mem_loc2-0x8b943fc) <=20) print_me = true;
+   if (abs(mem_loc1- 0x8b943e8) <= 20 || abs(mem_loc2-0x8b943e8) <=20) print_me = true;
 
 #if 0
     #define ADDR_TO_CHECK 0x86a4dc1
@@ -8134,7 +8227,7 @@ void init_patch_based_ckpt_info (struct thread_data* tdata)
     info->write_mem = new set<u_long>();
     info->read_mem = new map<u_long, char>();
     info->read_pages = new bitset<0xc0000>();
-    info->mmap_regions = new map<u_long, int>();
+    info->mmap_regions = new map<u_long, struct mmap_region_info*>();
     info->munmap_regions = new map<u_long, int>();
 }
 
@@ -8145,7 +8238,11 @@ void destroy_patch_based_ckpt_info (struct thread_data* tdata)
     if (info->write_mem) delete info->write_mem;
     if (info->read_mem) delete info->read_mem;
     if (info->read_pages) delete info->read_pages;
-    if (info->mmap_regions) delete info->mmap_regions;
+    if (info->mmap_regions) {
+        for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) 
+            free (iter->second);
+        delete info->mmap_regions;
+    }
     if (info->munmap_regions) delete info->munmap_regions;
 }
 
@@ -8608,7 +8705,7 @@ void PIN_FAST_ANALYSIS_CALL print_function_name_and_params (char* name, uint32_t
 #ifdef EXTRA_DEBUG_STOP
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
-    printf ("[CODE] %s\n", (char*)arg1);
+    printf ("[debug] 0x%x\n", arg1);
 }
 
 
@@ -8667,16 +8764,14 @@ void routine (RTN rtn, VOID* v)
             IARG_FAST_ANALYSIS_CALL, 
             IARG_PTR, strdup (name), 
             IARG_END);
-#if 0
-    if (strcmp(name, "_ZN11CodeletMarkC2ERP25InterpreterMacroAssemblerPKcN9Bytecodes4CodeE") == 0)
+    if (strcmp(name, "clean_non_persistent_constant") == 0)
     {
         RTN_InsertCall (rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name_and_params,
                 IARG_FAST_ANALYSIS_CALL, 
                 IARG_PTR, strdup (name), 
-                IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                 IARG_END);
     }
-#endif
     RTN_Close(rtn);
 #endif
     //some pthread_replay/record functions have two definitions, one in libc and the other in libpthread; makes pin and me confused for a while...

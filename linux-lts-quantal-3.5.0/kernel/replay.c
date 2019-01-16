@@ -8252,7 +8252,6 @@ static void jumpstart_mem_verification (char* prefix) {
 	BUG_ON (len != NUM_REGS*REG_SIZE);
 
 	output_buf = VMALLOC (PCKPT_MAX_BUF);
-	dump_vmas();
 	printk ("------verification regs ------\n");
 
 	printk ("------verify mem------\n");
@@ -8267,7 +8266,7 @@ static void jumpstart_mem_verification (char* prefix) {
 			mem_value = *((unsigned char*)(buf + offset));
 			offset += sizeof (unsigned char);
 			if (*((unsigned char*)mem_loc) != mem_value) {
-				printk ("mem 0x%lx value %u, cur %u\n", mem_loc, (unsigned int) mem_value, (unsigned int)(*((unsigned char*)mem_loc)));
+				//printk ("mem 0x%lx value %u, cur %u\n", mem_loc, (unsigned int) mem_value, (unsigned int)(*((unsigned char*)mem_loc)));
 				memcpy (output_buf + output_len, buf + offset - sizeof(unsigned long) - sizeof(unsigned char), sizeof(unsigned long) + sizeof(unsigned char));
 				output_len += sizeof(unsigned long) + sizeof (unsigned char);
 			}
@@ -8286,6 +8285,72 @@ static void jumpstart_mem_verification (char* prefix) {
 	VFREE (read_reg_value);
 	VFREE (buf);
 	VFREE (output_buf);
+}
+
+struct mmap_region_info {
+	u_long addr;
+	int size;
+	int flags;
+	int prot;
+};
+
+static void jumpstart_load_mckpt (char* prefix) 
+{
+	struct file* f = NULL;
+	int retval = 0;
+	mm_segment_t old_fs = get_fs();
+	char filename[128];
+	char* buf = VMALLOC (PCKPT_MAX_BUF); //the assumption is that this buffer will hold all content in the file (which is almost definitely true); 
+	int region_count = 0;
+	int offset = 0; 
+	int i = 0; 
+
+	sprintf (filename, "%s/mmap_region_ckpt", prefix);
+	set_fs (KERNEL_DS);
+	f = filp_open (filename, O_RDONLY, 0);	
+	BUG_ON (f == NULL);
+	retval = vfs_read (f, buf, PCKPT_MAX_BUF, &f->f_pos);
+	if (retval != f->f_dentry->d_inode->i_size) {
+		printk ("Error: cannot read all content into the buffer?\n");
+		BUG();
+	}
+	region_count = *((int*) buf);
+	offset += sizeof(int);
+	printk ("==== munmap regions count %d === \n", region_count);
+	for (i = 0; i<region_count; ++i) {
+		int size = 0;
+		u_long addr = *((u_long*) (buf + offset));
+		offset += sizeof (u_long);
+		size = *((int*) (buf + offset));
+		offset += sizeof (int);
+		printk ("    addr %lx size %d\n", addr, size);
+		retval = sys_munmap (addr, size);
+		BUG_ON (retval != 0);
+	}
+	region_count = *((int*) (buf + offset));
+	offset += sizeof(int);
+	printk ("==== mmap regions count %d === \n", region_count);
+	for (i = 0; i<region_count; ++i) {
+		struct mmap_region_info* info = (struct mmap_region_info*) (buf + offset); 
+		int fd = 0;
+
+		offset += sizeof (struct mmap_region_info);
+		printk ("    addr %lx size %d\n", info->addr, info->size);
+		//first unmap the region (since we reserve it before entering the kernel and before loading the slice)
+		retval = sys_munmap (info->addr, info->size);
+		BUG_ON (retval != 0);
+
+		snprintf (filename, 128, "%s/mmap_region_ckpt.%lx", prefix, info->addr);
+		fd = sys_open (filename, O_RDWR, 0644);
+		BUG_ON (fd <= 0);
+		retval = sys_mmap_pgoff (info->addr, info->size, info->prot, MAP_PRIVATE | MAP_FIXED, fd, 0);
+		BUG_ON (retval != info->addr);
+		sys_close (fd);
+	}
+
+	set_fs (old_fs);
+	filp_close (f, NULL);
+	VFREE (buf);
 }
 
 asmlinkage long 
@@ -8321,6 +8386,9 @@ sys_jumpstart_runtime (int mode) {
 			unsigned int regcount = 0;
 
 			sprintf (prefix, "/replay_logdb/rec_%d", run_patched_ckpt);
+			//load mmap ckpt
+			jumpstart_load_mckpt (prefix); 
+			//then load patch-based ckpt
 			sprintf (filename, "%s/pckpt", prefix);
 			printk ("Now loading the ckpt\n");
 			jumpstart_mem_verification (prefix);
@@ -8332,7 +8400,7 @@ sys_jumpstart_runtime (int mode) {
 			BUG_ON (retval != sizeof(unsigned int));
 			retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
 			BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
-			printk ("------checkpoint regs ------\n");
+			printk ("------patch-based checkpoint regs ------\n");
 			len = retval;
 
 			if (regcount != 0)
@@ -8354,7 +8422,7 @@ sys_jumpstart_runtime (int mode) {
 			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
 			set_fs(old_fs);
 			//dump_vmas();
-			printk ("------checkpoint mem------\n");
+			printk ("------patch-based checkpoint mem------\n");
 			while (len != 0) {
 				offset = 0;
 				while (offset < len) { 
@@ -8433,9 +8501,11 @@ sys_jumpstart_runtime (int mode) {
 					sprintf (tmp_filename, "%s/recheck.%d", prefix, run_patched_ckpt_record_pid);
 					start_fw_slice (go_live_clock, slice_addr, slice_size, run_patched_ckpt_record_pid, tmp_filename, 0);
 					//quit replay mode: TODO check if I've done everything
+					//TODO: destroy the group to avoid memory leak
 					current->go_live_thrd = current->replay_thrd;
 					current->replay_thrd = NULL;
 					current->record_thrd = NULL;
+					dump_vmas();
 				}
 			}
 			return 0;

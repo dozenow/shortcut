@@ -163,7 +163,15 @@ bool is_readonly_mmap_region (u_long addr, int len, u_long& start, u_long& end)
     return true;
 }
 
-static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type)
+
+struct extra_mmap_region_info {
+    u_long addr; 
+    int size; 
+    int flags;
+    int prot;
+};
+
+static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type, int fd)
 {
     DPRINT (stderr, "handle unprotection for range from 0x%lx size %lx: type %d\n", start, size, type);
     if (type == 1) {
@@ -201,6 +209,13 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 	OUTPUT_MAIN_THREAD (tdata, "mov edi, -1");
 	OUTPUT_MAIN_THREAD (tdata, "mov ebp, 0");
 	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
+        struct extra_mmap_region_info info; 
+        info.addr = start;
+        info.size = (int)size;
+        info.prot = PROT_READ|PROT_WRITE;
+        info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
+        int ret = write (fd, &info, sizeof (info));
+        assert (ret == sizeof (info));
     } else if (type == 3) {
 	// mmap anonymous read-only
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mmap2);
@@ -211,6 +226,13 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 	OUTPUT_MAIN_THREAD (tdata, "mov edi, -1");
 	OUTPUT_MAIN_THREAD (tdata, "mov ebp, 0");
 	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
+        struct extra_mmap_region_info info; 
+        info.addr = start;
+        info.size = (int)size;
+        info.prot = PROT_READ;
+        info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
+        int ret = write (fd, &info, sizeof (info));
+        assert (ret == sizeof (info));
 	// unmap
     }
 }
@@ -243,6 +265,13 @@ void handle_downprotected_pages (struct thread_data* tdata)
     OUTPUT_MAIN_THREAD (tdata, "downprotect_mem:");
     int i, start_at = 0, type = 0, prev_type = 0;
     int is_prev_executable = 0, is_executable = 0;
+
+    //dump the extra mmap regions (type 2 and 3) into a seperate file so that we can avoid mapping the slice or mapping the slice stack to the reserved region
+    //only useful with fine-grained code regions; not necessary for startups
+    char filename[256];
+    sprintf (filename, "/replay_logdb/rec_%lld/extra_mmap_region", tdata->rg_id);
+    int fd = open (filename, O_WRONLY| O_CREAT|O_TRUNC, 0644);
+
     for (i = 0; i < 0xc0000; i++) {
 	if (max_rw_pages.test(i) && !rw_pages.test(i)) {
 	    if (ro_pages.test(i)) {
@@ -263,7 +292,7 @@ void handle_downprotected_pages (struct thread_data* tdata)
 	
 	if (type != prev_type || is_prev_executable != is_executable) {
 	    if (prev_type != 0) {
-		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
+		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type, fd);
 	    } 
 	    start_at = i;
 	}
@@ -271,8 +300,9 @@ void handle_downprotected_pages (struct thread_data* tdata)
         is_prev_executable = is_executable;
     }	
     if (prev_type) {
-	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
+	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type, fd);
     } 
+    close (fd);
     //now allocate max heap 
     u_long max_heap = tdata->max_heap;
     if (max_heap != (u_long)syscall(SYS_brk, 0)) { 

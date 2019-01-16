@@ -410,6 +410,12 @@ struct lll_lock_info_cache {
     ADDRINT type;
 };
 
+struct mmap_region_info {
+    int size;
+    int flags;
+    int prot;
+};
+
 struct patch_based_ckpt_info  {
     bool read_reg[NUM_REGS*REG_SIZE];
     char read_reg_value[NUM_REGS*REG_SIZE];
@@ -418,7 +424,7 @@ struct patch_based_ckpt_info  {
     map<u_long, char> *read_mem;   
     bitset<0xc0000> *read_pages; //All pages that exist before sys_jumpstart_runtime
     map<u_long, int> *munmap_regions;//All regions that are allocated during the code region; 
-    map<u_long, int> *mmap_regions; //All mmap regions that are allocated during the code region; a mmap region might be cancelled out due to a following mummap in this code region
+    map<u_long, struct mmap_region_info*> *mmap_regions; //All mmap regions that are allocated during the code region; a mmap region might be cancelled out due to a following mummap in this code region
 };
 
 struct two_long_info {
