@@ -26,7 +26,7 @@ bitset<0xc0000> max_rw_pages;
 void init_mmap_region ()
 {
     char filename[256];
-    sprintf (filename, "/proc/%d/maps", getpid());
+    sprintf (filename, "/proc/self/maps");
     ifstream in(filename, ios::in);
     if (!in.is_open()) {
         cerr << "cannot open " << filename <<endl;
@@ -38,6 +38,7 @@ void init_mmap_region ()
         getline (in, line);
 	DPRINT (stderr, "%s\n", line.c_str());
         if (line.empty()) continue;
+        if (line.find ("/run/shm/uclock") != string::npos) continue;//the shared clock region
         //cerr <<line<<endl;
         u_long start = std::stoul(line.substr(0, 8), 0, 16);
         u_long end = stoul(line.substr(9, 8), 0, 16);
@@ -171,7 +172,39 @@ struct extra_mmap_region_info {
     int prot;
 };
 
-static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type, int fd)
+void jumpstart_create_extra_memory_region_list (int fd, bitset<0xc0000>* pages) 
+{
+    int start_at = 0; 
+    bool start = false;
+    fprintf (stderr, "===creating extra mmmap regions\n");
+    for (int i = 0; i<0xc0000; ++i) {
+        if (max_rw_pages.test(i) || max_ro_pages.test(i)) {
+            if (!pages->test(i)) {
+                //find an extra page
+                if (!start) {
+                    start = true;
+                    start_at = i;
+                } 
+            } else {
+                if (start) { 
+                    //end of an extra region
+                    start = false;
+                    struct extra_mmap_region_info info;
+                    info.addr = start_at*PAGE_SIZE;
+                    info.size = (i - start_at)*PAGE_SIZE;
+                    info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
+                    info.prot = PROT_READ;
+                    fprintf (stderr, "   addr %lx size %d\n", info.addr, info.size);
+                    int ret = write (fd, &info, sizeof(info));
+                    assert (ret == sizeof(info));
+                }
+            }
+        }
+    }
+    fprintf (stderr, "===extra mmmap regions done\n");
+}
+
+static void handle_unprotection (struct thread_data* tdata, u_long start, u_long size, int type)
 {
     DPRINT (stderr, "handle unprotection for range from 0x%lx size %lx: type %d\n", start, size, type);
     if (type == 1) {
@@ -209,13 +242,6 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 	OUTPUT_MAIN_THREAD (tdata, "mov edi, -1");
 	OUTPUT_MAIN_THREAD (tdata, "mov ebp, 0");
 	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
-        struct extra_mmap_region_info info; 
-        info.addr = start;
-        info.size = (int)size;
-        info.prot = PROT_READ|PROT_WRITE;
-        info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
-        int ret = write (fd, &info, sizeof (info));
-        assert (ret == sizeof (info));
     } else if (type == 3) {
 	// mmap anonymous read-only
 	OUTPUT_MAIN_THREAD (tdata, "mov eax, %d", SYS_mmap2);
@@ -226,13 +252,6 @@ static void handle_unprotection (struct thread_data* tdata, u_long start, u_long
 	OUTPUT_MAIN_THREAD (tdata, "mov edi, -1");
 	OUTPUT_MAIN_THREAD (tdata, "mov ebp, 0");
 	OUTPUT_MAIN_THREAD (tdata, "int 0x80");
-        struct extra_mmap_region_info info; 
-        info.addr = start;
-        info.size = (int)size;
-        info.prot = PROT_READ;
-        info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
-        int ret = write (fd, &info, sizeof (info));
-        assert (ret == sizeof (info));
 	// unmap
     }
 }
@@ -266,12 +285,6 @@ void handle_downprotected_pages (struct thread_data* tdata)
     int i, start_at = 0, type = 0, prev_type = 0;
     int is_prev_executable = 0, is_executable = 0;
 
-    //dump the extra mmap regions (type 2 and 3) into a seperate file so that we can avoid mapping the slice or mapping the slice stack to the reserved region
-    //only useful with fine-grained code regions; not necessary for startups
-    char filename[256];
-    sprintf (filename, "/replay_logdb/rec_%lld/extra_mmap_region", tdata->rg_id);
-    int fd = open (filename, O_WRONLY| O_CREAT|O_TRUNC, 0644);
-
     for (i = 0; i < 0xc0000; i++) {
 	if (max_rw_pages.test(i) && !rw_pages.test(i)) {
 	    if (ro_pages.test(i)) {
@@ -292,7 +305,7 @@ void handle_downprotected_pages (struct thread_data* tdata)
 	
 	if (type != prev_type || is_prev_executable != is_executable) {
 	    if (prev_type != 0) {
-		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type, fd);
+		handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
 	    } 
 	    start_at = i;
 	}
@@ -300,9 +313,8 @@ void handle_downprotected_pages (struct thread_data* tdata)
         is_prev_executable = is_executable;
     }	
     if (prev_type) {
-	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type, fd);
+	handle_unprotection (tdata, start_at*PAGE_SIZE, (i-start_at)*PAGE_SIZE, prev_type);
     } 
-    close (fd);
     //now allocate max heap 
     u_long max_heap = tdata->max_heap;
     if (max_heap != (u_long)syscall(SYS_brk, 0)) { 

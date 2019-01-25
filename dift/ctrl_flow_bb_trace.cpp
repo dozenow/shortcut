@@ -15,6 +15,7 @@ using namespace std;
 /* Globals */
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 unsigned long print_stop = 100000000;
+unsigned long print_start = 0;
 unsigned int inst_start = 0;
 int child = 0;
 int fd; // File descriptor for the replay device
@@ -23,6 +24,7 @@ bool tracing = false;  // Are we tracing right now?
 string subroutine;
 u_long subcount = 0;
 
+KNOB<string> KnobPrintStart(KNOB_MODE_WRITEONCE, "pintool", "p", "0", "clock to start");
 KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "1000000000", "clock to stop");
 KNOB<unsigned int> KnobInstStart(KNOB_MODE_WRITEONCE, "pintool", "i", "0", "start at this instruction");
 
@@ -82,6 +84,9 @@ inline void increment_syscall_cnt (struct thread_data* ptdata, int syscall_num)
 	} else {
 	    current_thread->syscall_cnt++;
 	}
+    }
+    if (*ppthread_log_clock >= print_start) { 
+        if (inst_start == 0) tracing = true;
     }
 
     if (*ppthread_log_clock > print_stop) { 
@@ -193,9 +198,9 @@ ADDRINT find_static_address(ADDRINT ip)
     return ip - offset;
 }
 
-static void trace_bbl (ADDRINT ip)
+static void trace_bbl (ADDRINT ip, ADDRINT end_ip)
 {
-    printf ("[BB]0x%x, #%llu,%lu (clock)  %d  ", ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid);
+    printf ("[BB]0x%x (ending at 0x%x), #%llu,%lu (clock)  %d  ", ip, end_ip, current_thread->ctrl_flow_info.count, *ppthread_log_clock, current_thread->record_pid);
     PIN_LockClient();
     if (IMG_Valid(IMG_FindByAddress(ip))) {
         printf("%s -- img %s static %#x\n", RTN_FindNameByAddress(ip).c_str(), IMG_Name(IMG_FindByAddress(ip)).c_str(), find_static_address(ip));
@@ -209,9 +214,9 @@ static void trace_bbl (ADDRINT ip)
 
 TAINTSIGN monitor_control_flow_inst (ADDRINT ip, BOOL is_branch, BOOL taken)
 {
-    if (!tracing && ip == inst_start) {
+    if (!tracing && ip == inst_start && *ppthread_log_clock >= print_start) {
 	printf ("[START] inst trace at instruction 0x%x\n", inst_start);
-	tracing = 1;
+	tracing = true;
 	subroutine = "";
     }
     if (tracing) {
@@ -247,7 +252,7 @@ TAINTSIGN monitor_control_flow_inst (ADDRINT ip, BOOL is_branch, BOOL taken)
 
 TAINTSIGN monitor_control_flow_tail (ADDRINT ip) 
 { 
-    if (tracing && subroutine == "") trace_bbl (current_thread->ctrl_flow_info.bbl_addr);
+    if (tracing && subroutine == "") trace_bbl (current_thread->ctrl_flow_info.bbl_addr, ip);
     ++ current_thread->ctrl_flow_info.count;
     if (*ppthread_log_clock != current_thread->ctrl_flow_info.last_clock) {
         current_thread->ctrl_flow_info.last_clock = *ppthread_log_clock;
@@ -351,7 +356,7 @@ void after_function_call(ADDRINT name, ADDRINT rtn_addr, ADDRINT ret)
 		}
 	    } else {
 		printf("[END] bbl trace - function return\n");
-		tracing = 0;
+		tracing = false;
 	    }
 	}
     }
@@ -451,8 +456,8 @@ int main(int argc, char** argv)
 
     // Read in knob parameters
     print_stop = atoi(KnobPrintStop.Value().c_str());
+    print_start = atoi(KnobPrintStart.Value().c_str());
     inst_start = KnobInstStart.Value();
-    if (inst_start == 0) tracing = true;  // Tracing all the time
 
     ppthread_log_clock = map_shared_clock(fd);
     

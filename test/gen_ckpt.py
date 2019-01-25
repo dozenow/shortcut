@@ -28,7 +28,7 @@ parser.add_argument("-outputdir", help = "the output dir of all output files.")
 parser.add_argument("-compile_only", help = "needs an input file name. Skip the slice generation phase and directly compiles assemble to .so")
 parser.add_argument("-compile_all", help = "Skip the slice generation phase and directly compiles all assemble files to .so", action="store_true")
 parser.add_argument("-no_ckpt", help = "Skip the ckpt phase", action="store_true")
-parser.add_argument("-function_level", help = "Only slice a region bounded by two sys_jumpstart_runtime.", action="store_true")
+parser.add_argument("-region_start_clock", help = "Only slice a region bounded by two sys_jumpstart_runtime.")
 args = parser.parse_args()
 
 rec_dir = args.rec_group_id
@@ -84,8 +84,9 @@ if len(input_asm_file) is 0:
         else:
                 commands = ["./runpintool", "/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", 
                        "-recheck_group", str(rec_dir), "-ckpt_clock", str(ckpt_at), "-chk", checkfilename, "-group_dir", outputdir]
-        if (args.function_level):
+        if (args.region_start_clock is not None):
             commands.append ("-fl")
+            commands.append (args.region_start_clock)
         p = Popen (commands, stdout=outfd)
         print (commands)
         p.wait()

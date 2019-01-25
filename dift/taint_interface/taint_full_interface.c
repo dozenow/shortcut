@@ -51,8 +51,8 @@ struct slab_alloc leaf_table_alloc;
 #endif
 
 // Use this for extra control flow tracking debugging
-#define CFDEBUG(x,...);
-//#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
+//#define CFDEBUG(x,...);
+#define CFDEBUG(x,...) fprintf(stderr, x, ## __VA_ARGS__)
  
 // File-descriptor tainting
 // A mapping of open fds to taint values.

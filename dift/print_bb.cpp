@@ -12,7 +12,7 @@
 #include <sys/time.h>
 #include <iostream>
 
-#define COMPACT
+//#define COMPACT
 #define PRINT if(*ppthread_log_clock>print_start)printf
 
 #define OP_CALL             0

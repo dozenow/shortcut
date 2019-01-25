@@ -243,10 +243,10 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
-//#if 0
+#if 0
     fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p record pid %d\n", 
 	     tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename), record_pid);
-//#endif
+#endif
 
     if (clock_addr)
         go_live_clock = clock_addr;
@@ -367,7 +367,6 @@ void print_value_log (u_long foo)
 
 void exit_slice (long is_ckpt_thread, long retval)
 {
-    fprintf (stderr, "exit_slice is called.\n");
 #ifdef SLICE_VM_DUMP
     // For debugging memory differeces
     dump_taintbuf (DIVERGE_DEBUG, 0);
@@ -410,7 +409,7 @@ void handle_jump_diverge()
     DELAY;
     syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_jump_diverge: should not get here\n");
-    abort();
+    //abort();
 }
 
 void handle_delayed_jump_diverge()
@@ -668,7 +667,7 @@ long read_recheck (size_t count)
 			LPRINT ("[MISMATCH] read returns different values - read/expected:\n");
 			for (i = 0; i < rc; i++) {
 			    if (tmpbuf[i] != tmpbuf[use_count+i]) LPRINT ("*");
-			    LPRINT ("%02x/%02x ", tmpbuf[i]&0xff, tmpbuf[use_count+i]&0xff);
+			    LPRINT ("%02x/%02x%c ", tmpbuf[i]&0xff, tmpbuf[use_count+i]&0xff, (tmpbuf[i] == tmpbuf[use_count+i]?' ':'*'));
 			    if (i%16 == 15) LPRINT ("\n");
 			}
 			LPRINT ("\n");
@@ -725,7 +724,7 @@ long read_recheck (size_t count)
 			LPRINT ("[MISMATCH] read returns different values - read/expected:\n");
 			for (i = 0; i < rc; i++) {
 			    if (tmpbuf[i] != readData[i]) LPRINT ("*");
-			    LPRINT ("%02x/%02x ", tmpbuf[i]&0xff, readData[i]&0xff);
+			    LPRINT ("%02x/%02x%c ", tmpbuf[i]&0xff, readData[i]&0xff, (tmpbuf[i] == readData[i]?' ':'*'));
 			    if (i%16 == 15) LPRINT ("\n");
 			}
 			LPRINT ("\n");
@@ -756,7 +755,7 @@ long pread_recheck ()
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    LPRINT ( "pread: fd %d buf %lx count %d readlen %d offset %lu returns %ld clock %lu\n", 
+    LPRINT ( "pread: fd %d buf %lx count %d readlen %d offset %llu returns %ld clock %lu\n", 
 	     pread->fd, (u_long) pread->buf, pread->count, pread->readlen, pread->offset, pentry->retval, pentry->clock);
 #endif
 
@@ -806,7 +805,7 @@ long pread_recheck ()
 		LPRINT ("[MISMATCH] read %lu returns different values - read/expected:\n", pentry->clock);
 		if (memcmp (pread->buf, readData, pentry->retval)) {
 		    for (i = 0; i < pentry->retval; i++) {
-			LPRINT ("%02x/%02x ", ((char *)pread->buf)[i]&0xff, readData[i]&0xff);
+			LPRINT ("%02x/%02x%c ", ((char *)pread->buf)[i]&0xff, readData[i]&0xff, (((char *)pread->buf)[i]==readData[i]?' ':'*'));
 			if (i%16 == 15) LPRINT ("\n");
 		    }
 		    LPRINT ("\n");
@@ -942,9 +941,10 @@ long recv_recheck ()
     struct recv_recheck* precv;
 #ifdef REORDERING
     u_char* match;
+    int offset;
 #endif
     long rc;
-    int offset, i;
+    int i;
 
     start_timing_func ();
     pentry = (struct recheck_entry *) bufptr;
@@ -1087,6 +1087,8 @@ long recv_recheck ()
 #ifdef PRINT_DEBUG
 	print_buffer_hex (precv->buf, pentry->retval);
 	print_buffer_hex ((u_char *) recvData, pentry->retval);
+	print_buffer (precv->buf, pentry->retval);
+	print_buffer ((u_char *) recvData, pentry->retval);
 #endif
 #ifdef REORDERING
 	reorder_sequence (precv->buf, (u_char *) recvData, pentry->retval);
@@ -1128,7 +1130,7 @@ long recv_recheck ()
 		LPRINT ("[MISMATCH] recv %lu returns different values - read/expected:\n", pentry->clock);
 		if (memcmp (precv->buf, recvData, pentry->retval)) {
 		    for (i = 0; i < pentry->retval; i++) {
-			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i]&0xff, recvData[i]&0xff);
+			LPRINT ("%02x/%02x%c ", ((char *)precv->buf)[i]&0xff, recvData[i]&0xff, (((char *)precv->buf)[i] == recvData[i]?' ':'*'));
 			if (i%16 == 15) LPRINT ("\n");
 		    }
 		    LPRINT ("\n");
@@ -1267,7 +1269,7 @@ long recvfrom_recheck ()
 		LPRINT ("[MISMATCH] recvfrom %lu returns different values - read/expected:\n", pentry->clock);
 		if (memcmp (precv->buf, recvData, pentry->retval)) {
 		    for (i = 0; i < pentry->retval; i++) {
-			LPRINT ("%02x/%02x ", ((char *)precv->buf)[i], recvData[i]);
+			LPRINT ("%02x/%02x%c ", ((char *)precv->buf)[i], recvData[i], (((char *)precv->buf)[i] == recvData[i]?' ':'*'));
 			if (i%16 == 15) LPRINT ("\n");
 		    }
 		    LPRINT ("\n");

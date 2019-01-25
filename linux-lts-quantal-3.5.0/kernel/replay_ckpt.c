@@ -1699,7 +1699,7 @@ static struct fw_slice_info* get_fw_slice_info (struct pt_regs* regs) {
 	return (struct fw_slice_info *) addr;
 }
 
-long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr) 
+long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_filename, u_long user_clock_addr, u_long slice_mode) 
 { 
 	//start to execute the slice
 	long extra_space_addr = 0;
@@ -1709,33 +1709,41 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	u_int entry;
         int index;
 
-        index = atomic_add_return (1, &go_live_clock->num_threads)-1;
-	if (index == 0) 
-		go_live_clock->cache_file_structure = NULL;
-        MPRINT ("Pid %d start_fw_slice pthread_clock_addr %lx\n", current->pid, user_clock_addr);
-        if (index > 99) { 
-            printk ("start_fw_slice: too many concurrent threads?\n");
-            BUG ();
-        } else { 
-            //write the process map
-            go_live_clock->process_map[index].record_pid = record_pid;
-            go_live_clock->process_map[index].current_pid = current->pid;
-	    go_live_clock->process_map[index].taintbuf = NULL; // Will be set by each slice when started
-	    go_live_clock->process_map[index].taintndx = NULL; // Ditto
-            go_live_clock->process_map[index].value = 0;
-            go_live_clock->process_map[index].wait = 0;
-        }
+	if (go_live_clock != NULL) {
+		index = atomic_add_return (1, &go_live_clock->num_threads)-1;
+		if (index == 0) 
+			go_live_clock->cache_file_structure = NULL;
+		MPRINT ("Pid %d start_fw_slice pthread_clock_addr %lx\n", current->pid, user_clock_addr);
+		if (index > 99) { //cannot put all information in one single page
+			printk ("start_fw_slice: too many concurrent threads?\n");
+			BUG ();
+		} else { 
+			//write the process map
+			go_live_clock->process_map[index].record_pid = record_pid;
+			go_live_clock->process_map[index].current_pid = current->pid;
+			go_live_clock->process_map[index].taintbuf = NULL; // Will be set by each slice when started
+			go_live_clock->process_map[index].taintndx = NULL; // Ditto
+			go_live_clock->process_map[index].value = 0;
+			go_live_clock->process_map[index].wait = 0;
+		}
+	}
 
 	// Too big - so allocate on the stack
 	pinfo = KMALLOC (sizeof(struct fw_slice_info), GFP_KERNEL);
-        pinfo->slice_clock = go_live_clock;
 	if (pinfo == NULL) {
 		printk ("Cannot allocate fw_slice_info\n");
 		return -ENOMEM;
 	}
+        pinfo->slice_clock = go_live_clock;
+	pinfo->slice_mode = slice_mode;
 
 	// Allocate space for the restore stack and also for storing some fw slice info
-	extra_space_addr = sys_mmap_pgoff (0, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	extra_space_addr = sys_mmap_pgoff (0x80004000, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
+	if (extra_space_addr != 0x80004000) {
+		//a bug related to fine-grained code regions
+		//okay... the correct fix is to load the extra_mmap_region file and reserve them...
+		printk ("This is a hacky fix to avoid we mmap into the location that will be used by the slice later on; the assumption is that the this address is never used by the program.\n"); 
+	}
 	if (IS_ERR((void *) extra_space_addr)) {
 		printk ("[ERROR] start_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);
 		return -ENOMEM;
@@ -1767,7 +1775,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	printk ("pid %d start_fw_slice: slice_addr is %lx, entry is %u, ip is %lx\n", current->pid, slice_addr, entry, regs->ip);
+	printk ("pid %d start_fw_slice: slice_addr is %lx, stack is %lx, entry is %u, ip is %lx, extra_space is %lx with size %d\n", current->pid, slice_addr, regs->sp, entry, regs->ip, extra_space_addr, STACK_SIZE+SLICE_INFO_SIZE);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {
@@ -1987,10 +1995,16 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		}
 
 		//unmap the slice - doing this during the dump will cause process to hang
-		rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
-		if (rc != 0) { 
-			printk ("sys_execute_fw_slice: cannot munmap");
-			return -1;
+		if (slice_info->slice_mode != 0) {
+			printk ("OKay... let's also ignore the step to unload the slice; do this in the user level.\n");
+			//in this case, we're definitely accelerating the fine code regions and the system call we need to restart right after the slice is a sys_jumpstart_runtime call; here we return the address of the slice dl handler so we can safely unload the slice
+			slice_retval = 1;
+		} else {
+			rc = sys_munmap (slice_info->text_addr, slice_info->text_size);
+			if (rc != 0) { 
+				printk ("sys_execute_fw_slice: cannot munmap");
+				return -1;
+			}
 		}
 		rc = sys_munmap (slice_info->extra_addr, slice_info->extra_size);
 		if (rc != 0) { 
@@ -2020,7 +2034,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			}
 		}
 
-		MPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
+		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {

@@ -62,9 +62,9 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-#define EXTRA_DEBUG 169260
-#define EXTRA_DEBUG_STOP 172603
-#define EXTRA_DEBUG_FUNCTION
+//#define EXTRA_DEBUG 169260
+//#define EXTRA_DEBUG_STOP 172603
+//#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
 //#define ERROR_PRINT(x,...);
@@ -137,7 +137,7 @@ extern unsigned long handled_index_divergence;
 int filter_x = 0;
 int filter_inputs = 0;
 int print_all_opened_files = 0;
-bool function_level_tracking = false;
+unsigned int function_level_tracking = 0;
 unsigned int checkpoint_clock = UINT_MAX;
 unsigned long recheck_group = 0;
 const char* filter_read_filename = NULL;
@@ -365,9 +365,9 @@ KNOB<string> KnobGroupDirectory(KNOB_MODE_WRITEONCE,
 KNOB<string> KnobCheckFilename(KNOB_MODE_WRITEONCE, 
     "pintool", "chk", "",
     "a file with allowed control and data flow divergences");
-KNOB<bool> KnobFunctionLevel (KNOB_MODE_WRITEONCE, 
+KNOB<unsigned int> KnobFunctionLevel (KNOB_MODE_WRITEONCE, 
         "pintool", "fl", "", 
-        "Run the pintool in fine granularities and generated patch-based checkpoints");
+        "Run the pintool in fine granularities and generated patch-based checkpoints, starting from this clock(end of sys_jumpstart_runtime)");
 
 //ARQUINN: added helper methods for copying tokens from the file
 #ifdef USE_FILE
@@ -2977,6 +2977,7 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) 
 {
+    if (*ppthread_log_clock < function_level_tracking) return; 
     if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "####### jumpstart_runtime slice begins.\n");
@@ -3157,6 +3158,13 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
             }
             close (mckpt_fd);
         }
+        close (fd);
+        //now calculate the maximum memory regions the code region is going to use
+        //so we can reserve these regions before loading the slice to avoid the slice is loaded into these regions
+        snprintf (ckpt_filename, 256, "%s/extra_mmap_region", group_directory);
+        fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        assert (fd > 0);
+        jumpstart_create_extra_memory_region_list (fd, current_thread->patch_based_ckpt_info.read_pages);
         close (fd);
 
         printf ("jumpstart_runtime slice ends.\n");

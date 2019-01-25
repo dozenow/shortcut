@@ -222,6 +222,7 @@ struct fw_slice_info {
 	union thread_xstate fpu_state;
         //some extra info
         struct go_live_clock* slice_clock;
+	unsigned long slice_mode; //set if you're accelerating fine-grained code region 
 };
 
 struct go_live_process_map { 
@@ -255,7 +256,7 @@ void wake_up_vm_dump_waiters (struct replay_thread* prept);
 void wait_for_vm_dump (struct replay_thread* prept);
 void put_go_live_thread (struct replay_thread* prept);
 
-long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr);
+long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr, u_long);
 void destroy_replay_group (struct replay_group *prepg);
 void fw_slice_recover_swap_register (struct task_struct *main_live_tsk);
 struct go_live_clock* get_go_live_clock (struct task_struct* tsk);

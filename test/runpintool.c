@@ -23,7 +23,7 @@ int main (int argc, char* argv[])
     char* attach_offset = NULL; //the position(clock_value) where we start to attach pin
 
     if (argc < 2) {
-	fprintf (stderr, "format: runpintool [--attach_offset==<pid,syscall_start_clock>] <replay dir> <tool> [args passed to pin tool]\n");
+	fprintf (stderr, "format: runpintool [--attach_offset=<pid,syscall_start_clock>] <replay dir> <tool> [args passed to pin tool]\n");
 	return -1;
     }
 

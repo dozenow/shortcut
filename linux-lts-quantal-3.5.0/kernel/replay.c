@@ -127,8 +127,9 @@ unsigned int replay_pause_tool = 0;
 //xdou
 //#define TRACE_TIMINGS //analysis for how much we can save on startup
 unsigned int trace_timings = 0;
-int run_patched_ckpt = 0;
-int run_patched_ckpt_record_pid = 0;
+int jumpstart_run_slice = 0; //only used for fine-grained code region
+int jumpstart_load_slice_gid = 0; //fine-grained
+int jumpstart_load_slice_pid = 0; //fine-grained
 int check_startup_db = 0;
 int pause_after_slice = 0;
 int slice_dump_vm = 0;
@@ -4736,7 +4737,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 			}
 
 			//run slice jumps back to the user space
-			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
+			start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr, 0);
 			//if (PRINT_TIME) {
 #ifndef NO_TIMING
 			if (1) {
@@ -4959,7 +4960,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                     return -EEXIST;
                 }
                 //run slice jumps back to the user space
-                start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr);
+                start_fw_slice (go_live_clock, slice_addr, slice_size, record_pid, recheckname, prept->rp_group->rg_pthread_clock_addr, 0);
                 /*printk ("Pid %d sleeping to allow gdb/pin to attach\n", current->pid);
                 set_current_state(TASK_INTERRUPTIBLE);
                 schedule();
@@ -8294,6 +8295,37 @@ struct mmap_region_info {
 	int prot;
 };
 
+static void jumpstart_unload_reserved_regions (void) 
+{
+	struct file* f = NULL;
+	int retval = 0;
+	mm_segment_t old_fs = get_fs();
+	char filename[128];
+	char* buf = VMALLOC (PCKPT_MAX_BUF); //the assumption is that this buffer will hold all content in the file (which is almost definitely true); 
+	int offset = 0; 
+
+	set_fs (KERNEL_DS);
+	sprintf (filename, "/replay_logdb/rec_%d/extra_mmap_region", jumpstart_load_slice_gid);
+	f = filp_open (filename, O_RDONLY, 0);
+	BUG_ON (f == NULL);
+	retval = vfs_read (f, buf, PCKPT_MAX_BUF, &f->f_pos);
+	if (retval != f->f_dentry->d_inode->i_size) {
+		printk ("Error: cannot read all content into the buffer?\n");
+		BUG();
+	}
+	offset = 0; 
+	while (offset < retval) {
+		struct mmap_region_info* info = (struct mmap_region_info*) (buf + offset);
+		offset += sizeof (struct mmap_region_info);
+		printk ("    extra addr %lx size %d\n", info->addr, info->size);
+		BUG_ON (sys_munmap (info->addr, info->size) != 0);
+	}
+	filp_close (f, NULL);
+	set_fs (old_fs);
+	VFREE (buf);
+
+}
+
 static void jumpstart_load_mckpt (char* prefix) 
 {
 	struct file* f = NULL;
@@ -8358,158 +8390,159 @@ sys_jumpstart_runtime (int mode) {
 	struct timeval tv;
 	do_gettimeofday (&tv);
 	printk ("calling jumpstart_runtime with mode %d,  %ld.%06ld\n", mode, tv.tv_sec, tv.tv_usec);
+	//dump_vmas();
 
-	if (run_patched_ckpt) {
-		if (mode == 1) { //test if we need to load the ckpt and execute the slice later
-			/*if (pause_after_slice) {
-				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
-				set_current_state(TASK_INTERRUPTIBLE);
-				schedule();
-				printk("Pid %d woken up.\n", current->pid);
-			}*/
-			return 1;
-		} else if (mode == 2) { //load the ckpt
-			char prefix[64];
-			char filename[128];
-			struct file* f = NULL;
-			int retval = 0;
-			mm_segment_t old_fs = get_fs();
-			char* buf = VMALLOC (PCKPT_MAX_BUF);
-			int reg_index = 0;
-			unsigned long reg_value;
-			unsigned long mem_loc;
-			unsigned char mem_value;
-			int len = 0;
-			int offset = 0;
-			struct pt_regs* regs = get_pt_regs (NULL);
-			int i = 0;
-			unsigned int regcount = 0;
-
-			sprintf (prefix, "/replay_logdb/rec_%d", run_patched_ckpt);
-			//load mmap ckpt
-			jumpstart_load_mckpt (prefix); 
-			//then load patch-based ckpt
-			sprintf (filename, "%s/pckpt", prefix);
-			printk ("Now loading the ckpt\n");
-			jumpstart_mem_verification (prefix);
-
-			set_fs (KERNEL_DS);
-			f = filp_open (filename, O_RDONLY, 0);	
-			BUG_ON (f == NULL);
-			retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
-			BUG_ON (retval != sizeof(unsigned int));
-			retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
-			BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
-			printk ("------patch-based checkpoint regs ------\n");
-			len = retval;
-
-			if (regcount != 0)
-				set_tsk_thread_flag (current, TIF_IRET);
-
-			for (i = 0; i<regcount; ++i) {
-				reg_index = *((int*) (buf + offset));
-				offset += sizeof (int);
-				reg_value = *((unsigned long*) (buf + offset));
-				offset += sizeof (unsigned long);
-				if (reg_index == -1) {
-					//printk ("skipped reg.\n");
-					continue;
-				}
-				//set the regs value
-				((unsigned long*) regs)[reg_index] = reg_value;
-				printk ("%d:%lu\n", reg_index, reg_value);
-			} 
-			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
-			set_fs(old_fs);
-			//dump_vmas();
-			printk ("------patch-based checkpoint mem------\n");
-			while (len != 0) {
-				offset = 0;
-				while (offset < len) { 
-					mem_loc = *((unsigned long*) (buf + offset));
-					offset += sizeof (unsigned long);
-					mem_value = *((unsigned char*)(buf + offset));
-					offset += sizeof (unsigned char);
-					//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
-					put_user (mem_value, (unsigned char __user*) mem_loc);
-				}
-				set_fs (KERNEL_DS);
-				len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
-				set_fs(old_fs);
-			}
-
-			filp_close (f, NULL);
-
-			VFREE (buf);
-
-			if(slice_dump_vm) {
-				printk ("Dumping memory.\n");
-				dump_vmas_content(0);
-				printk ("Dumping memory done.\n");
-			}
-
-			/*if (pause_after_slice) {
-				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
-				set_current_state(TASK_INTERRUPTIBLE);
-				schedule();
-				printk("Pid %d woken up.\n", current->pid);
-			}*/
-			printk ("pckpt is loaded.\n");
-			{
-				//set up the slice
-				if (current->record_thrd == NULL) {
-					printk ("We currently require the process is recording during acceleration....\n");
-				} else {
-					//xdou: I'm not sure whether this struct is useful or not for function level support...
-					struct go_live_clock* go_live_clock = (struct go_live_clock*) current->record_thrd->rp_group->rg_pkrecord_clock;
-					//figure out where the slice is loaded
-					struct vm_area_struct* vma;
-					char tmp_filename[256];
-					u_long slice_addr = 0, slice_size = 0;
-					sprintf (tmp_filename, "%s/exslice.%d.so", prefix, run_patched_ckpt_record_pid);
-
-					printk ("Loading the slice.\n");
-
-					down_read (&current->mm->mmap_sem);
-
-					for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
-						char buf[256];
-						char* s = NULL;
-
-						if (vma->vm_start == (u_long) current->mm->context.vdso) {
-							//printk (" this is vdso.\n");
-							continue;
-						}			
-						if (vma->vm_file) {
-							s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
-							if (!strcmp (s, tmp_filename)) {
-								if (slice_addr == 0) {
-									slice_addr = vma->vm_start;
-									slice_size = vma->vm_end - vma->vm_start;
-								}
-							}
-
-						}
-					}
-					up_read (&current->mm->mmap_sem);
-					//TODO: uncomment these two lines
-					if (slice_addr == 0) {
-						printk ("BUG: cannot load the slice. \n");
-						//BUG();
-					}
-
-					sprintf (tmp_filename, "%s/recheck.%d", prefix, run_patched_ckpt_record_pid);
-					start_fw_slice (go_live_clock, slice_addr, slice_size, run_patched_ckpt_record_pid, tmp_filename, 0);
-					//quit replay mode: TODO check if I've done everything
-					//TODO: destroy the group to avoid memory leak
-					current->go_live_thrd = current->replay_thrd;
-					current->replay_thrd = NULL;
-					current->record_thrd = NULL;
-					dump_vmas();
-				}
-			}
+	if (mode == 1) {
+		if (jumpstart_run_slice) return 2; //load the run the slice
+		else if (jumpstart_load_slice_gid) {//test if we need to load the slice later but don't run the slice
+			return 1; 
+		}
+		else {
+			printk ("[INFO] jumpstart_load_slice_gid is not set. \n");//This is hacky, but if you want to generate a working slice, you must first specify another slice to load (can be a non-working one) and record it and generate a slice with replay; this is necessary as we want to dlclose() the slice.so file correctly after executing slice; otherwise there is a memory mismatch problem since we have different memory layouts. 
+			//This is because if you record an execution that doesn't load any slice (whethere a workine or a non-working one) and use the execution to generate a slice, you might be able to run the slice and generate the correct output; but there is no guarantee since when you execute the slice, you loaded the slice.so file from the user-level, so you have already created a different memory layout than recorded before starting to run the slice 
 			return 0;
 		}
+	} else if (mode == 3) {
+		if (jumpstart_load_slice_gid) return 1;
+		else return 0;
+	} else if (mode == 2) {
+		char prefix[64];
+		char filename[128];
+		struct file* f = NULL;
+		int retval = 0;
+		mm_segment_t old_fs = get_fs();
+		char* buf = VMALLOC (PCKPT_MAX_BUF);
+		int reg_index = 0;
+		unsigned long reg_value;
+		unsigned long mem_loc;
+		unsigned char mem_value;
+		int len = 0;
+		int offset = 0;
+		struct pt_regs* regs = get_pt_regs (NULL);
+		int i = 0;
+		unsigned int regcount = 0;
+
+		sprintf (prefix, "/replay_logdb/rec_%d", jumpstart_load_slice_gid);
+		sprintf (filename, "%s/pckpt", prefix);
+		//verify the memory inputs
+		printk ("Now loading the ckpt\n");
+		jumpstart_mem_verification (prefix);
+		//load mmap ckpt
+		jumpstart_load_mckpt (prefix); 
+		//then load patch-based ckpt
+
+		set_fs (KERNEL_DS);
+		f = filp_open (filename, O_RDONLY, 0);	
+		BUG_ON (f == NULL);
+		retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
+		BUG_ON (retval != sizeof(unsigned int));
+		retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
+		BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
+		printk ("------patch-based checkpoint regs ------\n");
+		len = retval;
+
+		if (regcount != 0)
+			set_tsk_thread_flag (current, TIF_IRET);
+
+		for (i = 0; i<regcount; ++i) {
+			reg_index = *((int*) (buf + offset));
+			offset += sizeof (int);
+			reg_value = *((unsigned long*) (buf + offset));
+			offset += sizeof (unsigned long);
+			if (reg_index == -1) {
+				//printk ("skipped reg.\n");
+				continue;
+			}
+			//set the regs value
+			((unsigned long*) regs)[reg_index] = reg_value;
+			printk ("%d:%lu\n", reg_index, reg_value);
+		} 
+		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+		set_fs(old_fs);
+		//dump_vmas();
+		printk ("------patch-based checkpoint mem------\n");
+		while (len != 0) {
+			offset = 0;
+			while (offset < len) { 
+				mem_loc = *((unsigned long*) (buf + offset));
+				offset += sizeof (unsigned long);
+				mem_value = *((unsigned char*)(buf + offset));
+				offset += sizeof (unsigned char);
+				//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+				put_user (mem_value, (unsigned char __user*) mem_loc);
+			}
+			set_fs (KERNEL_DS);
+			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+			set_fs(old_fs);
+		}
+
+		filp_close (f, NULL);
+
+		VFREE (buf);
+
+		if(slice_dump_vm) {
+			printk ("Dumping memory.\n");
+			dump_vmas_content(0);
+			printk ("Dumping memory done.\n");
+		}
+
+		/*if (pause_after_slice) {
+		  printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
+		  set_current_state(TASK_INTERRUPTIBLE);
+		  schedule();
+		  printk("Pid %d woken up.\n", current->pid);
+		  }*/
+		printk ("pckpt is loaded.\n");
+		{
+			//set up the slice
+			//xdou: I'm sure this struct is not very useful or not for function level support...
+			struct go_live_clock* go_live_clock = NULL; 
+			//figure out where the slice is loaded
+			struct vm_area_struct* vma;
+			char tmp_filename[256];
+			u_long slice_addr = 0, slice_size = 0;
+			sprintf (tmp_filename, "%s/exslice.%d.so", prefix, jumpstart_load_slice_pid);
+
+			printk ("Loading the slice.\n");
+
+			down_read (&current->mm->mmap_sem);
+
+			for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+				char buf[256];
+				char* s = NULL;
+
+				if (vma->vm_start == (u_long) current->mm->context.vdso) {
+					//printk (" this is vdso.\n");
+					continue;
+				}			
+				if (vma->vm_file) {
+					s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+					if (!strcmp (s, tmp_filename)) {
+						if (slice_addr == 0) {
+							slice_addr = vma->vm_start;
+							slice_size = vma->vm_end - vma->vm_start;
+						}
+					}
+
+				}
+			}
+			up_read (&current->mm->mmap_sem);
+			//TODO: uncomment these two lines
+			if (slice_addr == 0) {
+				printk ("BUG: cannot load the slice. \n");
+				//BUG();
+			}
+
+			sprintf (tmp_filename, "%s/recheck.%d", prefix, jumpstart_load_slice_pid);
+			start_fw_slice (go_live_clock, slice_addr, slice_size, jumpstart_load_slice_pid, tmp_filename, 0, (u_long)mode);
+			//quit replay mode: TODO check if I've done everything
+			//TODO: destroy the group to avoid memory leak
+			current->go_live_thrd = current->replay_thrd;
+			current->replay_thrd = NULL;
+			current->record_thrd = NULL;
+			//dump_vmas();
+		}
+		return 0;
 	}
 
 	return 0;
@@ -8518,11 +8551,11 @@ sys_jumpstart_runtime (int mode) {
 static asmlinkage long record_jumpstart_runtime (int mode)
 {
 	long rc;
-	if (run_patched_ckpt == 0 && mode != 2) {
+	if (jumpstart_run_slice == 0) {
 		new_syscall_enter (222);
 	}
 	rc = sys_jumpstart_runtime (mode);
-	if (run_patched_ckpt == 0 && mode != 2) {
+	if (jumpstart_run_slice == 0) {
 		new_syscall_done (222, rc);
 		new_syscall_exit (222, NULL);
 	}
@@ -8545,7 +8578,7 @@ static asmlinkage long replay_jumpstart_runtime (int mode)
 }
 asmlinkage long shim_jumpstart_runtime(int mode) SHIM_CALL(jumpstart_runtime, 222, mode);
 
-asmlinkage long 
+	asmlinkage long 
 shim_exit(int error_code)
 {
 	if (current->record_thrd) MPRINT ("Recording Pid %d naturally exiting\n", current->pid);
@@ -14290,7 +14323,7 @@ record_getcwd (char __user *buf, unsigned long size)
 	rc = sys_getcwd (buf, size);
 	new_syscall_done (183, rc);
 	//debug:
-	{
+	/*{
 		struct file *file = NULL;
 		printk (" Getcwd called.\n");
 		//file = fcheck (3);
@@ -14303,7 +14336,7 @@ record_getcwd (char __user *buf, unsigned long size)
 				printk ("[DEBUG] fd 3 filename %s\n", filename);
 			fput (file);
 		}
-	}
+	}*/
 	if (rc >= 0) {
 		recbuf = ARGSKMALLOC(rc, GFP_KERNEL);
 		if (recbuf == NULL) {
@@ -17669,15 +17702,22 @@ static struct ctl_table replay_ctl[] = {
 		.proc_handler	= &proc_dointvec,
 	},
 	{
-		.procname	= "run_patched_ckpt",
-		.data		= &run_patched_ckpt,
+		.procname	= "jumpstart_run_slice",
+		.data		= &jumpstart_run_slice,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
 	{
-		.procname	= "run_patched_ckpt_record_pid",
-		.data		= &run_patched_ckpt_record_pid,
+		.procname	= "jumpstart_load_slice_gid",
+		.data		= &jumpstart_load_slice_gid,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "jumpstart_load_slice_pid",
+		.data		= &jumpstart_load_slice_pid,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
