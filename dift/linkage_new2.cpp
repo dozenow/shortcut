@@ -687,8 +687,12 @@ static inline void sys_open_start(struct thread_data* tdata, char* filename, int
 	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "push ecx");
 	OUTPUT_SLICE_INFO ("");
+	OUTPUT_SLICE (0, "push %p", filename);
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "call open_recheck");
 	OUTPUT_SLICE_INFO ("clock %lu", *ppthread_log_clock);
+	OUTPUT_SLICE (0, "add esp, 4");
+	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "pop ecx");
 	OUTPUT_SLICE_INFO ("");
 	OUTPUT_SLICE (0, "pop edx");
@@ -3170,7 +3174,7 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
         fprintf (stderr, "###### jumpstart_runtime slice ends.\n");
-        fprintf (stderr, "0x8cc34c0 0x%lx 0x8b943fc 0x%lx 0x8b943e8 0x%lx 0x8b943f8 0x%lx\n", *((long*)0x8cc34c0), *((long*) 0x8b943fc), *((long*)0x8b943e8), *((long*)0x8b943f8)); 
+        //fprintf (stderr, "0x8cc34c0 0x%lx 0x8b943fc 0x%lx 0x8b943e8 0x%lx 0x8b943f8 0x%lx\n", *((long*)0x8cc34c0), *((long*) 0x8b943fc), *((long*)0x8b943e8), *((long*)0x8b943f8)); 
     }
 }
 

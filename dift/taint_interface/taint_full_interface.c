@@ -266,6 +266,22 @@ static UINT32 get_mem_value32 (u_long mem_loc, uint32_t size);
 static inline int is_mem_tainted (u_long mem_loc, uint32_t size);
 static inline int is_reg_tainted (int reg, uint32_t size, uint32_t is_upper8);
 static inline void verify_memory (ADDRINT ip, u_long mem_loc, uint32_t mem_size);
+inline void print_buffer (char* buffer, int len, char* outbuffer)
+{
+    int i;
+    *(outbuffer++) = '{';
+    for (i = 0; i < len; i++) { 
+	u_char ch = buffer[i];
+	if (ch >= 32 && ch <= 126 && ch != 34) {
+            *(outbuffer++) = ch;
+	} else {
+            *(outbuffer++) = '?';
+	}
+    }
+    *(outbuffer++) = '}';
+    *(outbuffer++) = 0;
+}
+
 int is_flag_tainted (uint32_t flag) {
     int i = 0;	
     int tainted = 0;
@@ -4655,16 +4671,21 @@ TAINTSIGN fw_slice_flag2mem (ADDRINT ip, char* ins_str, uint32_t mask, u_long me
     }
 }
 
+
 //note: reg_size doesn't always correspond to the actual regsize (16 bytes) 
 TAINTINT fw_slice_pcmpistri_reg_reg (ADDRINT ip, char* ins_str, uint32_t reg1, uint32_t reg2, uint32_t reg1_size, uint32_t reg2_size, char* reg1_val, char* reg2_val) 
 {
     int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
     int reg2_taint = is_reg_tainted (reg2, reg2_size, 0);
     if (reg1_taint || reg2_taint) {
+        char str1[20];
+        char str2[20];
 	if (reg1_taint != 1) add_imm_load_to_slice (reg1, 16, reg1_val, ip);
 	if (reg2_taint != 1) add_imm_load_to_slice (reg2, 16, reg2_val, ip);
+        print_buffer (reg1_val, 16, str1);
+        print_buffer (reg2_val, 16, str2);
 	OUTPUT_SLICE (ip, "%s", ins_str);
-	OUTPUT_SLICE_INFO ("#src_regreg_pcmp[i_or_e]stri[%d:%d:%u,%d:%d:%u] #dst_reg_value %.16s, src_reg_value %.16s", reg1, reg1_taint, reg1_size, reg2, reg2_taint, reg2_size, reg1_val, reg2_val);
+	OUTPUT_SLICE_INFO ("#src_regreg_pcmp[i_or_e]stri[%d:%d:%u,%d:%d:%u] #dst_reg_value %s, src_reg_value %s", reg1, reg1_taint, reg1_size, reg2, reg2_taint, reg2_size, str1, str2);
 	return 1;
     }
     return 0;
@@ -4675,9 +4696,13 @@ TAINTINT fw_slice_pcmpistri_reg_mem (ADDRINT ip, char* ins_str, uint32_t reg1, u
     int reg1_taint = is_reg_tainted (reg1, reg1_size, 0);
     int mem_taints = is_mem_tainted (mem_loc2, mem_size);
     if (reg1_taint || mem_taints) {
+        char str1[20];
+        char str2[20];
 	if (reg1_taint != 1) add_imm_load_to_slice (reg1, 16, reg1_val, ip);
+        print_buffer (reg1_val, 16, str1);
+        print_buffer ((char*)mem_loc2, 16, str2);
 	OUTPUT_SLICE (ip, "%s", ins_str);
-	OUTPUT_SLICE_INFO ("#src_regmem_pcmp[i_or_e]stri[%d:%d:%u,%lx:%d:%u] #dst_reg_value %.16s, src_mem_value %u", reg1, reg1_taint, reg1_size, mem_loc2, mem_taints, mem_size, reg1_val, get_mem_value32(mem_loc2, mem_size));
+	OUTPUT_SLICE_INFO ("#src_regmem_pcmp[i_or_e]stri[%d:%d:%u,%lx:%d:%u] #dst_reg_value %s, src_mem_value %s", reg1, reg1_taint, reg1_size, mem_loc2, mem_taints, mem_size, str1, str2);
         if (!mem_taints) { 
             OUTPUT_SLICE (0, "[BUG][SLICE] cannot handle tainted mem for pcmpistri for now, because we didn't init the untainted mem values correctly\n");
             OUTPUT_SLICE_INFO ("");

@@ -1738,7 +1738,7 @@ long sendmsg_recheck ()
     return rc;
 }
 
-long open_recheck (int flags, int mode)
+long open_recheck (char* tainted_filename, int flags, int mode)
 {
     struct recheck_entry* pentry;
     struct open_recheck* popen;
@@ -1753,7 +1753,7 @@ long open_recheck (int flags, int mode)
     bufptr += pentry->len;
 
 #ifdef PRINT_VALUES
-    LPRINT ( "open: filename %s flags %x/%x tainted %d mode %x/%x tainted? %d", fileName, popen->flags, flags, popen->is_flags_tainted, popen->mode, mode, popen->is_mode_tainted);
+    LPRINT ( "open: filename %s tainted %d  current filename %s flags %x/%x tainted %d mode %x/%x tainted? %d", fileName, popen->is_name_tainted, tainted_filename, popen->flags, flags, popen->is_flags_tainted, popen->mode, mode, popen->is_mode_tainted);
     if (popen->has_retvals) {
 	LPRINT ( " dev %ld ino %ld mtime %ld.%ld", popen->retvals.dev, popen->retvals.ino, 
 	       popen->retvals.mtime.tv_sec, popen->retvals.mtime.tv_nsec); 
@@ -1773,7 +1773,10 @@ long open_recheck (int flags, int mode)
     }
 
     start_timing();
-    rc = syscall(SYS_open, fileName, use_flags, use_mode);
+    if (popen->is_name_tainted) 
+        rc = syscall(SYS_open, tainted_filename, use_flags, use_mode);
+    else 
+        rc = syscall(SYS_open, fileName, use_flags, use_mode);
     end_timing (SYS_open, rc);
     check_retval ("open", pentry->clock, pentry->retval, rc);
     if (rc >= MAX_FDS) abort ();

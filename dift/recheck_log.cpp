@@ -537,7 +537,11 @@ int recheck_open (struct recheck_handle* handle, char* filename, int flags, int 
     struct klog_result *res = skip_to_syscall (handle, SYS_open);
 
     check_reg_arguments ("open", 1);
-    if (is_mem_arg_tainted ((u_long) filename, strlen(filename)+1)) fprintf (stderr, "[ERROR] open filename is tainted: %s\n", filename);
+    if (is_mem_arg_tainted ((u_long) filename, strlen(filename)+1)) {
+        fprintf (stderr, "[Warning] open filename is tainted: %s\n", filename);
+        orchk.is_name_tainted = 1;
+    } else 
+        orchk.is_name_tainted = 0;
 
     write_header_into_recheck_log (handle->recheckfd, SYS_open, res->retval, sizeof (struct open_recheck) + strlen(filename) + 1, clock);
     if (res->psr.flags & SR_HAS_RETPARAMS) {

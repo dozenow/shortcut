@@ -117,6 +117,7 @@ struct execve_recheck {
 struct open_recheck {
     int has_retvals;
     struct open_retvals retvals;
+    int is_name_tainted;
     int is_flags_tainted;
     int flags;
     int is_mode_tainted;

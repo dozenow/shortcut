@@ -8270,6 +8270,8 @@ static void jumpstart_mem_verification (char* prefix) {
 				//printk ("mem 0x%lx value %u, cur %u\n", mem_loc, (unsigned int) mem_value, (unsigned int)(*((unsigned char*)mem_loc)));
 				memcpy (output_buf + output_len, buf + offset - sizeof(unsigned long) - sizeof(unsigned char), sizeof(unsigned long) + sizeof(unsigned char));
 				output_len += sizeof(unsigned long) + sizeof (unsigned char);
+				memcpy (output_buf + output_len, (unsigned char*) mem_loc, sizeof (unsigned char));
+				output_len += sizeof (unsigned char);
 			}
 		}
 		set_fs (KERNEL_DS);
