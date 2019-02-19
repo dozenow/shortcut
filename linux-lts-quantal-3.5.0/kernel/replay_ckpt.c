@@ -77,28 +77,6 @@ struct mm_info {
 //defined in replay.c
 struct ckpt_tsk; 
 
-struct ckpt_data {
-	u_long proc_count;
-	__u64  rg_id;
-	int    clock;	
-};
-
-struct ckpt_proc_data {
-	pid_t  record_pid;
-	long   retval;
-	loff_t logpos;
-	u_long outptr;
-	u_long consumed;
-	u_long expclock;
-	u_long pthreadclock;
-	u_long p_ignore_flag; //this is really just a memory address w/in the vma
-	u_long p_user_log_addr;
-	u_long user_log_pos;
-	u_long p_clear_child_tid;
-	u_long p_replay_hook;
-//	u_long rss_stat_counts[NR_MM_COUNTERS]; //the counters from the checkpointed task
-};
-
 struct recheck_entry {
 	int sysnum;
 	int flag;
@@ -665,6 +643,72 @@ exit:
 		rc = sys_close (fd);
 		if (rc < 0) printk ("replay_checkpoint_proc_to_disk: close returns %d\n", rc);
 	}
+	set_fs(old_fs);
+	return rc;
+}
+
+//a light version of the function replay_full_checkpoint_proc_to_disk
+//only checkpoint necessary information to support jumpstart replay_from_middle
+long 
+replay_full_checkpoint_proc_to_disk_light (char* filename, struct task_struct* tsk, pid_t record_pid, 
+				     int is_thread, long retval, loff_t logpos, u_long outptr, 
+				     u_long consumed, u_long expclock, u_long pthread_block_clock, 
+				     u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,
+				     u_long replay_hook, char* linker, loff_t* ppos)
+{
+	mm_segment_t old_fs = get_fs();
+	int fd = -1, rc, copied;
+	struct file* file = NULL;
+	struct ckpt_proc_data cpdata;
+	int len = (linker == NULL? 0: strlen (linker));
+
+	set_fs(KERNEL_DS);
+	fd = sys_open (filename, O_WRONLY|O_APPEND, 0);
+	if (fd < 0) {
+		printk ("replay_full_checkpoint_proc_to_disk: open of %s returns %d\n", filename, fd);
+		rc = fd;
+		goto exit;
+	}
+	file = fget(fd);
+
+	// First - write out checkpoint data
+	cpdata.record_pid = record_pid;
+	cpdata.retval = retval;
+	cpdata.logpos = logpos;
+	cpdata.outptr = outptr;
+	cpdata.consumed = consumed;
+	cpdata.expclock = expclock;
+	cpdata.pthreadclock = pthread_block_clock;
+	cpdata.p_ignore_flag  = ignore_flag;
+	cpdata.p_user_log_addr = user_log_addr;
+	cpdata.user_log_pos = user_log_pos; 
+	cpdata.p_clear_child_tid = (u_long)tsk->clear_child_tid; //ah, not having this messes up our replay on exit
+	cpdata.p_replay_hook = replay_hook;
+
+
+	copied = vfs_write (file, (char *) &cpdata, sizeof(cpdata), ppos);
+	if (copied != sizeof(cpdata)) {
+		printk ("replay_full_checkpoint_proc_to_disk: tried to write process data, got rc %d\n", copied);
+		rc = copied;
+		goto exit;
+	}
+
+	copied = vfs_write (file, (char*) &len, sizeof (int), ppos);
+	BUG_ON (copied != sizeof (int));
+	if (len > 0) {
+		copied = vfs_write (file, linker, len + 1, ppos);
+		BUG_ON (copied != len + 1);
+	}
+	if (!is_thread) 
+		// Write out the replay cache state
+		checkpoint_replay_cache_files (tsk, file, ppos);		
+exit:
+	if (file) fput(file);
+	if (fd >= 0)  {
+		rc = sys_close (fd);
+		if (rc < 0) printk ("replay_checkpoint_proc_to_disk: close returns %d\n", rc);
+	}
+        printk ("Pid %d replay_checkpoint_proc_to_disk exit: current pos %lld\n", current->pid, *ppos);
 	set_fs(old_fs);
 	return rc;
 }

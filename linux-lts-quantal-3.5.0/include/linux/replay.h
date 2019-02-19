@@ -120,6 +120,7 @@ long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_
 
 long replay_full_checkpoint_hdr_to_disk (char* filename, __u64 rg_id, int clock, u_long proc_count, struct ckpt_tsk *ct, struct task_struct *tsk, loff_t* ppos);
 long replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pid_t record_pid, int is_thread, long retval, loff_t logpos, u_long outptr, u_long consumed, u_long expclock, u_long pthread_block_clock, u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,u_long replay_hook, loff_t* ppos);
+long replay_full_checkpoint_proc_to_disk_light (char* filename, struct task_struct* tsk, pid_t record_pid, int is_thread, long retval, loff_t logpos, u_long outptr, u_long consumed, u_long expclock, u_long pthread_block_clock, u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,u_long replay_hook, char* linker, loff_t* ppos);
 
 
 /* Helper functions for checkpoint/resotre */
@@ -250,6 +251,29 @@ struct go_live_clock {
 	void* cache_file_structure; //This address is the cache_files_opened in recheck_support.c; this is need to make this structure shared across threads
 	struct go_live_process_map process_map[0]; //current pid  <-> record pid
 };
+
+struct ckpt_data {
+	u_long proc_count;
+	__u64  rg_id;
+	int    clock;	
+};
+
+struct ckpt_proc_data {
+	pid_t  record_pid;
+	long   retval;
+	loff_t logpos;
+	u_long outptr;
+	u_long consumed;
+	u_long expclock;
+	u_long pthreadclock;
+	u_long p_ignore_flag; //this is really just a memory address w/in the vma
+	u_long p_user_log_addr;
+	u_long user_log_pos;
+	u_long p_clear_child_tid;
+	u_long p_replay_hook;
+//	u_long rss_stat_counts[NR_MM_COUNTERS]; //the counters from the checkpointed task
+};
+
 
 struct replay_thread;
 void wake_up_vm_dump_waiters (struct replay_thread* prept);

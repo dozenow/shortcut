@@ -130,6 +130,7 @@ unsigned int trace_timings = 0;
 int jumpstart_run_slice = 0; //only used for fine-grained code region
 int jumpstart_load_slice_gid = 0; //fine-grained
 int jumpstart_load_slice_pid = 0; //fine-grained
+unsigned long long jumpstart_replay_from_middle_clock = 0;
 int check_startup_db = 0;
 int pause_after_slice = 0;
 int slice_dump_vm = 0;
@@ -1826,6 +1827,68 @@ checkpoint_replay_cache_files (struct task_struct* tsk, struct file* cfile, loff
 
 	return 0;
 }
+
+//This function create a fake replay cache file map (key is always equal to value) 
+//It's only used by the jumpstart replay_from_middle
+//If we start to replay from the middle of a normal program, there is no cached file opened during the normal execution; instead we can mimic the behavior of opened cache files as the cached file has the same file descriptor as the original files and the original files are already opened by the program 
+int
+restore_replay_cache_files_fake (struct file* cfile, loff_t* ppos)
+{
+	int fd = -1, cnt, len, copyed, i, val;
+	char* buffer;
+	loff_t pos;
+
+	copyed = vfs_read(cfile, (char *) &cnt, sizeof(cnt), ppos);
+	if (copyed != sizeof(cnt)) {
+		printk ("restore_replay_cache_files: tried to read count, got rc %d\n", copyed);
+		return copyed;
+	}
+	DPRINT ("restore_replay_cache_files: %d files in checkpoint\n", cnt);
+
+	for (i = 0; i < cnt; i++) {
+		copyed = vfs_read(cfile, (char *) &val, sizeof(val), ppos);
+		if (copyed != sizeof(val)) {
+			printk ("restore_replay_cache_files: tried to read fd val, got rc %d\n", copyed);
+			return copyed;
+		}
+
+		copyed = vfs_read(cfile, (char *) &len, sizeof(len), ppos);
+		if (copyed != sizeof(len)) {
+			printk ("restore_replay_cache_files: tried to read count, got rc %d\n", copyed);
+			return copyed;
+		}
+		
+		buffer = KMALLOC (len+1, GFP_KERNEL);
+		if (!buffer) {
+			printk ("restore_replay_chache_files: cannot allocate memory\n");
+			return -ENOMEM;
+		}
+		copyed = vfs_read(cfile, (char *) buffer, len, ppos);
+		if (copyed != len) {
+			printk ("restore_replay_cache_files: tried to read filename, got rc %d\n", copyed);
+			KFREE(buffer);
+			return copyed;
+		}
+		buffer[len] = '\0';
+		printk ("Test (remove it later): cached file name is %s\n", buffer);
+
+		fd = val; //cache_fd == fd
+		KFREE(buffer);
+
+		if (set_replay_cache_file (current->replay_thrd->rp_cache_files, val, fd) < 0) {
+			printk ("restore_replay_cache_files: cannot set cache file");
+			sys_close (fd);
+		} else {
+			copyed = vfs_read(cfile, (char *) &pos, sizeof(pos), ppos);
+			if (copyed != sizeof(pos)) {
+				printk ("restore_replay_cache_files: tried to read file position, got rc %d\n", copyed);
+				return copyed;
+			}
+		}
+	}
+	return 0;
+}
+
 
 int
 restore_replay_cache_files (struct file* cfile, loff_t* ppos, int go_live)
@@ -4317,19 +4380,32 @@ replay_full_ckpt (long rc)
 	MPRINT("Pid %d (%d) had exp clock %lu\n", current->pid, current->replay_thrd->rp_record_thread->rp_record_pid, current->replay_thrd->rp_expected_clock);
 
 
-	retval = replay_full_checkpoint_proc_to_disk (ckpt, current, 
-						      current->replay_thrd->rp_record_thread->rp_record_pid, 
-						      curr_ckpt_tsk->is_thread,rc, 
-						      current->replay_thrd->rp_record_thread->rp_read_log_pos,
-						      current->replay_thrd->rp_out_ptr, 
-						      argsconsumed(current->replay_thrd->rp_record_thread), 
-						      current->replay_thrd->rp_expected_clock, 0,
-						      (u_long) current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
-						      (u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr,
-						      (u_long) current->replay_thrd->rp_record_thread->rp_read_ulog_pos,
-						      (u_long) current->replay_thrd->rp_replay_hook, &pos);
-
-
+	if (jumpstart_replay_from_middle_clock) 
+		retval = replay_full_checkpoint_proc_to_disk_light (ckpt, current, 
+				current->replay_thrd->rp_record_thread->rp_record_pid, 
+				curr_ckpt_tsk->is_thread,rc, 
+				current->replay_thrd->rp_record_thread->rp_read_log_pos,
+				current->replay_thrd->rp_out_ptr, 
+				argsconsumed(current->replay_thrd->rp_record_thread), 
+				current->replay_thrd->rp_expected_clock, 0,
+				(u_long) current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
+				(u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr,
+				(u_long) current->replay_thrd->rp_record_thread->rp_read_ulog_pos,
+				(u_long) current->replay_thrd->rp_replay_hook, 
+				current->replay_thrd->rp_group->rg_rec_group->rg_linker, 
+				&pos);
+	else 
+		retval = replay_full_checkpoint_proc_to_disk (ckpt, current, 
+				current->replay_thrd->rp_record_thread->rp_record_pid, 
+				curr_ckpt_tsk->is_thread,rc, 
+				current->replay_thrd->rp_record_thread->rp_read_log_pos,
+				current->replay_thrd->rp_out_ptr, 
+				argsconsumed(current->replay_thrd->rp_record_thread), 
+				current->replay_thrd->rp_expected_clock, 0,
+				(u_long) current->replay_thrd->rp_record_thread->rp_ignore_flag_addr, 
+				(u_long) current->replay_thrd->rp_record_thread->rp_user_log_addr,
+				(u_long) current->replay_thrd->rp_record_thread->rp_read_ulog_pos,
+				(u_long) current->replay_thrd->rp_replay_hook, &pos);
 	if (retval) return retval;
 	// Then write out the processes
 	iter = ds_list_iter_create(current->replay_thrd->rp_group->rg_replay_threads);
@@ -4342,14 +4418,26 @@ replay_full_ckpt (long rc)
 			//not sure we want or need these two cases! 
 			if(prt->rp_ckpt_pthread_block_clock){				
 				MPRINT("Pid %d (%d) had exp clock %lu\n", prt->rp_replay_pid, prt->rp_record_thread->rp_record_pid, prt->rp_expected_clock);
-				retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
-									      prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
-									      argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
-									      prt->rp_ckpt_pthread_block_clock,
-									      (u_long) prt->rp_record_thread->rp_ignore_flag_addr,
-									      (u_long) prt->rp_record_thread->rp_user_log_addr,
-									      (u_long) prt->rp_record_thread->rp_read_ulog_pos,
-									      (u_long) prt->rp_replay_hook, &pos); 	       
+				if (jumpstart_replay_from_middle_clock) 
+					retval = replay_full_checkpoint_proc_to_disk_light (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
+							prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
+							argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
+							prt->rp_ckpt_pthread_block_clock,
+							(u_long) prt->rp_record_thread->rp_ignore_flag_addr,
+							(u_long) prt->rp_record_thread->rp_user_log_addr,
+							(u_long) prt->rp_record_thread->rp_read_ulog_pos,
+							(u_long) prt->rp_replay_hook, 
+							current->replay_thrd->rp_group->rg_rec_group->rg_linker, 
+							&pos); 	       
+				else 
+					retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, curr_ckpt_tsk->is_thread, 0,
+							prt->rp_record_thread->rp_read_log_pos, prt->rp_out_ptr, 
+							argsconsumed(prt->rp_record_thread), prt->rp_expected_clock,
+							prt->rp_ckpt_pthread_block_clock,
+							(u_long) prt->rp_record_thread->rp_ignore_flag_addr,
+							(u_long) prt->rp_record_thread->rp_user_log_addr,
+							(u_long) prt->rp_record_thread->rp_read_ulog_pos,
+							(u_long) prt->rp_replay_hook, &pos); 	       
 			}
 			else { 
 				MPRINT("Pid %d (%d) had exp clock %lu, save clock %lu\n", 
@@ -4357,15 +4445,28 @@ replay_full_ckpt (long rc)
 				       prt->rp_record_thread->rp_record_pid, 
 				       prt->rp_expected_clock,
 				       prt->rp_ckpt_save_expected_clock);
-				retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, 
-									      curr_ckpt_tsk->is_thread, 0,
-									      prt->rp_record_thread->rp_read_log_pos, 
-									      prt->rp_out_ptr, prt->rp_ckpt_save_args_head,
-									      prt->rp_ckpt_save_expected_clock, 0,
-									      (u_long) prt->rp_record_thread->rp_ignore_flag_addr,
-									      (u_long) prt->rp_record_thread->rp_user_log_addr,
-									      (u_long) prt->rp_record_thread->rp_read_ulog_pos,
-									      (u_long) prt->rp_replay_hook, &pos); 	       
+				if (jumpstart_replay_from_middle_clock) 
+					retval = replay_full_checkpoint_proc_to_disk_light (ckpt, tsk, prt->rp_record_thread->rp_record_pid, 
+							curr_ckpt_tsk->is_thread, 0,
+							prt->rp_record_thread->rp_read_log_pos, 
+							prt->rp_out_ptr, prt->rp_ckpt_save_args_head,
+							prt->rp_ckpt_save_expected_clock, 0,
+							(u_long) prt->rp_record_thread->rp_ignore_flag_addr,
+							(u_long) prt->rp_record_thread->rp_user_log_addr,
+							(u_long) prt->rp_record_thread->rp_read_ulog_pos,
+							(u_long) prt->rp_replay_hook, 
+							current->replay_thrd->rp_group->rg_rec_group->rg_linker, 
+							&pos); 	       
+				else 
+					retval = replay_full_checkpoint_proc_to_disk (ckpt, tsk, prt->rp_record_thread->rp_record_pid, 
+							curr_ckpt_tsk->is_thread, 0,
+							prt->rp_record_thread->rp_read_log_pos, 
+							prt->rp_out_ptr, prt->rp_ckpt_save_args_head,
+							prt->rp_ckpt_save_expected_clock, 0,
+							(u_long) prt->rp_record_thread->rp_ignore_flag_addr,
+							(u_long) prt->rp_record_thread->rp_user_log_addr,
+							(u_long) prt->rp_record_thread->rp_read_ulog_pos,
+							(u_long) prt->rp_replay_hook, &pos); 	       
 
 
 			}
@@ -4626,7 +4727,6 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 		pckpt_waiter->index = 1;
 
 		//wakeup only on thread, because only one can read ckpt file at a time anyway!
-                //xdou: TODO will this hurt our performance?
 		up (&pckpt_waiter->sem);
 
 		MPRINT ("Pid %d: waiting for %lu wakeups on sem %p\n", 
@@ -8328,6 +8428,150 @@ static void jumpstart_unload_reserved_regions (void)
 
 }
 
+static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
+{
+	struct record_group* precg; 
+	struct record_thread* prect;
+	struct replay_group* prepg;
+	struct replay_thread* prept;
+	long record_pid, rc;
+	long syscall_retval;
+	u_long consumed ;
+	mm_segment_t old_fs = get_fs ();
+	struct file* file = NULL;
+	char filename[256],  logdir[256];
+	struct ckpt_proc_data cpdata;
+	struct ckpt_data cdata;
+	loff_t ppos = 0;
+	int is_thread = 0, linker_len = 0; 
+
+
+	snprintf (logdir, 256, "/replay_logdb/rec_%llu", rg_id);
+	printk ("Pid %d replay_from_middle starts\n", current->pid);
+	if (current->record_thrd || current->replay_thrd) {
+		printk ("replay_from_middle: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
+		return -EINVAL;
+	}
+
+	// First create a record group and thread for this replay
+	precg = new_record_group (logdir);
+	if (precg == NULL) return -ENOMEM;
+	precg->rg_save_mmap_flag = 0;
+
+	prect = new_record_thread(precg, 0, NULL);
+	if (prect == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prepg = new_replay_group (precg, 0/*no support for multi-threaded programs*/);
+	if (prepg == NULL) {
+		destroy_record_group(precg);
+		return -ENOMEM;
+	}
+
+	prept = new_replay_thread (prepg, prect, current->pid, 0, NULL, NULL);
+	if (prept == NULL) {
+		destroy_replay_group (prepg);
+		destroy_record_group (precg);
+		return -ENOMEM;
+	}
+
+	rg_lock (precg);
+
+	//we shouldn't recheckpoint:
+	prepg->finished_ckpt = 1;
+
+	prept->rp_status = REPLAY_STATUS_RUNNING;
+	// Since there is no recording going on, we need to dec record_thread's refcnt
+	atomic_dec(&prect->rp_refcnt);
+	atomic_set(&prept->ckpt_restore_done,1);  
+
+	// Create a replay group and thread for this process
+	current->replay_thrd = prept;
+	current->record_thrd = NULL;
+
+	current->replay_thrd->rp_record_thread->rp_group->rg_id = rg_id;
+
+	is_thread = (current->tgid != current->pid);
+
+	rg_unlock (precg); 
+	
+	//restore replay kernel states
+	set_fs (KERNEL_DS);
+	snprintf (filename, 256, "%s/ckpt.%lu", logdir, ckpt_clock);
+	file = filp_open (filename, O_RDONLY, 0);
+	if (file == NULL) { 
+		printk ("cannot open file %s\n", filename);
+		set_fs (old_fs); 
+		return -1;
+	}
+	rc = vfs_read (file, (char*) &cdata, sizeof(cdata), &ppos);
+	BUG_ON (rc != sizeof (cdata));
+	//This is necessary because checkpoint clock != the actual clock value at the checkpoint! see the ckpt variable in replay_full_ckpt
+	atomic_set(precg->rg_pkrecord_clock, cdata.clock);
+
+	//skip: this information will be useful to support replay from middle for multi-threaded programs
+	//currently only single-thread program is supported
+	restore_ckpt_tsks_header (cdata.proc_count, file, &ppos);
+	restore_task_xray_monitor (current, file, &ppos);
+
+	//read the actual proc states
+	rc = vfs_read (file, (char*) &cpdata, sizeof (cpdata), &ppos);
+	if (rc != sizeof (cpdata)) {
+		printk ("cannot read cpdata\n");
+		filp_close (file, NULL);
+		set_fs (old_fs);
+		return -1;
+	}
+	record_pid = prect->rp_record_pid = cpdata.record_pid;
+	syscall_retval = cpdata.retval;
+	prect->rp_read_log_pos = cpdata.logpos;
+	prept->rp_out_ptr = cpdata.outptr;
+	consumed = cpdata.consumed;
+	prept->rp_expected_clock = cpdata.expclock;
+	prept->rp_ckpt_pthread_block_clock = cpdata.pthreadclock;
+	prect->rp_ignore_flag_addr = (int*) cpdata.p_ignore_flag;
+	prect->rp_user_log_addr = cpdata.p_user_log_addr;
+	prect->rp_read_ulog_pos = cpdata.user_log_pos;
+	current->clear_child_tid = (void*) cpdata.p_clear_child_tid;
+	prept->rp_replay_hook = cpdata.p_replay_hook;
+
+	rc = vfs_read (file, (char*)& linker_len, sizeof (linker_len), &ppos);
+	BUG_ON (rc != sizeof (linker_len));
+	if (linker_len > 0) {
+		BUG_ON (linker_len > MAX_LOGDIR_STRLEN -1);
+		rc = vfs_read (file, current->replay_thrd->rp_group->rg_rec_group->rg_linker, linker_len + 1, &ppos);
+		printk ("Set linker for replay process to %s\n", current->replay_thrd->rp_group->rg_rec_group->rg_linker);
+	}
+
+	if (!is_thread)
+		restore_replay_cache_files_fake (file, &ppos);
+	else 
+		printk ("[TODO] set up cache file map correctly for threads\n");
+
+	filp_close (file, NULL);
+	set_fs (old_fs);
+	rc = skip_and_read_log_data (prect);
+	if (rc < 0) {
+		printk ("cannot read klog, aborting...\n");
+		return rc;
+	}
+
+	if (consumed > 0) argsconsume(prect, consumed);
+
+	set_thread_flag(TIF_IRET); // We are updating regs so need full iret
+
+	/*if (nfake_calls) {
+		prepg->rg_nfake_calls = nfake_calls;
+		prepg->rg_fake_calls = fake_call_points;
+		atomic_set(precg->rg_pkrecord_clock+1,fake_call_points[0]);        
+	}*/
+	current->go_live_thrd = current->replay_thrd;
+
+	return syscall_retval;
+}
+
 static void jumpstart_load_mckpt (char* prefix) 
 {
 	struct file* f = NULL;
@@ -8545,6 +8789,12 @@ sys_jumpstart_runtime (int mode) {
 			//dump_vmas();
 		}
 		return 0;
+	} else if (mode == 4) { 
+		if (jumpstart_replay_from_middle_clock) {
+			//restore registers first
+			printk ("Pid %d starts to replay from the middle\n", current->pid);
+		 	return replay_from_middle (jumpstart_load_slice_gid, jumpstart_replay_from_middle_clock);
+		}
 	}
 
 	return 0;
@@ -17721,6 +17971,13 @@ static struct ctl_table replay_ctl[] = {
 		.procname	= "jumpstart_load_slice_pid",
 		.data		= &jumpstart_load_slice_pid,
 		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec,
+	},
+	{
+		.procname	= "jumpstart_replay_from_middle_clock",
+		.data		= &jumpstart_replay_from_middle_clock,
+		.maxlen		= sizeof(unsigned long long),
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
