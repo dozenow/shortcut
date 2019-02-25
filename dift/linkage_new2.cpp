@@ -3059,6 +3059,10 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
 
         fprintf (stderr, "===== checkpoint mem ====\n");
         print_memory_regions();
+        //format: start addr (4 bytes) , len (2 byte), content (len bytes)
+        unsigned long start_addr = 0;
+        unsigned short int block_len = 0;
+        char* block_buf = (char*) malloc (USHRT_MAX);
         for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
             //fprintf (stderr, "0x%lx", *iter);
             if (!write_pages.test (*iter/PAGE_SIZE)) {
@@ -3070,11 +3074,29 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
             }
             //fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
             u_long addr = *iter;
-            ret = write (fd, (char*) &addr, sizeof (unsigned long));
-            assert (ret == sizeof(unsigned long));
-            ret = write (fd, (char*) (*iter), sizeof (char));
-            assert (ret == sizeof (char));
+            if (addr != start_addr + block_len || block_len == USHRT_MAX) {
+                if (block_len != 0) {
+                    ret = write (fd, (char*) &block_len, sizeof(block_len));
+                    assert (ret == sizeof(block_len));
+                    ret = write (fd, block_buf, block_len);
+                    assert (ret == block_len);
+                    block_len = 0;
+                }
+                ret = write (fd, (char*) &addr, sizeof (unsigned long));
+                assert (ret == sizeof(unsigned long));
+                start_addr = addr;
+            } 
+
+            * (block_buf + block_len) = *((char*) addr);
+            ++ block_len;
         }
+        if (block_len != 0) {
+            ret = write (fd, (char*) &block_len, sizeof(block_len));
+            assert (ret == sizeof(block_len));
+            ret = write (fd, block_buf, block_len);
+            assert (ret == block_len);
+        }
+        free (block_buf);
         close (fd);
 
         //verifications
