@@ -18,6 +18,7 @@ TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
 CFILES=$(wildcard *.c)
+CFILES := $(filter-out fpm_main.c, $(CFILES))
 DEPS=$(patsubst %.c, .deps/%.d, $(CFILES))
 
 .PHONY: all
@@ -57,7 +58,7 @@ wparserecheck:
 parseklog: libutil.a parseklog.o parseklib.o
 	$(CC) $(CFLAGS) $(LDFLAGS) parseklib.o parseklog.o -o parseklog -lssl -lcrypto
 
-sdaemon: libutil.a sdaemon.cpp parseklib.o libutil.a
+sdaemon: libutil.a sdaemon.cpp parseklib.o libutil.a ../linux-lts-quantal-3.5.0/include/linux/replay_configs.h
 	g++ $(CFLAGS) $(LDFLAGS) parseklib.o sdaemon.cpp libutil.a -o sdaemon -std=c++0x
 
 xdiff: libutil.a xdiff.cpp parseklib.o libutil.a

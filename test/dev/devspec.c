@@ -145,7 +145,7 @@ spec_psdev_ioctl (struct file* file, u_int cmd, u_long data)
 
 		rc = replay_ckpt_wakeup(device, logdir, tmp, wdata.fd,wdata.follow_splits, wdata.save_mmap, 
 					wdata.attach_index, wdata.attach_pid, wdata.ckpt_at, wdata.ckpt_memory_only, 
-					wdata.ckpt_mem_slice_pid, wdata.record_timing, wdata.nfake_calls, fake_calls);
+					wdata.ckpt_mem_daemon_pid, wdata.record_timing, wdata.nfake_calls, fake_calls);
 
 		if (tmp) putname (tmp);
 		return rc;

@@ -38,7 +38,7 @@ extern "C" {
 #include <asm/ldt.h>
 #include <sys/resource.h>
 
-#include "replay_headers/include/linux/replay_configs.h"
+#include "../linux-lts-quantal-3.5.0/include/linux/replay_configs.h"
 
 #ifndef __USE_LARGEFILE64
 #  define __USE_LARGEFILE64

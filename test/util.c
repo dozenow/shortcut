@@ -77,7 +77,7 @@ int replay_fork (int fd_spec, const char** args, const char** env,
 
 int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at,
-		      int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, 
+		      int ckpt_memory_only, int ckpt_mem_daemon_pid, int record_timing, 
 		      u_long nfake_calls, u_long* fake_calls)
 {
     struct wakeup_data data;
@@ -92,7 +92,7 @@ int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save
     data.attach_pid = attach_pid;
     data.ckpt_at = ckpt_at;
     data.ckpt_memory_only = ckpt_memory_only;
-    data.ckpt_mem_slice_pid = ckpt_mem_slice_pid;
+    data.ckpt_mem_daemon_pid = ckpt_mem_daemon_pid;
     data.record_timing = record_timing;
     data.nfake_calls = nfake_calls;
     data.fake_calls = fake_calls;

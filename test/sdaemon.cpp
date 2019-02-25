@@ -21,9 +21,10 @@ using namespace std;
 #include "taintbuf.h"
 #include "util.h"
 #include <time.h>
+#include "../linux-lts-quantal-3.5.0/include/linux/replay_configs.h"
 
-//#define DPRINT printf
-#define DPRINT(x,...)
+#define DPRINT printf
+//#define DPRINT(x,...)
 //#define PRINT_TIME
 
 map<long,long> clone_map;
@@ -281,8 +282,8 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     char taintbuf_path[256];
     sprintf (taintbuf_path, "%s/taintbuf.%s", dir.c_str(), pid);
     if (access (taintbuf_path, R_OK)) {
-        //a patch for single-thread program like gcc 
-        sprintf (taintbuf_path, "%s/taintbuf.", dir.c_str());
+        fprintf (stderr, "Note: cannot find corresponding taintbuf file for klog %s. This could be a correct behavior if you're accelerating fine-grained code regions\n", klogfilename);
+        return -1;
     }
     
     int tfd = open (taintbuf_path, O_RDONLY);
@@ -341,8 +342,6 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
       
     DPRINT ("Opened output file %s\n", newklogpath);
 
-    DPRINT ("Next syscall is %d clock %ld type %d\n", trv.syscall, trv.clock, trv.rettype);
-
     struct klogfile *log = parseklog_open(klogpath);
     if (!log) {
 	fprintf(stderr, "%s doesn't appear to be a valid log file!\n", klogpath);
@@ -353,8 +352,8 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
     while (parseklog_read_next_chunk(log) > 0) {
 	struct klog_result* res;
 	while ((res = parseklog_get_next_psr_from_chunk (log)) != NULL && !no_more_records) {
-	    DPRINT ("Start clock is %lu sysnum is %d\n", res->start_clock, res->psr.sysnum);
 	    if (res->start_clock < ptrv->clock) continue; // No modifications for this record
+	    DPRINT ("Start clock is %lu sysnum is %d\n", res->start_clock, res->psr.sysnum);
 	    while (res->start_clock >= ptrv->clock && !no_more_records) {
 		DPRINT ("Match on clock %lu,%lu syscall %d,%d\n", res->start_clock, ptrv->clock, res->psr.sysnum, ptrv->syscall);
 		assert (res->psr.sysnum == ptrv->syscall);
@@ -528,12 +527,20 @@ int patch_klog (string recheck_filename)
         fprintf (stderr, "Start to replay %ld.%09ld\n", tp.tv_sec, tp.tv_nsec);
 #endif
 
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK 
+    //wakeup the rollback process and let it replay
+    //the wakeup will be done the syscall 350 with mode = 4
+    
+    DPRINT ("Done creating new checkpoint\n");
+    return last_clock;
+#else 
     // Patch complete - now execute up to the last syscall 
     char recover_syscall[64], recover_pid[64];
     sprintf (recover_syscall, "--recover_at=%lu", last_clock);
     sprintf (recover_pid, "--recover_pid=%d", getpid());
     pid_t cpid = fork ();
     if (cpid == 0) {
+        DPRINT ("calling resume\n");
 	rc = execl("./resume", "resume", last_altex.c_str(), "--pthread", "../eglibc-2.15/prefix/lib", recover_syscall, recover_pid, NULL);
 	fprintf (stderr, "execl of resume failed, rc=%ld, errno=%d\n", rc, errno);
 	return -1;
@@ -542,6 +549,7 @@ int patch_klog (string recheck_filename)
     DPRINT ("Done creating new checkpoint\n");
 
     return cpid;
+#endif
 }
 
 int main(int argc, char **argv) 

@@ -1712,6 +1712,9 @@ exit:
 struct slice_task {
 	pid_t slice_pid;
 	pid_t daemon_pid;
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+	pid_t rollback_pid;
+#endif
 	char recheck_filename[256];
 	struct list_head list;
 };
@@ -2000,6 +2003,11 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 		long is_ckpt_thread = regs->cx; // See below
 		long slice_retval = 0;
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+		int rollback_pid = current->go_live_thrd->rollback_process_id;
+		struct task_struct* rollback_tsk = NULL;
+#endif
+
 		if (is_ckpt_thread) {
 		    slice_retval = regs->dx; // This is arg3, but we are going to change this later (compiler gets confused and optimizes incorrectly?)
 		} 
@@ -2028,13 +2036,9 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		if (slice_dump_vm) {
 			if (is_ckpt_thread) {
 				dump_vmas_content (0);
-				if (current->go_live_thrd) {
-					wake_up_vm_dump_waiters (current->go_live_thrd);
-				}
+				wake_up_vm_dump_waiters (current->go_live_thrd);
 			} else {
-				if (current->go_live_thrd) {
-					wait_for_vm_dump (current->go_live_thrd);
-				}
+				wait_for_vm_dump (current->go_live_thrd);
 			}
 		}
 
@@ -2056,10 +2060,8 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			return -1;
 		}
 
-		if (current->go_live_thrd) {
-			put_go_live_thread (current->go_live_thrd);
-			current->go_live_thrd = NULL;
-		}
+		put_go_live_thread (current->go_live_thrd);
+		current->go_live_thrd = NULL;
 
 		if (is_ckpt_thread) {
 			struct rusage ru;
@@ -2069,6 +2071,16 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			set_fs (old_fs);
 			do_gettimeofday (&tv);
 			printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+			printk ("Pid %d is destroying its rollback process %d\n", current->pid, rollback_pid);
+			rollback_tsk = find_task_by_vpid (rollback_pid);
+			if (!rollback_tsk) {
+				printk ("Pid %d cannot find the rollback task struct with pid %d\n", current->pid, rollback_pid);
+				BUG ();
+			}
+			rollback_tsk->go_live_thrd = NULL;
+			wake_up_process (rollback_tsk); //after the rollback process is waken up, the process will exit by its own
+#endif
 
 			if (pause_after_slice) {
 				printk ("Pausing so you can attach gdb to pid %d\n", current->pid);
@@ -2087,16 +2099,24 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		long retval;
 
 		char __user* filename = (char __user *) arg2;
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+		struct task_struct* rollback_tsk = find_task_by_vpid (current->go_live_thrd->rollback_process_id); 
+		if (!rollback_tsk) {
+			printk ("sys_execute_fw_slice: cannot find rollback process, pid is %d \n", current->go_live_thrd->rollback_process_id); 
+
+			BUG ();
+		}
+#endif 
 
 		if (PRINT_TIME) {
 		    struct timeval tv;
 		    do_gettimeofday (&tv);
 		    printk ("slice fails check at %ld.%06ld\n", tv.tv_sec, tv.tv_usec);
 		}
-		{
+		/*
 			printk ("let's skip recovery for now.\n");
 			return 0;
-		}
+		*/
 
 		pstask = KMALLOC (sizeof(struct slice_task), GFP_KERNEL);
 		if (pstask == NULL) {
@@ -2112,6 +2132,11 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 		DPRINT ("recheck_filename is %s\n", pstask->recheck_filename);
 
 		pstask->slice_pid = current->pid;
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK 
+		//find and pass some information to the rollback process
+		rollback_tsk->go_live_thrd = current->go_live_thrd;
+		pstask->rollback_pid = current->go_live_thrd->rollback_process_id;
+#endif
 		mutex_lock(&slice_task_mutex);
 		list_add(&pstask->list, &slice_task_list);
 		wake_up (&daemon_waitq);
@@ -2227,36 +2252,76 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			wake_up_process (tsk);
 			KFREE (pstask);
 		}
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+		else {
+			struct slice_task* pstask;
+			struct task_struct* tsk;
+			int found = 0;
+			
+			mutex_lock(&slice_task_mutex);
+			list_for_each_entry (pstask, &slice_processing_list, list) {		
+				if (pstask->daemon_pid == current->pid) {
+					list_del(&pstask->list);
+					found = 1;
+					break;
+				}
+			}
+			mutex_unlock(&slice_task_mutex);
+			if (!found) {
+				printk ("Cannot find slice task for damon pid %d\n", current->pid);
+				return -1;
+			}
+
+			tsk = find_task_by_vpid (pstask->rollback_pid);
+			if (!tsk) {
+				printk ("sys_execute_fw_slice: cannot find target rollback pid %d\n", pstask->rollback_pid);
+				BUG ();
+			}
+			//setup the recover clock (where we stop replay)
+			tsk->go_live_thrd->recover_clock = retval;
+			wake_up_process (tsk);
+		}
+#endif
 	}
 	return 0;
 }
 
-void fw_slice_recover (pid_t daemon_pid, long retval)
+void fw_slice_recover (pid_t daemon_pid, pid_t slice_pid, long retval)
 {
 	struct mm_struct* tmp_mm;
 	struct task_struct* tsk;
 	//struct fpu* fpu, *tsk_fpu;
 	struct task_rss_stat tmp_stat;
-	pid_t slice_pid = 0;
 	int i;
+#ifdef JAVA_FIX_PTHREAD
 	int __user* hack_addr = NULL;
+#endif
 
 	// Find the task in the list
 	struct slice_task* pstask;
 	mutex_lock(&slice_task_mutex);
 	list_for_each_entry (pstask, &slice_processing_list, list) {		
-		if (pstask->daemon_pid == daemon_pid) {
-			slice_pid = pstask->slice_pid;
-			list_del(&pstask->list);
-			KFREE (pstask);
-			break;
+		if (slice_pid == 0) {
+			if (pstask->daemon_pid == daemon_pid) {
+				slice_pid = pstask->slice_pid;
+				list_del(&pstask->list);
+				KFREE (pstask);
+				break;
+			}
+		} else {
+			if (pstask->slice_pid == slice_pid) {
+				daemon_pid = pstask->daemon_pid;
+				list_del(&pstask->list);
+				KFREE (pstask);
+				break;
+			}
 		}
 	}
 	mutex_unlock(&slice_task_mutex);
 	{
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk ("Pid %d, deamon pid %d  fw_slice_recover enters %ld.%09ld\n", current->pid, daemon_pid, tp.tv_sec, tp.tv_nsec);
+		printk ("Pid %d, deamon pid %d  slice_pid %d fw_slice_recover enters %ld.%09ld\n", current->pid, daemon_pid, slice_pid, tp.tv_sec, tp.tv_nsec);
 	}
 
 	if (slice_pid == 0) {
@@ -2377,7 +2442,11 @@ void fw_slice_recover (pid_t daemon_pid, long retval)
 
 	//Swap registers states for other threads
 	//this function is defined in replay.c; it uses struct replay_thread etc.
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+	fw_slice_recover_swap_register_single_thread (tsk, current);
+#else 
 	fw_slice_recover_swap_register (tsk);
+#endif
 
 	// Change register state in sleeping task to match this one
 	DPRINT ("Current esi register %lx target esi register %lx\n", get_pt_regs(current)->si, get_pt_regs(tsk)->si);

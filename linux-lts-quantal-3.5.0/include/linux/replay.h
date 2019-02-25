@@ -34,7 +34,7 @@ long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, c
 			      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, 
 			      int go_live, char* execute_slice_name, char* recheck_filename);
 long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name, char* recheck_filename);
-void fw_slice_recover (pid_t daemon_pid, long retval);
+void fw_slice_recover (pid_t daemon_pid, pid_t slice_pid, long retval);
 
 /* Returns linker for exec to use */
 char* get_linker (void);
@@ -275,15 +275,29 @@ struct ckpt_proc_data {
 };
 
 
+struct record_thread;
 struct replay_thread;
-void wake_up_vm_dump_waiters (struct replay_thread* prept);
-void wait_for_vm_dump (struct replay_thread* prept);
-void put_go_live_thread (struct replay_thread* prept);
 
 long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr, u_long);
 void destroy_replay_group (struct replay_group *prepg);
 void fw_slice_recover_swap_register (struct task_struct *main_live_tsk);
+void fw_slice_recover_swap_register_single_thread (struct task_struct *main_live_tsk, struct task_struct* recover_tsk);
 struct go_live_clock* get_go_live_clock (struct task_struct* tsk);
 void dump_vmas_content (u_long prefix);
+
+struct go_live_thread_info;
+void wake_up_vm_dump_waiters (struct go_live_thread_info* info);
+void wait_for_vm_dump (struct go_live_thread_info* info);
+void put_go_live_thread (struct go_live_thread_info* info);
+
+struct go_live_thread_info {
+	struct record_thread* orig_record_thrd;
+	struct replay_thread* orig_replay_thrd;
+	int rollback_process_id; 
+	u64 slice_gid;
+	int slice_pid;  
+	u_long region_start_clock; 
+	u_long recover_clock; 
+};
 
 #endif

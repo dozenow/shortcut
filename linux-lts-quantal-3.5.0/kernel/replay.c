@@ -799,7 +799,8 @@ struct replay_group {
 	int rg_follow_splits;       // Ture if we should replay any split-off replay groups
 	int rg_checkpoint_at;       // Checkpoint at first syscall on or after this clock value
 	int rg_ckpt_memory_only;    // True if this is a memory-only checkpoint (for slice recovery)
-	int rg_ckpt_mem_slice_pid;  // And this communicates the slice tasks's pid
+	int rg_ckpt_mem_daemon_pid;  // And this communicates the daemon tasks's pid
+	int rg_ckpt_mem_slice_pid;  // And this communicates the daemon tasks's pid
 	int finished_ckpt;          // Detects if we've already checkpointed
 	u_long rg_attach_clock;     // If Pin is being attached, do it before this clock value
 	int rg_attach_pid;          // If Pin is being attached, set to the pid to attach to
@@ -3864,7 +3865,7 @@ get_linker (void)
 
 long
 replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
-		    int ckpt_at, int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, u_long nfake_calls, u_long* fake_call_points)
+		    int ckpt_at, int ckpt_memory_only, int ckpt_mem_daemon_pid, int record_timing, u_long nfake_calls, u_long* fake_call_points)
 {
 	struct record_group* precg; 
 	struct record_thread* prect;
@@ -3883,7 +3884,7 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int f
 	{
 		struct timespec tp;
 		getnstimeofday(&tp);
-		printk("Replay Start %ld.%09ld\n", tp.tv_sec, tp.tv_nsec);
+		printk("Replay Start %ld.%09ld %s %d\n", tp.tv_sec, tp.tv_nsec, logdir, current->pid);
 	}
 
 	MPRINT ("In replay_ckpt_wakeup\n");
@@ -3940,8 +3941,8 @@ replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int f
 	if (ckpt_at > 0) {
 		prepg->rg_checkpoint_at = ckpt_at;
 		prepg->rg_ckpt_memory_only = ckpt_memory_only;
-		prepg->rg_ckpt_mem_slice_pid = ckpt_mem_slice_pid;
-		printk ("ckpt_at is %d (mem only is %d slice pid is %d)\n", ckpt_at, ckpt_memory_only, ckpt_mem_slice_pid);
+		prepg->rg_ckpt_mem_daemon_pid = ckpt_mem_daemon_pid;
+		printk ("Pid %d ckpt_at is %d (mem only is %d daemon pid is %d)\n", current->pid, ckpt_at, ckpt_memory_only, ckpt_mem_daemon_pid);
 	}
 
 	prept = new_replay_thread (prepg, prect, current->pid, 0, NULL, NULL);
@@ -4057,7 +4058,7 @@ should_take_checkpoint (void)
 	    current->replay_thrd->rp_group->rg_checkpoint_at > 0 && 
 	    (atomic_read (current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock) - 1) >= current->replay_thrd->rp_group->rg_checkpoint_at) { 
 
-		printk("%d, taking checkpoint, record_clock %d, rg_cpt_at %d\n", current->pid, 
+		printk("%d, taking checkpoint, replay_clock %d, rg_ckpt_at %d\n", current->pid, 
 		       atomic_read (current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock),
 		       current->replay_thrd->rp_group->rg_checkpoint_at);
 
@@ -4282,7 +4283,7 @@ replay_full_ckpt (long rc)
 	struct ckpt_tsk *curr_ckpt_tsk, *parent_ckpt_tsk;
 
 	prepg = prept->rp_group;
-	if (prepg->rg_ckpt_memory_only) fw_slice_recover (prepg->rg_ckpt_mem_slice_pid, rc); // This function should not return
+	if (prepg->rg_ckpt_memory_only) fw_slice_recover (prepg->rg_ckpt_mem_daemon_pid, prepg->rg_ckpt_mem_slice_pid, rc); // This function should not return
 
 	btree_init32(&proc_btree);	
 	if (!prept) {
@@ -4510,6 +4511,25 @@ static ds_list_t* ckpt_waiters = NULL; // List of checkpoints (in case multiple 
 static u_long num_ckpts = 0;           // Number of total checkpoint restores on queue
 static wait_queue_head_t ckpt_waitq;   // For threads waiting to start retstore
 static DEFINE_MUTEX(ckpt_mutex);       // Protects list and associated data
+
+struct go_live_thread_info* get_go_live_thread (void)
+{
+	return (struct go_live_thread_info*) KMALLOC (sizeof (struct go_live_thread_info), GFP_KERNEL);
+}
+
+void put_go_live_thread (struct go_live_thread_info* info)
+{
+	struct replay_thread* prept = info->orig_replay_thrd;
+
+	printk ("destroying go_live_thread and replay_group\n");
+	if (prept != NULL) 
+		put_replay_group(prept->rp_group);
+	if (info->orig_record_thrd != NULL) 
+		put_record_group (info->orig_record_thrd->rp_group);
+	info->orig_replay_thrd = NULL;
+	info->orig_record_thrd = NULL;
+	KFREE (info);
+}
 
 static long
 __init_ckpt_waiters (void) // Requires ckpt_lock be locked
@@ -4816,7 +4836,8 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
                 struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
                 struct replay_group* replay_group = current->replay_thrd->rp_group;
 
-		current->go_live_thrd = current->replay_thrd; // Save this for easier reference
+		current->go_live_thrd = get_go_live_thread ();
+		current->go_live_thrd->orig_replay_thrd = current->replay_thrd; // Save this for easier reference
 		current->replay_thrd = NULL;
 
 		if (PRINT_TIME) {
@@ -5048,7 +5069,8 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
             struct go_live_clock* go_live_clock = (struct go_live_clock*) current->replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock;
             MPRINT ("replay pid %d goes live, rp_ckpt_pthread_block_clock %lu\n", current->pid, prept->rp_ckpt_pthread_block_clock);
                 
-	    current->go_live_thrd = current->replay_thrd; // Save this for easier reference
+	    current->go_live_thrd = get_go_live_thread ();
+	    current->go_live_thrd->orig_replay_thrd = current->replay_thrd; // Save this for easier reference
             current->replay_thrd = NULL;
 
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
@@ -8428,7 +8450,7 @@ static void jumpstart_unload_reserved_regions (void)
 
 }
 
-static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
+static long replay_from_middle (__u64 rg_id, u_long start_clock, int alternative_log)
 {
 	struct record_group* precg; 
 	struct record_thread* prect;
@@ -8439,22 +8461,26 @@ static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
 	u_long consumed ;
 	mm_segment_t old_fs = get_fs ();
 	struct file* file = NULL;
-	char filename[256],  logdir[256];
+	char filename[256],  logdir[256], alt_logdir[256]; 
 	struct ckpt_proc_data cpdata;
 	struct ckpt_data cdata;
 	loff_t ppos = 0;
 	int is_thread = 0, linker_len = 0; 
 
 
+	snprintf (alt_logdir, 256, "/replay_logdb/rec_%llu/last_altex", rg_id);
 	snprintf (logdir, 256, "/replay_logdb/rec_%llu", rg_id);
-	printk ("Pid %d replay_from_middle starts\n", current->pid);
+	printk ("Pid %d replay_from_middle starts, replay gropu %llu, clock %lu, alternative_log %d\n", current->pid, rg_id,start_clock, alternative_log);
 	if (current->record_thrd || current->replay_thrd) {
 		printk ("replay_from_middle: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
 		return -EINVAL;
 	}
 
 	// First create a record group and thread for this replay
-	precg = new_record_group (logdir);
+	if (alternative_log) 
+		precg = new_record_group (alt_logdir);
+	else 
+		precg = new_record_group (logdir);
 	if (precg == NULL) return -ENOMEM;
 	precg->rg_save_mmap_flag = 0;
 
@@ -8479,9 +8505,6 @@ static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
 
 	rg_lock (precg);
 
-	//we shouldn't recheckpoint:
-	prepg->finished_ckpt = 1;
-
 	prept->rp_status = REPLAY_STATUS_RUNNING;
 	// Since there is no recording going on, we need to dec record_thread's refcnt
 	atomic_dec(&prect->rp_refcnt);
@@ -8499,7 +8522,7 @@ static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
 	
 	//restore replay kernel states
 	set_fs (KERNEL_DS);
-	snprintf (filename, 256, "%s/ckpt.%lu", logdir, ckpt_clock);
+	snprintf (filename, 256, "%s/ckpt.%lu", logdir, start_clock);
 	file = filp_open (filename, O_RDONLY, 0);
 	if (file == NULL) { 
 		printk ("cannot open file %s\n", filename);
@@ -8567,9 +8590,25 @@ static long replay_from_middle (__u64 rg_id, u_long ckpt_clock)
 		prepg->rg_fake_calls = fake_call_points;
 		atomic_set(precg->rg_pkrecord_clock+1,fake_call_points[0]);        
 	}*/
-	current->go_live_thrd = current->replay_thrd;
+	if (current->go_live_thrd == NULL) current->go_live_thrd = get_go_live_thread();
+	current->go_live_thrd->orig_replay_thrd = current->replay_thrd;
 
 	return syscall_retval;
+}
+
+static void set_self_as_rollback_process (int slice_pid, u_long end_clock) 
+{
+	struct replay_group* prepg = NULL;
+	if (current->replay_thrd == NULL) { 
+		printk ("Pid %d set_self_as_rollback_process: not a replay process.\n", current->pid); 
+		return;
+	}
+	prepg = current->replay_thrd->rp_group;
+	prepg->finished_ckpt = 0;
+	prepg->rg_checkpoint_at = end_clock;
+	prepg->rg_ckpt_memory_only = 1;
+	prepg->rg_ckpt_mem_daemon_pid = 0;
+	prepg->rg_ckpt_mem_slice_pid = slice_pid;
 }
 
 static void jumpstart_load_mckpt (char* prefix) 
@@ -8631,15 +8670,84 @@ static void jumpstart_load_mckpt (char* prefix)
 	VFREE (buf);
 }
 
+static void jumpstart_load_pckpt (char* filename)
+{
+	mm_segment_t old_fs = get_fs();
+	struct file* f = NULL;
+	int retval = 0;
+	char* buf = VMALLOC (PCKPT_MAX_BUF);
+	int reg_index = 0;
+	unsigned long reg_value;
+	unsigned long mem_loc;
+	unsigned char mem_value;
+	unsigned int regcount = 0;
+	int len = 0;
+	int offset = 0;
+	int i = 0;
+	struct pt_regs* regs = get_pt_regs (NULL);
+
+	set_fs (KERNEL_DS);
+	f = filp_open (filename, O_RDONLY, 0);	
+	BUG_ON (f == NULL);
+	retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
+	BUG_ON (retval != sizeof(unsigned int));
+	retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
+	BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
+	printk ("------patch-based checkpoint regs ------\n");
+	len = retval;
+
+	if (regcount != 0) {
+		printk ("Test: verify the TIF_IRET is set\n");
+		set_tsk_thread_flag (current, TIF_IRET);
+	}
+
+	for (i = 0; i<regcount; ++i) {
+		reg_index = *((int*) (buf + offset));
+		offset += sizeof (int);
+		reg_value = *((unsigned long*) (buf + offset));
+		offset += sizeof (unsigned long);
+		if (reg_index == -1) {
+			//printk ("skipped reg.\n");
+			continue;
+		}
+		//set the regs value
+		((unsigned long*) regs)[reg_index] = reg_value;
+		printk ("%d:%lu\n", reg_index, reg_value);
+	} 
+	len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+	set_fs(old_fs);
+	//dump_vmas();
+	printk ("------patch-based checkpoint mem------\n");
+	while (len != 0) {
+		offset = 0;
+		while (offset < len) { 
+			mem_loc = *((unsigned long*) (buf + offset));
+			offset += sizeof (unsigned long);
+			mem_value = *((unsigned char*)(buf + offset));
+			offset += sizeof (unsigned char);
+			//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
+			put_user (mem_value, (unsigned char __user*) mem_loc);
+		}
+		set_fs (KERNEL_DS);
+		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+		set_fs(old_fs);
+	}
+
+	filp_close (f, NULL);
+
+	VFREE (buf);
+}
+
+static
 asmlinkage long 
-sys_jumpstart_runtime (int mode) {
+sys_jumpstart_runtime (int mode, int pid) {
 	struct timeval tv;
 	do_gettimeofday (&tv);
 	printk ("calling jumpstart_runtime with mode %d,  %ld.%06ld\n", mode, tv.tv_sec, tv.tv_usec);
 	//dump_vmas();
 
 	if (mode == 1) {
-		if (jumpstart_run_slice) return 2; //load the run the slice
+		if (jumpstart_run_slice) return 2; //load and run the slice
 		else if (jumpstart_load_slice_gid) {//test if we need to load the slice later but don't run the slice
 			return 1; 
 		}
@@ -8654,19 +8762,33 @@ sys_jumpstart_runtime (int mode) {
 	} else if (mode == 2) {
 		char prefix[64];
 		char filename[128];
-		struct file* f = NULL;
-		int retval = 0;
-		mm_segment_t old_fs = get_fs();
-		char* buf = VMALLOC (PCKPT_MAX_BUF);
-		int reg_index = 0;
-		unsigned long reg_value;
-		unsigned long mem_loc;
-		unsigned char mem_value;
-		int len = 0;
-		int offset = 0;
-		struct pt_regs* regs = get_pt_regs (NULL);
-		int i = 0;
-		unsigned int regcount = 0;
+		struct go_live_clock* go_live_clock = NULL;
+		//figure out where the slice is loaded
+		struct vm_area_struct* vma;
+		char tmp_filename[256];
+		u_long slice_addr = 0, slice_size = 0;
+
+#ifdef JUMPSTART_ROLLBACK_WITH_FORK
+		//rollback support in case of slice failure
+		//first mechanism: checkpoint the memory state before loading checkpoint
+		printk ("pId %d rollback support: rollback process pid is %d\n", current->pid, pid);
+		if (pid == 0) {
+			current->record_thrd = NULL;
+			current->replay_thrd = NULL;
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule ();
+			if (current->go_live_thrd == NULL) {
+				printk ("Rollback process: the slice execution finishes. Let's exit.\n");
+				do_exit(0);
+			} else {
+				replay_from_middle (current->go_live_thrd->slice_gid, jumpstart_replay_from_middle_clock, 1);
+				set_self_as_rollback_process (current->go_live_thrd->slice_pid, current->go_live_thrd->recover_clock);
+				//return back to the kernel and replay until we hit the recover_clock
+				//TODO: we print something before this syscall in the user land, would this cause divergence?
+				return 0;
+			}
+		} 
+#endif
 
 		sprintf (prefix, "/replay_logdb/rec_%d", jumpstart_load_slice_gid);
 		sprintf (filename, "%s/pckpt", prefix);
@@ -8676,55 +8798,7 @@ sys_jumpstart_runtime (int mode) {
 		//load mmap ckpt
 		jumpstart_load_mckpt (prefix); 
 		//then load patch-based ckpt
-
-		set_fs (KERNEL_DS);
-		f = filp_open (filename, O_RDONLY, 0);	
-		BUG_ON (f == NULL);
-		retval = vfs_read (f, (char*) &regcount, sizeof (unsigned int), &f->f_pos);
-		BUG_ON (retval != sizeof(unsigned int));
-		retval = vfs_read (f, buf, regcount *(sizeof (int) + sizeof (unsigned long)), &f->f_pos);
-		BUG_ON (retval != regcount * (sizeof(int) + sizeof(unsigned long)));
-		printk ("------patch-based checkpoint regs ------\n");
-		len = retval;
-
-		if (regcount != 0)
-			set_tsk_thread_flag (current, TIF_IRET);
-
-		for (i = 0; i<regcount; ++i) {
-			reg_index = *((int*) (buf + offset));
-			offset += sizeof (int);
-			reg_value = *((unsigned long*) (buf + offset));
-			offset += sizeof (unsigned long);
-			if (reg_index == -1) {
-				//printk ("skipped reg.\n");
-				continue;
-			}
-			//set the regs value
-			((unsigned long*) regs)[reg_index] = reg_value;
-			printk ("%d:%lu\n", reg_index, reg_value);
-		} 
-		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
-		set_fs(old_fs);
-		//dump_vmas();
-		printk ("------patch-based checkpoint mem------\n");
-		while (len != 0) {
-			offset = 0;
-			while (offset < len) { 
-				mem_loc = *((unsigned long*) (buf + offset));
-				offset += sizeof (unsigned long);
-				mem_value = *((unsigned char*)(buf + offset));
-				offset += sizeof (unsigned char);
-				//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
-				put_user (mem_value, (unsigned char __user*) mem_loc);
-			}
-			set_fs (KERNEL_DS);
-			len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
-			set_fs(old_fs);
-		}
-
-		filp_close (f, NULL);
-
-		VFREE (buf);
+		jumpstart_load_pckpt (filename);
 
 		if(slice_dump_vm) {
 			printk ("Dumping memory.\n");
@@ -8739,74 +8813,69 @@ sys_jumpstart_runtime (int mode) {
 		  printk("Pid %d woken up.\n", current->pid);
 		  }*/
 		printk ("pckpt is loaded.\n");
-		{
-			//set up the slice
-			//xdou: I'm sure this struct is not very useful or not for function level support...
-			struct go_live_clock* go_live_clock = NULL; 
-			//figure out where the slice is loaded
-			struct vm_area_struct* vma;
-			char tmp_filename[256];
-			u_long slice_addr = 0, slice_size = 0;
-			sprintf (tmp_filename, "%s/exslice.%d.so", prefix, jumpstart_load_slice_pid);
 
-			printk ("Loading the slice.\n");
+		//set up the slice
+		printk ("Loading the slice.\n");
+		sprintf (tmp_filename, "%s/exslice.%d.so", prefix, jumpstart_load_slice_pid);
 
-			down_read (&current->mm->mmap_sem);
+		down_read (&current->mm->mmap_sem);
+		for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+			char buf[256];
+			char* s = NULL;
 
-			for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
-				char buf[256];
-				char* s = NULL;
-
-				if (vma->vm_start == (u_long) current->mm->context.vdso) {
-					//printk (" this is vdso.\n");
-					continue;
-				}			
-				if (vma->vm_file) {
-					s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
-					if (!strcmp (s, tmp_filename)) {
-						if (slice_addr == 0) {
-							slice_addr = vma->vm_start;
-							slice_size = vma->vm_end - vma->vm_start;
-						}
+			if (vma->vm_start == (u_long) current->mm->context.vdso) {
+				//printk (" this is vdso.\n");
+				continue;
+			}			
+			if (vma->vm_file) {
+				s = d_path (&vma->vm_file->f_path, buf, sizeof(buf));
+				if (!strcmp (s, tmp_filename)) {
+					if (slice_addr == 0) {
+						slice_addr = vma->vm_start;
+						slice_size = vma->vm_end - vma->vm_start;
 					}
-
 				}
-			}
-			up_read (&current->mm->mmap_sem);
-			//TODO: uncomment these two lines
-			if (slice_addr == 0) {
-				printk ("BUG: cannot load the slice. \n");
-				//BUG();
-			}
 
-			sprintf (tmp_filename, "%s/recheck.%d", prefix, jumpstart_load_slice_pid);
-			start_fw_slice (go_live_clock, slice_addr, slice_size, jumpstart_load_slice_pid, tmp_filename, 0, (u_long)mode);
-			//quit replay mode: TODO check if I've done everything
-			//TODO: destroy the group to avoid memory leak
-			current->go_live_thrd = current->replay_thrd;
-			current->replay_thrd = NULL;
-			current->record_thrd = NULL;
-			//dump_vmas();
+			}
 		}
+		up_read (&current->mm->mmap_sem);
+		//TODO: uncomment these two lines
+		if (slice_addr == 0) {
+			printk ("BUG: cannot load the slice. \n");
+			//BUG();
+		}
+
+		sprintf (tmp_filename, "%s/recheck.%d", prefix, jumpstart_load_slice_pid);
+		start_fw_slice (go_live_clock, slice_addr, slice_size, jumpstart_load_slice_pid, tmp_filename, 0, (u_long)mode);
+		//quit replay mode: TODO check if I've done everything
+		current->go_live_thrd = get_go_live_thread ();
+		current->go_live_thrd->orig_record_thrd = current->record_thrd;
+		current->go_live_thrd->rollback_process_id = pid;
+		current->go_live_thrd->slice_gid = jumpstart_load_slice_gid;
+		current->go_live_thrd->slice_pid = current->pid;
+		current->record_thrd = NULL;
+		//dump_vmas();
+	
+
 		return 0;
 	} else if (mode == 4) { 
 		if (jumpstart_replay_from_middle_clock) {
 			//restore registers first
 			printk ("Pid %d starts to replay from the middle\n", current->pid);
-		 	return replay_from_middle (jumpstart_load_slice_gid, jumpstart_replay_from_middle_clock);
+		 	return replay_from_middle (jumpstart_load_slice_gid, jumpstart_replay_from_middle_clock, 0);
 		}
 	}
 
 	return 0;
 }
 
-static asmlinkage long record_jumpstart_runtime (int mode)
+static asmlinkage long record_jumpstart_runtime (int mode, int pid)
 {
 	long rc;
 	if (jumpstart_run_slice == 0) {
 		new_syscall_enter (222);
 	}
-	rc = sys_jumpstart_runtime (mode);
+	rc = sys_jumpstart_runtime (mode, pid);
 	if (jumpstart_run_slice == 0) {
 		new_syscall_done (222, rc);
 		new_syscall_exit (222, NULL);
@@ -8814,7 +8883,7 @@ static asmlinkage long record_jumpstart_runtime (int mode)
 	return rc;
 }
 
-static asmlinkage long replay_jumpstart_runtime (int mode)
+static asmlinkage long replay_jumpstart_runtime (int mode, int pid)
 {
 	long rc = get_next_syscall (222, NULL);
 
@@ -8828,7 +8897,7 @@ static asmlinkage long replay_jumpstart_runtime (int mode)
 	return rc;
 
 }
-asmlinkage long shim_jumpstart_runtime(int mode) SHIM_CALL(jumpstart_runtime, 222, mode);
+asmlinkage long shim_jumpstart_runtime(int mode, int pid) SHIM_CALL(jumpstart_runtime, 222, mode, pid);
 
 	asmlinkage long 
 shim_exit(int error_code)
@@ -12844,6 +12913,7 @@ record_clone(unsigned long clone_flags, unsigned long stack_start, struct pt_reg
 
 	prg = current->record_thrd->rp_group;
 
+	//printk ("clone_flags %lx statckstart %lx regs %p, size %lu, ptid %p ctid %p get_pt_regs %p stack %lx\n", clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr, get_pt_regs( NULL), get_pt_regs(NULL)->sp);
 	new_syscall_enter (120);
 
 	if (!(clone_flags&CLONE_VM)) {
@@ -17424,26 +17494,57 @@ int do_is_record(struct ctl_table *table, int write, void __user *buffer,
 	return 0;
 }
 
-void wake_up_vm_dump_waiters (struct replay_thread* prept) 
+void wake_up_vm_dump_waiters (struct go_live_thread_info* info) 
 {
 	struct replay_thread* tmp;
+	struct replay_thread* prept = info->orig_replay_thrd;
+
+	if (info == NULL) {
+		printk ("wake_up_vm_dump_waiters: don't have go live threa dinfo???\n");
+		return;
+	}
+	if (prept == NULL) return;
 	
 	for (tmp = prept->rp_next_thread; tmp != prept; tmp = tmp->rp_next_thread) {    
 		up(&tmp->rp_vm_dump_sem);
 	}
 }
 
-void wait_for_vm_dump (struct replay_thread* prept) 
+void wait_for_vm_dump (struct go_live_thread_info* info)
 {
+	struct replay_thread* prept = info->orig_replay_thrd;
+
+	if (info == NULL) {
+		printk ("wait_for_vm_dump: don't have go live threa dinfo???\n");
+		return;
+	}
+	if (prept == NULL) return;
 	down(&prept->rp_vm_dump_sem);
 }
 
-void put_go_live_thread (struct replay_thread* prept)
+//xdou: okay...These two functions has to be put in this file due to the struct definitions...why don't we put these structure in a header file at the first place...I guess there is a reason?
+void fw_slice_recover_swap_register_single_thread (struct task_struct *live_tsk, struct task_struct* recover_tsk) 
 {
-	put_replay_group(prept->rp_group);
+	struct fpu* fpu, *tsk_fpu;
+
+	memcpy (get_pt_regs (live_tsk), get_pt_regs(recover_tsk), sizeof(struct pt_regs));
+	unlazy_fpu(recover_tsk);
+	fpu = &(recover_tsk->thread.fpu);
+	if (fpu_allocated(fpu)) {
+		//allocate the new fpu if we need it and it isn't setup
+		tsk_fpu = &(live_tsk->thread.fpu);  
+		if (!fpu_allocated(tsk_fpu)) {
+			DPRINT ("allocating fpu\n");
+			fpu_alloc(tsk_fpu);
+		}
+		tsk_fpu->last_cpu = fpu->last_cpu;
+		tsk_fpu->has_fpu = fpu->has_fpu;
+		tsk_fpu->state = fpu->state;
+	}
+	set_tsk_thread_flag (live_tsk, TIF_IRET);
+	
 }
 
-//xdou: okay...This function has to be put in this file due to the struct definitions...why don't we put these structure in a header file at the first place...I guess there is a reason?
 void fw_slice_recover_swap_register (struct task_struct *main_live_tsk) 
 {
 	ds_list_iter_t* live_iter;
@@ -17452,9 +17553,10 @@ void fw_slice_recover_swap_register (struct task_struct *main_live_tsk)
 	struct replay_thread* recover_thread;
 	struct fpu* fpu, *tsk_fpu;
 	u_char ch, ch2;
+	struct go_live_thread_info* info = main_live_tsk->go_live_thrd;
 
-	live_iter = ds_list_iter_create (main_live_tsk->go_live_thrd->rp_group->rg_replay_threads);
-	MPRINT ("live thread replay_group %p, clock mmap %p\n", main_live_tsk->go_live_thrd->rp_group, main_live_tsk->go_live_thrd->rp_group->rg_rec_group->rg_pkrecord_clock);
+	live_iter = ds_list_iter_create (info->orig_replay_thrd->rp_group->rg_replay_threads);
+	MPRINT ("live thread replay_group %p, clock mmap %p\n", info->orig_replay_thrd->rp_group, info->orig_replay_thrd->rp_group->rg_rec_group->rg_pkrecord_clock);
 	while ((live_thread = ds_list_iter_next (live_iter)) != NULL) {
 		struct task_struct* live_tsk = find_task_by_vpid (live_thread->rp_replay_pid);
 		MPRINT ("Pid %d found a live thread to for recovery: live thread pid %d live thread replay pid %d, live thread record_pid %d\n", current->pid, live_tsk->pid, live_thread->rp_replay_pid, live_thread->rp_record_thread->rp_record_pid);
@@ -17476,8 +17578,9 @@ void fw_slice_recover_swap_register (struct task_struct *main_live_tsk)
 					if (ch != 0xcd || ch2 != 0x80) {
 						printk ("Pid %d fw_slice_recover_swap_register not backing up to int 80: %x %x\n", current->pid, ch, ch2);
 					}
-					set_tsk_thread_flag (live_tsk, TIF_IRET);
 				}
+				printk ("TODO test: not sure if this line is only necessary for the second case (else statements)\n");
+				set_tsk_thread_flag (live_tsk, TIF_IRET);
 
 				unlazy_fpu(recover_tsk);
 				fpu = &(recover_tsk->thread.fpu);
@@ -17502,7 +17605,8 @@ void fw_slice_recover_swap_register (struct task_struct *main_live_tsk)
 
 struct go_live_clock* get_go_live_clock (struct task_struct* tsk) 
 {
-	return  (struct go_live_clock*) tsk->go_live_thrd->rp_group->rg_pthread_clock_addr;
+	struct go_live_thread_info* info = tsk->go_live_thrd;
+	return  (struct go_live_clock*) info->orig_replay_thrd->rp_group->rg_pthread_clock_addr;
 }
 
 int btree_print = 0;

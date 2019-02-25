@@ -172,7 +172,7 @@ static int dump_taintbuf (u_long diverge_type, u_long diverge_ndx)
         int fd;
 
         sprintf (dump_filename, "%s", taintbuf_filename);
-        fprintf (stderr, "this is a singlethreaded program, dumping taintbuf to %s\n", dump_filename);
+        fprintf (stderr, "this is a singlethreaded program or we are accelerating fine-grained code regions, dumping taintbuf to %s\n", dump_filename);
         fd = open (dump_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd < 0) {
             fprintf (stderr, "Cannot open taint buffer dump file, filename %s\n", dump_filename);
@@ -298,7 +298,12 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     for (i = strlen(taintbuf_filename)-1; i >= 0; i--) {
 	if (taintbuf_filename[i] == '/') {
 	    // Will postpend pids for each thread if dumping taint buffer
-	    strcpy (&taintbuf_filename[i+1], "taintbuf.");
+            if (go_live_clock == NULL) { 
+                char tmp[32];
+                sprintf (tmp, "taintbuf.%d", record_pid);
+                strcpy (&taintbuf_filename[i+1], tmp);
+            } else 
+                strcpy (&taintbuf_filename[i+1], "taintbuf.");
 	    break;
 	}
     }
@@ -379,14 +384,14 @@ void exit_slice (long is_ckpt_thread, long retval)
 void handle_mismatch()
 {
     //TODO: uncomment these lines
-    //dump_taintbuf (DIVERGE_MISMATCH, 0);
+    dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
     fflush (stdout);
 #endif
     //DELAY;
-    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_mismatch: should not get here\n");
     //abort();
 }
