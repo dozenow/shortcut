@@ -2942,7 +2942,7 @@ void taint_input_mem_predicate_from_checks (void)
     }
 }
 
-#define MAX_BUF 1024*16
+#define MAX_BUF_SIZE 1024*1024
 #if 0
 static void taint_input_mem_predicate_from_file (void)
 {
@@ -2956,9 +2956,9 @@ static void taint_input_mem_predicate_from_file (void)
         return; 
     }
 
-    char buf[MAX_BUF];
+    char* buf = (char*) malloc (MAX_BUF_SIZE);
 
-    len = read (fd, buf, MAX_BUF/5*5);
+    len = read (fd, buf, MAX_BUF_SIZE/5*5);
     while (len != 0) {
         offset = 0;
         while (offset < len) { 
@@ -2968,9 +2968,11 @@ static void taint_input_mem_predicate_from_file (void)
             taint_memory_out (TOK_INIT_MEMORY_INPUT, (char*) mem_loc, 1);
             fprintf (stderr, "taint %lx\n", mem_loc);
         }
-        len = read (fd, buf, MAX_BUF/5*5);
+        len = read (fd, buf, MAX_BUF_SIZE/5*5);
     }
     close (fd);
+
+    free (buf);
 }
 #endif
 
@@ -2978,6 +2980,251 @@ static inline void sys_jumpstart_runtime_start (struct thread_data* data, const 
 {
 
 }
+
+struct write_buffer {
+    char* buffer;
+    int size;
+    int pos;
+    int fd;
+    int dump_threshold;
+};
+
+static inline struct write_buffer* init_write_buffer (int size, int fd, int dump_threshold)
+{
+    struct write_buffer* wb = (struct write_buffer*) malloc (sizeof (struct write_buffer));
+    wb->buffer = (char*) malloc (size);
+    wb->size = size;
+    wb->pos = 0;
+    wb->fd = fd;
+    wb->dump_threshold = dump_threshold;
+    return wb;
+}
+
+
+static inline void dump_write_buffer (struct write_buffer* wb)
+{
+    if (wb->pos > 0) {
+        //write out the size of the current buffer
+        //fprintf (stderr, "dumping size %d\n", wb->pos);
+        int ret = write (wb->fd, (char*) &wb->pos, sizeof(wb->pos));
+        if (ret != sizeof (wb->pos)) {
+            fprintf (stderr, "[ERROR] cannot dump to fd %d\n", wb->fd);
+        }
+        //then write the actual buffer content
+        ret = write (wb->fd, wb->buffer, wb->pos);
+        if (ret != wb->pos) {
+            fprintf (stderr, "[ERROR] cannot dump to fd %d\n", wb->fd);
+        }
+    }
+    wb->pos = 0;
+}
+
+static inline void free_write_buffer (struct write_buffer* wb) 
+{
+    dump_write_buffer (wb);
+    free (wb->buffer);
+    free (wb);
+}
+
+static inline char* append_write_buffer_with_dump (struct write_buffer* wb, char* content, int len) 
+{
+    if (wb->pos + len >= wb->size || wb->pos + len >= wb->dump_threshold) 
+        dump_write_buffer (wb);
+    char* ret = wb->buffer + wb->pos;
+    memcpy (wb->buffer + wb->pos, content, len);
+    wb->pos += len;
+    return ret;
+}
+
+static inline char* append_write_buffer_without_dump (struct write_buffer* wb, char* content, int len)
+{
+    char* ret = wb->buffer + wb->pos;
+    memcpy (wb->buffer + wb->pos, content, len);
+    wb->pos += len;
+    return ret;
+}
+
+static void write_patch_based_checkpoint (set<u_long>* write_mem, set<int>* write_reg, CONTEXT* ctx) 
+{
+    char ckpt_filename[256];
+    snprintf (ckpt_filename, 256, "%s/pckpt", group_directory);
+    int fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    assert (fd > 0);
+    //regs
+    fprintf (stderr, "===== checkpoint reg ====\n");
+    write_reg->insert (LEVEL_BASE::REG_ESP);
+    write_reg->insert (LEVEL_BASE::REG_EFLAGS);
+
+    unsigned int reg_size = write_reg->size();
+    int ret = write (fd, (char*) &reg_size, sizeof (unsigned int));
+    assert (ret == sizeof (unsigned int)); 
+
+    for (set<int>::iterator iter = write_reg->begin(); iter != write_reg->end(); ++iter) { 
+        if (REG_Size ((REG)*iter) == 4) {
+            PIN_REGISTER value;
+            PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
+            fprintf (stderr, "%s: %u (%x)\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value), *((unsigned int*)&value));
+            int index = get_reg_ckpt_index ((REG)(*iter)); 
+            ret = write (fd, (char*) &index, sizeof(int));
+            assert (ret == sizeof(int));
+            ret = write (fd, (char*) ((unsigned long*) &value), sizeof(unsigned long));
+            assert (ret == sizeof(unsigned long));
+        } else {
+            int tmp = -1;
+            ret = write (fd, (char*) &tmp, sizeof (int));
+            assert (ret == sizeof(int));
+            ret = write (fd, (char*) &tmp, sizeof (unsigned long));
+            assert (ret == sizeof (unsigned long));
+            fprintf (stderr, "%s: -----skip-----\n", REG_StringShort ((REG)*iter).c_str());
+        }
+    }
+
+    //print out  mmap regions
+    bitset<0xc0000> write_pages;
+    get_existing_pages (&write_pages, false);
+    fflush(stdout);
+    //now we remove any locations that will be stored in the mmap_region_ckpt
+    for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
+        for (u_long addr = iter->first; addr < iter->first + iter->second->size; addr += PAGE_SIZE)
+            write_pages.reset (addr/PAGE_SIZE);
+    }
+
+    fprintf (stderr, "===== checkpoint mem ====\n");
+    print_memory_regions();
+
+    //format:  SIZE ->list of blocks -> SIZE -> list of blocks ->...
+    //each block: start addr (4 bytes) , len (2 byte), content (len bytes)
+    // we need this format to have better read performance when reading the pckpt in the kernel
+    //well the trick here is to avoid to break a block (start addr + len + content) into two different regions (regions are defined by SIZE)  
+    unsigned long start_addr = 0;
+    unsigned short int block_len = 0; //The max len with be USHRT_MAX
+    unsigned short int* last_block_len = NULL;
+    struct write_buffer* wb = init_write_buffer (MAX_BUF_SIZE, fd, MAX_BUF_SIZE - USHRT_MAX - sizeof (short int) - sizeof (unsigned long));
+
+    for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
+        //fprintf (stderr, "0x%lx", *iter);
+        if (!write_pages.test (*iter/PAGE_SIZE)) {
+            //fprintf (stderr, " doesn't exist\n");
+            continue;
+        }
+        if (is_existed (*iter) == false) {
+            //fprintf (stderr, " has been deallocated?  ");
+        }
+        //fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
+        u_long addr = *iter;
+        if (addr != start_addr + block_len || block_len == USHRT_MAX) {
+            //a new block
+            if (last_block_len != NULL) 
+                *last_block_len = block_len;
+            append_write_buffer_with_dump (wb, (char*) &addr, sizeof(unsigned long));
+            last_block_len = (unsigned short int*) append_write_buffer_without_dump (wb, (char*) &block_len, sizeof(block_len));
+            start_addr = addr;
+            block_len = 0;
+        } 
+        append_write_buffer_without_dump (wb, (char*) addr, sizeof (char)); 
+        //fprintf (stderr, "mem 0x%lx value %u\n", addr, (unsigned int) (*((unsigned char*) addr)));
+        ++ block_len;
+    }
+
+    *last_block_len = block_len;
+    free_write_buffer (wb);
+    close (fd);
+}
+
+static void write_verification_predicates (bool* read_reg, char* read_reg_value, map<u_long, char>* read_mem)
+{
+    char verification_filename[256];
+    snprintf (verification_filename, 256, "%s/verification", group_directory);
+    int fd = open (verification_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    assert (fd > 0);
+
+    fprintf (stderr, "===== verification reg ==== \n");
+    for (unsigned int i = 0; i < sizeof(read_reg)/sizeof(bool); ++i) { 
+        if (read_reg[i]) { 
+            fprintf (stderr, "%d (%s): %u\n", i, REG_StringShort((REG) (i/REG_SIZE)).c_str(), (unsigned int)read_reg_value[i]);
+        }
+    }
+    int ret = write (fd, (char*) read_reg, sizeof(current_thread->patch_based_ckpt_info.read_reg));
+    assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg));
+    fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg));
+    ret = write (fd, read_reg_value, sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
+    assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
+    fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
+    fprintf (stderr, "===== verification mem ==== \n");
+    for (map<u_long, char>::iterator iter = read_mem->begin(); iter != read_mem->end(); ++iter) {
+        //fprintf (stderr, "0x%lx: ", iter->first);
+        if (!current_thread->patch_based_ckpt_info.read_pages->test (iter->first/PAGE_SIZE)) {
+            //fprintf (stderr, " doesn't exist beforehand\n");
+            continue;
+        }
+        //fprintf (stderr, " %u\n", (unsigned int)(unsigned char) iter->second);
+        u_long addr = iter->first;
+        ret = write (fd, (char*)&addr, sizeof(addr));
+        assert (ret == sizeof(addr));
+        char value = iter->second;
+        ret = write (fd, &value, sizeof(value));
+        assert (ret== sizeof(value));
+    }
+    close(fd);
+
+    fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
+
+}
+
+static void write_mmap_region_checkpoint (void) 
+{
+    char ckpt_filename[256];
+    snprintf (ckpt_filename, 256, "%s/mmap_region_ckpt", group_directory);
+    int fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    assert (fd > 0);
+    fprintf (stderr, "======munmap regions====\n");
+    int region_count = current_thread->patch_based_ckpt_info.munmap_regions->size();
+    int ret = write (fd, &region_count, sizeof(region_count)); 
+    assert (ret == sizeof (region_count));
+    for (map<u_long, int>::iterator iter = current_thread->patch_based_ckpt_info.munmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.munmap_regions->end(); ++iter) {
+        fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second);
+        ret = write (fd, &iter->first, sizeof (u_long));
+        assert (ret == sizeof(u_long));
+        ret = write (fd, &iter->second, sizeof (int));
+        assert (ret == sizeof(int));
+    }
+
+    region_count = current_thread->patch_based_ckpt_info.mmap_regions->size();
+    fprintf (stderr, "======mmap regions====\n");
+    ret = write (fd, &region_count, sizeof(int));
+    assert (ret == sizeof(int));
+    for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
+        fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second->size);
+        if ((iter->second->prot & PROT_READ) == 0) { 
+            fprintf (stderr, "non-readable regions?\n");
+            assert (0);
+        }
+        if ((iter->second->flags & MAP_SHARED) != 0) {
+            fprintf (stderr, "shared regions?\n");
+            assert (0);
+        }
+        ret = write (fd, &iter->first, sizeof(u_long));
+        assert (ret == sizeof(u_long));
+        ret = write (fd, (char*) iter->second, sizeof(struct mmap_region_info));
+        assert (ret == sizeof (struct mmap_region_info));
+        //dump the region
+        char region_filename[256];
+        snprintf (region_filename, 256, "%s/mmap_region_ckpt.%lx", group_directory, iter->first);
+        int mckpt_fd = open (region_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        assert (mckpt_fd > 0);
+        int count = 0;
+        int to_copy = 4096;
+        while (count < iter->second->size) {
+            to_copy = (iter->second->size - count) > 4096?4096:(iter->second->size - count);
+            ret = write (mckpt_fd, (char*) (iter->first + count), to_copy);
+            assert (ret == to_copy);
+            count += to_copy;
+        }
+        close (mckpt_fd);
+    }
+    close (fd);
+}
+
 
 static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx) 
 {
@@ -3008,187 +3255,22 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
     else if (function_level_tracking && current_thread->start_tracking == true) {
         current_thread->start_tracking = false;
         //sum up the checkpoint and verification set for patch_based_ckpt
-        bool* read_reg = current_thread->patch_based_ckpt_info.read_reg;
-        char* read_reg_value = current_thread->patch_based_ckpt_info.read_reg_value;
-        set<u_long> *write_mem = current_thread->patch_based_ckpt_info.write_mem;
-        map<u_long, char>* read_mem = current_thread->patch_based_ckpt_info.read_mem;
-        set<int>* write_reg = current_thread->patch_based_ckpt_info.write_reg;
-        //checkpoint 
-        char ckpt_filename[256];
-        snprintf (ckpt_filename, 256, "%s/pckpt", group_directory);
-        int fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        assert (fd > 0);
-        //regs
-        fprintf (stderr, "===== checkpoint reg ====\n");
-        write_reg->insert (LEVEL_BASE::REG_ESP);
-        write_reg->insert (LEVEL_BASE::REG_EFLAGS);
-        
-        unsigned int reg_size = write_reg->size();
-        int ret = write (fd, (char*) &reg_size, sizeof (unsigned int));
-        assert (ret == sizeof (unsigned int)); 
 
-        for (set<int>::iterator iter = write_reg->begin(); iter != write_reg->end(); ++iter) { 
-            if (REG_Size ((REG)*iter) == 4) {
-                PIN_REGISTER value;
-                PIN_GetContextRegval (ctx, (REG) *iter, (UINT8*)&value);
-                fprintf (stderr, "%s: %u (%x)\n", REG_StringShort((REG)*iter).c_str(), *((unsigned int*)&value), *((unsigned int*)&value));
-                int index = get_reg_ckpt_index ((REG)(*iter)); 
-                ret = write (fd, (char*) &index, sizeof(int));
-                assert (ret == sizeof(int));
-                ret = write (fd, (char*) ((unsigned long*) &value), sizeof(unsigned long));
-                assert (ret == sizeof(unsigned long));
-            } else {
-                int tmp = -1;
-                ret = write (fd, (char*) &tmp, sizeof (int));
-                assert (ret == sizeof(int));
-                ret = write (fd, (char*) &tmp, sizeof (unsigned long));
-                assert (ret == sizeof (unsigned long));
-                fprintf (stderr, "%s: -----skip-----\n", REG_StringShort ((REG)*iter).c_str());
-            }
-        }
+        //1. generate patch-based checkpoint 
+        write_patch_based_checkpoint (current_thread->patch_based_ckpt_info.write_mem, current_thread->patch_based_ckpt_info.write_reg, ctx);
 
-        //print out  mmap regions
-        bitset<0xc0000> write_pages;
-        get_existing_pages (&write_pages, false);
-        fflush(stdout);
-        //now we remove any locations that will be stored in the mmap_region_ckpt
-        for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
-            for (u_long addr = iter->first; addr < iter->first + iter->second->size; addr += PAGE_SIZE)
-                write_pages.reset (addr/PAGE_SIZE);
-        }
+        //2. generate verifications (memory predicates)
+        write_verification_predicates (current_thread->patch_based_ckpt_info.read_reg, current_thread->patch_based_ckpt_info.read_reg_value, current_thread->patch_based_ckpt_info.read_mem);
 
-        fprintf (stderr, "===== checkpoint mem ====\n");
-        print_memory_regions();
-        //format: start addr (4 bytes) , len (2 byte), content (len bytes)
-        unsigned long start_addr = 0;
-        unsigned short int block_len = 0;
-        char* block_buf = (char*) malloc (USHRT_MAX);
-        for (set<u_long>::iterator iter = write_mem->begin(); iter != write_mem->end(); ++iter) { 
-            //fprintf (stderr, "0x%lx", *iter);
-            if (!write_pages.test (*iter/PAGE_SIZE)) {
-                //fprintf (stderr, " doesn't exist\n");
-                continue;
-            }
-            if (is_existed (*iter) == false) {
-                //fprintf (stderr, " has been deallocated?  ");
-            }
-            //fprintf (stderr, ": %u\n", (unsigned int)(*(unsigned char*)(*iter)));
-            u_long addr = *iter;
-            if (addr != start_addr + block_len || block_len == USHRT_MAX) {
-                if (block_len != 0) {
-                    ret = write (fd, (char*) &block_len, sizeof(block_len));
-                    assert (ret == sizeof(block_len));
-                    ret = write (fd, block_buf, block_len);
-                    assert (ret == block_len);
-                    block_len = 0;
-                }
-                ret = write (fd, (char*) &addr, sizeof (unsigned long));
-                assert (ret == sizeof(unsigned long));
-                start_addr = addr;
-            } 
+        //3. mmap_region ckpt 
+        write_mmap_region_checkpoint ();
 
-            * (block_buf + block_len) = *((char*) addr);
-            ++ block_len;
-        }
-        if (block_len != 0) {
-            ret = write (fd, (char*) &block_len, sizeof(block_len));
-            assert (ret == sizeof(block_len));
-            ret = write (fd, block_buf, block_len);
-            assert (ret == block_len);
-        }
-        free (block_buf);
-        close (fd);
-
-        //verifications
-        char verification_filename[256];
-        snprintf (verification_filename, 256, "%s/verification", group_directory);
-        fd = open (verification_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        assert (fd > 0);
-
-        fprintf (stderr, "===== verification reg ==== \n");
-        for (unsigned int i = 0; i < sizeof(read_reg)/sizeof(bool); ++i) { 
-            if (read_reg[i]) { 
-                fprintf (stderr, "%d (%s): %u\n", i, REG_StringShort((REG) (i/REG_SIZE)).c_str(), (unsigned int)read_reg_value[i]);
-            }
-        }
-        ret = write (fd, (char*) read_reg, sizeof(current_thread->patch_based_ckpt_info.read_reg));
-        assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg));
-        fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg));
-        ret = write (fd, read_reg_value, sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
-        assert (ret == sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
-        fprintf (stderr, "write out %d bytes\n", sizeof(current_thread->patch_based_ckpt_info.read_reg_value));
-        fprintf (stderr, "===== verification mem ==== \n");
-        for (map<u_long, char>::iterator iter = read_mem->begin(); iter != read_mem->end(); ++iter) {
-            //fprintf (stderr, "0x%lx: ", iter->first);
-            if (!current_thread->patch_based_ckpt_info.read_pages->test (iter->first/PAGE_SIZE)) {
-                //fprintf (stderr, " doesn't exist beforehand\n");
-                continue;
-            }
-            //fprintf (stderr, " %u\n", (unsigned int)(unsigned char) iter->second);
-            u_long addr = iter->first;
-            ret = write (fd, (char*)&addr, sizeof(addr));
-            assert (ret == sizeof(addr));
-            char value = iter->second;
-            ret = write (fd, &value, sizeof(value));
-            assert (ret== sizeof(value));
-        }
-        close(fd);
-
-        fprintf (stderr, " ***remember to check the esp ,ebp and eflags; also be careful about ax/al/ah..\n");
-        //mmap_region ckpt
-        snprintf (ckpt_filename, 256, "%s/mmap_region_ckpt", group_directory);
-        fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        assert (fd > 0);
-        fprintf (stderr, "======munmap regions====\n");
-        int region_count = current_thread->patch_based_ckpt_info.munmap_regions->size();
-        ret = write (fd, &region_count, sizeof(region_count)); 
-        assert (ret == sizeof (region_count));
-        for (map<u_long, int>::iterator iter = current_thread->patch_based_ckpt_info.munmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.munmap_regions->end(); ++iter) {
-            fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second);
-            ret = write (fd, &iter->first, sizeof (u_long));
-            assert (ret == sizeof(u_long));
-            ret = write (fd, &iter->second, sizeof (int));
-            assert (ret == sizeof(int));
-        }
-
-        region_count = current_thread->patch_based_ckpt_info.mmap_regions->size();
-        fprintf (stderr, "======mmap regions====\n");
-        ret = write (fd, &region_count, sizeof(int));
-        assert (ret == sizeof(int));
-        for (map<u_long, struct mmap_region_info*>::iterator iter = current_thread->patch_based_ckpt_info.mmap_regions->begin(); iter != current_thread->patch_based_ckpt_info.mmap_regions->end(); ++iter) {
-            fprintf (stderr, "addr %lx size %d\n", iter->first, iter->second->size);
-            if ((iter->second->prot & PROT_READ) == 0) { 
-                fprintf (stderr, "non-readable regions?\n");
-                assert (0);
-            }
-            if ((iter->second->flags & MAP_SHARED) != 0) {
-                fprintf (stderr, "shared regions?\n");
-                assert (0);
-            }
-            ret = write (fd, &iter->first, sizeof(u_long));
-            assert (ret == sizeof(u_long));
-            ret = write (fd, (char*) iter->second, sizeof(struct mmap_region_info));
-            assert (ret == sizeof (struct mmap_region_info));
-            //dump the region
-            char region_filename[256];
-            snprintf (region_filename, 256, "%s/mmap_region_ckpt.%lx", group_directory, iter->first);
-            int mckpt_fd = open (region_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            assert (mckpt_fd > 0);
-            int count = 0;
-            int to_copy = 4096;
-            while (count < iter->second->size) {
-                to_copy = (iter->second->size - count) > 4096?4096:(iter->second->size - count);
-                ret = write (mckpt_fd, (char*) (iter->first + count), to_copy);
-                assert (ret == to_copy);
-                count += to_copy;
-            }
-            close (mckpt_fd);
-        }
-        close (fd);
+        //4. extra mmap regions  (pre-allocations to reserve memory)
         //now calculate the maximum memory regions the code region is going to use
         //so we can reserve these regions before loading the slice to avoid the slice is loaded into these regions
-        snprintf (ckpt_filename, 256, "%s/extra_mmap_region", group_directory);
-        fd = open (ckpt_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        char extra_mmap_region_filename[256];
+        snprintf (extra_mmap_region_filename, 256, "%s/extra_mmap_region", group_directory);
+        int fd = open (extra_mmap_region_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         assert (fd > 0);
         jumpstart_create_extra_memory_region_list (fd, current_thread->patch_based_ckpt_info.read_pages);
         close (fd);

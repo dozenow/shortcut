@@ -8678,13 +8678,12 @@ static void jumpstart_load_pckpt (char* filename)
 	char* buf = VMALLOC (PCKPT_MAX_BUF);
 	int reg_index = 0;
 	unsigned long reg_value;
-	unsigned long mem_loc;
-	unsigned char mem_value;
 	unsigned int regcount = 0;
 	int len = 0;
 	int offset = 0;
 	int i = 0;
 	struct pt_regs* regs = get_pt_regs (NULL);
+	int cur_size = 0;
 
 	set_fs (KERNEL_DS);
 	f = filp_open (filename, O_RDONLY, 0);	
@@ -8714,27 +8713,51 @@ static void jumpstart_load_pckpt (char* filename)
 		((unsigned long*) regs)[reg_index] = reg_value;
 		printk ("%d:%lu\n", reg_index, reg_value);
 	} 
-	len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
 	set_fs(old_fs);
 	//dump_vmas();
 	printk ("------patch-based checkpoint mem------\n");
-	while (len != 0) {
+
+	while (1) {
 		offset = 0;
-		while (offset < len) { 
-			mem_loc = *((unsigned long*) (buf + offset));
-			offset += sizeof (unsigned long);
-			mem_value = *((unsigned char*)(buf + offset));
-			offset += sizeof (unsigned char);
-			//printk ("0x%lx:%u\n", mem_loc, (unsigned int) mem_value);
-			put_user (mem_value, (unsigned char __user*) mem_loc);
-		}
+		cur_size = 0;
 		set_fs (KERNEL_DS);
-		len = vfs_read (f, buf, PCKPT_MAX_BUF/5*5, &f->f_pos);
+		len = vfs_read (f, (char*) &cur_size, sizeof (cur_size), &f->f_pos); 
 		set_fs(old_fs);
+		if (len == 0) {
+			break;
+		}
+		printk ("cur_size %d\n", cur_size);
+		BUG_ON (len != sizeof (cur_size));
+		while (offset < cur_size) {
+			set_fs (KERNEL_DS);
+			len = vfs_read (f, buf + offset, cur_size - offset, &f->f_pos);
+			set_fs(old_fs);
+			BUG_ON (len <= 0);
+			offset += len;
+		}
+		offset = 0;
+		while (offset < cur_size) {
+			unsigned long start_addr = *((unsigned long*) (buf + offset));
+			unsigned short int block_len  = 0;
+			unsigned long mem_loc;
+			unsigned char mem_value;
+			int secondary_offset = 0;
+
+			offset += sizeof (unsigned long);
+			block_len = *((unsigned short int*) (buf + offset));
+			offset += sizeof(unsigned short);
+			while (secondary_offset < block_len) {
+				mem_loc = start_addr + secondary_offset;
+				mem_value = *(buf + offset + secondary_offset);
+				//printk ("mem 0x%lx value %u\n", mem_loc, (unsigned int) mem_value);
+				put_user (mem_value, (unsigned char __user*) mem_loc);
+				++ secondary_offset;
+			}
+			offset += secondary_offset;
+		}
 	}
 
 	filp_close (f, NULL);
-
 	VFREE (buf);
 }
 
