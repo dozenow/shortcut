@@ -1892,11 +1892,13 @@ consult the installation file that came with this distribution, or visit \n\
 	/* library is already initialized, now init our request */
 	request = fpm_init_request(fcgi_fd);
 
+	void* hndl = NULL; //xdou
+	char gid[16]; //xdou
+	memset (gid, 0, 16);
 	zend_first_try {
 		while (EXPECTED(fcgi_accept_request(request) >= 0)) {
 			char *primary_script = NULL;
-			//xdou timer
-			//xdou
+
 			request_body_fd = -1;
 			SG(server_context) = (void *) request;
 			init_request_info();
@@ -1939,57 +1941,47 @@ consult the installation file that came with this distribution, or visit \n\
 				goto fastcgi_request_done;
 			}
 
+
 			/*
 			 * have to duplicate SG(request_info).path_translated to be able to log errrors
 			 * php_fopen_primary_script seems to delete SG(request_info).path_translated on failure
 			 */
 			primary_script = estrdup(SG(request_info).path_translated);
 
-			/* path_translated exists, we can continue ! */
-			if (UNEXPECTED(php_fopen_primary_script(&file_handle) == FAILURE)) {
-				zend_try {
-					zlog(ZLOG_ERROR, "Unable to open primary script: %s (%s)", primary_script, strerror(errno));
-					if (errno == EACCES) {
-						SG(sapi_headers).http_response_code = 403;
-						PUTS("Access denied.\n");
-					} else {
-						SG(sapi_headers).http_response_code = 404;
-						PUTS("No input file specified.\n");
-					}
-				} zend_catch {
-				} zend_end_try();
-				/* we want to serve more requests if this is fastcgi
-				 * so cleanup and continue, request shutdown is
-				 * handled later */
-
-				goto fastcgi_request_done;
-			}
-
-			fpm_request_executing();
-
-			void* hndl = NULL;
+			//xdou timer
 			{
-				struct timespec time;
+				struct timeval time;
 
 				//timer
-				clock_gettime (CLOCK_MONOTONIC, &time);
-				fprintf (stderr, "====Pid %d new request time: %ld.%09ld\n", getpid(), time.tv_sec, time.tv_nsec);
+				gettimeofday (&time, NULL);
+				fprintf (stderr, "====Pid %d new request time: %ld.%06ld\n", getpid(), time.tv_sec, time.tv_usec);
 				//timer
 
 				{
 					int ret = -1;
 					char filename[128];
 					FILE* proc_file = fopen ("/proc/sys/kernel/jumpstart_load_slice_gid", "r");
-					char gid[16];
 					char* ret_str = NULL;
+					char cur_gid[16];
+					memset (cur_gid, 0, 16);
 
 					//check if we need to load the slice
-					ret_str = fgets (gid, sizeof(gid), proc_file);
+					ret_str = fgets (cur_gid, sizeof(cur_gid), proc_file);
 					if (ret_str == NULL) fprintf (stderr, "cannot read from jumpstart_load_slice_gid\n");
-					gid[strlen(gid)-1] = '\0';
+					cur_gid[strlen(cur_gid)-1] = '\0';
 					fclose (proc_file);
 
-					if (gid[0] != '0') {
+					//this guarantees that for normal execution, we're only adding the overhead for opening the jumpstart_load_slice_gid proc file and two jumpstart syscalls 
+					//while avoiding doing extra work to set up slice/load checkpoint etc.
+					
+					if (memcmp (gid, cur_gid, 16)) {
+						if (hndl) {
+							dlclose (hndl);
+							hndl = NULL;
+						}
+						memcpy (gid, cur_gid, 16);
+					}
+					if (hndl == NULL && gid[0] != '0') { 
 						//load the slice
 						char pid[16];
 						int mckpt_fd = 0, extra_fd = 0;
@@ -2018,7 +2010,7 @@ consult the installation file that came with this distribution, or visit \n\
 						region_count = rc/sizeof(struct mmap_region_info);
 						for (i = 0; i < region_count; ++i) {
 							u_long addr = (u_long) mmap ((void*) infos[i].addr, infos[i].size, infos[i].prot, MAP_PRIVATE|MAP_FIXED | MAP_ANONYMOUS, -1, 0);
-							fprintf (stderr, " extra addr %lx size %d\n", infos[i].addr, infos[i].size);
+							//fprintf (stderr, " extra addr %lx size %d\n", infos[i].addr, infos[i].size);
 							if (addr != infos[i].addr) fprintf (stderr, "mmap reservation fails for extra mmap region, addr %lx ret %lx\n", infos[i].addr, addr);
 						}
 						close (extra_fd);
@@ -2031,6 +2023,7 @@ consult the installation file that came with this distribution, or visit \n\
 							fprintf (stderr, "slice %s dlopen failed: %s\n", filename, dlerror());
 							exit (0);
 						}
+						fprintf (stderr, "hndle is %p(%p)\n", hndl, &hndl);
 						//now unload the extra mmap region
 						for (i = 0; i < region_count; ++i) { 
 							int ret = munmap ((void*) infos[i].addr, infos[i].size);
@@ -2049,57 +2042,63 @@ consult the installation file that came with this distribution, or visit \n\
 							:
 							: "eax", "ebx", "memory" //verify if more registers are added
 							);
-					fprintf (stderr, "hndl address is %p\n", hndl);
+					//make sure there is no syscalls between the above syscall and the php_execute_script if ret !=2
+					//make sure there is no syscalls between the following syscall and the php_execute_script if ret ==2
+					//otherwise, we'll have a replay divergence with the synthetic execution on failure
+					//fprintf (stderr, "hndl address is %p\n", hndl);
 					if (ret == 2) { //2 means jumpstart_run_slice is turned on and we should call the sys_jumpstart_runtime to execute the slice
 						fprintf (stderr, "jumping to the kernel for setting up the slice, handler %p\n", hndl);
+						//fork process in order to support rollback
+					    int pid = fork ();	
 						asm volatile ("pushl %%eax\n\t"
 								"pushl %%ebx\n\t"
+								"pushl %%ecx\n\t"
 								"movl $2,%%ebx\n\t"
+								"movl %1,%%ecx\n\t"
 								"movl $222,%%eax\n\t"
 								"int $0x80\n\t"
 								"movl %%eax, %0\n\t"
+								"popl %%ecx\n\t"
 								"popl %%ebx\n\t"
 								"popl %%eax"
 								: "=r" (ret)
-								: 
+								: "r" (pid)
 								: "eax", "ebx", "memory" //verify if more registers are added
 								);
 					} 
-
 				}
 			}
+			//xdou
+			/* path_translated exists, we can continue ! */
+			if (UNEXPECTED(php_fopen_primary_script(&file_handle) == FAILURE)) {
+				zend_try {
+					zlog(ZLOG_ERROR, "Unable to open primary script: %s (%s)", primary_script, strerror(errno));
+					if (errno == EACCES) {
+						SG(sapi_headers).http_response_code = 403;
+						PUTS("Access denied.\n");
+					} else {
+						SG(sapi_headers).http_response_code = 404;
+						PUTS("No input file specified.\n");
+					}
+				} zend_catch {
+				} zend_end_try();
+				/* we want to serve more requests if this is fastcgi
+				 * so cleanup and continue, request shutdown is
+				 * handled later */
+
+				goto fastcgi_request_done;
+			}
+
+			fpm_request_executing();
+
 
 			php_execute_script(&file_handle);
-			{
-				{
-					int ret = -1;
-					asm volatile ("pushl %%eax\n\t"
-							"pushl %%ebx\n\t"
-							"movl $3,%%ebx\n\t"
-							"movl $222,%%eax\n\t"
-							"int $0x80\n\t"
-							"movl %%eax, %0\n\t"
-							"popl %%ebx\n\t"
-							"popl %%eax"
-							: "=r" (ret)
-							:
-							: "eax", "ebx", "memory" //verify if more registers are added
-						);
-					fprintf (stderr, "ret is %d(0x%x)\n", ret, ret);
-					if (ret == 1 && hndl != NULL) {
-						ret = dlclose (hndl);
-						if (ret != 0) fprintf (stderr, "dlclose returns %d\n", ret);
-					} 
-				}
-				struct timespec time;
-				clock_gettime (CLOCK_MONOTONIC, &time);
-				fprintf (stderr, "===Pid %d request done: %ld.%09ld\n", getpid(), time.tv_sec, time.tv_nsec);
-			}
 
 
 fastcgi_request_done:
 			if (EXPECTED(primary_script)) {
 				efree(primary_script);
+				primary_script = NULL;
 			}
 
 			if (UNEXPECTED(request_body_fd != -1)) {
@@ -2116,14 +2115,40 @@ fastcgi_request_done:
 					sapi_header_op(SAPI_HEADER_REPLACE, &ctr);
 				}
 			}
+			efree(SG(request_info).path_translated);
+			SG(request_info).path_translated = NULL;
 
 			fpm_request_end();
 			fpm_log_write(NULL);
 
-			efree(SG(request_info).path_translated);
-			SG(request_info).path_translated = NULL;
-
 			php_request_shutdown((void *) 0);
+
+			{
+				{
+					int ret = -1;
+					asm volatile ("pushl %%eax\n\t"
+							"pushl %%ebx\n\t"
+							"movl $3,%%ebx\n\t"
+							"movl $222,%%eax\n\t"
+							"int $0x80\n\t"
+							"movl %%eax, %0\n\t"
+							"popl %%ebx\n\t"
+							"popl %%eax"
+							: "=r" (ret)
+							:
+							: "eax", "ebx", "memory" //verify if more registers are added
+							);
+					//fprintf (stderr, "ret is %d(0x%x), hndl is %p\n", ret, ret, hndl);
+					/*if (ret == 1 && hndl != NULL) {
+						ret = dlclose (hndl);
+						if (ret != 0) fprintf (stderr, "dlclose returns %d\n", ret);
+					}*/
+				}
+				struct timeval time;
+				gettimeofday (&time, NULL);
+				fprintf (stderr, "===Pid %d request done: %ld.%06ld\n", getpid(), time.tv_sec, time.tv_usec);
+			}
+
 
 			requests++;
 			if (UNEXPECTED(max_requests && (requests == max_requests))) {

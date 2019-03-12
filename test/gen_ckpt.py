@@ -30,6 +30,7 @@ parser.add_argument("-compile_all", help = "Skip the slice generation phase and 
 parser.add_argument("-no_ckpt", help = "Skip the ckpt phase", action="store_true")
 parser.add_argument("-region_start_clock", help = "Only slice a region bounded by two sys_jumpstart_runtime.")
 parser.add_argument("-no_pthread_lib", help = "don't use the eglibc to record user-level operations", action="store_true")
+parser.add_argument("-attach_offset", help = "attach pintool at a specific location instead of attaching it from the beginning")
 args = parser.parse_args()
 
 rec_dir = args.rec_group_id
@@ -74,6 +75,8 @@ if len(input_asm_file) is 0:
         commands = ["./runpintool"]
         if (args.no_pthread_lib):
             commands.append("-no_pthread_lib")
+        if (args.attach_offset):
+            commands.append ("--attach_offset="+args.attach_offset)
         if (taint_filter > 0):
         	if (taint_syscall):
 	        	commands.extend(["/replay_logdb/rec_" + str(rec_dir), "../dift/obj-ia32/linkage_offset.so", "-i", "-s", 

@@ -48,7 +48,7 @@ extern int replay_debug, replay_min_debug;
 //#define WRITABLE_MMAPS_LEN 17
 //#define WRITABLE_MMAPS "/tmp/replay_mmap_%d"
 //print timings
-#define PRINT_TIME 1
+#define PRINT_TIME 0
 //#define JAVA_FIX_PTHREAD
 
 /* Prototypes not in header files */
@@ -2044,7 +2044,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 
 		//unmap the slice - doing this during the dump will cause process to hang
 		if (slice_info->slice_mode != 0) {
-			printk ("OKay... let's also ignore the step to unload the slice; do this in the user level.\n");
+			//OKay... let's also ignore the step to unload the slice; do this in the user level.
 			//in this case, we're definitely accelerating the fine code regions and the system call we need to restart right after the slice is a sys_jumpstart_runtime call; here we return the address of the slice dl handler so we can safely unload the slice
 			slice_retval = 1;
 		} else {
@@ -2072,7 +2072,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			do_gettimeofday (&tv);
 			printk ("Pid %d end execute_slice %ld.%06ld, user %ld kernel %ld\n", current->pid, tv.tv_sec, tv.tv_usec, ru.ru_utime.tv_usec, ru.ru_stime.tv_usec);
 #ifdef JUMPSTART_ROLLBACK_WITH_FORK
-			printk ("Pid %d is destroying its rollback process %d\n", current->pid, rollback_pid);
+			DPRINT ("Pid %d is destroying its rollback process %d\n", current->pid, rollback_pid);
 			rollback_tsk = find_task_by_vpid (rollback_pid);
 			if (!rollback_tsk) {
 				printk ("Pid %d cannot find the rollback task struct with pid %d\n", current->pid, rollback_pid);
@@ -2090,7 +2090,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 			}
 		}
 
-		printk ("Pid %d returning %ld\n", current->pid, slice_retval);
+		DPRINT ("Pid %d returning %ld\n", current->pid, slice_retval);
 		return slice_retval;
 
 	} else if (finish == 2) {
@@ -2182,7 +2182,7 @@ asmlinkage long sys_execute_fw_slice (int finish, long arg2, long arg3)
 #endif
 
 		//TODO: free up the go_live_thrd, replay_group etc. for this thread; memory leaks
-
+		current->go_live_thrd = NULL;
 	
 		return get_pt_regs(current)->orig_ax; // We stuffed actual return value in here.
 

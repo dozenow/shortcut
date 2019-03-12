@@ -21,6 +21,19 @@ struct recheck_handle {
     int recheckfd;
 };
 
+static struct klog_result* skip_to_syscall_by_clock (struct recheck_handle* handle, u_long clock) 
+{
+    struct klog_result* res;
+
+    do {
+	res = parseklog_get_next_psr(handle->log);
+    } while (res->start_clock < clock);
+
+    fprintf (stderr, "skip_to_syscall_by_clock: target %lu cur %lu\n", clock, res->start_clock);
+    return res;
+}
+
+
 struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid)
 {
     char klog_filename[512];
@@ -170,12 +183,9 @@ static long calculate_partial_read_size (int is_cache_file, int partial_read, si
 	}
 }
 
-void recheck_jumpstart_start (struct recheck_handle* handle)
+void recheck_jumpstart_start (struct recheck_handle* handle, u_long clock)
 {
-    struct klog_result* res;
-    do {
-	res = parseklog_get_next_psr(handle->log);
-    } while (res->psr.sysnum != 222);
+    skip_to_syscall_by_clock (handle, clock);
 }
 
 int recheck_read_ignore (struct recheck_handle* handle) 
@@ -906,6 +916,11 @@ int recheck_gettimeofday (struct recheck_handle* handle, struct timeval* tv, str
     write_header_into_recheck_log (handle->recheckfd, SYS_gettimeofday, res->retval, sizeof(struct gettimeofday_recheck), clock);
     chk.tv_ptr = tv;
     chk.tz_ptr = tz;
+#ifdef MEDIAWIKI_HACK
+    fprintf (stderr, "[WARNING] MEDIAWIKI_HACK is on!!!\n");
+    memcpy (&chk.tv, &((struct gettimeofday_retvals*)res->retparams)->tv, sizeof (struct timeval));
+    if (tz) memcpy (&chk.tz, &((struct gettimeofday_retvals*)res->retparams)->tz, sizeof (struct timeval));
+#endif
     write_data_into_recheck_log (handle->recheckfd, &chk, sizeof(chk));
     
     return 0;

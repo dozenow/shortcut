@@ -13,7 +13,7 @@ DEPS_DIR := .deps
 TARGETS=parseklog parseulog parsemlog launcher resume parseckpt \
 	getstats filemap replay_pause reset_ndx currentpid seqtt runpintool partt fulltt fullsend streamtt streamctl sync_files read_trace retaint mkpartition mkpart_iter \
         recheck_support.o process_slice parserecheck finalize_slice_ctrl_flow diverge_and_merge_point find_diverge canonicalize find_range parseulib.o parsecheckpoint sdaemon env_patch ckpt_patch xdiff \
-	xdump pidinator memcmp parsepckpt parseverif
+	xdump pidinator memcmp parsepckpt parseverif fix_pckpt
 
 # For automatic .h dependency tracking... may not work perfectly for launcher as
 #    the include path changes for it
@@ -50,6 +50,8 @@ filemap: libutil.a
 parseckpt: libutil.a
 
 parsecheckpoint: libutil.a parsecheckpoint.o
+
+fix_pckpt: libutil.a fix_pckpt.o
 
 parserecheck: parserecheck.o
 

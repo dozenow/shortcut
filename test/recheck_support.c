@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -332,6 +332,9 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
     memset (success_functions, 0, sizeof(unsigned long long)*512);
 #endif
     end_timing_func (0);
+    bufptr= buf;
+    last_clock = 0;
+    taintndx = 0;
 }
 
 #ifdef PRINT_TO_LOG
@@ -383,8 +386,9 @@ void exit_slice (long is_ckpt_thread, long retval)
 
 void handle_mismatch()
 {
+    return;
     //TODO: uncomment these lines
-    dump_taintbuf (DIVERGE_MISMATCH, 0);
+    //dump_taintbuf (DIVERGE_MISMATCH, 0);
     fprintf (stderr, "[MISMATCH] exiting.\n\n\n");
     LPRINT ("[MISMATCH] exiting.\n\n\n");
 #ifdef PRINT_VALUES
@@ -548,6 +552,21 @@ inline void print_buffer (u_char* buffer, int len)
 	    LPRINT ("%c", ch);
 	} else {
 	    LPRINT ("\\%o", ch);
+	}
+    }
+    LPRINT ("}\n");
+}
+
+inline void print_buffer_with_pos (u_char* buffer, int len)
+{
+    int i;
+    LPRINT ("{");
+    for (i = 0; i < len; i++) { 
+	u_char ch = buffer[i];
+	if (ch >= 32 && ch <= 126) {
+	    LPRINT ("%d:%c, ", i, ch);
+	} else {
+	    LPRINT ("%d:\\%o, ", i, ch);
 	}
     }
     LPRINT ("}\n");
@@ -1018,8 +1037,10 @@ long recv_recheck ()
 		    rc = msglen;
 		} else {
 #endif
-		    LPRINT ("recv: sleeping for %d us\n", 500);
-		    usleep (500);
+		    //LPRINT ("recv: sleeping for %d us\n", 500);
+		    LPRINT ("recv: sleeping for %d us\n", 500*(2<<(tries-1)));
+                    usleep (500*(2<<(tries-1)));
+		    //usleep (500);
 #ifdef REORDERING
 		}
 #endif
@@ -1094,6 +1115,8 @@ long recv_recheck ()
 	print_buffer_hex ((u_char *) recvData, pentry->retval);
 	print_buffer (precv->buf, pentry->retval);
 	print_buffer ((u_char *) recvData, pentry->retval);
+	//print_buffer_with_pos (precv->buf, pentry->retval);
+	//print_buffer_with_pos ((u_char *) recvData, pentry->retval);
 #endif
 #ifdef REORDERING
 	reorder_sequence (precv->buf, (u_char *) recvData, pentry->retval);
@@ -1108,8 +1131,19 @@ long recv_recheck ()
 			int j;
 			LPRINT ("[MISMATCH] partial recv %lu start %d returns different values - read/expected:\n", pentry->clock, i);
 			for (j = bytes_so_far; j < precv->partial_read_starts[i]; j++) {
+                            LPRINT ("%02x/%02x%c ", ((char *)precv->buf)[i]&0xff, recvData[i]&0xff, (((char *)precv->buf)[i] == recvData[i]?' ':'*'));
+                            if (i%16 == 15) LPRINT ("\n");
+			}
+                        LPRINT ("\n");
+                        int last_pos = bytes_so_far;
+			for (j = bytes_so_far; j < precv->partial_read_starts[i]; j++) {
 			    if (((char *)precv->buf)[j] != recvData[j]) {
 				LPRINT ("%d ", j);
+                                if (j != last_pos) {
+                                    LPRINT ("(start) ");
+                                    last_pos = j;
+                                } 
+                                ++last_pos;
 			    }
 			}
 			LPRINT ("\n");
@@ -1124,8 +1158,22 @@ long recv_recheck ()
 			    pentry->retval-precv->partial_read_ends[precv->partial_read_cnt-1])) {
 		    LPRINT ("[MISMATCH] partial recv %lu end returns different values - read/expected:\n", pentry->clock);
 		    for (i = precv->partial_read_ends[precv->partial_read_cnt-1]; i < pentry->retval; i++) {
-			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
+			LPRINT ("%02x/%02x%c ", ((char *)precv->buf)[i]&0xff, recvData[i]&0xff, (((char *)precv->buf)[i] == recvData[i]?' ':'*'));
+			if (i%16 == 15) LPRINT ("\n");
 		    }
+                    LPRINT ("\n");
+                    int last_pos = precv->partial_read_ends[precv->partial_read_cnt-1]; 
+		    for (i = precv->partial_read_ends[precv->partial_read_cnt-1]; i < pentry->retval; i++) {
+			if (((char *)precv->buf)[i] != recvData[i]) {
+                            LPRINT ("%d ", i);
+                            if (i != last_pos) {
+                                LPRINT ("(start) ");
+                                last_pos = i;
+                            }
+                            ++last_pos;
+                        }
+		    }
+                    LPRINT ("\n");
 		    handle_mismatch();
 		}
 	    }
@@ -1139,9 +1187,17 @@ long recv_recheck ()
 			if (i%16 == 15) LPRINT ("\n");
 		    }
 		    LPRINT ("\n");
+                    int last_pos = 0;
 		    for (i = 0; i < pentry->retval; i++) {
-			if (((char *)precv->buf)[i] != recvData[i]) LPRINT ("%d ", i);
-		    }
+			if (((char *)precv->buf)[i] != recvData[i]) {
+                            LPRINT ("%d ", i);
+                            if (i != last_pos) {
+                                LPRINT ("(start) ");
+                                last_pos = i;
+                            }
+                            ++last_pos;
+                        }
+                    }
 		    LPRINT ("\n");
 		    handle_mismatch();
 		}
@@ -1537,6 +1593,9 @@ long write_recheck (size_t count)
     } else {
 	use_count = pwrite->count;
     }
+#ifdef PRINT_VALUES
+    print_buffer (writedata, use_count);
+#endif
 
     start_timing();
     rc = syscall(SYS_write, pwrite->fd, writedata, use_count);
@@ -1620,7 +1679,8 @@ long send_recheck ()
 
     psendbuf = fill_taintedbuf (data, psend->buf, psend->len);
 #ifdef PRINT_VALUES
-    print_buffer_hex ((u_char*) psend->buf, psend->len);
+    print_buffer_hex ((u_char*) psendbuf, psend->len);
+    print_buffer ((u_char*) psendbuf, psend->len);
 #endif
 
     u_long block[6];
@@ -2541,11 +2601,19 @@ long gettimeofday_recheck () {
     check_retval ("gettimeofday", pentry->clock, pentry->retval, rc);
     
     if (pget->tv_ptr) { 
+#ifdef MEDIAWIKI_HACK
+        memcpy (pget->tv_ptr, &pget->tv, sizeof(struct timeval));
+#else 
 	memcpy (pget->tv_ptr, &tv, sizeof(struct timeval));
+#endif
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TV, &tv, sizeof(struct timeval));
     }
     if (pget->tz_ptr) { 
+#ifdef MEDIAWIKI_HACK
+        memcpy (pget->tz_ptr, &pget->tz, sizeof(struct timezone));
+#else 
 	memcpy (pget->tz_ptr, &tz, sizeof(struct timezone));
+#endif
 	add_to_taintbuf (pentry, GETTIMEOFDAY_TZ, &tz, sizeof(struct timezone));
     }
     end_timing_func (SYS_gettimeofday);

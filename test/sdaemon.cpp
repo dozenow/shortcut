@@ -23,8 +23,8 @@ using namespace std;
 #include <time.h>
 #include "../linux-lts-quantal-3.5.0/include/linux/replay_configs.h"
 
-#define DPRINT printf
-//#define DPRINT(x,...)
+//#define DPRINT printf
+#define DPRINT(x,...)
 //#define PRINT_TIME
 
 map<long,long> clone_map;
@@ -94,6 +94,24 @@ static void handle_gettid (char*& tbptr, struct taint_retval* trv, struct klog_r
 }
 
 static void handle_read (char*& tbptr, struct taint_retval* trv, struct klog_result* res) 
+{
+    if (trv->rettype == RETVAL) {
+	memcpy (&res->retval, tbptr, sizeof(long));
+	tbptr += sizeof(long);
+    } else {
+	char* newentry = (char *) malloc (trv->size + sizeof(u_int));
+	assert (newentry);
+	*((u_int *) newentry) = 0; // Not a cached file
+	memcpy (newentry + sizeof(u_int), tbptr, trv->size);
+	tbptr += trv->size;
+	//free (res->retparams); 
+	res->retparams_size = trv->size + sizeof(u_int);
+	res->retparams = newentry;
+	DPRINT ("read buffer replaced\n");
+    }
+}
+
+static void handle_pread64 (char*& tbptr, struct taint_retval* trv, struct klog_result* res)
 {
     if (trv->rettype == RETVAL) {
 	memcpy (&res->retval, tbptr, sizeof(long));
@@ -361,6 +379,9 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 		case SYS_read:
 		    handle_read (tbptr, ptrv, res);
 		    break;
+                case SYS_pread64:
+                    handle_pread64 (tbptr, ptrv, res);
+                    break;
 		case SYS_stat64:
 		case SYS_fstat64:
 		case SYS_lstat64:
@@ -412,7 +433,7 @@ int handle_one_klog (string dir, char* altdirname, char* klogfilename, u_long* p
 		    handle_getdents (tbptr, ptrv, res);
 		    break;
 		default:
-		    fprintf (stderr, "syscall %d unhandled\n", ptrv->syscall);
+		    fprintf (stderr, "ERROR: syscall %d unhandled\n", ptrv->syscall);
 		    return -1;
 		}
 		if (tbptr >= tbend) {

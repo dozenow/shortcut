@@ -67,6 +67,7 @@ GHashTable* taint_fds_cloexec = NULL;
 #define CHECK_TYPE_SPECIFIC_RANGE       2
 #define CHECK_TYPE_RANGE_WRITE          3
 #define CHECK_TYPE_SPECIFIC_RANGE_WRITE 4
+#define CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR 5
 
 unsigned long handled_jump_divergence = 0;
 unsigned long handled_index_divergence = 0;
@@ -77,7 +78,14 @@ struct taint_check {
     u_long size;
 };
 
+struct rangev_write_entry {
+    u_long anchor; 
+    u_long start;
+    u_long size;
+};
+
 map<ADDRINT,taint_check> check_map;
+multimap<ADDRINT, struct rangev_write_entry> check_map_rangev_write;
 map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
 vector<struct check_syscall> ignored_syscall;
@@ -1052,7 +1060,10 @@ static inline uint32_t set_cmem_taints(u_long mem_loc, uint32_t size, taint_t* v
     unsigned low_index = mem_loc & LEAF_INDEX_MASK;
     memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
 
-    if (set_size != size) fprintf (stderr, "set_cmem_taints doesn't taint all memory address.\n");
+    if (set_size != size) {
+        fprintf (stderr, "set_cmem_taints doesn't taint all memory address.\n");
+        set_cmem_taints (mem_loc + set_size, size - set_size, values + set_size);
+    }
     return set_size;
 }
 
@@ -1328,6 +1339,21 @@ static int init_check_map (const char* check_filename)
                     tc.value = start_addr;
                     tc.size = size;
                     check_map[ip] = tc;
+                } else if (!strcmp(type, "specify_range_write_with_anchor")) {
+                    //This is a special type, which means if the current memory write location is [anchor], 
+                    //then we set the potential ranged write mem locations to be from [start_addr] with size as [size]
+                    u_long start_addr, size, anchor;
+                    sscanf (value, "%lx,%lx,%lu", &anchor, &start_addr, &size);
+                    tc.type = CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR;
+                    tc.value = start_addr;
+                    tc.size = size;
+                    check_map[ip] = tc;
+                    struct rangev_write_entry entry;
+                    entry.anchor = anchor;
+                    entry.start = start_addr;
+                    entry.size = size;
+                    check_map_rangev_write.insert (pair<ADDRINT, struct rangev_write_entry>(ip, entry));
+                    fprintf (stderr, "specify_range_write_with_anchor: start %lx\n", start_addr);
                 } else if (!strcmp(type, "specify_range")) {
                     u_long start_addr, size;
                     sscanf (value, "%lx,%lu", &start_addr, &size);
@@ -2709,7 +2735,6 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    }
 	} else if (iter->second.type == CHECK_TYPE_RANGE || iter->second.type == CHECK_TYPE_SPECIFIC_RANGE) {
 	    bool is_ro_region = false;
-
 	    if (is_readonly_mmap_region (mem_loc, mem_size, start, end)) {
 		is_ro_region = true; // Start and end set above
 	    } else if (iter->second.type == CHECK_TYPE_RANGE) {
@@ -2743,6 +2768,8 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
     return false;
 }
 
+static void taint_base_index_to_range_memwrite (ADDRINT ip, u_long mem_loc, uint32_t size, int base_reg_off, uint32_t base_reg_size, int index_reg_off, uint32_t index_reg_size);
+
 // Only called if base or index register is tainted.  Returns true if register(s) are still tainted after verification due to range check */
 static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, 
 							    int base_reg, uint32_t base_reg_size, uint32_t base_reg_value, uint32_t base_reg_u8, 
@@ -2754,15 +2781,30 @@ static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* in
     PIN_REGISTER index_value;
     map<ADDRINT,taint_check>::iterator iter = check_map.find(ip);
     if (iter != check_map.end()) {
-	if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE || iter->second.type == CHECK_TYPE_RANGE_WRITE) {
+	if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE || iter->second.type == CHECK_TYPE_RANGE_WRITE || iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR) {
 	    if (iter->second.type == CHECK_TYPE_RANGE_WRITE) {
                 start = mem_loc - iter->second.value;
                 end = mem_loc + iter->second.value + 1;
-	    } else {
+	    } else if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE) {
 		start = iter->second.value;
 		end = iter->second.value + iter->second.size;
+            } else  {
+                pair<multimap<ADDRINT, struct rangev_write_entry>::iterator, multimap<ADDRINT, struct rangev_write_entry>::iterator> range = check_map_rangev_write.equal_range (ip);
+                bool found = false;
+                for (multimap<ADDRINT, struct rangev_write_entry>::iterator iter = range.first; iter != range.second; ++iter) {
+                    if (iter->second.anchor == mem_loc) {
+                        found = true;
+                        start = iter->second.start;
+                        end = start + iter->second.size;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fprintf (stderr, "[ERROR]: verify_base_index_registers_write_range: cannot find the anchor\n");
+                    return false;
+                }
 	    }
-	    CFDEBUG ("Tainted base/index write from %lx to %lx\n", start, end); 
+	    fprintf (stderr, "[INFO] Tainted base/index write from %lx to %lx\n", start, end); 
 	    if (base_reg_size > 0) copy_value_to_pin_register (&base_value, base_reg_value, base_reg_size, base_reg_u8);
 	    if (index_reg_size > 0) copy_value_to_pin_register (&index_value, index_reg_value, index_reg_size, index_reg_u8);
 	    if (base_tainted != 1 && base_reg_size > 0) print_extra_move_reg (ip, base_reg, base_reg_size, &base_value, base_reg_u8, base_tainted);
@@ -2776,6 +2818,7 @@ static inline bool verify_base_index_registers_write_range (ADDRINT ip, char* in
 		}
 	    }
 	    print_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
+            taint_base_index_to_range_memwrite (ip, mem_loc, mem_size, base_reg*REG_SIZE+base_reg_u8, base_reg_size, index_reg*REG_SIZE+index_reg_u8, index_reg_size);
 	    return true;
 	}
     } else {
@@ -2800,11 +2843,27 @@ static inline void taint_base_index_to_range_memwrite (ADDRINT ip, u_long mem_lo
             } else if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE) {
                 mem_start = iter->second.value;
                 mem_size = iter->second.size;
+            } else if (iter->second.type == CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR) {
+                pair<multimap<ADDRINT, struct rangev_write_entry>::iterator, multimap<ADDRINT, struct rangev_write_entry>::iterator> range = check_map_rangev_write.equal_range (ip);
+                bool found = false;
+                for (multimap<ADDRINT, struct rangev_write_entry>::iterator iter = range.first; iter != range.second; ++iter) {
+                    if (iter->second.anchor == mem_loc) {
+                        found = true;
+                        mem_start = iter->second.start;
+                        mem_size =  iter->second.size;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fprintf (stderr, "[ERROR]: verify_base_index_registers_write_range: cannot find the anchor\n");
+                    return;
+                }
             }
         } else {
             mem_start = mem_loc;
             mem_size = size;
         }
+        fprintf (stderr, "[INFO] taint_base_index_to_range_memwrite: tainting from %lx, size %u\n", mem_start, mem_size);
         //merge taints
         uint32_t offset = 0;
         while (offset < mem_size) { 
@@ -2955,6 +3014,7 @@ static void init_ctrl_flow_the_other_branch (ADDRINT ip, std::set<uint32_t> *sto
     for (auto i: *(store_set_mem)) { 
 	if (!i.second.taint) { 
 	    OUTPUT_SLICE_CTRL_FLOW (0, "mov byte ptr [0x%lx], %u", i.first, (UINT8) i.second.value);
+            add_modified_mem_for_final_check (i.first, 1);  
 	}
     }
 }
@@ -2973,6 +3033,7 @@ static void init_ctrl_flow_this_branch (ADDRINT ip, const CONTEXT* ctx, std::set
         int tainted = is_mem_tainted (mem_loc, 1);
 	if (!tainted) { 
 	    OUTPUT_SLICE_CTRL_FLOW (0, "mov byte ptr [0x%lx], %u", mem_loc, (UINT8) get_mem_value32(mem_loc, 1));
+            add_modified_mem_for_final_check (mem_loc, 1);
 	}
     }
 }

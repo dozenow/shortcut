@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <bitset>
 
 void init_mmap_region ();
 void clear_mmap_region ();

@@ -176,6 +176,7 @@ void jumpstart_create_extra_memory_region_list (int fd, bitset<0xc0000>* pages)
 {
     int start_at = 0; 
     bool start = false;
+    bool dump = false;
     fprintf (stderr, "===creating extra mmmap regions\n");
     for (int i = 0; i<0xc0000; ++i) {
         if (max_rw_pages.test(i) || max_ro_pages.test(i)) {
@@ -186,19 +187,25 @@ void jumpstart_create_extra_memory_region_list (int fd, bitset<0xc0000>* pages)
                     start_at = i;
                 } 
             } else {
-                if (start) { 
-                    //end of an extra region
-                    start = false;
-                    struct extra_mmap_region_info info;
-                    info.addr = start_at*PAGE_SIZE;
-                    info.size = (i - start_at)*PAGE_SIZE;
-                    info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
-                    info.prot = PROT_READ;
-                    fprintf (stderr, "   addr %lx size %d\n", info.addr, info.size);
-                    int ret = write (fd, &info, sizeof(info));
-                    assert (ret == sizeof(info));
-                }
+                dump = true;
             }
+        } else {
+            dump = true;
+        }
+        if (dump) { 
+            if (start) { 
+                //end of an extra region
+                start = false;
+                struct extra_mmap_region_info info;
+                info.addr = start_at*PAGE_SIZE;
+                info.size = (i - start_at)*PAGE_SIZE;
+                info.flags = MAP_ANONYMOUS | MAP_PRIVATE;
+                info.prot = PROT_READ;
+                fprintf (stderr, "   addr %lx size %d\n", info.addr, info.size);
+                int ret = write (fd, &info, sizeof(info));
+                assert (ret == sizeof(info));
+            }
+            dump = false;
         }
     }
     fprintf (stderr, "===extra mmmap regions done\n");

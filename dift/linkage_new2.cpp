@@ -62,8 +62,8 @@ int s = -1;
 #define ERROR_PRINT fprintf
 
 /* Set this to clock value where extra logging should begin */
-//#define EXTRA_DEBUG 169260
-//#define EXTRA_DEBUG_STOP 172603
+//#define EXTRA_DEBUG 63125
+//#define EXTRA_DEBUG_STOP 63162
 //#define EXTRA_DEBUG_FUNCTION
 //9100-9200 //718800-718900
 
@@ -3092,7 +3092,8 @@ static void write_patch_based_checkpoint (set<u_long>* write_mem, set<int>* writ
     fprintf (stderr, "===== checkpoint mem ====\n");
     print_memory_regions();
 
-    //format:  SIZE ->list of blocks -> SIZE -> list of blocks ->...
+    //format:  REGION-> REGION -> REGION->...
+    //each region: SIZE->list of blocks
     //each block: start addr (4 bytes) , len (2 byte), content (len bytes)
     // we need this format to have better read performance when reading the pckpt in the kernel
     //well the trick here is to avoid to break a block (start addr + len + content) into two different regions (regions are defined by SIZE)  
@@ -3200,8 +3201,7 @@ static void write_mmap_region_checkpoint (void)
             assert (0);
         }
         if ((iter->second->flags & MAP_SHARED) != 0) {
-            fprintf (stderr, "shared regions?\n");
-            assert (0);
+            fprintf (stderr, "[ERROR] write_mmap_region_checkpoint: shared regions?\n");
         }
         ret = write (fd, &iter->first, sizeof(u_long));
         assert (ret == sizeof(u_long));
@@ -3232,6 +3232,11 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
     if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "####### jumpstart_runtime slice begins.\n");
+        fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
+        fprintf (stderr, "0x08c71f58 %x\n", *((int*) 0x8c71f58));
+        fprintf (stderr, "0xbffff554 %x\n", *((int*) 0xbffff554));
+        fprintf (stderr, "0x8C720C8 %x\n", *((int*) 0x8C720C8));
+        fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));
         fflush (stdout);
 	current_thread->recheck_handle = open_recheck_log (current_thread->rg_id, current_thread->record_pid);
         if (fw_slice_print_header(current_thread->rg_id, current_thread, 1) < 0) {
@@ -3239,7 +3244,7 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
             return;
         }
         //skip log entries
-        recheck_jumpstart_start (current_thread->recheck_handle);
+        recheck_jumpstart_start (current_thread->recheck_handle, function_level_tracking - 1);
         current_thread->start_tracking = true;
         first_thread = current_thread->record_pid;
         print_memory_regions ();
@@ -3275,9 +3280,15 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
         jumpstart_create_extra_memory_region_list (fd, current_thread->patch_based_ckpt_info.read_pages);
         close (fd);
 
+        //fprintf (stderr, "8c72100 %x\n", *((int*) 0x8c72100));
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
         fprintf (stderr, "###### jumpstart_runtime slice ends.\n");
+        fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
+        fprintf (stderr, "0x8c71f58 %x\n", *((int*) 0x8c71f58));
+        fprintf (stderr, "0xbffff554 %x\n", *((int*) 0xbffff554));
+        fprintf (stderr, "0x8C720C8 %x\n", *((int*) 0x8C720C8));
+        fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));
         //fprintf (stderr, "0x8cc34c0 0x%lx 0x8b943fc 0x%lx 0x8b943e8 0x%lx 0x8b943f8 0x%lx\n", *((long*)0x8cc34c0), *((long*) 0x8b943fc), *((long*)0x8b943e8), *((long*)0x8b943f8)); 
     }
 }
@@ -3472,7 +3483,7 @@ void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, A
                             fprintf (stderr, "munmap from the middle of a region? %lx+%d %lx+%d\n", addr,size, iter->first, iter->second->size);
                             found = true;
                             break;
-                        } else if (addr > iter->first && addr <= iter->first + iter->second->size) {
+                        } else if (addr > iter->first && addr < iter->first + iter->second->size) {
                             fprintf (stderr, "[ERROR] munmap multiple regions? %lx+%d %lx+%d\n", addr,size, iter->first, iter->second->size);
                             assert (0);
                         }
@@ -6729,7 +6740,7 @@ static void instrument_ldmxcsr (INS ins)
             IARG_END);
 }
 
-void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, ADDRINT value3, ADDRINT value4, const CONTEXT* ctx)
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_loc1, u_long mem_loc2, ADDRINT value1, ADDRINT value2, ADDRINT value3, ADDRINT value4, ADDRINT value5, const CONTEXT* ctx)
 {
 #ifdef EXTRA_DEBUG
     if (*ppthread_log_clock < EXTRA_DEBUG) return;
@@ -6738,10 +6749,10 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
     if (*ppthread_log_clock >= EXTRA_DEBUG_STOP) return;
 #endif
     //if (current_thread->ctrl_flow_info.index > 20000) return; 
-    bool print_me = false;
-   if (abs(mem_loc1- 0x8cc34c0) <= 20 || abs(mem_loc2-0x8cc34c0) <=20) print_me = true;
-   if (abs(mem_loc1- 0x8b943fc) <= 20 || abs(mem_loc2-0x8b943fc) <=20) print_me = true;
-   if (abs(mem_loc1- 0x8b943e8) <= 20 || abs(mem_loc2-0x8b943e8) <=20) print_me = true;
+    bool print_me= true;
+    //bool print_me = false;
+   //if (abs(mem_loc1- 0xb79cb450) <= 20 || abs(mem_loc2-0xb79cb450) <=20) print_me = true;
+   //if (abs(mem_loc1- 0x8c71f5c) <= 20 || abs(mem_loc2-0x8c71f5c) <=20) print_me = true;
 
 #if 0
     #define ADDR_TO_CHECK 0x86a4dc1
@@ -6770,8 +6781,9 @@ void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins, u_long mem_
 	printf ("eax tainted? %d ebx tainted? %d ecx tainted? %d edx tainted? %d ebp tainted? %d esp tainted? %d\n", 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EAX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ECX, 4, 0), 
 		is_reg_arg_tainted (LEVEL_BASE::REG_EDX, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_EBP, 4, 0), is_reg_arg_tainted (LEVEL_BASE::REG_ESP, 4, 0));
-        printf ("ecx value %u edx %u ebx %u eax %u\n", value1, value2, value3, value4);
+        printf ("ecx value %u edx %u ebx %u eax %u esi %u(%x)\n", value1, value2, value3, value4, value5, value5);
         printf ("jump_diverge index %lu\n", jump_count);
+        printf ("0xb79cb450 %x\n", *((int*)0xb79cb450));
 
 	PIN_REGISTER value;
 	PIN_GetContextRegval (ctx, REG_FPSW, (UINT8*)&value);
@@ -6826,6 +6838,7 @@ static void debug_print (INS ins)
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 		
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else if ((mem1read && !mem2read) || (!mem1read && mem2read)) {
@@ -6839,6 +6852,7 @@ static void debug_print (INS ins)
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 		
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6856,6 +6870,7 @@ static void debug_print (INS ins)
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 		
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	} else {
@@ -6869,6 +6884,7 @@ static void debug_print (INS ins)
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
 			   IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+			   IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 		
 			   IARG_CONST_CONTEXT,
 			   IARG_END);
 	}
@@ -6883,6 +6899,7 @@ static void debug_print (INS ins)
 		       IARG_REG_VALUE, LEVEL_BASE::REG_EDX, 			
                        IARG_REG_VALUE, LEVEL_BASE::REG_EBX, 			
                        IARG_REG_VALUE, LEVEL_BASE::REG_EAX, 			
+                       IARG_REG_VALUE, LEVEL_BASE::REG_ESI, 		
 		       IARG_CONST_CONTEXT,
 		       IARG_END);
     }
@@ -8944,7 +8961,8 @@ void routine (RTN rtn, VOID* v)
                            IARG_ADDRINT, 1,
 			    IARG_END);
             pthread_operation_addr["pthread_log_mutex_trylock"] = RTN_Address(rtn);
-        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")) {
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock") || 
+                !strcmp (name, "pthread_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock_usercnt")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
 			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			   IARG_END);

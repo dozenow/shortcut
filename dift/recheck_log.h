@@ -6,6 +6,7 @@
 #include <poll.h>
 
 #define MAX_REGIONS 50
+//#define MEDIAWIKI_HACK
 
 //****
 //note: there are kernel-level structures corresponding to these two in replay.h.  Both must be changed together.
@@ -257,6 +258,10 @@ struct statfs64_recheck {
 struct gettimeofday_recheck {
     struct timeval* tv_ptr;
     struct timezone* tz_ptr;
+#ifdef MEDIAWIKI_HACK
+    struct timeval tv;
+    struct timezone tz;
+#endif
 };
 
 struct clock_getx_recheck {  //shared by clock_gettime and clock_getres
@@ -624,7 +629,7 @@ int recheck_pipe (struct recheck_handle* handle, int pipefd[2], u_long clock);
 int recheck_shmget (struct recheck_handle* handle, key_t key, size_t size, int shmflg, u_long clock);
 int recheck_shmat (struct recheck_handle* handle, int shmid, void* shmaddr, void* raddr, int shmflg, u_long clock);
 int recheck_ipc_rmid (struct recheck_handle* handle, int shmid, int cmd, u_long clock);
-void recheck_jumpstart_start (struct recheck_handle* handle);
+void recheck_jumpstart_start (struct recheck_handle* handle, u_long);
 int recheck_getcwd (struct recheck_handle* handle, char* buf, size_t size, u_long clock);
 struct klog_result* skip_to_syscall (struct recheck_handle* handle, int syscall);
 int recheck_lseek (struct recheck_handle* handle, unsigned int fd, off_t offset, unsigned int whence, u_long clock);

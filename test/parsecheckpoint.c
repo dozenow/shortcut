@@ -84,7 +84,7 @@ struct user_desc {
 #endif
 };
 
-#define xstate_size 512 //should be the same as the size of union thread_xstate, not verified on other machines; seems to be 832 on a VM?
+#define xstate_size 832 //should be the same as the size of union thread_xstate, not verified on other machines; seems to be 832 on a VM and 512 on a physical machine
 #define GDT_ENTRY_TLS_ENTRIES 3
 //end copyed from kernel
 
