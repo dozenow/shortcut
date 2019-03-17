@@ -243,9 +243,10 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 
     start_timing_func ();
     syscall (SYS_gettimeofday, &tv, NULL);
+
 #if 0
-    fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), %p record pid %d\n", 
-	     tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, (void*)(*(long*) filename), record_pid);
+    fprintf (stderr, "recheck_start time %ld.%06ld, recheckfile %s, recheckfilename %p(%p), clock_addr %p(%p), record pid %d\n", 
+	     tv.tv_sec, tv.tv_usec, filename, filename, &filename, clock_addr, &clock_addr, record_pid);
 #endif
 
     if (clock_addr)
@@ -257,7 +258,7 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
-	fprintf (stderr, "Cannot open recheck file\n");
+	fprintf (stderr, "Pid %d Cannot open recheck file\n", syscall(SYS_gettid));
 	return;
     }
     rc = read (fd, buf, sizeof(buf));
@@ -4389,7 +4390,7 @@ void recheck_wait_init ()
             //just use busy waiting here as it shouldn't take a long time
         }
 #ifdef PRINT_SCHEDULING
-        printf ("Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
+        fprintf (stderr, "Pid %d recheck_wait_clock_init: all threads are ready to continue!\n", pid);
 #endif
     }
 }
@@ -4399,7 +4400,7 @@ void recheck_wait_proc_init ()
     if (go_live_clock) { 
 #ifdef PRINT_SCHEDULING
         int pid = syscall (SYS_gettid);
-        printf ("Pid %d recheck_wait_clock_proc_init: this thread is ready to continue\n", pid);
+        fprintf (stderr, "Pid %d recheck_wait_clock_proc_init: this thread is ready to continue\n", pid);
 #endif
         __sync_sub_and_fetch (&go_live_clock->wait_for_other_threads, 1);
     }
@@ -4502,7 +4503,7 @@ int recheck_fake_clone (pid_t record_pid, pid_t* ptid, pid_t* ctid)
             if (!process_map[i].record_pid) break;
             ++i;
         }
-        if (fail) fprintf (stderr, "recheck_fake_clone cannot find the record_pid????\n");
+        if (fail) fprintf (stderr, "recheck_fake_clone cannot find the record_pid %d\n", record_pid);
 #ifdef PRINT_VALUES
         LPRINT ("Pid %ld fake_clone ptid %p(original value %d), ctid %p(original value %d), record pid %d, children pid %d clock %ld\n", syscall(SYS_gettid), ptid, *ptid, ctid, *ctid, record_pid, ret, pentry->clock);
 #endif

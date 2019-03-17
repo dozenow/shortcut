@@ -1785,11 +1785,16 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	pinfo->slice_mode = slice_mode;
 
 	// Allocate space for the restore stack and also for storing some fw slice info
-	extra_space_addr = sys_mmap_pgoff (0x80004000, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
-	if (extra_space_addr != 0x80004000) {
+	if (slice_mode != 0) {
+		//this means fine-grained slicing
 		//a bug related to fine-grained code regions
 		//okay... the correct fix is to load the extra_mmap_region file and reserve them...
-		printk ("This is a hacky fix to avoid we mmap into the location that will be used by the slice later on; the assumption is that the this address is never used by the program.\n"); 
+		extra_space_addr = sys_mmap_pgoff (0x80004000, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
+		if (extra_space_addr != 0x80004000) {
+			printk ("This is a hacky fix to avoid we mmap into the location that will be used by the slice later on; the assumption is that the this address is never used by the program.\n"); 
+		}
+	} else {
+		extra_space_addr = sys_mmap_pgoff (NULL, STACK_SIZE + SLICE_INFO_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	}
 	if (IS_ERR((void *) extra_space_addr)) {
 		printk ("[ERROR] start_fw_slice: cannot allocate mem size %u\n", STACK_SIZE+SLICE_INFO_SIZE);

@@ -2,7 +2,8 @@
 #include <map>
 using namespace std;
 
-#define LPRINT(x,...)
+//#define LPRINT(x,...)
+#define LPRINT printf 
 
 extern struct thread_data* current_thread;
 
@@ -99,7 +100,11 @@ static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mute
 static inline void destroy_wait_state (ADDRINT wait)
 {
     struct wait_state* state = active_wait[wait];
-    assert (state != NULL);
+    if (!state) {
+        fflush (stdout);
+        fprintf (stderr, "[ERROR] destroy_wait_state: cannot find\n");
+        return;
+    }
     -- state->wait_counter;
     if (state->wait_counter == 0) { 
         free (state);

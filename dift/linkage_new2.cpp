@@ -1209,7 +1209,7 @@ static inline void sys_clone_start (struct thread_data* tdata, int flags, pid_t*
     struct clone_info* info = &tdata->op.clone_info_cache;
     int child_pid = -1;
     if (tdata->recheck_handle) {
-        recheck_clone (current_thread->recheck_handle, *ppthread_log_clock-1);
+        child_pid = recheck_clone (current_thread->recheck_handle, *ppthread_log_clock-1);
     }
     info->flags = flags;
     info->ptid = ptid;
