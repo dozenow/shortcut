@@ -1827,7 +1827,7 @@ long start_fw_slice (struct go_live_clock* go_live_clock, u_long slice_addr, u_l
 	//change stack pointer
 	regs->sp = extra_space_addr + STACK_SIZE;
 
-	printk ("pid %d start_fw_slice: slice_addr is %lx, stack is %lx, entry is %u, ip is %lx, extra_space is %lx with size %d\n", current->pid, slice_addr, regs->sp, entry, regs->ip, extra_space_addr, STACK_SIZE+SLICE_INFO_SIZE);
+	MPRINT ("pid %d start_fw_slice: slice_addr is %lx, stack is %lx, entry is %u, ip is %lx, extra_space is %lx with size %d\n", current->pid, slice_addr, regs->sp, entry, regs->ip, extra_space_addr, STACK_SIZE+SLICE_INFO_SIZE);
 	DPRINT ("start_fw_slice gs is %lx\n", regs->gs);
 
 	if (regs->gs == 0) {

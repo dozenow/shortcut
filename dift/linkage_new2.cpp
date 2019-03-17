@@ -8961,8 +8961,8 @@ void routine (RTN rtn, VOID* v)
                            IARG_ADDRINT, 1,
 			    IARG_END);
             pthread_operation_addr["pthread_log_mutex_trylock"] = RTN_Address(rtn);
-        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock") || 
-                !strcmp (name, "pthread_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock_usercnt")) {
+        } else if (!strcmp (name, "pthread_log_mutex_unlock") || !strcmp (name, "__pthread_mutex_unlock") || !strcmp (name, "pthread_mutex_unlock")
+                 || !strcmp (name, "__pthread_mutex_unlock_usercnt")) {
             RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR)track_pthread_mutex_params_1,
 			   IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
 			   IARG_END);

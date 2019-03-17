@@ -2,8 +2,8 @@
 #include <map>
 using namespace std;
 
-//#define LPRINT(x,...)
-#define LPRINT printf 
+#define LPRINT(x,...)
+//#define LPRINT printf 
 
 extern struct thread_data* current_thread;
 
@@ -28,7 +28,7 @@ void track_pthread_mutex_lock (int retval, int is_libc_lock)
         return;
     }
     ADDRINT mutex = current_thread->pthread_info.mutex_info_cache.mutex;
-    LPRINT ("record pid %d, mutex lock %p\n", current_thread->record_pid, (void*) mutex);
+    LPRINT ("record pid %d, mutex lock %p, ret %d, is_libc_lock %d\n", current_thread->record_pid, (void*) mutex, retval, is_libc_lock);
     if (active_mutex.find(mutex) == active_mutex.end()) {
 	struct mutex_state state;
 	state.lock_count = 1; // Use this to handle recursive locks
@@ -95,6 +95,7 @@ static inline void change_wait_state (ADDRINT wait, int wait_state, ADDRINT mute
     state->abstime = abstime;
     ++state->wait_counter;
     active_wait[wait] = state;
+    LPRINT ("Pid %d change_wait_state: wait %u(0x%x), wait_state %d mutex %x, abstime %x\n", current_thread->record_pid, wait, wait, wait_state, mutex, abstime);
 }
 
 static inline void destroy_wait_state (ADDRINT wait)
@@ -102,7 +103,7 @@ static inline void destroy_wait_state (ADDRINT wait)
     struct wait_state* state = active_wait[wait];
     if (!state) {
         fflush (stdout);
-        fprintf (stderr, "[ERROR] destroy_wait_state: cannot find\n");
+        fprintf (stderr, "[ERROR] destroy_wait_state: cannot find wait %u(0x%x)\n", wait, wait);
         return;
     }
     -- state->wait_counter;
@@ -190,6 +191,7 @@ void track_lll_unlock_after ()
 {
     struct lll_lock_info_cache* cache = &current_thread->pthread_info.lll_lock_info_cache;
     struct lll_lock_state& state = active_lll_lock[cache->plock];
+    LPRINT ("record pid %d, lll unlock %p\n", current_thread->record_pid, (void*) cache->plock);
     state.pid = 0;
     state.type = 0;
 }

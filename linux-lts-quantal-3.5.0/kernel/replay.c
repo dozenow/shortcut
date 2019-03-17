@@ -4545,7 +4545,7 @@ __init_ckpt_waiters (void) // Requires ckpt_lock be locked
 	return 0;
 }
 
-#define PRINT_TIME 1
+#define PRINT_TIME 0
 
 long
 replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *linker, char* uniqueid, int fd, 
@@ -4838,6 +4838,7 @@ replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *
 
 		current->go_live_thrd = get_go_live_thread ();
 		current->go_live_thrd->orig_replay_thrd = current->replay_thrd; // Save this for easier reference
+		current->go_live_thrd->orig_record_thrd = NULL; // Save this for easier reference
 		current->replay_thrd = NULL;
 
 		if (PRINT_TIME) {
@@ -5071,6 +5072,7 @@ replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid, int 
                 
 	    current->go_live_thrd = get_go_live_thread ();
 	    current->go_live_thrd->orig_replay_thrd = current->replay_thrd; // Save this for easier reference
+	    current->go_live_thrd->orig_record_thrd = NULL; // Save this for easier reference
             current->replay_thrd = NULL;
 
             up (prept->rp_ckpt_restart_sem); //wake up the main thread
@@ -8615,6 +8617,7 @@ static long replay_from_middle (__u64 rg_id, u_long start_clock, int alternative
 	}*/
 	if (current->go_live_thrd == NULL) current->go_live_thrd = get_go_live_thread();
 	current->go_live_thrd->orig_replay_thrd = current->replay_thrd;
+	current->go_live_thrd->orig_record_thrd = current->record_thrd;
 
 	return syscall_retval;
 }

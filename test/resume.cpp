@@ -470,6 +470,7 @@ int main (int argc, char* argv[])
 //#ifdef LTIMING
 	sprintf(uniqueid,"%d",pid); //use the parent's pid as the uniqueid
 	gettimeofday (&tv, NULL);
+        fprintf (stderr, "Resume start %d, %ld.%06ld\n", pid, tv.tv_sec, tv.tv_usec);
 //#endif
 
 
