@@ -1719,9 +1719,12 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 
 	size_t starts[MAX_REGIONS], ends[MAX_REGIONS];
 	int regions;
+        struct syscall_padding_entry paddings[MAX_REGIONS];
+        int pad_cnt = check_is_syscall_padded (current_thread->record_pid, current_thread->syscall_cnt, paddings);
+        if (pad_cnt) fprintf (stderr, "recv: padding this syscall\n");
 	if (filter_input() && (regions = get_partial_taint_byte_range(current_thread->record_pid, current_thread->syscall_cnt, starts, ends)) > 0) {
 	    if (regions > 0) {
-		int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, regions, starts, ends, *ppthread_log_clock);
+		int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, regions, starts, ends, pad_cnt, paddings, *ppthread_log_clock);
 		if (retaddrlen > 0) {
 		    clear_mem_taints ((u_long)buf, retaddrlen); 
 		    add_modified_mem_for_final_check ((u_long)buf, retaddrlen);
@@ -1731,7 +1734,7 @@ static void sys_recv_start(thread_data* tdata, int sockfd, void* buf, size_t len
 		}
 	    }
 	} else {
-	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, *ppthread_log_clock);
+	    int retaddrlen = recheck_recv (tdata->recheck_handle, sockfd, buf, len, flags, 0, 0, 0, pad_cnt, paddings, *ppthread_log_clock);
 	    if (retaddrlen > 0) {
 		clear_mem_taints ((u_long)buf, retaddrlen); 
 		add_modified_mem_for_final_check ((u_long)buf, retaddrlen);
@@ -3232,11 +3235,11 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
     if (function_level_tracking && current_thread->start_tracking == false) {
         printf ("jumpstart_runtime slice begins pid %d.\n", getpid());
         fprintf (stderr, "####### jumpstart_runtime slice begins.\n");
-        fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
+        /*fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
         fprintf (stderr, "0x08c71f58 %x\n", *((int*) 0x8c71f58));
         fprintf (stderr, "0xbffff554 %x\n", *((int*) 0xbffff554));
         fprintf (stderr, "0x8C720C8 %x\n", *((int*) 0x8C720C8));
-        fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));
+        fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));*/
         fflush (stdout);
 	current_thread->recheck_handle = open_recheck_log (current_thread->rg_id, current_thread->record_pid);
         if (fw_slice_print_header(current_thread->rg_id, current_thread, 1) < 0) {
@@ -3284,11 +3287,11 @@ static inline void sys_jumpstart_runtime_end (long rc, CONTEXT* ctx)
         printf ("jumpstart_runtime slice ends.\n");
         fflush (stdout);
         fprintf (stderr, "###### jumpstart_runtime slice ends.\n");
-        fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
-        fprintf (stderr, "0x8c71f58 %x\n", *((int*) 0x8c71f58));
-        fprintf (stderr, "0xbffff554 %x\n", *((int*) 0xbffff554));
-        fprintf (stderr, "0x8C720C8 %x\n", *((int*) 0x8C720C8));
-        fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));
+        //fprintf (stderr, "0x8c71f5c %x\n", *((int*) 0x8c71f5c));
+        //fprintf (stderr, "0x8c71f58 %x\n", *((int*) 0x8c71f58));
+        //fprintf (stderr, "0xbffff554 %x\n", *((int*) 0xbffff554));
+        //fprintf (stderr, "0x8C720C8 %x\n", *((int*) 0x8C720C8));
+        //fprintf (stderr, "0xb79cb450 %x\n", *((int*) 0xb79cb450));
         //fprintf (stderr, "0x8cc34c0 0x%lx 0x8b943fc 0x%lx 0x8b943e8 0x%lx 0x8b943f8 0x%lx\n", *((long*)0x8cc34c0), *((long*) 0x8b943fc), *((long*)0x8b943e8), *((long*)0x8b943f8)); 
     }
 }
@@ -8331,10 +8334,10 @@ static void init_ctrl_flow_info (struct thread_data* ptdata)
                index.alt_path[alt_path_index].push(in);
            } else if (i.type == CTRL_FLOW_BLOCK_TYPE_INSTRUMENT_ALT) {
                if (alt_path_index < 0) { 
-                   fprintf (stderr, "Alt path index is not set.\n");
+                   fprintf (stderr, "[ERROR] Alt path index is not set.\n");
                }
 	       if (index.ip == 0) {
-		   fprintf (stderr, "Alt path entry without preceeding diverge entry\n");
+		   fprintf (stderr, "[ERROR] Alt path entry without preceeding diverge entry\n");
 	       } else {
 		   ptdata->ctrl_flow_info.insts_instrumented->insert(i.ip);
 		   if (i.branch_flag != '-') {

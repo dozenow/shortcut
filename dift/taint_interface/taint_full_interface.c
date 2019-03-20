@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include "../mmap_regions.h"
+#include "../recheck_log.h"
 #include <execinfo.h>
 
 #include <map>
@@ -67,7 +68,8 @@ GHashTable* taint_fds_cloexec = NULL;
 #define CHECK_TYPE_SPECIFIC_RANGE       2
 #define CHECK_TYPE_RANGE_WRITE          3
 #define CHECK_TYPE_SPECIFIC_RANGE_WRITE 4
-#define CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR 5
+#define CHECK_TYPE_SPECIFIC_RANGE_WRITE_WITH_ANCHOR 5  //see comments on how "specify_range_write_with_anchor" is used
+#define CHECK_TYPE_RANGE_ALTERNATIVE_ADDRESS 6 //this means the current read/write can read or write another address than the recorded on
 
 unsigned long handled_jump_divergence = 0;
 unsigned long handled_index_divergence = 0;
@@ -89,6 +91,7 @@ multimap<ADDRINT, struct rangev_write_entry> check_map_rangev_write;
 map<u_long,syscall_check> syscall_checks;
 vector<struct ctrl_flow_param> ctrl_flow_params;
 vector<struct check_syscall> ignored_syscall;
+vector<struct syscall_padding_entry> syscall_padding_vector;
 vector<u_long> ignored_inst;
 boost::icl::interval_set<unsigned long> address_taint_set;
 map<u_long, int> mem_predicate_map;
@@ -1061,7 +1064,7 @@ static inline uint32_t set_cmem_taints(u_long mem_loc, uint32_t size, taint_t* v
     memcpy(leaf_t + low_index, values, set_size * sizeof(taint_t));
 
     if (set_size != size) {
-        fprintf (stderr, "set_cmem_taints doesn't taint all memory address.\n");
+        fprintf (stderr, "set_cmem_taints doesn't taint all memory address. Re-try.\n");
         set_cmem_taints (mem_loc + set_size, size - set_size, values + set_size);
     }
     return set_size;
@@ -1332,6 +1335,12 @@ static int init_check_map (const char* check_filename)
                     tc.value = range;
                     check_map[ip] = tc;
 		    CFDEBUG ("range write for ip %lx range %ld\n", ip, tc.value);
+                } else if (!strcmp (type, "alternative_address")) {
+                    //this means the current read/write can read or write another address than the recorded on
+                    tc.type = CHECK_TYPE_RANGE_ALTERNATIVE_ADDRESS; 
+                    u_long alter_addr = strtoul (value, NULL, 0);
+                    tc.value = alter_addr;
+                    check_map[i] = tc;
                 } else if (!strcmp(type, "specify_range_write")) {
                     u_long start_addr, size;
                     sscanf (value, "%lx,%lu", &start_addr, &size);
@@ -1439,6 +1448,12 @@ static int init_check_map (const char* check_filename)
                     ignored_inst.push_back (ip);
                 } else if (!strcmp (type, "mem_predicate")) {
                     mem_predicate_map[strtoul (value, NULL, 0)] = atoi(extra1);
+                } else if (!strcmp (type, "syscall_padding")) {
+                    struct syscall_padding_entry entry;
+                    entry.pid = (int) ip;
+                    entry.syscall_index = atol (value);
+                    sscanf (extra1, "%d,%d,%d,%d", &entry.length_offset, &entry.length_size, &entry.expected_length, &entry.padding_character);
+                    syscall_padding_vector.push_back (entry);
 		} else { 
 		    fprintf (stderr, "check %s: invalid type, type is %s\n", line, type);
 		    return -1;
@@ -1467,6 +1482,22 @@ int check_is_syscall_ignored (int pid, u_long index)
     }
     if (iter != ignored_syscall.end())
         ignored_syscall.erase (iter);
+    return ret;
+}
+
+int check_is_syscall_padded (int pid, u_long index, struct syscall_padding_entry* ret_entries)
+{
+    vector<struct syscall_padding_entry>::iterator iter = syscall_padding_vector.begin();
+    int ret = 0;
+
+    while (iter != syscall_padding_vector.end()) { 
+        if (iter->pid == pid && iter->syscall_index == index) {
+            memcpy (ret_entries + ret, &(*iter), sizeof (struct syscall_padding_entry));
+            ++ ret;
+            iter = syscall_padding_vector.erase (iter);
+        } else 
+            ++iter;
+    }
     return ret;
 }
 
@@ -2760,7 +2791,7 @@ static inline bool verify_base_index_registers (ADDRINT ip, char* ins_str, u_lon
 	    }
 	    print_range_verification (ip, ins_str, start, end, mem_loc, mem_size);
 	    return true;
-	}
+	} 
     } 
 
     if (base_tainted) verify_register (ip, base_reg, base_reg_size, base_reg_value, base_reg_u8, mem_loc);
@@ -4570,7 +4601,7 @@ TAINTSIGN fw_slice_condjump (ADDRINT ip, char* ins_str, uint32_t mask, BOOL take
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);
 #endif
             OUTPUT_SLICE (ip, "%s", change_str);
-            OUTPUT_SLICE_INFO ("#src_flag[FM%x:1:4] #branch_taken %d", mask, (int) taken);
+            OUTPUT_SLICE_INFO ("#src_flag[FM%x:1:4] #branch_taken %d block_index %llu", mask, (int) taken, current_thread->ctrl_flow_info.index);
 #ifndef OPTIMIZED
 	    OUTPUT_SLICE_VERIFICATION ("add esp, 4");
 	    OUTPUT_SLICE_VERIFICATION_INFO ("comes with %08x", ip);

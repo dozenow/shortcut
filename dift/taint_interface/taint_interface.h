@@ -251,6 +251,7 @@ void add_modified_mem_for_final_check (u_long mem_loc, uint32_t size);
   void remove_modified_mem_for_final_check (u_long mem_loc, u_long size);
 
 int check_is_syscall_ignored (int pid, u_long index);
+int check_is_syscall_padded (int pid, u_long index, struct syscall_padding_entry*);
 
 TAINTSIGN fw_slice_fpu_cmov (ADDRINT ip, char* ins_str, int dst_reg, uint32_t dst_regsize, int src_reg, uint32_t src_regsize, const CONTEXT* ctx, uint32_t flags, BOOL executed);
 TAINTSIGN fw_slice_fpureg (ADDRINT ip, char* ins_str, int reg, uint32_t size, const CONTEXT* ctx, uint32_t reg_u8, uint32_t fp_stack_change);

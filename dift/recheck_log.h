@@ -6,6 +6,7 @@
 #include <poll.h>
 
 #define MAX_REGIONS 50
+#define MAX_PADDING_REGIONS 4
 //#define MEDIAWIKI_HACK
 
 //****
@@ -43,6 +44,14 @@ struct recheck_entry {
 };
 
 /************************* Syscall-specific data ******************************/
+struct syscall_padding_entry {
+    int pid;
+    u_long syscall_index; 
+    int length_offset;
+    int length_size;
+    int expected_length;
+    int padding_character;
+};
 
 struct read_recheck {
     int has_retvals;
@@ -79,6 +88,8 @@ struct recv_recheck {
     int partial_read_cnt; //these are bytes that need to be copied to buf on recheck; other bytes should be verified
     size_t partial_read_starts[MAX_REGIONS];
     size_t partial_read_ends[MAX_REGIONS];
+    int padding_count;
+    struct syscall_padding_entry paddings[MAX_PADDING_REGIONS];
 };
 /* Followed by variable length read data */
 
@@ -553,7 +564,7 @@ struct recheck_handle* open_recheck_log (u_long record_grp, pid_t record_pid);
 int close_recheck_log (struct recheck_handle* handle);
 int recheck_read_ignore (struct recheck_handle* handle);
 int recheck_read (struct recheck_handle* handle, int fd, void* buf, size_t count, int, size_t, size_t, u_long max_count, u_long clock);
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, int padding_count, struct syscall_padding_entry* paddings, u_long clock);
 int recheck_recvmsg (struct recheck_handle* handle, int sockfd, struct msghdr* msg, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 int recheck_recvfrom (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags,struct sockaddr* src_addr, socklen_t* addrlen, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock);
 int recheck_execve (struct recheck_handle* handle, char* filename, char* argv[], char* envp[], u_long clock);

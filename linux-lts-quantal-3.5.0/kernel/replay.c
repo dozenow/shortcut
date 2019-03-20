@@ -8496,6 +8496,10 @@ static long replay_from_middle (__u64 rg_id, u_long start_clock, int alternative
 	snprintf (logdir, 256, "/replay_logdb/rec_%llu", rg_id);
 	do_gettimeofday (&tv);
 	printk ("Pid %d replay_from_middle starts, replay gropu %llu, clock %lu, alternative_log %d,%ld.%06ld\n", current->pid, rg_id,start_clock, alternative_log, tv.tv_sec, tv.tv_usec);
+	if (start_clock == 0) {
+		printk ("Error! Did you forget to set jumpstart_replay_from_middle_clock?\n");
+		return -EINVAL;
+	}
 	if (current->record_thrd || current->replay_thrd) {
 		printk ("replay_from_middle: pid %d cannot start a new replay while already recording or replaying\n", current->pid);
 		return -EINVAL;

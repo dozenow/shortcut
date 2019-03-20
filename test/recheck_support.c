@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -258,7 +258,7 @@ void recheck_start(char* filename, void* clock_addr, pid_t record_pid)
 
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
-	fprintf (stderr, "Pid %d Cannot open recheck file\n", syscall(SYS_gettid));
+	fprintf (stderr, "Pid %ld Cannot open recheck file\n", syscall(SYS_gettid));
 	return;
     }
     rc = read (fd, buf, sizeof(buf));
@@ -396,7 +396,7 @@ void handle_mismatch()
     fflush (stdout);
 #endif
     //DELAY;
-    syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
+    //syscall(350, 2, taintbuf_filename); // Call into kernel to recover transparently
     fprintf (stderr, "handle_mismatch: should not get here\n");
     //abort();
 }
@@ -1048,6 +1048,46 @@ long recv_recheck ()
 	    }
 	} while (rc == -1 && errno == 11 && pentry->retval > 0 && tries <= 100);
 
+        if (rc < 0) rc = 0;
+        //padding the syscall
+        if (bytes_received >= 0 && precv->padding_count > 0) {
+            int index = 0;
+            for (; index < precv->padding_count; ++index) {
+                int length_offset = precv->paddings[index].length_offset;
+                //if the previous received bytes contains the length variable
+                if (length_offset >= bytes_received && length_offset < bytes_received + rc) {
+                    if (length_offset + precv->paddings[index].length_size >= bytes_received + rc) {
+                        fprintf (stderr, "[ERROR] length variable is broke into two recv buffers\n");
+                        handle_mismatch();
+                    }
+                    int cur_length = 0;
+                    switch (precv->paddings[index].length_size) {
+                        case 1: cur_length = *((unsigned char*) (precv->buf + length_offset)); 
+                                break;
+                        case 2: cur_length = (int) (*((unsigned short*) (precv->buf + length_offset))); 
+                                break;
+                        case 4: cur_length = (int) (*((unsigned int*) (precv->buf + length_offset))); break;
+                        default: 
+                                fprintf (stderr, "[ERROR] unsupported length\n");
+                                handle_mismatch();
+                    }
+                    int expected_length = precv->paddings[index].expected_length;
+                    LPRINT ("padding! expected %d cur len %d length_offset %d length_size %d\n", expected_length, cur_length, length_offset, precv->paddings[index].length_size);
+                    if (cur_length > expected_length) {
+                        fprintf (stderr, "[ERROR] padding in recv syscall: the current string is longer than maximum\n");
+                        handle_mismatch();
+                    }
+                    if (expected_length > cur_length) { 
+                        char pad = precv->paddings[index].padding_character;
+                        memcpy (precv->buf + length_offset + precv->paddings[index].length_size + expected_length, precv->buf + length_offset + precv->paddings[index].length_size + cur_length, bytes_received  + rc - precv->paddings[index].length_size - length_offset - cur_length);
+                        memset (precv->buf + length_offset + precv->paddings[index].length_size + cur_length, pad, expected_length - cur_length);
+                        bytes_received += expected_length - cur_length;
+                        if (rc > 0) rc += expected_length - cur_length;
+                        memcpy (precv->buf + length_offset, &expected_length, precv->paddings[index].length_size);
+                    }
+                }
+            }
+        }
 	if (rc <= 0) break;
 	bytes_received += rc;
 
@@ -1116,8 +1156,8 @@ long recv_recheck ()
 	print_buffer_hex ((u_char *) recvData, pentry->retval);
 	print_buffer (precv->buf, pentry->retval);
 	print_buffer ((u_char *) recvData, pentry->retval);
-	//print_buffer_with_pos (precv->buf, pentry->retval);
-	//print_buffer_with_pos ((u_char *) recvData, pentry->retval);
+	print_buffer_with_pos (precv->buf, pentry->retval);
+	print_buffer_with_pos ((u_char *) recvData, pentry->retval);
 #endif
 #ifdef REORDERING
 	reorder_sequence (precv->buf, (u_char *) recvData, pentry->retval);
@@ -1595,7 +1635,7 @@ long write_recheck (size_t count)
 	use_count = pwrite->count;
     }
 #ifdef PRINT_VALUES
-    print_buffer (writedata, use_count);
+    print_buffer ((u_char*)writedata, use_count);
 #endif
 
     start_timing();

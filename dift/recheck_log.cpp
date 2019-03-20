@@ -272,7 +272,7 @@ int recheck_pread (struct recheck_handle* handle, int fd, void* buf, size_t coun
     return res->retval;
 }
 
-int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, u_long clock)
+int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t len, int flags, int partial_read_cnt, size_t* partial_read_starts, size_t* partial_read_ends, int padding_count, struct syscall_padding_entry* paddings, u_long clock)
 {
     struct recv_recheck rrchk;
     struct klog_result *res = skip_to_syscall (handle, SYS_socketcall);
@@ -290,8 +290,12 @@ int recheck_recv (struct recheck_handle* handle, int sockfd, void* buf, size_t l
     rrchk.len = len;
     rrchk.flags = flags;
     rrchk.partial_read_cnt = partial_read_cnt;
+    rrchk.padding_count = padding_count;
     memcpy (rrchk.partial_read_starts, partial_read_starts, partial_read_cnt*sizeof(size_t));
     memcpy (rrchk.partial_read_ends, partial_read_ends, partial_read_cnt*sizeof(size_t));
+    memcpy (rrchk.paddings, paddings, padding_count*sizeof(struct syscall_padding_entry));
+    if (padding_count > 0)
+        fprintf (stderr, "recv padding length_offset %d length_size %d expected length %d\n", rrchk.paddings[0].length_offset, rrchk.paddings[0].length_size, rrchk.paddings[0].expected_length);
     write_data_into_recheck_log (handle->recheckfd, &rrchk, sizeof(rrchk));
     struct recvfrom_retvals* pretvals = (struct recvfrom_retvals *) res->retparams;
     if (rrchk.readlen) write_data_into_recheck_log (handle->recheckfd, &pretvals->buf, rrchk.readlen);
