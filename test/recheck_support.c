@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-#define PRINT_DEBUG
-#define PRINT_VALUES
-#define PRINT_TO_LOG
+//#define PRINT_DEBUG
+//#define PRINT_VALUES
+//#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -383,6 +383,12 @@ void exit_slice (long is_ckpt_thread, long retval)
     syscall(350, 1, is_ckpt_thread, retval); // Call into kernel to mark complete slice
     fprintf (stderr, "handle_exit_slice: should not get here\n");
     abort();
+}
+
+int check_memory_address_with_candidates (u_long mem_loc, u_long cand1, u_long cand2) 
+{
+    if (mem_loc == cand1 || mem_loc == cand2) return 1;
+    return 0;
 }
 
 void handle_mismatch()

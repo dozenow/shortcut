@@ -119,6 +119,7 @@ TAINTSIGN fw_slice_push_mem (ADDRINT ip, u_long src_mem_loc, u_long dst_mem_loc,
 TAINTSIGN fw_slice_pop_mem (ADDRINT ip, char* ins_str, u_long src_mem_loc, u_long dst_mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_pop_reg (ADDRINT ip, uint32_t reg, u_long mem_loc, uint32_t mem_size); 
 TAINTSIGN fw_slice_mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
+TAINTSIGN fw_slice_selfmem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_memflag (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS, uint32_t mask, uint32_t eflags);
 TAINTSIGN fw_slice_2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t mem_size, BASE_INDEX_ARGS);
 TAINTSIGN fw_slice_mem2mem (ADDRINT ip, char* ins_str, u_long mem_loc, uint32_t size, u_long dst_mem_loc, uint32_t dst_size, BASE_INDEX_ARGS);

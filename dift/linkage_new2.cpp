@@ -4171,6 +4171,23 @@ static inline void fw_slice_src_mem (INS ins, REG base_reg, REG index_reg)
     put_copy_of_disasm (str);
 }
 
+static inline void fw_slice_src_mem_to_self (INS ins, REG base_reg, REG index_reg)  
+{
+    char* str = get_copy_of_disasm (ins);
+    SETUP_BASE_INDEX(base_reg, index_reg);
+    INS_InsertCall(ins, IPOINT_BEFORE,
+		   AFUNPTR(fw_slice_selfmem),
+		   IARG_FAST_ANALYSIS_CALL,
+		   IARG_INST_PTR,
+		   IARG_PTR, str,
+		   IARG_MEMORYREAD_EA,
+		   IARG_UINT32, INS_MemoryReadSize(ins),
+		   PASS_BASE_INDEX,
+		   IARG_END);
+    put_copy_of_disasm (str);
+}
+
+
 static inline void fw_slice_src_memflag (INS ins, REG base_reg, REG index_reg, int mask)  
 {
     char* str = get_copy_of_disasm (ins);
@@ -5853,7 +5870,7 @@ static void instrument_addorsub(INS ins, int set_flags, int clear_flags)
     } else if(op1mem && op2imm) {
 	REG base_reg = INS_OperandMemoryBaseReg(ins, 0);
 	REG index_reg = INS_OperandMemoryIndexReg(ins, 0);
-	fw_slice_src_mem (ins, base_reg, index_reg);
+        fw_slice_src_mem_to_self (ins, base_reg, index_reg);
 	instrument_taint_mem2flag (ins, set_flags, clear_flags, base_reg, index_reg);
     } else if(op1reg && op2imm){
         REG reg = INS_OperandReg(ins, 0);
