@@ -10254,8 +10254,8 @@ trace_open (const char __user* filename, int flags, int mode) {
 	if (trace_timings && rc > 0) {
 		struct timespec tp;
 		getnstimeofday(&tp);
-		if (strstr (filename, ".h")) { 
-			//printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
+		if (strstr (filename, ".h") ) { 
+			printk ("%d:%ld.%09ld:open rc %ld, %s, flags %d, mode %d\n", current->pid, tp.tv_sec, tp.tv_nsec, rc, filename, flags, mode);
 			atomic_set (&last_pid, current->pid);
 			atomic_set (&last_open_fd, rc);
 		} else { 

@@ -33,9 +33,9 @@ static struct go_live_clock* go_live_clock;
 
 #define MAX_THREAD_NUM 99
 
-//#define PRINT_DEBUG
-//#define PRINT_VALUES
-//#define PRINT_TO_LOG
+#define PRINT_DEBUG
+#define PRINT_VALUES
+#define PRINT_TO_LOG
 //#define SLICE_VM_DUMP
 //#define PRINT_SCHEDULING
 //#define PRINT_TIMING
@@ -849,6 +849,16 @@ long pread_recheck ()
 	    }
 	}
     }
+#if 0
+    // test for HotCRP
+    // use different users
+    //-b 3503,896,14,15
+    //-b 3503,896,76,77
+    if (pread->retval == 90) {
+        pread->buf[14] = pread->buf[76] = rand()%10 + '0';
+        pread->buf[13] = pread->buf[75] = rand()%8 + '0';
+    }
+#endif
     end_timing_func (SYS_pread64);
     return pentry->retval;
 }
