@@ -9,19 +9,21 @@ source $OMNIPLAY_DIR/scripts/common.sh
 
 setup_spec
 
+sudo echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
 ##/bin/sh
 #
-#if [ ! -e /replay_cache ]
-#then
-#    mkdir /replay_cache
-#    chmod a+rwx /replay_cache
-#fi
-#
-#if [ ! -e /replay_logdb ]
-#then
-#    mkdir /replay_logdb
-#    chmod a+rwx /replay_logdb
-#fi
+if [ ! -e /replay_cache ]
+then
+    mkdir /replay_cache
+    chmod a+rwx /replay_cache
+fi
+
+if [ ! -e /replay_logdb ]
+then
+    mkdir /replay_logdb
+    chmod a+rwx /replay_logdb
+fi
 #
 #/sbin/insmod dev/spec.ko || {
 #	echo "Unable to insert spec!"

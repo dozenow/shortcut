@@ -20,6 +20,7 @@
 #include <errno.h>
 #include "pthreadP.h"
 #include <atomic.h>
+#include "pthread_log.h" // REPLAY
 
 
 int
@@ -32,20 +33,31 @@ __pthread_key_create (key, destr)
     {
       uintptr_t seq = __pthread_keys[cnt].seq;
 
-      if (KEY_UNUSED (seq) && KEY_USABLE (seq)
+      if (KEY_UNUSED (seq) && KEY_USABLE (seq)) {
 	  /* We found an unused slot.  Try to allocate it.  */
-	  && ! atomic_compare_and_exchange_bool_acq (&__pthread_keys[cnt].seq,
-						     seq + 1, seq))
-	{
-	  /* Remember the destructor.  */
-	  __pthread_keys[cnt].destr = destr;
-
-	  /* Return the key to the caller.  */
-	  *key = cnt;
-
-	  /* The call succeeded.  */
-	  return 0;
-	}
+	  int b;
+	  if (is_recording()) {
+	      pthread_log_record (0, PTHREAD_ONCE_ENTER, (u_long) &__pthread_keys[cnt].seq, 1); 
+	      b = atomic_compare_and_exchange_bool_acq (&__pthread_keys[cnt].seq, seq + 1, seq);
+	      pthread_log_record (b, PTHREAD_ONCE_EXIT, (u_long) &__pthread_keys[cnt].seq, 0); 
+	  } else if (is_replaying()) {
+	      pthread_log_replay (PTHREAD_ONCE_ENTER, (u_long) &__pthread_keys[cnt].seq); 
+	      b = pthread_log_replay (PTHREAD_ONCE_EXIT, (u_long) &__pthread_keys[cnt].seq); 
+	      if (!b) __pthread_keys[cnt].seq = seq+1;
+	  } else {
+	      b = atomic_compare_and_exchange_bool_acq (&__pthread_keys[cnt].seq, seq + 1, seq);
+	  }
+	  if (!b) {
+	      /* Remember the destructor.  */
+	      __pthread_keys[cnt].destr = destr;
+	      
+	      /* Return the key to the caller.  */
+	      *key = cnt;
+	      
+	      /* The call succeeded.  */
+	      return 0;
+	  }
+      }
     }
 
   return EAGAIN;

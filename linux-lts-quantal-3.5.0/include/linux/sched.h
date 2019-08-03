@@ -1228,6 +1228,7 @@ enum perf_event_task_context {
 
 struct replay_thread; /* REPLAY */
 struct record_thread; /* REPLAY */
+struct go_live_thread_info; /* REPLAY */
 
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
@@ -1591,6 +1592,7 @@ struct task_struct {
 #endif
 	struct replay_thread*        replay_thrd; /* REPLAY */
 	struct record_thread*        record_thrd; /* REPLAY */
+	struct go_live_thread_info*  go_live_thrd; /* REPLAY */
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */

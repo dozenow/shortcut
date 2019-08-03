@@ -1113,6 +1113,8 @@ do_group_exit(int exit_code)
 	struct signal_struct *sig = current->signal;
 
 	BUG_ON(exit_code & 0x80); /* core dumps don't get here */
+	//DEBUG
+	//printk ("Pid %d exits, major page faults %ld, minor %ld\n", current->pid, current->maj_flt, current->min_flt);
 
 	if (signal_group_exit(sig))
 		exit_code = sig->group_exit_code;

@@ -49,15 +49,15 @@ int resume(int fd_spec, int attach_pin, int attach_gdb, int follow_splits, int s
 	   char* logdir, char* linker, loff_t attach_index, int attach_pid, int record_timing,
 	   u_long nfake_calls, u_long* fake_calls);
 int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
-		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at, int record_timing,
+		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at,
+		      int ckpt_memory_only, int ckpt_mem_daemon_pid, int record_timing, 
 		      u_long nfake_calls, u_long* fake_calls);
-
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename, char *uniqueid, loff_t attach_index, int attach_pid
-		       ,u_long nfake_calls, u_long* fake_calls);
+		       ,u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename, char* recheck_filename);
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char *uniqueid, int ckpt_pos);
-int set_pin_addr (int fd_spec, u_long app_syscall_addr, void* pthread_data, void** pcurthread, int* pattach_ndx);
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char *uniqueid, int ckpt_pos, int go_live, char* slice_filename, char* recheck_filename);
+int set_pin_addr (int fd_spec, u_long app_syscall_addr, u_long app_syscall_chk, void* pthread_data, void** pcurthread, int* pattach_ndx);
 int check_clock_before_syscall (int fd_spec, int syscall);
 int check_clock_after_syscall (int fd_spec);
 int get_log_id (int fd_spec);
@@ -81,6 +81,7 @@ u_long* map_shared_clock (int fd_spec);
 long check_for_redo (int fd_spec);
 long redo_mmap (int fd_spec, u_long* prc, u_long* plen);
 long redo_munmap (int fd_spec);
+void add_to_startup_db (int fd, char* argbuf, int arglen, uint64_t group_id, unsigned long ckpt_clock);
 
 #ifdef __cplusplus
 }

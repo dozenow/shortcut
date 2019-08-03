@@ -32,6 +32,8 @@ struct wakeup_data {
 	int             attach_pid;
 	int	        save_mmap;
 	int             ckpt_at;
+	int             ckpt_memory_only;
+	int             ckpt_mem_daemon_pid;
 	int             record_timing;
 	u_long          nfake_calls;
 	u_long __user * fake_calls;
@@ -52,6 +54,9 @@ struct wakeup_ckpt_data {
         int           ckpt_pos;
 	u_long          nfake_calls;
 	u_long __user * fake_calls;    
+	int 	      go_live;
+	char __user*  slice_filename;
+	char __user*  recheck_filename;
 };
 
 struct get_used_addr_data {
@@ -96,6 +101,7 @@ struct get_replay_pid_data {
 
 struct set_pin_address_data {
 	u_long pin_address;
+	u_long pin_chk;
 	u_long pthread_data;
 	u_long __user* pcurthread;
 	int attach_ndx;
@@ -104,6 +110,13 @@ struct set_pin_address_data {
 struct redo_mmap_data {
 	u_long rc;
 	u_long len;
+};
+
+struct add_startup_db_data { 
+	char __user* argbuf; 
+	int arglen;
+	uint64_t group_id;
+	unsigned long ckpt_clock;
 };
 
 #define SPECI_REPLAY_FORK _IOR('u', 0, struct record_data)
@@ -128,11 +141,13 @@ struct redo_mmap_data {
 #define SPECI_WAIT_FOR_REPLAY_GROUP _IOR('u', 19, pid_t)
 #define SPECI_TRY_TO_EXIT _IOR('u', 20, pid_t)
 #define SPECI_GET_REPLAY_PID _IOR('u', 21, struct get_replay_pid_data)
-#define SPECI_MAP_CLOCK _IO('u',22)
+#define SPECI_MAP_CLOCK _IOW('u',22, u_long)
 #define SPECI_GET_OPEN_FDS _IOR('u', 23, struct open_fds_data)
 #define SPECI_CHECK_FOR_REDO _IO('u', 24)
 #define SPECI_REDO_MMAP _IOW('u', 25, struct redo_mmap_data)
 #define SPECI_IS_PIN_ATTACHING _IO('u', 26)
 #define SPECI_REDO_MUNMAP _IO('u', 27)
+#define SPECI_STARTUP_DB_INIT _IO('u', 28)
+#define SPECI_STARTUP_DB_ADD _IOR('u', 29, struct add_startup_db_data)
 
 #endif

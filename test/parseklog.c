@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <syscall.h>
 
 #include <unistd.h>
 #include <getopt.h>
@@ -10,7 +11,6 @@
 
 static void empty_printfcn(FILE *out, struct klog_result *res) {
 }
-
 
 static void print_write_pipe(FILE *out, struct klog_result *res) {
 	char *retparams = res->retparams;
@@ -141,6 +141,22 @@ static void print_socketcall(FILE *out, struct klog_result *res) {
 	}
 }
 
+static void print_ipc (FILE *out, struct klog_result *res) {
+	struct syscall_result *psr = &res->psr;
+
+	parseklog_default_print(out, res);
+
+	if (psr->flags & SR_HAS_RETPARAMS) {
+		int len = *((int *)res->retparams);
+		int type = *((int *)res->retparams+1);
+		fprintf(out, "         IPC len is %d type is %d\n", len, type);
+		if (type == SHMAT) {
+			struct shmat_retvals* pshmat = (struct shmat_retvals *) res->retparams;
+			fprintf (out, "         SHMAT size %lx returns %lx\n", pshmat->size, pshmat->raddr);
+		}
+	}
+}
+
 static void print_rt_sigaction(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
 
@@ -149,7 +165,45 @@ static void print_rt_sigaction(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct sigaction* sa = (struct sigaction *)res->retparams;
 		fprintf(out, "         sa handler is %lx\n", (unsigned long) sa->sa_handler);
+		fprintf(out, "         dword 2 is %lx\n", *(((u_long *) res->retparams)+1));
+		fprintf(out, "         dword 3 is %lx\n", *(((u_long *) res->retparams)+2));
+		fprintf(out, "         dword 4 is %lx\n", *(((u_long *) res->retparams)+3));
+		fprintf(out, "         dword 5 is %lx\n", *(((u_long *) res->retparams)+4));
 	}
+}
+
+static void print_rt_sigprocmask(FILE *out, struct klog_result *res) {
+	struct syscall_result *psr = &res->psr;
+	int i;
+
+	parseklog_default_print(out, res);
+
+	if (psr->flags & SR_HAS_RETPARAMS) {
+		sigset_t* s = (sigset_t *)(res->retparams + sizeof(u_long));
+		fprintf(out, "         set %llx, retpara size %d\n", *((__u64 *) s), res->retparams_size);
+		for (i = 0; i < 64; i++) {
+			if (sigismember(s,i)) fprintf(out, "         signal %d is in set\n", i);
+		}
+	} else {
+		fprintf(out, "         no return parameters\n");
+	}
+}
+
+static void print_ioctl(FILE *out, struct klog_result *res) {
+    struct syscall_result *psr = &res->psr;
+    u_long i;
+    
+    parseklog_default_print(out, res);
+    
+    if (psr->flags & SR_HAS_RETPARAMS) {
+	u_long* plen = (u_long *)(res->retparams);
+	fprintf(out, "         length %lu\n", *plen);
+	for (i = 0; i < *plen; i++) {
+	    fprintf(out, "%lu %02x\n", i, *((char *)res->retparams+sizeof(u_long)+i));
+	}
+    } else {
+	fprintf(out, "         no return parameters\n");
+    }
 }
 
 static void print_getcwd(FILE *out, struct klog_result *res) {
@@ -160,6 +214,20 @@ static void print_getcwd(FILE *out, struct klog_result *res) {
 	if (res->retparams_size-sizeof(int) > 0) {
 		fprintf(out, "         path is %s\n", ((char *)res->retparams)+sizeof(int));
 	}
+}
+
+static void print_time(FILE *out, struct klog_result *res) 
+{
+    struct syscall_result *psr = &res->psr;
+    
+    parseklog_default_print(out, res);
+    
+    if (psr->flags & SR_HAS_RETPARAMS) {
+	time_t* time = (time_t*)res->retparams;
+	fprintf(out, "time: %ld\n", *time);
+    } else {
+	fprintf (out, "no buffer\n");
+    }
 }
 
 static void print_clock_gettime(FILE *out, struct klog_result *res) {
@@ -175,9 +243,7 @@ static void print_clock_gettime(FILE *out, struct klog_result *res) {
 
 static void print_mmap(FILE *out, struct klog_result *res) {
 	struct syscall_result *psr = &res->psr;
-
 	parseklog_default_print(out, res);
-
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		fprintf(out, "         dev is %lx\n",
 				((struct mmap_pgoff_retvals *)res->retparams)->dev);
@@ -228,6 +294,15 @@ static void print_read(FILE *out, struct klog_result *res) {
 		char *buf = res->retparams;
 
 		int is_cache_read = *((int *)buf);
+		fprintf(out, "         is_cache_read: %x\n", is_cache_read);
+		buf += sizeof(int);
+
+		if (!is_cache_read && res->retval == 11) {
+		  int i;
+		  for (i = 0; i < 11; i++) {
+		    fprintf (out, "JNF: output %c (%x)\n", buf[i], buf[i]);
+		  }
+		}
 
 		if (is_cache_read & READ_NEW_CACHE_FILE) {
 			struct open_retvals *orets = (void *)(buf + sizeof(int) + sizeof(loff_t));
@@ -275,6 +350,9 @@ static void print_read(FILE *out, struct klog_result *res) {
 			}
 #endif
 		}
+                /*if (!is_cache_read) { 
+                    printf ("%s\n", (char*) (buf + sizeof (int)));
+                }*/
 	}
 }
 
@@ -318,8 +396,12 @@ static void print_stat(FILE *out, struct klog_result *res) {
 	if (psr->flags & SR_HAS_RETPARAMS) {
 		struct stat64* pst = (struct stat64 *) res->retparams;
 
-		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld\n", 
-			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino);
+		fprintf(out, "         stat64 size %Ld blksize %lx blocks %Ld ino %Ld rdev %Lx\n"
+			     "                ctime %ld.%ld mtime %ld.%ld atime %ld.%ld\n",
+			pst->st_size, pst->st_blksize, pst->st_blocks, pst->st_ino, pst->st_rdev,
+			pst->st_ctim.tv_sec, pst->st_ctim.tv_nsec,
+			pst->st_mtim.tv_sec, pst->st_mtim.tv_nsec,
+			pst->st_atim.tv_sec, pst->st_atim.tv_nsec);
 	}
 }
 
@@ -389,7 +471,7 @@ int main(int argc, char **argv) {
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "gp")) != -1) {
+	while ((opt = getopt(argc, argv, "gph:")) != -1) {
 		switch (opt) {
 			case 'g':
 				type = GRAPH;
@@ -423,11 +505,15 @@ int main(int argc, char **argv) {
 		parseklog_set_printfcn(log, print_open, 5);
 		parseklog_set_printfcn(log, print_waitpid, 7);
 		parseklog_set_printfcn(log, print_execve, 11);
+		parseklog_set_printfcn(log, print_time, 13);
 		parseklog_set_printfcn(log, print_pipe, 42);
+		parseklog_set_printfcn(log, print_ioctl, SYS_ioctl);
 		parseklog_set_printfcn(log, print_gettimeofday, 78);
 		parseklog_set_printfcn(log, print_socketcall, 102);
+		parseklog_set_printfcn(log, print_ipc, 117);
 		parseklog_set_printfcn(log, print_write, 146);
 		parseklog_set_printfcn(log, print_rt_sigaction, 174);
+		parseklog_set_printfcn(log, print_rt_sigprocmask, SYS_rt_sigprocmask);
 		parseklog_set_printfcn(log, print_getcwd, 182);
 		parseklog_set_printfcn(log, print_mmap, 192);
 		parseklog_set_printfcn(log, print_stat, 195);

@@ -985,6 +985,7 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 	 * (the exception is when the underlying filesystem is noexec
 	 *  mounted, in which case we dont add PROT_EXEC.)
 	 */
+	//debug
 	if ((prot & PROT_READ) && (current->personality & READ_IMPLIES_EXEC))
 		if (!(file && (file->f_path.mnt->mnt_flags & MNT_NOEXEC)))
 			prot |= PROT_EXEC;
@@ -1014,6 +1015,10 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 	addr = get_unmapped_area(file, addr, len, pgoff, flags);
 	if (addr & ~PAGE_MASK)
 		return addr;
+	/*if (addr & ~PAGE_MASK){
+		if (file == NULL) printk ("%d mmap: %p %lx %lx ret %lx \n", current->pid, file, addr, len, addr);
+		return addr;
+	}*/
 
 	/* Do simple checking here so the lower-level routines won't have
 	 * to. we assume access permissions have been handled by the open
@@ -1099,6 +1104,11 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 		}
 	}
 
+	/*{
+		long ret_addr =  mmap_region(file, addr, len, flags, vm_flags, pgoff);
+		if (file == NULL) printk ("%d mmap: %p %lx %lx ret %lx \n", current->pid, file, addr, len, ret_addr);
+		return ret_addr;
+	}*/
 	return mmap_region(file, addr, len, flags, vm_flags, pgoff);
 }
 

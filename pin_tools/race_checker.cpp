@@ -5,6 +5,7 @@
 #include "util.h"
 #include <string.h>
 #include <stdlib.h>
+#include <syscall.h>
 
 // edited by hyihe
 #include "happens_before.h"
@@ -14,14 +15,14 @@
 struct thread_data* current_thread; // Always points to thread-local data (changed by kernel on context switch)
 
 #define INSTMNT_CALL_RET
-#define START_AT_SYSCALL 0
-#define STOP_AT_SYSCALL  224999
+//#define EXTRA_DEBUG
 
-int print_limit = 0;
-int print_stop = 2000000000;
+unsigned long print_limit = 0;
+unsigned long int print_stop = UINT_MAX;
+u_long* ppthread_log_clock;
 
-KNOB<string> KnobPrintLimit(KNOB_MODE_WRITEONCE, "pintool", "p", "10000000", "syscall print limit");
-KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "10000000", "syscall print stop");
+KNOB<string> KnobPrintLimit(KNOB_MODE_WRITEONCE, "pintool", "p", "0", "syscall print start");
+KNOB<string> KnobPrintStop(KNOB_MODE_WRITEONCE, "pintool", "s", "100000000", "syscall print stop");
 
 // BEGIN GENERIC STUFF NEEDED TO REPLAY WITH PIN
 
@@ -45,9 +46,11 @@ int num_threads = 0;
 var_map_t variables;
 
 static inline bool inrange() {
-//    return ((syscall_cnt >= print_limit) 
-//        && (syscall_cnt <= print_stop));
-    return true;
+    //return ((syscall_cnt >= print_limit) 
+        //&& (syscall_cnt <= print_stop)); 
+    if (*ppthread_log_clock > print_limit && *ppthread_log_clock <print_stop) 
+    	return true;
+    return false;
 }
 
 int get_record_pid()
@@ -64,22 +67,37 @@ int get_record_pid()
     return record_log_id;
 }
 
+//call this function with PIN_LOCKCLIENT held
 ADDRINT find_static_address(ADDRINT ip)
 {
-	PIN_LockClient();
 	IMG img = IMG_FindByAddress(ip);
-	if (!IMG_Valid(img)) return ip;
+	if (!IMG_Valid(img)) {
+		return ip;
+	}
 	ADDRINT offset = IMG_LoadOffset(img);
-	PIN_UnlockClient();
 	return ip - offset;
 }
 
 bool detect_race(THREADID tid, VOID *ref_addr, ADDRINT size, ADDRINT ip, int ref_type) {
+    if(!inrange()) {
+        return false;
+    }
+    if ((unsigned long)ref_addr == 0x9d844a08 || (unsigned long)ref_addr == 0x9d844a04) {
+	    fprintf (stderr, "tid %d addr %p ip %x\n", tid, ref_addr, ip);
+    }
     // Ignore instructions from shared libraries/syscalls
-    if((unsigned long)ip > 0x80000000 || num_threads == 1)
+    /*if((unsigned long)ip > 0x80000000 || num_threads == 1) {
         return false;
-    if(!inrange())
-        return false;
+    }*/
+    PIN_LockClient ();
+    IMG img = IMG_FindByAddress(ip);
+    if (IMG_Valid (img)) {
+	    if (IMG_Name(img).find ("libpthread") != string::npos) {
+		    PIN_UnlockClient ();
+		    return false;
+	    }
+    }
+    PIN_UnlockClient ();
     var_map_t::iterator lkup = variables.find(std::make_pair((void *)ref_addr, (int)size));
     if(lkup == variables.end()) {
         // No sharing ,conflict upon first access
@@ -113,11 +131,17 @@ bool detect_race(THREADID tid, VOID *ref_addr, ADDRINT size, ADDRINT ip, int ref
 
 struct thread_data {
     u_long app_syscall; // Per thread address for specifying pin vs. non-pin system calls
+    u_long app_syscall_chk;
+    int record_pid;
+    int syscall_cnt;
+    int sysnum;
+    u_long ignore_flag;
 };
 
 void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, VOID* v)
 {
-    struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
+    //struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
+    struct thread_data* tdata = current_thread;
     if (tdata) {
 	if (tdata->app_syscall != 999) tdata->app_syscall = 0;
     } else {
@@ -125,49 +149,62 @@ void inst_syscall_end(THREADID thread_id, CONTEXT* ctxt, SYSCALL_STANDARD std, V
     }	
 }
 
-void set_address_one(ADDRINT syscall_num, ADDRINT eax_ref)
-{   
-    struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
-    if (tdata) {
-	int sysnum = (int) syscall_num;
-	
-//	fprintf (stderr, "In set_address_one, num is %d, cnt is %d\n", (int) syscall_num, ++syscall_cnt);
-	if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
-	    check_clock_before_syscall (fd, (int) syscall_num);
-	}
-	tdata->app_syscall = syscall_num;
-    } else {
-	fprintf (stderr, "set_address_one: NULL tdata\n");
+static void sys_mmap_start(struct thread_data* tdata, u_long addr, int len, int prot, int fd)
+{
+    tdata->app_syscall_chk = len + prot; // Pin sometimes makes mmaps during mmap
+}
+
+void syscall_start(struct thread_data* tdata, int sysnum, ADDRINT syscallarg0, ADDRINT syscallarg1,
+		   ADDRINT syscallarg2, ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+{
+    switch (sysnum) {
+        case SYS_mmap:
+        case SYS_mmap2:
+            sys_mmap_start(tdata, (u_long)syscallarg0, (int)syscallarg1, (int)syscallarg2, (int)syscallarg4);
+            break;
     }
 }
 
-void syscall_after (ADDRINT ip)
+void PIN_FAST_ANALYSIS_CALL set_address_one(ADDRINT syscall_num, ADDRINT syscallarg0, ADDRINT syscallarg1, ADDRINT syscallarg2,
+					    ADDRINT syscallarg3, ADDRINT syscallarg4, ADDRINT syscallarg5)
+{   
+    //struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
+    struct thread_data* tdata = current_thread;
+    int sysnum = (int) syscall_num;
+    
+    if (sysnum == 45 || sysnum == 91 || sysnum == 120 || sysnum == 125 || sysnum == 174 || sysnum == 175 || sysnum == 190 || sysnum == 192) {
+	check_clock_before_syscall (fd, (int) syscall_num);
+	fprintf (stderr, "check_clock_before_syscall: sysnum %d\n", sysnum);
+    }
+    tdata->app_syscall = syscall_num;
+
+    syscall_start(tdata, syscall_num, syscallarg0, syscallarg1, syscallarg2, 
+		  syscallarg3, syscallarg4, syscallarg5);
+}
+
+void PIN_FAST_ANALYSIS_CALL syscall_after (ADDRINT ip)
 {
-    struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
-    if (tdata) {
-	if (tdata->app_syscall == 999) {
-	    fprintf (stderr, "Waiting for clock after syscall,ip=%lx\n", (u_long) ip);
-	    if (check_clock_after_syscall (fd) == 0) {
-	    } else {
-		fprintf (stderr, "Check clock failed\n");
-	    }
-	    tdata->app_syscall = 0;
+    //struct thread_data* tdata = (struct thread_data *) PIN_GetThreadData(tls_key, PIN_ThreadId());
+    struct thread_data* tdata = current_thread;
+    if (tdata->app_syscall == 999) {
+	if (check_clock_after_syscall (fd) == 0) {
+	} else {
+	    fprintf (stderr, "Check clock failed\n");
 	}
-    } else {
-	fprintf (stderr, "syscall_after: NULL tdata\n");
+	tdata->app_syscall = 0;
     }
 }
 
 // END GENERIC STUFF NEEDED TO REPLAY WITH PIN
 
-void instrument_call(ADDRINT address, ADDRINT target, ADDRINT next_address)
+void PIN_FAST_ANALYSIS_CALL instrument_call(ADDRINT address, ADDRINT target, ADDRINT next_address)
 {
 //    if(inrange()) {
 //        fprintf (stderr, "Thread %5d Call 0x%08x target 0x%08x next 0x%08x\n", PIN_ThreadId(), address, target, next_address);
 //    }
 }
 
-void instrument_ret(ADDRINT address, ADDRINT target)
+void PIN_FAST_ANALYSIS_CALL instrument_ret(ADDRINT address, ADDRINT target)
 {
 //    if(inrange()) {
 //        fprintf (stderr, "Thread %5d Ret  0x%08x target 0x%08x\n", PIN_ThreadId(), address, target);
@@ -182,40 +219,40 @@ bool type_is_enter (ADDRINT type) {
     }
 }
 
-void log_replay_enter (ADDRINT type, ADDRINT check)
+void PIN_FAST_ANALYSIS_CALL log_replay_enter (ADDRINT type, ADDRINT check)
 {
-    long curr_clock = get_clock_value(fd);
+    long curr_clock = *ppthread_log_clock;
     if(type_is_enter(type)) {
         // Indicates the end of an interval
         thd_entr_type[PIN_ThreadId()] = type;
-        //fprintf (stderr, "Thread %5d reaches sync point (%d) at clock %ld\n", PIN_ThreadId(), type, curr_clock);
+        fprintf (stderr, "Thread %5d reaches sync point (%d) at clock %ld, type %u check %x\n", PIN_ThreadId(), type, curr_clock, type, check);
         update_interval_speculate(thd_ints, PIN_ThreadId(), curr_clock);
     } else {
         thd_entr_type[PIN_ThreadId()] = type;
-        //fprintf (stderr, "Thread %5d resumes (%d) at clock %ld\n", PIN_ThreadId(), type, curr_clock);
+        fprintf (stderr, "Thread %5d resumes (%d) at clock %ld\n", PIN_ThreadId(), type, curr_clock);
     }
 }
 
-void record_read (ADDRINT ip, VOID* addr, ADDRINT size)
+void PIN_FAST_ANALYSIS_CALL record_read (ADDRINT ip, VOID* addr, ADDRINT size)
 {
     if(detect_race(PIN_ThreadId(), addr, size, ip, MEM_REF_READ))
         exit(1);
 }
 
-void record_read2 (VOID* ip, VOID* addr)
+void PIN_FAST_ANALYSIS_CALL record_read2 (ADDRINT ip, VOID* addr, ADDRINT size)
 {
 //    if (inrange()) {
 //        fprintf (stderr, "Thread %5d read2 address %p (inst %p)\n", PIN_ThreadId(), addr, ip);
 //    }
 }
 
-void record_write (ADDRINT ip, VOID* addr, ADDRINT size)
+void PIN_FAST_ANALYSIS_CALL record_write (ADDRINT ip, VOID* addr, ADDRINT size)
 {
     if(detect_race(PIN_ThreadId(), addr, size, ip, MEM_REF_WRITE))
         exit(1);
 }
 
-void record_locked (ADDRINT ip)
+void PIN_FAST_ANALYSIS_CALL record_locked (ADDRINT ip)
 {
 
     if (inrange()) {
@@ -235,7 +272,7 @@ void record_locked (ADDRINT ip)
     }
 }
 
-void log_replay_exit ()
+void PIN_FAST_ANALYSIS_CALL log_replay_exit ()
 {
     int type = thd_entr_type[PIN_ThreadId()];
     if(!type_is_enter(type)) {
@@ -246,7 +283,7 @@ void log_replay_exit ()
 }
 
 // Update the exit time of the current interval upon context switch
-void log_replay_block(ADDRINT block_until) {
+void PIN_FAST_ANALYSIS_CALL log_replay_block(ADDRINT block_until) {
 //    long curr_clock = get_clock_value(fd);
 //    fprintf(stderr, "Context Switch! Thread %d reaches %d, current clock is %ld\n",
 //        PIN_ThreadId(), block_until, curr_clock);
@@ -255,51 +292,97 @@ void log_replay_block(ADDRINT block_until) {
         update_interval_overwrite(thd_ints, PIN_ThreadId(), block_until);
 }
 
+void PIN_FAST_ANALYSIS_CALL print_function_name (ADDRINT ip, char* name, ADDRINT value1, ADDRINT value2)
+{
+	if (inrange ()) {
+		fprintf (stderr, "[debug] %d %s\n", PIN_ThreadId(), name);
+		if (strstr (name, "pthread") || strstr (name, "sem")) {
+			fprintf (stderr, "  params %x %x\n", value1, value2);
+		} else if (strstr (name, "getenv")) {
+			fprintf (stderr, "    getenv: %s\n", (char*) value1);
+		}
+		PIN_LockClient();
+		if (IMG_Valid(IMG_FindByAddress(ip))) {
+			fprintf(stderr, " -- img %s\n", IMG_Name(IMG_FindByAddress(ip)).c_str());
+		}
+		PIN_UnlockClient();
+
+	}
+}
+
 void track_function(RTN rtn, void* v) 
 {
+    /*if (IMG_Name(IMG_FindByAddress(RTN_Address(rtn))).find("libpthread") == string::npos) {
+	    return;
+    }*/
     RTN_Open(rtn);
     const char* name = RTN_Name(rtn).c_str();
+    RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) print_function_name, IARG_FAST_ANALYSIS_CALL,
+		    IARG_ADDRINT, RTN_Address (rtn),
+		    IARG_PTR, strdup (name), 
+		    IARG_FUNCARG_ENTRYPOINT_VALUE, 0, 
+		    IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+		    IARG_END);
     if (!strcmp (name, "pthread_log_replay")) {
         RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) log_replay_enter, 
+			IARG_FAST_ANALYSIS_CALL, 
 		       IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_FUNCARG_ENTRYPOINT_VALUE, 1, IARG_END);
-        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) log_replay_exit, IARG_END);
+        RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR) log_replay_exit, IARG_FAST_ANALYSIS_CALL, IARG_END);
     } else if (!strcmp (name, "pthread_log_block")) {
-        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) log_replay_block, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
+        RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) log_replay_block, IARG_FAST_ANALYSIS_CALL, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
     }
     RTN_Close(rtn);
+}
+
+void PIN_FAST_ANALYSIS_CALL debug_print_inst (ADDRINT ip, char* ins_str) 
+{ 
+#ifdef EXTRA_DEBUG
+    if (ins_str) 
+	fprintf (stderr, "%s\n", ins_str);
+    else 
+	fprintf (stderr, "null\n");
+#endif
 }
 
 void track_inst(INS ins, void* data) 
 {
   // BEGIN GENERIC STUFF NEEDED TO REPLAY WITH PIN
-
     // The first system call is the ioctl associated with fork_replay.
     // We do not want to issue it again, so we NULL the call and return.
     if(INS_IsSyscall(ins)) {
-            INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(set_address_one), IARG_SYSCALL_NUMBER, 
-			   IARG_REG_REFERENCE, LEVEL_BASE::REG_EAX, IARG_END);
-
+		INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) set_address_one, 
+			       IARG_FAST_ANALYSIS_CALL,
+			       IARG_SYSCALL_NUMBER, 
+			       IARG_SYSARG_VALUE, 0, 
+			       IARG_SYSARG_VALUE, 1,
+			       IARG_SYSARG_VALUE, 2,
+			       IARG_SYSARG_VALUE, 3,
+			       IARG_SYSARG_VALUE, 4,
+			       IARG_SYSARG_VALUE, 5,
+			       IARG_END);
     } else {
 	// Ugh - I guess we have to instrument every instruction to find which
 	// ones are after a system call - would be nice to do better.
-	INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)syscall_after, IARG_INST_PTR, IARG_END);
+	INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)syscall_after, 
+			IARG_FAST_ANALYSIS_CALL,
+			IARG_INST_PTR, IARG_END);
     }
   // END GENERIC STUFF NEEDED TO REPLAY WITH PIN
 
     if (INS_IsMemoryRead(ins)) {
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, AFUNPTR(record_read), IARG_INST_PTR,
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, (AFUNPTR) record_read, IARG_FAST_ANALYSIS_CALL,IARG_INST_PTR,
 				  IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_END);
     }
     if (INS_IsMemoryWrite(ins)) {
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, AFUNPTR(record_write), IARG_INST_PTR,
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, (AFUNPTR) record_write, IARG_FAST_ANALYSIS_CALL,  IARG_INST_PTR,
 				  IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE, IARG_END);
     }
     if (INS_HasMemoryRead2(ins)) {
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, AFUNPTR(record_read2), IARG_INST_PTR,
-				  IARG_MEMORYREAD2_EA, IARG_END);
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, (AFUNPTR) record_read2, IARG_FAST_ANALYSIS_CALL,IARG_INST_PTR,
+				  IARG_MEMORYREAD2_EA, IARG_MEMORYREAD_SIZE, IARG_END);
     }
     if (INS_LockPrefix(ins)) {
-	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, AFUNPTR(record_locked), IARG_INST_PTR, IARG_END);
+	INS_InsertPredicatedCall (ins, IPOINT_BEFORE, (AFUNPTR) record_locked, IARG_FAST_ANALYSIS_CALL, IARG_INST_PTR, IARG_END);
     }
 
 #ifdef INSTMNT_CALL_RET
@@ -307,21 +390,24 @@ void track_inst(INS ins, void* data)
     switch (INS_Opcode(ins)) {
 	case XED_ICLASS_CALL_NEAR:
 	case XED_ICLASS_CALL_FAR:
-	    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_call), IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, 
+	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) instrument_call, 
+			    IARG_FAST_ANALYSIS_CALL, 
+			    IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, 
 			   IARG_ADDRINT, INS_NextAddress(ins), IARG_END);
 	    
 	    break;
 	    
 	case XED_ICLASS_RET_NEAR:
 	case XED_ICLASS_RET_FAR:
-	    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(instrument_ret), IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_END);    
+	    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) instrument_ret, 
+			    IARG_FAST_ANALYSIS_CALL, 
+			    IARG_INST_PTR, IARG_BRANCH_TARGET_ADDR, IARG_END);    
 	    break;
     }
 #endif
 }
 
 // BEGIN GENERIC STUFF NEEDED TO REPLAY WITH PIN
-
 BOOL follow_child(CHILD_PROCESS child, void* data)
 {
     char** argv;
@@ -358,16 +444,33 @@ void thread_start (THREADID threadid, CONTEXT* ctxt, INT32 flags, VOID* v)
     thd_entr_type.push_back(0);
 
     ptdata->app_syscall = 0;
+    ptdata->record_pid = get_record_pid();
 
     PIN_SetThreadData (tls_key, ptdata, threadid);
     int thread_ndx;
-    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), ptdata, (void **) &current_thread, &thread_ndx);
+    long thread_status = set_pin_addr (fd, (u_long) &(ptdata->app_syscall), (u_long) &(ptdata->app_syscall_chk), 
+				       ptdata, (void **) &current_thread, &thread_ndx);
     if (thread_status < 2) {
 	current_thread = ptdata;
     }
     fprintf (stderr,"Thread gets rc %ld ndx %d from set_pin_addr\n", thread_status, thread_ndx);
+}
 
-//    set_pin_addr (fd, (u_long) ptdata, NULL, NULL);
+void trace_instrumentation(TRACE trace, void* v)
+{
+    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
+	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+#ifdef EXTRA_DEBUG
+		string s = INS_Disassemble (ins);
+		char* ins_str = strdup (s.c_str());
+		INS_InsertCall (ins, IPOINT_BEFORE, (AFUNPTR) debug_print_inst,
+				IARG_FAST_ANALYSIS_CALL,
+				IARG_INST_PTR,
+				IARG_PTR, ins_str, IARG_END);
+#endif
+		track_inst (ins, NULL);
+	}
+    }
 }
 
 int main(int argc, char** argv) 
@@ -380,18 +483,20 @@ int main(int argc, char** argv)
     // Intialize the replay device
     rc = devspec_init (&fd);
     if (rc < 0) return rc;
+    ppthread_log_clock = map_shared_clock (fd);
 
     // Obtain a key for TLS storage
     tls_key = PIN_CreateThreadDataKey(0);
-    print_limit = atoi(KnobPrintLimit.Value().c_str());
-    print_stop = atoi(KnobPrintStop.Value().c_str());
+    print_limit = atol(KnobPrintLimit.Value().c_str());
+    print_stop = atol(KnobPrintStop.Value().c_str());
 
     PIN_AddThreadStartFunction(thread_start, 0);
 
-    PIN_AddFollowChildProcessFunction(follow_child, argv);
-    INS_AddInstrumentFunction(track_inst, 0);
+    //PIN_AddFollowChildProcessFunction(follow_child, argv);
     RTN_AddInstrumentFunction(track_function, 0);
     PIN_AddSyscallExitFunction(inst_syscall_end, 0);
+    TRACE_AddInstrumentFunction (trace_instrumentation, 0);
+    PIN_SetSyntaxIntel();
     PIN_StartProgram();
     return 0;
 }

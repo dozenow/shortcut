@@ -14,6 +14,8 @@
 
 #define MAX_PROCESSES  2
 #define BUFFER_SIZE 1024
+
+//TODO: Currently, we only use data flow tool, probably should also enable the index tool in the future
 int main (int argc, char* argv[]) 
 {
     struct timeval tv_start, tv_attach, tv_tool_done, tv_done;
@@ -26,16 +28,25 @@ int main (int argc, char* argv[])
     int fd, rc, status, filter_inet = 0;
     u_long filter_output_after = 0;
     char* stop_at = NULL;
+    char* ckpt_clock = NULL;
     char* filter_output_after_str = NULL;
     char* filter_partfile = NULL;
+    char* filter_byterange = NULL;
+    char* filter_syscall = NULL;
+    char* filter_file_input = NULL;
     int next_child = 0, i;
     size_t n = BUFFER_SIZE;
     FILE* fp; 
-
+    int instruction_only = 0;
+    char* group_dir = NULL;
+    int attach_gdb = 0;
+    int run_data_tool = 0;
+    
     int post_process_pids[MAX_PROCESSES];
 
     if (argc < 2) {
-	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock]\n");
+	fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction] [-ckpt_clock clock] [-group_dir dir] [-attach_gdb] [-run_data_tool] [-filter_file_input filename]\n");
+	//byterange: buffer starts with 0, start: inclusive, end: exclusive
 	return -1;
     }
 
@@ -47,8 +58,14 @@ int main (int argc, char* argv[])
 	    if(!strncmp(argv[index],"--cache_dir",BUFFER_SIZE)) {
 		strncpy(cache_dir,argv[index + 1],BUFFER_SIZE); 
 		index++;
+	    } else if (!strncmp(argv[index],"-print_instruction",BUFFER_SIZE)) {
+		    instruction_only = 1;
+		    ++index;
 	    } else if (!strncmp(argv[index],"-stop_at",BUFFER_SIZE)) {
 		stop_at = argv[index+1];
+		index += 2;
+	    } else if (!strncmp(argv[index],"-ckpt_clock",BUFFER_SIZE)) {
+		ckpt_clock = argv[index+1];
 		index += 2;
 	    } else if (!strncmp(argv[index],"-filter_inet",BUFFER_SIZE)) {
 		filter_inet = 1;
@@ -56,12 +73,30 @@ int main (int argc, char* argv[])
 	    } else if (!strncmp(argv[index],"-filter_partfile",BUFFER_SIZE)) {
 		filter_partfile = argv[index+1];
 		index += 2;
+	    } else if (!strncmp(argv[index],"-filter_byterange",BUFFER_SIZE)) {
+		filter_byterange = argv[index+1];
+		index += 2;
+	    } else if (!strncmp(argv[index],"-filter_syscall",BUFFER_SIZE)) {
+		filter_syscall = argv[index+1];
+		index += 2;
 	    } else if (!strncmp(argv[index],"-filter_output_after",BUFFER_SIZE)) {
 		filter_output_after_str = argv[index+1];
 		filter_output_after = atoi(argv[index+1]);
 		index += 2;
+	    } else if (!strncmp(argv[index], "-group_dir", BUFFER_SIZE)) { 
+		group_dir = argv[index + 1];
+		index += 2;
+	    } else if (!strncmp(argv[index], "-attach_gdb", BUFFER_SIZE)) { 
+		    attach_gdb = 1;
+		    index ++;
+	    } else if (!strncmp(argv[index], "-run_data_tool", BUFFER_SIZE)) {
+		    run_data_tool = 1;
+		    ++index;
+	    } else if (!strncmp (argv[index], "-filter_file_input", BUFFER_SIZE)) {
+		    filter_file_input = argv[index + 1];
+		    index += 2;
 	    } else {
-		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_output_after clock]\n");
+		fprintf (stderr, "format: seqtt <replay dir> [filter syscall] [--cache_dir cache_dir] [-filter_inet] [-filter_partfile xxx] [-filter_byterange xxx] [-filter_syscall xxx] [-filter_output_after clock] [-print_instruction][-stop_at][-ckpt_clock] [-attach_gdb] [-run_data_tool] [-filter_file_input filename]\n");
 		return -1;
 	    }
 	}
@@ -86,11 +121,14 @@ int main (int argc, char* argv[])
 	fprintf (stderr, "execl of resume failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     } 
+    printf ("resume called.\n");
     
     do {
 	// Wait until we can attach pin
 	rc = get_attach_status (fd, cpid);
     } while (rc <= 0);
+
+    printf ("start to attach pin.\n");
     
     gettimeofday (&tv_attach, NULL);
 
@@ -103,8 +141,19 @@ int main (int argc, char* argv[])
 	args[argcnt++] = "-pid";
 	sprintf (cpids, "%d", cpid);
 	args[argcnt++] = cpids;
+	if (attach_gdb) { 
+		args[argcnt++] = "-pause_tool";
+		args[argcnt++] = "15";
+	}
 	args[argcnt++] = "-t";
-	args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+	if (instruction_only) 
+		args[argcnt++] = "../pin_tools/obj-ia32/print_instructions.so";
+	else {
+		if (run_data_tool)//default is to run the index tool
+			args[argcnt++] = "../dift/obj-ia32/linkage_data.so";
+		else 
+			args[argcnt++] = "../dift/obj-ia32/linkage_offset.so";
+	}
 	if (filter_output_after) {
 	    args[argcnt++] = "-ofb";
 	    args[argcnt++] = filter_output_after_str;
@@ -117,20 +166,43 @@ int main (int argc, char* argv[])
 	    args[argcnt++] = "-i";
 	    args[argcnt++] = "-e";
 	    args[argcnt++] = filter_partfile;
+	} else if (filter_byterange) {
+	    args[argcnt++] = "-i";
+	    args[argcnt++] = "-b";
+	    args[argcnt++] = filter_byterange;
+        } else if (filter_syscall) { 
+            args[argcnt++] = "-i";
+            args[argcnt++] = "-s";
+            args[argcnt++] = filter_syscall;
+	} else if (filter_file_input) { 
+            args[argcnt++] = "-i";
+            args[argcnt++] = "-rf";
+            args[argcnt++] = filter_file_input;
+	    fprintf (stderr, "filter_file_input: %s\n", filter_file_input);
 	}
 	if (stop_at) {
 	    args[argcnt++] = "-l";
 	    args[argcnt++] = stop_at;
 	}
+	if (ckpt_clock) {
+	    args[argcnt++] = "-ckpt_clock";
+	    args[argcnt++] = ckpt_clock;
+	}
+	if (group_dir) { 
+		args[argcnt++] = "-group_dir";
+		args[argcnt++] = group_dir;
+	}
 	args[argcnt++] = NULL;
-	rc = execv ("../../../pin/pin", (char **) args);
+	rc = execv ("../../pin/pin", (char **) args);
 	fprintf (stderr, "execv of pin tool failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     }
 
     // Wait for cpid to complete
+    printf ("waiting for finishing, fd %d, cpid %d\n", fd, cpid);
 
     rc = wait_for_replay_group(fd, cpid);
+    printf ("waitpid starts.\n");
     rc = waitpid (cpid, &status, 0);
     if (rc < 0) {
 	fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
@@ -143,7 +215,10 @@ int main (int argc, char* argv[])
     
     printf("DIFT finished\n");
     sprintf(tmpdir, "/tmp/%d",cpid);
-    sprintf(lscmd, "/bin/ls %s/dataflow.result*", tmpdir);
+    if (group_dir)
+    	sprintf(lscmd, "/bin/ls %s/dataflow.result*", group_dir);
+    else
+    	sprintf(lscmd, "/bin/ls %s/dataflow.result*", tmpdir);
     fp = popen(lscmd, "r");
     if(fp == NULL) { 
 	fprintf(stderr, "popen failed: errno %d", errno);
@@ -167,7 +242,11 @@ int main (int argc, char* argv[])
 
 	post_process_pids[next_child] = fork(); 
 	if (post_process_pids[next_child] == 0) {
-	    sprintf(tmpdir, "/tmp/%d",cpid);
+	    if (group_dir)
+		strcpy (tmpdir, group_dir);
+	    else 
+	    	sprintf(tmpdir, "/tmp/%d",cpid);
+	    printf ("tmpdir is %s, pid %s\n", tmpdir, pid);
 	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, "-p", pid, NULL);
 	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	    return -1;
@@ -178,9 +257,13 @@ int main (int argc, char* argv[])
 
     ppid = fork();
     if (ppid == 0) {
-	sprintf(tmpdir, "/tmp/%d",cpid);
-	rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, NULL);
-	fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
+	    if (group_dir)
+		strcpy (tmpdir, group_dir);
+	    else 
+		sprintf(tmpdir, "/tmp/%d",cpid);
+
+	    rc = execl ("../dift/obj-ia32/postprocess_linkage", "postprocess_linkage", "-m", tmpdir, NULL);
+	    fprintf (stderr, "execl of postprocess_linkage failed, rc=%d, errno=%d\n", rc, errno);
 	return -1;
     }
 
@@ -194,6 +277,7 @@ int main (int argc, char* argv[])
 	    fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);
 	}
     }
+    printf ("wait for %d\n", ppid);
     rc = waitpid (ppid, &status, 0);
     if (rc < 0) {
 	fprintf (stderr, "waitpid returns %d, errno %d for pid %d\n", rc, errno, cpid);

@@ -77,7 +77,8 @@ int replay_fork (int fd_spec, const char** args, const char** env,
 
 int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		      char* logdir, char* linker, loff_t attach_index, int attach_pid, int ckpt_at,
-		      int record_timing, u_long nfake_calls, u_long* fake_calls)
+		      int ckpt_memory_only, int ckpt_mem_daemon_pid, int record_timing, 
+		      u_long nfake_calls, u_long* fake_calls)
 {
     struct wakeup_data data;
     data.pin = pin;
@@ -90,6 +91,8 @@ int resume_with_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save
     data.attach_index = attach_index;
     data.attach_pid = attach_pid;
     data.ckpt_at = ckpt_at;
+    data.ckpt_memory_only = ckpt_memory_only;
+    data.ckpt_mem_daemon_pid = ckpt_mem_daemon_pid;
     data.record_timing = record_timing;
     data.nfake_calls = nfake_calls;
     data.fake_calls = fake_calls;
@@ -101,14 +104,13 @@ int resume (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap,
 	    u_long nfake_calls, u_long* fake_calls)
 {
     return resume_with_ckpt (fd_spec, pin, gdb, follow_splits, save_mmap, logdir, linker, 
-			     attach_index, attach_pid, 0, record_timing, nfake_calls, fake_calls);
+			     attach_index, attach_pid, 0, 0, 0, record_timing, nfake_calls, fake_calls);
 }
 
 int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int save_mmap, 
 		       char* logdir, char* linker, char* filename,char* uniqueid, loff_t attach_index, int attach_pid
-		       , u_long nfake_calls, u_long* fake_calls)
+		       , u_long nfake_calls, u_long* fake_calls, int go_live, char* slice_filename, char* recheck_filename)
 {
-    fprintf(stderr, "calling resume_after_ckpt\n");
     struct wakeup_ckpt_data data;
     data.pin = pin;
     data.gdb = gdb;
@@ -123,11 +125,14 @@ int resume_after_ckpt (int fd_spec, int pin, int gdb, int follow_splits, int sav
     data.attach_pid = attach_pid;
     data.nfake_calls = nfake_calls;
     data.fake_calls = fake_calls;
+    data.go_live = go_live;
+    data.slice_filename = slice_filename;
+    data.recheck_filename = recheck_filename;
     return ioctl (fd_spec, SPECI_CKPT_RESUME, &data);    
 
 }
 
-int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos)
+int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uniqueid, int ckpt_pos, int go_live, char* slice_filename, char* recheck_filename)
 {
     struct wakeup_ckpt_data data;
     data.logdir = logdir;
@@ -135,15 +140,19 @@ int resume_proc_after_ckpt (int fd_spec, char* logdir, char* filename, char* uni
     data.uniqueid = uniqueid;
     data.ckpt_pos = ckpt_pos;
     data.fd = fd_spec;
+    data.go_live = go_live;
+    data.slice_filename = slice_filename;
+    data.recheck_filename = recheck_filename;
     return ioctl (fd_spec, SPECI_CKPT_PROC_RESUME, &data);    
 }
 
-int set_pin_addr (int fd_spec, u_long app_syscall_addr, void* pthread_data, void** pcurthread, int* pattach_ndx)
+int set_pin_addr (int fd_spec, u_long app_syscall_addr, u_long app_syscall_chk, void* pthread_data, void** pcurthread, int* pattach_ndx)
 {
     struct set_pin_address_data data;
     long rc;
 
     data.pin_address = app_syscall_addr;
+    data.pin_chk = app_syscall_chk;
     data.pthread_data = (u_long) pthread_data;
     data.pcurthread = (u_long *) pcurthread;
     rc = ioctl (fd_spec, SPECI_SET_PIN_ADDR, &data);
@@ -293,18 +302,27 @@ u_long* map_shared_clock (int fd_spec)
 {
     u_long* clock;
 
-    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK);
+    int fd = ioctl (fd_spec, SPECI_MAP_CLOCK, (u_long) &clock);
     if (fd < 0) {
-	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d\n", fd, errno);
+	fprintf (stderr, "map_shared_clock: iotcl returned %d, errno=%d, clock %p\n", fd, errno, clock);
 	return NULL;
     }
 
     clock = mmap (0, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     if (clock == MAP_FAILED) {
-	fprintf (stderr, "Cannot setup shared page for clock\n");
-	return NULL;
+        fprintf (stderr, "Cannot setup shared page for clock\n");
+        return NULL;
     }
 
     close (fd);
     return clock;
+}
+
+void add_to_startup_db (int fd_spec, char* argbuf, int arglen, uint64_t group_id, unsigned long ckpt_clock) { 
+	struct add_startup_db_data data; 
+	data.argbuf = argbuf;
+	data.arglen = arglen;
+	data.group_id = group_id;
+	data.ckpt_clock = ckpt_clock;
+	ioctl (fd_spec, SPECI_STARTUP_DB_ADD, &data);
 }

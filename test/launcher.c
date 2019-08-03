@@ -14,7 +14,7 @@ extern char** environ;
 
 void format ()
 {
-	fprintf (stderr, "format: launcher [--logdir logdir] [--pthread libdir] [-o |--outfile stdoutput_redirect] [-m] program [args]\n");
+	fprintf (stderr, "format: launcher [--logdir logdir] [--pthread libdir] [-o |--outfile stdoutput_redirect] [-m] [-d (directly run without recording for jumpstart)] program [args]\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -29,6 +29,7 @@ int main (int argc, char* argv[])
 	char ldpath[4096];
 	char* linkpath = NULL;
 	int save_mmap = 0;
+        int direct_run = 0;
 	char *outfile = NULL;
 	char logarr[0x100];
 	char *logarr_ptr;
@@ -54,7 +55,7 @@ int main (int argc, char* argv[])
 		int option_index = 0;
 
 		setenv("POSIXLY_CORRECT", "1", 1);
-		opt = getopt_long(argc, argv, "mho:", long_options, &option_index);
+		opt = getopt_long(argc, argv, "mhod:", long_options, &option_index);
 		unsetenv("POSIXLY_CORRECT");
 		//printf("getopt_long returns %c (%d)\n", opt, opt);
 
@@ -89,6 +90,9 @@ int main (int argc, char* argv[])
 			case 'o':
 				outfile = optarg;
 				break;
+                        case 'd':
+                                direct_run = 1;
+                                break;
 			case 'h':
 				format();
 				break;
@@ -150,9 +154,16 @@ int main (int argc, char* argv[])
 		argv[base-1] = ldpath;
 		linkpath = ldpath;
 
-		setenv("LD_LIBRARY_PATH", libdir, 1);
+                if (direct_run) {
+                    setenv("XX_GARBAGE_PATH", libdir, 1);//push some garbage into the environment variables so that we can have the same stack starting address between a direct run and a recorded run
+                } else {
+                    setenv("LD_LIBRARY_PATH", libdir, 1);
+                }
 	}
-	if (link_debug) setenv("LD_DEBUG", "libs", 1);
+	if (link_debug) {
+            if (direct_run) fprintf (stderr, "It won't work with link_debug turned on due to mismatched stack pointer.\n");
+            setenv("LD_DEBUG", "libs", 1);
+        }
 
 	rc = pipe(pipe_fds);
 	if (rc) {
@@ -180,8 +191,22 @@ int main (int argc, char* argv[])
 	//printf("linkpath: %s, ldpath: %s\n", linkpath, ldpath);
 	if (pid == 0) {
 		close(pipe_fds[0]);
-		rc = replay_fork(fd, (const char**) &argv[base], (const char **) environ,
+                if (direct_run == 0) {
+		        rc = replay_fork(fd, (const char**) &argv[base], (const char **) environ,
 				linkpath, logdir, save_mmap, pipe_fds[1]);
+                } else {
+                    /*int i = 0;
+                    while ((&argv[base])[i] != NULL) {
+                        fprintf (stderr, "%s\n", (&argv[base])[i]);
+                        ++i;
+                    }
+                    i = 0;
+                    while (environ[i] != NULL) { 
+                        fprintf (stderr, "len %d: %s\n", strlen (environ[i]), environ[i]);
+                        ++i;
+                    }*/
+                    rc = execve (argv[base], (char* const*) &argv[base], environ);
+                }
 
 		fprintf(stderr, "replay_fork failed, rc = %d\n", rc);
 		exit(EXIT_FAILURE);
@@ -198,7 +223,8 @@ int main (int argc, char* argv[])
 		infofile = stdout;
 	}
 
-	fprintf(infofile, "Record log saved to: ");
+        if (direct_run == 0)
+            fprintf(infofile, "Record log saved to: ");
 	logarr_ptr = logarr;
 	while (read(pipe_fds[0], logarr_ptr++, 1) > 0);
 	close(pipe_fds[0]);

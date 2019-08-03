@@ -7,8 +7,8 @@ extern "C" {
 
 /* Note: define exactly 1 of these 4 */
 //#define USE_NW
-#define USE_SHMEM
-//#define USE_FILE
+//#define USE_SHMEM
+#define USE_FILE
 //#define USE_NULL
 
 //#define RETAINT
@@ -24,6 +24,7 @@ extern "C" {
 #define TAINT_DATA_OUTPUT 2
 #define TAINT_DATA_INPUT  3
 #define TAINT_DATA_ADDR   4
+#define TAINT_DATA_INST 5
 
 struct taint_data_header {
     uint32_t type;

@@ -1,0 +1,92 @@
+FROM: instrument_taint_reg2reh
+taint_lbreg2lbreg
+taint_ubreg2lbreg
+taint_ubreg2ubreg
+taint_hwreg2hwreg
+taint_wreg2wreg
+taint_dwreg2dwreg
+taint_qwreg2qwreg
+taintx_lbreg2hwreg
+taintx_lbreg2wreg
+taintx_lbreg2dwreg
+taintx_lbreg2qwreg
+taintx_ubreg2hwreg
+taintx_ubreg2wreg
+taintx_ubreg2dwreg
+taintx_ubreg2qwreg
+taintx_hwreg2wreg
+taintx_hwreg2dwreg
+taintx_hwreg2qwreg
+taintx_wreg2dwreg
+taintx_wreg2qwreg
+taintx_dwreg2qwreg
+taint_lbreg2hwreg
+taint_lbreg2wreg
+taint_lbreg2dwreg
+taint_lbreg2qwreg
+taint_ubreg2hwreg
+taint_ubreg2wreg
+taint_ubreg2dwreg
+taint_ubreg2qwreg
+taint_hwreg2wreg
+taint_hwreg2dwreg
+taint_hwreg2qwreg
+taint_wreg2dwreg
+taint_wreg2qwreg
+taint_dwreg2qwreg
+
+
+FROM: instrument_taint_add_mem2reg
+taint_add_bmem2lbreg
+	  bmem2ubreg
+	  wmem2wreg
+	  dwmem2dwreg
+	  qwmem2qwreg
+	  bmem2hwreg
+	  bmem2wreg
+	  bmem2dwreg
+	  bmem2qwreg
+	  hwmem2wreg
+	  hwmem2dwreg
+	  hwmem2qwreg
+	  wmem2dwreg
+	  wmem2qwreg
+	  dwmem2qwreg
+
+FROM: instrument_taint_add_reg2reg
+taint_add_lbreg2lbreg
+	  lbreg2ubreg
+	  ubreg2lbreg
+	  ubreg2ubreg
+	  hwreg2hwreg
+	  wreg2wreg
+	  dwreg2dwreg
+	  qwreg2qwreg
+	  lbreg2hwreg
+	  lbreg2wreg
+	  lbreg2dwreg
+	  lbreg2qwreg
+	  ubreg2hwreg
+	  ubreg2wreg
+	  ubreg2dwreg
+	  ubreg2qwereg
+	  hwreg2wreg
+	  hwreg2dwreg
+	  hwreg2qwreg
+	  wreg2dwreg
+	  wreg2qwreg
+	  dwreg2qwreg
+	  
+FROM: instrument_taint_reg2mem
+taint_lbreg2mem
+      ubreg2mem
+      hwreg2mem
+      wreg2mem
+      dwreg2mem
+      qwreg2mem
+      lbreg2hwmem
+      lbreg2wmem
+      
+
+      instrument_taint_add_reg2mem
+      instruemnt_taint_immval2mem

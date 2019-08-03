@@ -47,6 +47,7 @@ int add_file_to_cache (struct file* vm_file, dev_t* pdev, unsigned long* pino, s
 	struct inode* inode = vm_file->f_dentry->d_inode;
 	struct kstat stat;
 	int mode;
+	struct timespec times[2];
 
 	*pino = inode->i_ino;
 	*pdev = inode->i_sb->s_dev;
@@ -64,8 +65,9 @@ int add_file_to_cache (struct file* vm_file, dev_t* pdev, unsigned long* pino, s
 		DPRINT ("file mod time: %ld.%ld\n", inode->i_mtime.tv_sec, inode->i_mtime.tv_nsec);
 		
 		// is mod time < cache time? - if so, done!
-		if (inode->i_mtime.tv_sec < st.st_mtime ||
-		    (inode->i_mtime.tv_sec == st.st_mtime && inode->i_mtime.tv_nsec < st.st_mtime_nsec)) {
+		//for startup cache: if they're equal, we're also done
+		//if (inode->i_mtime.tv_sec < st.st_mtime ||(inode->i_mtime.tv_sec == st.st_mtime && inode->i_mtime.tv_nsec <= st.st_mtime_nsec)) {
+		if (inode->i_mtime.tv_sec == st.st_mtime || inode->i_mtime.tv_nsec == st.st_mtime_nsec) {
 			DPRINT ("File is already in the cache and up to date - so done\n");
 			pmtime->tv_sec = st.st_mtime;
 			pmtime->tv_nsec = st.st_mtime_nsec;
@@ -133,6 +135,17 @@ int add_file_to_cache (struct file* vm_file, dev_t* pdev, unsigned long* pino, s
 
 	rc = sys_rename (tname, cname);
 	if (rc < 0) printk ("add_file_to_cache: atomic rename from %s to %s failed, rc = %d\n", tname, cname, rc);
+	
+	//force the cache file to have exact times with the original one (This is only for the startup cache)
+	times[0].tv_sec = stat.atime.tv_sec;
+	times[0].tv_nsec = stat.atime.tv_nsec;
+	times[1].tv_sec = stat.mtime.tv_sec;
+	times[1].tv_nsec = stat.mtime.tv_nsec;
+	rc = sys_utimensat (0, cname, times, 0);
+	if (rc < 0) {
+	    printk ("[BUG]utimens in add_file_to_cache fails, rc %d\n", rc);
+	    BUG();
+	}
 	
 	rc = sys_stat64 (cname, &st);
 	if (rc < 0) printk ("add_file_to_cache: stat on newly created cache file failed, rc = %d\n", rc);

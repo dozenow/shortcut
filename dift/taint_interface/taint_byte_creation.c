@@ -7,6 +7,8 @@
 #include "taint_interface.h"
 #include "../xray_token.h"
 #include "../taint_nw.h"
+#include "../linkage_common.h"
+#include "../recheck_log.h"
 
 #ifdef TAINT_DEBUG
 extern FILE* debug_f;
@@ -153,8 +155,6 @@ void add_input_filter(int type, void* filter)
                     (char *) filter, rc);
             exit(-1);
         }
-        //fprintf(stderr, "Filtering pid %d syscall %d [%d, %d)\n",
-                //fbr->pid, fbr->syscall, fbr->start_offset, fbr->end_offset);
         list_add_tail(&fbr->list, &filter_byte_ranges);
         num_filter_byte_ranges++;
     } else if (type == FILTER_PARTFILENAME) {
@@ -227,18 +227,35 @@ int filter_regex(char* buf, int len) {
 
 // Assumes syscalls are uniquely ordered in a replay group,
 // so don't the pid
-int filter_byte_range(int syscall, int byteoffset)
+// xdou:is this true??? the syscall here is the index in each thread I think, not the global replay clock
+int filter_byte_range(pid_t pid, int syscall, int byteoffset)
 {
     struct filter_byterange* fbr;
     list_for_each_entry(fbr, &filter_byte_ranges, list) {
-        if (fbr->syscall == syscall &&
-                byteoffset >= fbr->start_offset &&
-                byteoffset < fbr->end_offset)
+        if (fbr->pid == pid && fbr->syscall == syscall &&
+	    byteoffset >= fbr->start_offset &&
+	    byteoffset < fbr->end_offset)
         {
             return 1;
         }
     }
     return 0;
+}
+
+int get_partial_taint_byte_range (pid_t pid, int syscall, size_t* starts, size_t* ends) 
+{
+    struct filter_byterange* fbr;
+    int cnt = 0;
+
+    list_for_each_entry(fbr, &filter_byte_ranges, list) {
+        if (fbr->pid == pid && fbr->syscall == syscall) {
+	    assert (cnt <= MAX_REGIONS);
+	    starts[cnt] = fbr->start_offset;
+	    ends[cnt] = fbr->end_offset;
+	    cnt++;
+        }
+    }
+    return cnt;
 }
 
 #if defined(USE_SHMEM) || defined(USE_NW)
@@ -390,8 +407,6 @@ void create_taints_from_buffer(void* buf, int size,
 			       int outfd,
 			       char* channel_name)
 {
-
-    int i = 0;
     taint_t start;
     u_long buf_addr = (u_long) buf;
     if (size <= 0) return;
@@ -428,31 +443,108 @@ void create_taints_from_buffer(void* buf, int size,
         }
     }
 
+    if (filter_input()) {	
+	struct filter_byterange* fbr;
+
+	start = taint_num;
+	list_for_each_entry(fbr, &filter_byte_ranges, list) {
+	    if (fbr->pid == tci->record_pid && (long) fbr->syscall == tci->syscall_cnt) {
+		int i;
+		for (i = fbr->start_offset; i < fbr->end_offset; i++) {
+		    if (i < size) create_and_taint_option(buf_addr + i);
+		}
+	    }
+
+	}
+	write_tokens_info(outfd, start, tci, size);
+    }
+
+#if 0
     start = taint_num;
     for (i = 0; i < size; i++) {
         if (filter_input() && num_filter_byte_ranges > 0 &&
-                !filter_byte_range(tci->syscall_cnt, tci->offset + i)) {
+	    !filter_byte_range(tci->record_pid, tci->syscall_cnt, tci->offset + i)) {
 	    if (taint_num != start) {
 		write_tokens_info(outfd, start, tci, taint_num-start);
 		start = taint_num;
 	    }
             continue;
-        }
+        } 
 
         create_and_taint_option(buf_addr + i);
     }
     write_tokens_info(outfd, start, tci, size);
+#endif
 }
 
-void create_fd_taints(int nfds, fd_set* fds, struct taint_creation_info* tci,
-        int outfd)
+void create_taints_from_buffer_unfiltered(void* buf, int size, 
+					  struct taint_creation_info* tci,
+					  int outfd)
 {
-    //void out the untracked process
-    if (outfd == -99999) { 
+
+    u_long buf_addr = (u_long) buf;
+    int i;
+    taint_t start;
+    if (size <= 0) return;
+    if (!buf) return;
+
+    if(outfd == -99999) { 
 	return;
     }
-    taint_t t = create_and_taint_fdset(nfds, fds);
-    write_tokens_info(outfd, t, tci, 1);
+
+    start = taint_num;
+    for (i = 0; i < size; i++) {
+         create_and_taint_option(buf_addr + i);
+    }
+    write_tokens_info(outfd, start, tci, size);
+}
+
+void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, char* channel_name) {
+	taint_t t =  taint_num;
+	int i = 0;
+	if (outfd == -99999) { 
+		return;
+	}
+
+	if (filter_input()) {
+		int pass = 0;
+		if (num_filter_input_files &&
+				filter_filename(channel_name)) {
+			pass = 1; 
+		}
+		if (num_filter_part_filenames &&
+				filter_partfilename(channel_name)) {
+			pass = 1;
+		}
+		if (num_filter_input_syscalls &&
+				filter_syscall(tci->syscall_cnt)) {
+			pass = 1;
+		}
+
+		if (!pass) {
+			return;
+		}
+	}
+
+	for (; i < REG_SIZE; ++i) {
+		set_syscall_retval_reg_value (i, taint_num);
+		++ taint_num;
+	}
+	write_tokens_info (outfd, t, tci, REG_SIZE);
+}
+
+void create_syscall_retval_taint_unfiltered (struct taint_creation_info *tci, int outfd) 
+{
+	taint_t t =  taint_num;
+	int i = 0;
+
+	if (outfd == -99999) return;
+
+	for (; i < REG_SIZE; ++i) {
+		set_syscall_retval_reg_value (i, taint_num);
+		++ taint_num;
+	}
+	write_tokens_info (outfd, t, tci, REG_SIZE);
 }
 
 void write_output_taint(int outfd, taint_t t,
@@ -544,6 +636,25 @@ void write_output_taints (int outfd, void* buf, int size)
     }
 }
 
+void write_output_reg_taints (int outfd, u_long reg, taint_t value) {
+	int rc;
+	rc = write(outfd, &reg, sizeof(u_long));
+	if (rc != sizeof(u_long)) {
+		fprintf (stderr, "Could not write taint reg index.\n");
+	}
+#ifdef TAINT_DEBUG
+	if (TAINT_DEBUG(value)) {
+		fprintf (debug_f, "output %lx has taint value %x reg %lu clock %lx\n", 
+				debug_taint_cnt, value, reg, *ppthread_log_clock);
+	}
+	debug_taint_cnt++;
+#endif
+	rc = write(outfd, &value, sizeof(taint_t));
+	if (rc != sizeof(taint_t)) {
+		fprintf (stderr, "Could not write taint value.\n");
+	}
+}
+
 int filter_outputs (struct taint_creation_info* tci)
 {
     if (taint_filter_outputs) return 1;
@@ -599,6 +710,16 @@ static inline void fill_outbuf (char* pout, struct taint_creation_info* tci, voi
     fprintf (debug_f, "output %lx-%lx size %d clock %ld\n", 
 	     debug_taint_cnt-size, debug_taint_cnt, size, *ppthread_log_clock);
 #endif
+}
+
+void output_jump_result (u_long inst_addr, taint_t value, struct taint_creation_info* tci, int outfd) {
+	if (outfd == -99999) {
+		return;
+	}
+	if (!filter_outputs(tci)) {
+		write_output_header (outfd, tci, (void*) inst_addr, 1);
+		write_output_reg_taints (outfd, inst_addr, value);
+	}
 }
 
 void output_buffer_result (void* buf, int size,
@@ -958,15 +1079,20 @@ void build_filters_from_file(const char* filter_filename) {
     //int pid, syscall, start_offset, end_offset;
     while ((read = getline(&line, &len, filter_f)) != -1) {
         //sscanf(line, "-%c %d,%d,%d,%d\n", &filter_type, &pid, &syscall, &start_offset, &end_offset);
-        sscanf(line, "-%c %s\n", &filter_type, filter);
+	if (line[0] == '#') continue;
+        if (sscanf(line, "-%c %s\n", &filter_type, filter) == 2) {
 
-        switch (filter_type) {
+	    switch (filter_type) {
             case 'b':
                 add_input_filter(FILTER_BYTERANGE, (void*) filter);
                 break;
+	    case 's':
+		add_input_filter(FILTER_SYSCALL, (void*) filter);
+		break;
             default:
                 break;
-        }
+	    }
+	}
     }
 
 

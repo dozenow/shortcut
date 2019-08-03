@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/select.h>
+#include "taint.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,8 @@ void add_input_filter(int type, void* filter);
 // output filters
 void add_output_filter(int type, void* filter);
 
+int get_partial_taint_byte_range (pid_t pid, int syscall, size_t* start, size_t* end);
+
 int serialize_filters(int outfd);
 int deserialize_filters(int infd);
 
@@ -53,14 +56,21 @@ void create_taints_from_buffer(void* buf, int size,
 			       struct taint_creation_info*,
 			       int outfd,
 			       char* channel_name);
-void create_fd_taints(int nfds, fd_set* fds,
-		      struct taint_creation_info*, int outfd);
+void create_taints_from_buffer_unfiltered(void* buf, int size, 
+					  struct taint_creation_info*,
+					  int outfd);
+void create_syscall_retval_taint (struct taint_creation_info *tci, int outfd, char* channel_name);
+void create_syscall_retval_taint_unfiltered (struct taint_creation_info *tci, int outfd);
   
 /* Outputs the taints in a buffer that match the output
  * filters, if output filters are on. */
 void output_buffer_result (void* buf, int size,
 			   struct taint_creation_info* tci,
 			   int outfd);
+void output_jump_result (u_long inst_addr, taint_t value, struct taint_creation_info* tci, int outfd);
+void write_output_header(int outfd, struct taint_creation_info* tci,
+                            void* buf, int buf_size);
+void write_output_taints (int outfd, void* buf, int size);
 
 void output_xcoords (int outfd, int syscall_cnt,
 		     int dest_x, int dest_y, u_long mem_loc);

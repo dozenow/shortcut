@@ -38,7 +38,7 @@ extern "C" {
 #include <asm/ldt.h>
 #include <sys/resource.h>
 
-#include "replay_headers/include/linux/replay_configs.h"
+#include "../linux-lts-quantal-3.5.0/include/linux/replay_configs.h"
 
 #ifndef __USE_LARGEFILE64
 #  define __USE_LARGEFILE64
@@ -213,9 +213,10 @@ struct sem_retvals {
 
 // retvals for shmat, since we need to save additional information
 struct shmat_retvals {
-	int    call;
-	u_long size;
-	u_long raddr;
+    u_long len;
+    int    call;
+    u_long size;
+    u_long raddr;
 };
 
 struct set_thread_area_retvals {
@@ -232,9 +233,6 @@ struct splice_retvals {
 	loff_t off_in;
 	loff_t off_out;
 };
-
-u_long scount[512];
-u_long bytes[512];
 
 /* grabbed from asm/stat.h - ick - cannot include */
 /* for 32bit emulation and 32 bit kernels */
@@ -294,7 +292,7 @@ struct syscall_result {
 
 struct klog_signal {
 	char raw[172];
-	struct repsignal sig;
+	int signr;
 	struct klog_signal *next;
 };
 
@@ -323,24 +321,27 @@ struct parse_rules {
 };
 
 struct klogfile {
-	int fd;
+    u_long size;
+    char* buf;
+    char* ptr;
 
-	/* TODO: Not initialized yet... */
-	loff_t num_psrs;
-
-	loff_t cur_idx;
-
-	loff_t expected_clock;
-
-	loff_t active_start_idx;
-	loff_t active_num_psrs;
-	struct klog_result *active_psrs;
-
-	struct parse_rules *parse_rules[NR_SYSCALLS];
-
-	void (*default_printfcn)(FILE *out, struct klog_result *);
-	void (*printfcns[NR_SYSCALLS])(FILE *out, struct klog_result *);
-	void (*signal_print)(FILE *out, struct klog_result *);
+    /* TODO: Not initialized yet... */
+    loff_t num_psrs;
+    
+    loff_t cur_idx;
+    
+    loff_t expected_clock;
+    loff_t expected_write_clock;
+    
+    loff_t active_start_idx;
+    loff_t active_num_psrs;
+    struct klog_result *active_psrs;
+    
+    struct parse_rules *parse_rules[NR_SYSCALLS];
+    
+    void (*default_printfcn)(FILE *out, struct klog_result *);
+    void (*printfcns[NR_SYSCALLS])(FILE *out, struct klog_result *);
+    void (*signal_print)(FILE *out, struct klog_result *);
 };
 
 /* 
@@ -351,12 +352,11 @@ struct klogfile *parseklog_open(const char *filename);
 void parseklog_close(struct klogfile *log);
 
 struct klog_result *parseklog_get_next_psr(struct klogfile *log);
-struct klog_result *parseklog_get_psr(struct klogfile *log, loff_t idx);
+struct klog_result *parseklog_get_next_psr_from_chunk (struct klogfile *log);
 
 int parseklog_read_next_chunk(struct klogfile *log);
 int parseklog_cur_chunk_size(struct klogfile *log);
 int parseklog_write_chunk(struct klogfile *log, int destfd);
-int parseklog_do_write_chunk(int count, struct klog_result *psrs, int destfd);
 
 void parseklog_set_signalprint(struct klogfile *log,
 		void (*printfcn)(FILE *out, struct klog_result *));

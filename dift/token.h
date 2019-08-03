@@ -26,10 +26,22 @@ extern "C" {
 #define TOK_RECV 5
 #define TOK_SENDMSG 6
 #define TOK_RECVMSG 7
-#define TOK_PREAD 8
+#define TOK_PREAD 8  
 /* Select on a file descriptor */
 #define TOK_SELECT 9
-
+#define TOK_READ_RET 10
+#define TOK_MMAP 11
+#define TOK_GETTIMEOFDAY 12
+#define TOK_CLOCK_GETTIME 13
+#define TOK_RETVAL 14 /* This is more generic - I think that's OK since info is elsewhere */
+#define TOK_GETRUSAGE 15
+#define TOK_STAT_ATIME 16
+#define TOK_UNAME 17
+#define TOK_STATFS64 18
+#define TOK_SYSCALL_MEM 19  /* This is more generic - I think that's OK since info is elsewhere */
+#define TOK_TIME 20
+#define TOK_CLOCK_GETRES 21
+#define TOK_INIT_MEMORY_INPUT 22 //The initial memory tainted inputs for funtion-level support
 
 /* A token represents one or more contiguous inputs,
  * e.g. a range of bytes from read

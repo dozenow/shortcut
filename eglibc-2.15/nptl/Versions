@@ -16,6 +16,8 @@ libc {
     pthread_mutex_lock; pthread_mutex_unlock;
     pthread_self;
     pthread_setcancelstate; pthread_setcanceltype;
+    pthread_go_live;
+    pthread_log_lll_wait_tid;
   }
   GLIBC_2.1 {
     pthread_attr_init;
@@ -129,6 +131,8 @@ libpthread {
     # Functions which previously have been overwritten.
     sigwait; sigaction; __sigaction; _exit; _Exit; longjmp; siglongjmp;
     raise;
+    pthread_go_live;
+    pthread_log_lll_wait_tid;
   }
 
   GLIBC_2.1 {

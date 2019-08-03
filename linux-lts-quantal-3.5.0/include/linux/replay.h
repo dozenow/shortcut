@@ -13,6 +13,7 @@
 #define PIN_ATTACH_BLOCKED 2
 #define PIN_ATTACH_REDO    4
 
+#define RECHECK
 
 #include <linux/signal.h>
 #include <linux/mm_types.h>
@@ -27,10 +28,13 @@ int fork_replay (char __user * logdir, const char __user *const __user *args,
 
 /* Restore ckpt from disk - replaces AS of current process (like exec) */
 /* Linker may be NULL - otherwise points to special libc linker */
-long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd,
-			 int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, int ckpt_at, int record_timing, u_long nfake_calls, u_long* fake_call_points);
-long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points);
-long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread);
+long replay_ckpt_wakeup (int attach_device, char* logdir, char* linker, int fd, int follow_splits, int save_mmap, loff_t attach_index, int attach_pid, 
+			 int ckpt_at, int ckpt_memory_only, int ckpt_mem_slice_pid, int record_timing, u_long nfake_calls, u_long* fake_call_points);
+long replay_full_ckpt_wakeup (int attach_device, char* logdir, char* filename, char *uniqueid, char* linker, int fd,      
+			      int follow_splits, int save_mmap, loff_t syscall_index, int attach_pid, u_long nfake_calls, u_long *fake_call_points, 
+			      int go_live, char* execute_slice_name, char* recheck_filename);
+long replay_full_ckpt_proc_wakeup (char* logdir, char* filename, char *uniqueid,int fd, int is_thread, int go_live, char* execute_slice_name, char* recheck_filename);
+void fw_slice_recover (pid_t daemon_pid, pid_t slice_pid, long retval);
 
 /* Returns linker for exec to use */
 char* get_linker (void);
@@ -41,7 +45,7 @@ struct used_address {
     u_long end;
 };
 
-int set_pin_address (u_long pin_address, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx);
+int set_pin_address (u_long pin_address, u_long pin_chk, u_long thread_data, u_long __user* curthread_ptr, int* attach_ndx);
 long get_log_id (void);
 unsigned long get_clock_value (void);
 long check_clock_before_syscall (int syscall);
@@ -112,15 +116,16 @@ long replay_resume_from_disk (char* filename, char** execname, char*** argsp, ch
 
 
 long replay_full_resume_hdr_from_disk (char* filename, __u64* prg_id, int* pclock, u_long* pproc_count, loff_t* ppos);
-long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_thread, long* pretval, loff_t* plogpos, u_long* poutptr, u_long* pconsumed, u_long* pexpclock, u_long* pthreadclock, u_long *ignore_flag, u_long *user_log_addr, u_long *user_log_pos,u_long *child_tid,u_long *replay_hook, loff_t* ppos);
+long replay_full_resume_proc_from_disk (char* filename, pid_t clock_pid, int is_thread, long* pretval, loff_t* plogpos, u_long* poutptr, u_long* pconsumed, u_long* pexpclock, u_long* pthreadclock, u_long *ignore_flag, u_long *user_log_addr, u_long *user_log_pos,u_long *child_tid,u_long *replay_hook, loff_t* ppos, char* slicelib, u_long* slice_addr, u_long* slice_size, u_long* pthread_clock_addr);
 
 long replay_full_checkpoint_hdr_to_disk (char* filename, __u64 rg_id, int clock, u_long proc_count, struct ckpt_tsk *ct, struct task_struct *tsk, loff_t* ppos);
 long replay_full_checkpoint_proc_to_disk (char* filename, struct task_struct* tsk, pid_t record_pid, int is_thread, long retval, loff_t logpos, u_long outptr, u_long consumed, u_long expclock, u_long pthread_block_clock, u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,u_long replay_hook, loff_t* ppos);
+long replay_full_checkpoint_proc_to_disk_light (char* filename, struct task_struct* tsk, pid_t record_pid, int is_thread, long retval, loff_t logpos, u_long outptr, u_long consumed, u_long expclock, u_long pthread_block_clock, u_long ignore_flag, u_long user_log_addr, u_long user_log_pos,u_long replay_hook, char* linker, loff_t* ppos);
 
 
 /* Helper functions for checkpoint/resotre */
 int checkpoint_replay_cache_files (struct task_struct* tsk, struct file* cfile, loff_t* ppos);
-int restore_replay_cache_files (struct file* cfile, loff_t* ppos);
+int restore_replay_cache_files (struct file* cfile, loff_t* ppos, int go_live);
 
 int find_sysv_mapping_by_key (int key);
 int checkpoint_ckpt_tsks_header(struct ckpt_tsk *ct, int parent_pid, int is_thread, struct file *cfile, loff_t *ppos);
@@ -177,7 +182,7 @@ void replay_unlink_gdb(struct task_struct* tsk);
 long try_to_exit (u_long pid);
 
 /* Let's the PIN tool read the clock value too */
-long pthread_shm_path (void);
+long pthread_shm_path (void __user** mapped_address);
 
 /* For obtaining list of open sockets */
 struct monitor_data {
@@ -187,5 +192,112 @@ struct monitor_data {
 	char channel[256];
 };
 long get_open_socks (struct monitor_data __user* entries, int num_entries);
+
+long go_live_recheck (__u64 gid, pid_t pid, char* recheck_log);
+struct open_retvals {
+	dev_t           dev;
+	u_long          ino;
+	struct timespec mtime;
+};
+struct startup_db_result { 
+	__u64 group_id;
+	unsigned long ckpt_clock;
+};
+
+
+void init_startup_db (void);
+void add_to_startup_cache (char* arbuf, int arglen, __u64 group_id, unsigned long ckpt_clock);
+//int find_startup_cache (char* argbuf, int arglen, struct startup_db_result* result);
+int find_startup_cache_user_argv (const char __user *const __user *__argv, struct startup_db_result* result);
+char* copy_args (const char __user* const __user* args, const char __user* const __user* env, int* buflen);
+struct fw_slice_info {
+	unsigned long text_addr;
+	unsigned long text_size;
+	unsigned long extra_addr;
+	unsigned long extra_size;
+	struct pt_regs regs;
+	//fpu
+	char fpu_is_allocated;
+	unsigned int fpu_last_cpu;
+	unsigned int fpu_has_fpu;
+	union thread_xstate fpu_state;
+        //some extra info
+        struct go_live_clock* slice_clock;
+	unsigned long slice_mode; //set if you're accelerating fine-grained code region 
+};
+
+struct go_live_process_map { 
+    int record_pid;
+    int current_pid;
+    __user char* taintbuf; // Location of taintbuf in process address space
+    __user u_long* taintndx; // Location of taintbuf index in process address space
+    int wait; //for futex wait
+    int value; //for futex wait 
+};
+
+struct replay_group;
+
+// ****
+//NOTE: there is one user-level structure corresponding to this one in recheck_log.h
+// ***
+struct go_live_clock {
+	char skip[128];  //since we put this structure in the shared uclock region, make sure it won't mess up original data in that region (I believe original data only occupies first 8 bytes)
+	atomic_t slice_clock; //ordering
+	atomic_t num_threads;  //the number of threads that has started (has called start_fw_slice)
+	atomic_t num_remaining_threads; //the number of threads that hasn't finished slice exeucting
+	atomic_t wait_for_other_threads; // Used by user-level slice code
+	int mutex; // Used by user-level slice code
+	struct replay_group* replay_group; //the address of the replay_group
+	void* cache_file_structure; //This address is the cache_files_opened in recheck_support.c; this is need to make this structure shared across threads
+	struct go_live_process_map process_map[0]; //current pid  <-> record pid
+};
+
+struct ckpt_data {
+	u_long proc_count;
+	__u64  rg_id;
+	int    clock;	
+};
+
+struct ckpt_proc_data {
+	pid_t  record_pid;
+	long   retval;
+	loff_t logpos;
+	u_long outptr;
+	u_long consumed;
+	u_long expclock;
+	u_long pthreadclock;
+	u_long p_ignore_flag; //this is really just a memory address w/in the vma
+	u_long p_user_log_addr;
+	u_long user_log_pos;
+	u_long p_clear_child_tid;
+	u_long p_replay_hook;
+//	u_long rss_stat_counts[NR_MM_COUNTERS]; //the counters from the checkpointed task
+};
+
+
+struct record_thread;
+struct replay_thread;
+
+long start_fw_slice (struct go_live_clock* slice_clock, u_long slice_addr, u_long slice_size, long record_pid, char* recheck_name, u_long user_clock_addr, u_long);
+void destroy_replay_group (struct replay_group *prepg);
+void fw_slice_recover_swap_register (struct task_struct *main_live_tsk);
+void fw_slice_recover_swap_register_single_thread (struct task_struct *main_live_tsk, struct task_struct* recover_tsk);
+struct go_live_clock* get_go_live_clock (struct task_struct* tsk);
+void dump_vmas_content (u_long prefix);
+
+struct go_live_thread_info;
+void wake_up_vm_dump_waiters (struct go_live_thread_info* info);
+void wait_for_vm_dump (struct go_live_thread_info* info);
+void put_go_live_thread (struct go_live_thread_info* info);
+
+struct go_live_thread_info {
+	struct record_thread* orig_record_thrd;
+	struct replay_thread* orig_replay_thrd;
+	int rollback_process_id; 
+	u64 slice_gid;
+	int slice_pid;  
+	u_long region_start_clock; 
+	u_long recover_clock; 
+};
 
 #endif
